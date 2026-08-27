@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebMCP Challenge Starter</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">WEBMCP CHALLENGE STARTER</p>
+        <h1>Agent-ready notes</h1>
+        <p class="lede">
+          人間はこの画面からメモを追加し、エージェントはWebMCPツール経由で同じ状態を確認・更新できます。
+        </p>
+        <p id="webmcp-status" class="status" role="status">WebMCPの状態を確認中...</p>
+      </header>
+
+      <section class="card" aria-labelledby="add-note-heading">
+        <h2 id="add-note-heading">メモを追加</h2>
+        <form id="note-form">
+          <label for="note-input">内容</label>
+          <div class="input-row">
+            <input id="note-input" name="note" type="text" required maxlength="200" placeholder="例: デモ動画を撮影する" />
+            <button type="submit">追加</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="notes-heading">
+        <div class="section-heading">
+          <h2 id="notes-heading">メモ一覧</h2>
+          <span id="note-count" class="count">0件</span>
+        </div>
+        <ul id="notes" class="notes" aria-live="polite"></ul>
+        <p id="empty-state" class="empty">まだメモはありません。</p>
+      </section>
+
+      <footer>
+        <code>document.modelContext</code> に <code>getNotes</code> と <code>addNote</code> を登録しています。
+      </footer>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
+
