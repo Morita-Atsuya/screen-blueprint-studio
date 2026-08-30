@@ -66,7 +66,7 @@ AIがchange setへ型付きoperationを追加
 - Screensタブで画面の追加、選択、名前・route編集、削除
 - canvas上部の`+`から任意名の状態を追加し、選択中の非default状態は`⋯`から名前・説明を編集または削除
 - 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
-- Buttonや入力componentを選択し、Inspectorの「振る舞い」でeventと実行順action、API operationとrequest bindingを編集。validation仕様は参照のみ
+- Buttonや入力componentを選択し、Inspectorの「振る舞い」でeventと実行順action、API operationとrequest bindingを編集。field bindingの正準sourceは`ApiOperation.requestBindings`のみで、validation仕様は参照のみ
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 Page／Modal root、別screen、leaf、自分自身・子孫へのdropは拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。

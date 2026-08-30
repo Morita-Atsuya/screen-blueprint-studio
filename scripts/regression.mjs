@@ -1306,6 +1306,11 @@ await test('event actions and API bindings reject cross-screen references', asyn
         patch: { name: { invalid: true } },
       },
       {
+        type: 'updateComponentSpec',
+        componentId: 'comp-name-input',
+        patch: { config: { requestBinding: null } },
+      },
+      {
         type: 'createScreenState',
         stateId: 'invalid-state',
         screenId: 'screen-list',
@@ -4605,29 +4610,37 @@ await test('API editor commands preserve references and enforce canonical bindin
     'Undo did not restore the API operation and callApi actions',
   )
 
-  const legacyNullDocument = structuredClone(deleteStore.getState().document)
-  legacyNullDocument.components['comp-email-input'].config.requestBinding = null
-  legacyNullDocument.components['comp-role-select'].config.requestBinding = null
-  memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyNullDocument }))
-  const migratedStore = await freshStore('api-binding-null-migration')
-  assert(
-    migratedStore.getState().recoveryState === null &&
-      !Object.prototype.hasOwnProperty.call(
-        migratedStore.getState().document.components['comp-email-input'].config,
-        'requestBinding',
-      ),
-    'legacy null component bindings did not migrate safely',
-  )
-  const legacyValueDocument = structuredClone(migratedStore.getState().document)
-  legacyValueDocument.components['comp-email-input'].config.requestBinding = {
-    componentId: 'comp-name-input',
-    targetPath: 'body.name',
+  for (const [label, componentId, legacyValue] of [
+    ['text input null', 'comp-email-input', null],
+    ['select null', 'comp-role-select', null],
+    ['text input value', 'comp-email-input', {
+      componentId: 'comp-name-input',
+      targetPath: 'body.name',
+    }],
+  ]) {
+    const documentWithLegacyField = structuredClone(deleteStore.getState().document)
+    documentWithLegacyField.components[componentId].config.requestBinding = legacyValue
+    memoryStorage.setItem(storageKey, JSON.stringify({ document: documentWithLegacyField }))
+    const rejectedStore = await freshStore(`api-binding-legacy-${label}`)
+    assert(
+      rejectedStore.getState().recoveryState !== null,
+      `${label} legacy component binding did not enter Recovery`,
+    )
   }
-  memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyValueDocument }))
-  const unsupportedLegacyStore = await freshStore('api-binding-value-recovery')
+
   assert(
-    unsupportedLegacyStore.getState().recoveryState !== null,
-    'non-null legacy component binding was silently discarded',
+    Object.values(deleteStore.getState().document.components).every(component =>
+      !Object.prototype.hasOwnProperty.call(component.config, 'requestBinding')
+    ),
+    'canonical component fixtures contain the legacy requestBinding field',
+  )
+  const persistenceSource = readFileSync(
+    join(root, 'src/persistence/localStorage.ts'),
+    'utf8',
+  )
+  assert(
+    !persistenceSource.includes('requestBinding'),
+    'persistence retains legacy requestBinding compatibility handling',
   )
 
   const apiDialogSource = readFileSync(

@@ -63,51 +63,6 @@ function requireNonNegativeInteger(value: unknown, path: string): asserts value 
   }
 }
 
-function removeLegacyNullRequestBinding(config: unknown, path: string): void {
-  if (
-    !isRecord(config) ||
-    !Object.prototype.hasOwnProperty.call(config, 'requestBinding')
-  ) return
-  if (config.requestBinding !== null) {
-    throw new Error(`${path}.requestBinding contains unsupported legacy data`)
-  }
-  delete config.requestBinding
-}
-
-function migrateLegacyRequestBindings(document: unknown): void {
-  if (!isRecord(document) || !isRecord(document.components)) return
-  for (const [componentId, component] of Object.entries(document.components)) {
-    if (!isRecord(component)) continue
-    removeLegacyNullRequestBinding(
-      component.config,
-      `document.components.${componentId}.config`,
-    )
-  }
-}
-
-function migrateLegacyChangeSet(value: unknown): void {
-  if (!isRecord(value)) return
-  migrateLegacyRequestBindings(value.baseDocument)
-  if (!Array.isArray(value.operations)) return
-  for (const operation of value.operations) {
-    if (!isRecord(operation) || !isRecord(operation.command)) continue
-    const command = operation.command
-    if (command.type === 'addComponent') {
-      removeLegacyNullRequestBinding(command.config, 'activeChangeSet addComponent config')
-    }
-    if (
-      command.type === 'updateComponentSpec' &&
-      isRecord(command.patch) &&
-      isRecord(command.patch.config)
-    ) {
-      removeLegacyNullRequestBinding(
-        command.patch.config,
-        'activeChangeSet updateComponentSpec config',
-      )
-    }
-  }
-}
-
 function storage(): Storage {
   return globalThis.localStorage
 }
@@ -188,7 +143,6 @@ export function loadFromStorage(): LoadResult {
     return { status: 'invalid', rawData: raw, error: 'Unsupported schema version' }
   }
   try {
-    migrateLegacyRequestBindings(data.document)
     validateInvariants(data.document)
   } catch (e) {
     return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
@@ -201,9 +155,7 @@ export function loadFromStorage(): LoadResult {
       activeScreenId: data.activeScreenId,
     }
   }
-
   try {
-    migrateLegacyChangeSet(data.activeChangeSet)
     return {
       status: 'success',
       document: data.document,
