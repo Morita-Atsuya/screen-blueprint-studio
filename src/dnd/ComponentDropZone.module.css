@@ -27,7 +27,14 @@
 }
 
 .invalid {
-  opacity: 0.35;
+  border-color: var(--danger);
+  opacity: 0.45;
+}
+
+.invalidOver {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  opacity: 1;
 }
 
 .tree {

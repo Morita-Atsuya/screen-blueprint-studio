@@ -33,12 +33,11 @@ export function ComponentDropZone({
     label,
   }
   const accepts = !validDrag || canAcceptDrop(document, drag, target)
-  const showAffordance = validDrag && accepts
+  const showAffordance = validDrag
   const dropId = componentDropId(surface, parentId, position)
   const { isOver, setNodeRef } = useDroppable({
     id: dropId,
     data: target,
-    disabled: validDrag && !accepts,
   })
   return (
     <div
@@ -48,9 +47,10 @@ export function ComponentDropZone({
         styles[surface],
         styles[orientation],
         edge === 'end' ? styles.end : '',
-        showAffordance ? styles.active : '',
+        showAffordance && accepts ? styles.active : '',
         validDrag && !accepts ? styles.invalid : '',
-        isOver && showAffordance ? styles.over : '',
+        isOver && accepts ? styles.over : '',
+        isOver && validDrag && !accepts ? styles.invalidOver : '',
       ].join(' ')}
       aria-label={t('dnd.dropAria', { label })}
       data-drop-surface={surface}
@@ -59,6 +59,7 @@ export function ComponentDropZone({
       data-drop-orientation={orientation}
       data-editor-drop-id={dropId}
       data-drop-visible={showAffordance}
+      data-drop-outcome={validDrag ? accepts ? 'allowed' : 'invalid' : undefined}
     />
   )
 }

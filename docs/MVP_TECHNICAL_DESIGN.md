@@ -777,7 +777,8 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 
 - 主要操作をbutton、form control、tree semanticsで提供
 - dnd-kitのpointer、touch、keyboard sensorを提供し、Tree drag handleとCanvasのfocus可能なcomponent面にaccessible nameを設定
-- DnD状態は視覚的なline・outlineに加え、選択localeのscreen reader announcementで通知
+- component配置はdomainの共通classifierで`moved`／`no-op`／`invalid(reason)`へ分類する。drop slotから同一parent内の最終indexを正規化してから判定し、no-opではrevision、history、change set version、Toastを変更しない。invalidはroot、self/descendant、children不可、kind制約、別Screen、stale、位置不正、その他domain制約へ型付きで分ける
+- DnD状態は視覚的なline・outlineに加え、選択localeのscreen reader announcementで通知する。moved／no-op／cancelはDnD live region、invalid確定時は理由別error Toastを使い、同じ失敗を二重announceしない
 - キーボードで選択、クリック追加、上下移動、削除、選択解除、Undo／Redoが可能
 - 選択を色だけで示さない
 - change setのAI変更と人間修正を色とlabelの両方で示す

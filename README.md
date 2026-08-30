@@ -74,8 +74,8 @@ AIがchange setへ型付きoperationを追加
 - Buttonや入力componentを選択し、Inspectorの「振る舞い」でeventと実行順action、API operationとrequest bindingを編集。field bindingの正準sourceは`ApiOperation.requestBindings`のみ。`textInput`ではvalidation rule（required／minLength／maxLength／pattern／email／custom）を追加・編集・削除・並べ替え
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
-Page／Modal root、別screen、leaf、自分自身・子孫へのdropは拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
-drop位置はdrag中だけ挿入line・outlineで示し、preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Section／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。treeとdrag表示はleafのlabel／textなどの仕様値、または構造kindのeditor-only名を使います。
+Page／Modal root、別screen、leaf、自分自身・子孫へのdropは理由別に拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。同じ位置へ戻すdropは正常なno-opとしてToast、history、change set operationを生成せず、対象外でdragを終えた場合やEscapeは通常cancelとして扱います。active change set中の有効なdragや編集は、人間によるoperationとしてproposalへ追加されます。
+drop位置はdrag中だけ挿入line・outlineで示し、無効な位置は別のchromeで識別できます。preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Section／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。treeとdrag表示はleafのlabel／textなどの仕様値、または構造kindのeditor-only名を使います。
 
 ## ローカル実行
 

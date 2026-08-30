@@ -26,6 +26,7 @@ import {
   type DeleteCommand,
   type DeleteImpactAnalysis,
 } from '../domain/deleteImpact'
+import { classifyComponentMove } from '../domain/componentPlacement'
 import { sampleProject } from '../sample/sampleProject'
 import {
   clearStorage,
@@ -464,6 +465,15 @@ export const useAppStore = create<AppStore>((set, get) => {
     dispatch(command, label = 'Edit') {
       requireWritable()
       const state = get()
+      if (command.type === 'moveComponent') {
+        const outcome = classifyComponentMove(
+          state.effectiveDocument,
+          command.componentId,
+          command.newParentId,
+          command.position,
+        )
+        if (outcome.status === 'no-op') return true
+      }
       // While a change set is active, human edits go into the change set, not the confirmed doc
       if (state.activeChangeSet) {
         try {
@@ -633,6 +643,15 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       // Try applying the op to the current preview to validate it
       const previewDoc = state.effectiveDocument
+      if (command.type === 'moveComponent') {
+        const outcome = classifyComponentMove(
+          previewDoc,
+          command.componentId,
+          command.newParentId,
+          command.position,
+        )
+        if (outcome.status === 'no-op') return
+      }
       try {
         applyCommandWithoutRevision(previewDoc, command)
       } catch (error) {

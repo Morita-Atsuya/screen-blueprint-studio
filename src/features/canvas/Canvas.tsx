@@ -482,7 +482,7 @@ function CanvasComponent({
       style={style}
       {...(!isRoot ? attributes : {})}
       {...(!isRoot ? listeners : {})}
-      tabIndex={isRoot ? 0 : undefined}
+      tabIndex={0}
       aria-label={isRoot ? displayName : t('canvas.dragAria', { label: displayName })}
       onClick={event => {
         event.stopPropagation()

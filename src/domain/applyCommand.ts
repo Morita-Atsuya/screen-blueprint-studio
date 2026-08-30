@@ -19,6 +19,11 @@ import {
   createComponentSubtreeSnapshot,
   resolveComponentPasteTarget,
 } from './componentDuplication'
+import {
+  classifyComponentAdd,
+  classifyComponentMove,
+  componentPlacementError,
+} from './componentPlacement'
 
 // Deep clone a document (JSON-safe)
 function clone<T>(v: T): T {
@@ -474,45 +479,13 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         'addComponent command',
       )
       const { componentId, screenId, parentId, kind, config, position } = command
-      const screen = getOwnEntity(next.screens, screenId)
-      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
       if (hasOwnEntity(next.components, componentId)) {
         throw new DomainError('INVARIANT_VIOLATION', `Component ${componentId} already exists`)
       }
-
-      if (kind === 'page') {
-        throw new DomainError('INVALID_PARENT', 'Page components can only be created with a screen')
-      }
-
-      if (kind === 'modal') {
-        if (parentId !== null) {
-          throw new DomainError('INVALID_PARENT', 'Modal components must be independent screen roots')
-        }
-        if (
-          position !== undefined &&
-          (!Number.isInteger(position) || position < 0 || position > screen.modalComponentIds.length)
-        ) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Modal position is out of range')
-        }
-      } else {
-        if (parentId === null) {
-          throw new DomainError('INVALID_PARENT', 'Non-modal components require a container parent')
-        }
-        const parent = getOwnEntity(next.components, parentId)
-        if (!parent) throw new DomainError('NOT_FOUND', `Parent component ${parentId} not found`)
-        if (parent.screenId !== screen.id) {
-          throw new DomainError('INVALID_PARENT', `Parent component ${parentId} belongs to a different screen`)
-        }
-        if (!CONTAINER_KINDS.includes(parent.kind)) {
-          throw new DomainError('INVALID_PARENT', `${parent.kind} cannot contain children`)
-        }
-        if (
-          position !== undefined &&
-          (!Number.isInteger(position) || position < 0 || position > parent.childIds.length)
-        ) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Component position is out of range')
-        }
-      }
+      const placement = classifyComponentAdd(next, screenId, parentId, kind, position)
+      if (placement.status === 'invalid') throw componentPlacementError(placement.reason)
+      const screen = getOwnEntity(next.screens, screenId)
+      if (!screen) throw componentPlacementError('stale')
 
       setOwnEntity(next.components, componentId, {
         id: componentId,
@@ -524,22 +497,14 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         config,
       })
       if (kind === 'modal') {
-        if (position !== undefined) {
-          screen.modalComponentIds.splice(position, 0, componentId)
-        } else {
-          screen.modalComponentIds.push(componentId)
-        }
+        screen.modalComponentIds.splice(placement.position, 0, componentId)
       } else {
         if (parentId === null) {
-          throw new DomainError('INVALID_PARENT', 'Non-modal components require a container parent')
+          throw componentPlacementError('componentConstraint')
         }
         const parent = getOwnEntity(next.components, parentId)
-        if (!parent) throw new DomainError('INVALID_PARENT', 'Component parent is unavailable')
-        if (position !== undefined) {
-          parent.childIds.splice(position, 0, componentId)
-        } else {
-          parent.childIds.push(componentId)
-        }
+        if (!parent) throw componentPlacementError('stale')
+        parent.childIds.splice(placement.position, 0, componentId)
       }
       break
     }
@@ -551,54 +516,22 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         'moveComponent command',
       )
       const { componentId, newParentId, position } = command
-      const comp = getOwnEntity(next.components, componentId)
-      if (!comp) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
-      if (comp.parentId === null) throw new DomainError('INVARIANT_VIOLATION', 'Cannot move root component')
-
-      const newParent = getOwnEntity(next.components, newParentId)
-      if (!newParent) throw new DomainError('NOT_FOUND', `New parent ${newParentId} not found`)
-      if (!CONTAINER_KINDS.includes(newParent.kind)) {
-        throw new DomainError('INVALID_PARENT', `${newParent.kind} cannot contain children`)
-      }
-      if (newParent.screenId !== comp.screenId) {
-        throw new DomainError('INVALID_PARENT', 'Cannot move a component to another screen')
-      }
-
-      let ancestor = newParent
-      const visited = new Set<EntityId>()
-      while (!visited.has(ancestor.id)) {
-        if (ancestor.id === comp.id) {
-          throw new DomainError('INVALID_PARENT', 'Cannot move a component into itself or its descendant')
-        }
-        visited.add(ancestor.id)
-        if (ancestor.parentId === null) break
-        const parent = getOwnEntity(next.components, ancestor.parentId)
-        if (!parent) break
-        ancestor = parent
-      }
-
-      const oldParent = getOwnEntity(next.components, comp.parentId)
-      if (!oldParent) {
-        throw new DomainError('INVARIANT_VIOLATION', `Parent ${comp.parentId} not found`)
-      }
-      const oldIndex = oldParent.childIds.indexOf(componentId)
-      if (oldIndex < 0) {
-        throw new DomainError('INVARIANT_VIOLATION', `Parent ${oldParent.id} does not contain ${componentId}`)
-      }
-      const sameParent = oldParent.id === newParent.id
-      const maxPosition = sameParent ? newParent.childIds.length - 1 : newParent.childIds.length
-      const nextPosition = position ?? maxPosition
-      if (!Number.isInteger(nextPosition) || nextPosition < 0 || nextPosition > maxPosition) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Component position is out of range')
-      }
-      if (sameParent && nextPosition === oldIndex) {
+      const placement = classifyComponentMove(next, componentId, newParentId, position)
+      if (placement.status === 'invalid') throw componentPlacementError(placement.reason)
+      if (placement.status === 'no-op') {
         throw new DomainError('INVARIANT_VIOLATION', 'Component is already at that position')
       }
+      const comp = getOwnEntity(next.components, componentId)
+      if (!comp || comp.parentId === null) throw componentPlacementError('stale')
+      const newParent = getOwnEntity(next.components, newParentId)
+      if (!newParent) throw componentPlacementError('stale')
+      const oldParent = getOwnEntity(next.components, comp.parentId)
+      if (!oldParent) throw componentPlacementError('stale')
 
       oldParent.childIds = oldParent.childIds.filter(id => id !== componentId)
 
       comp.parentId = newParentId
-      newParent.childIds.splice(nextPosition, 0, componentId)
+      newParent.childIds.splice(placement.position, 0, componentId)
       break
     }
 

@@ -2520,7 +2520,10 @@ await test('palette factory and component drops use validated commands', async (
       label: 'first',
     },
   )
-  assert(resolution.ok && resolution.position === 0, 'drop position was not resolved')
+  assert(
+    resolution.status === 'moved' && resolution.position === 0,
+    'drop position was not resolved',
+  )
 })
 
 await test('modal roots own independent trees and clean references on removal', async () => {
@@ -2674,11 +2677,15 @@ await test('modal roots own independent trees and clean references on removal', 
   )
 })
 
-await test('component reorder and reparent reject invalid targets', async () => {
+await test('component reorder and reparent classify moved, no-op, and invalid targets', async () => {
   memoryStorage.clear()
   const store = await freshStore('direct-edit-moves')
   const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'direct-edit-domain'))
-  const { resolveComponentDrop } = await import(moduleUrl(editorDndBundle, 'invalid-drops'))
+  const {
+    canAcceptDrop,
+    resolveComponentDrop,
+    resolveEditorDrop,
+  } = await import(moduleUrl(editorDndBundle, 'invalid-drops'))
   const baseline = store.getState().document
 
   let document = applyCommandWithoutRevision(baseline, {
@@ -2746,24 +2753,172 @@ await test('component reorder and reparent reject invalid targets', async () => 
     assert(rejected, `invalid move was accepted: ${JSON.stringify(command)}`)
   }
 
-  const invalidDrops = [
-    ['comp-edit-page', 'comp-edit-section'],
-    ['comp-edit-section', 'comp-actions'],
-    ['comp-cancel-btn', 'comp-name-input'],
-    ['comp-list-title', 'comp-edit-section'],
-    ['comp-name-input', 'comp-edit-section', 1],
+  const classifiedDrops = [
+    {
+      componentId: 'comp-edit-page',
+      parentId: 'comp-edit-section',
+      position: 0,
+      status: 'invalid',
+      reason: 'root',
+    },
+    {
+      componentId: 'comp-edit-section',
+      parentId: 'comp-actions',
+      position: 0,
+      status: 'invalid',
+      reason: 'selfOrDescendant',
+    },
+    {
+      componentId: 'comp-edit-section',
+      parentId: 'comp-edit-section',
+      position: 0,
+      status: 'invalid',
+      reason: 'selfOrDescendant',
+    },
+    {
+      componentId: 'comp-cancel-btn',
+      parentId: 'comp-name-input',
+      position: 0,
+      status: 'invalid',
+      reason: 'parentCannotContainChildren',
+    },
+    {
+      componentId: 'comp-list-title',
+      parentId: 'comp-edit-section',
+      position: 0,
+      status: 'invalid',
+      reason: 'crossScreen',
+    },
+    {
+      componentId: 'comp-name-input',
+      parentId: 'comp-edit-section',
+      position: 1,
+      status: 'no-op',
+    },
+    {
+      componentId: 'comp-name-input',
+      parentId: 'comp-edit-section',
+      position: 2,
+      status: 'no-op',
+    },
+    {
+      componentId: 'missing-component',
+      parentId: 'comp-edit-section',
+      position: 0,
+      status: 'invalid',
+      reason: 'stale',
+    },
+    {
+      componentId: 'comp-name-input',
+      parentId: 'missing-parent',
+      position: 0,
+      status: 'invalid',
+      reason: 'stale',
+    },
+    {
+      componentId: 'comp-name-input',
+      parentId: 'comp-edit-section',
+      position: 99,
+      status: 'invalid',
+      reason: 'invalidPosition',
+    },
   ]
-  for (const [componentId, parentId, position = 0] of invalidDrops) {
-    const parent = baseline.components[parentId]
-    const resolution = resolveComponentDrop(baseline, componentId, {
+  for (const expected of classifiedDrops) {
+    const parent = baseline.components[expected.parentId]
+    const resolution = resolveComponentDrop(baseline, expected.componentId, {
       type: 'component-drop',
-      parentId,
-      screenId: parent.screenId,
-      position,
+      parentId: expected.parentId,
+      screenId: parent?.screenId ?? 'screen-edit',
+      position: expected.position,
       label: 'invalid target',
     })
-    assert(!resolution.ok, `invalid UI drop was accepted: ${componentId} -> ${parentId}`)
+    assert(
+      resolution.status === expected.status &&
+        (resolution.status !== 'invalid' || resolution.reason === expected.reason),
+      `drop classification mismatch: ${expected.componentId} -> ${expected.parentId}`,
+    )
   }
+
+  const noOpTarget = {
+    type: 'component-drop',
+    parentId: 'comp-edit-section',
+    screenId: 'screen-edit',
+    position: 1,
+    label: 'current position',
+  }
+  assert(
+    canAcceptDrop(baseline, {
+      type: 'component',
+      componentId: 'comp-name-input',
+      screenId: 'screen-edit',
+      label: 'Name',
+    }, noOpTarget),
+    'a normalized no-op target was disabled',
+  )
+  const paletteAdd = resolveEditorDrop(baseline, {
+    type: 'palette',
+    kind: 'text',
+    label: 'Text',
+  }, noOpTarget)
+  const paletteModal = resolveEditorDrop(baseline, {
+    type: 'palette',
+    kind: 'modal',
+    label: 'Modal',
+  }, noOpTarget)
+  const invalidPaletteParent = resolveEditorDrop(baseline, {
+    type: 'palette',
+    kind: 'button',
+    label: 'Button',
+  }, {
+    ...noOpTarget,
+    parentId: 'comp-name-input',
+  })
+  assert(
+    paletteAdd.status === 'moved' &&
+      paletteAdd.action === 'add' &&
+      paletteAdd.parentId === 'comp-edit-section' &&
+      paletteModal.status === 'moved' &&
+      paletteModal.action === 'add' &&
+      paletteModal.parentId === null &&
+      invalidPaletteParent.status === 'invalid' &&
+      invalidPaletteParent.reason === 'parentCannotContainChildren',
+    'palette drops did not use typed placement classification',
+  )
+
+  memoryStorage.clear()
+  const noOpStore = await freshStore('direct-edit-no-op')
+  noOpStore.getState().setActiveScreen('screen-edit')
+  noOpStore.getState().setSelectedComponent('comp-email-input')
+  const beforeNoOp = noOpStore.getState()
+  const noOpApplied = noOpStore.getState().dispatch({
+    type: 'moveComponent',
+    componentId: 'comp-name-input',
+    newParentId: 'comp-edit-section',
+    position: 1,
+  }, 'No-op move')
+  const afterNoOp = noOpStore.getState()
+  assert(
+    noOpApplied &&
+      afterNoOp.document === beforeNoOp.document &&
+      afterNoOp.document.revision === beforeNoOp.document.revision &&
+      afterNoOp.history.length === beforeNoOp.history.length &&
+      afterNoOp.ui.selectedComponentId === beforeNoOp.ui.selectedComponentId &&
+      afterNoOp.toast === null,
+    'confirmed no-op move changed document, history, selection, or Toast',
+  )
+  const changeSet = noOpStore.getState().beginChangeSet('No-op review')
+  noOpStore.getState().dispatch({
+    type: 'moveComponent',
+    componentId: 'comp-name-input',
+    newParentId: 'comp-edit-section',
+    position: 1,
+  }, 'No-op review move')
+  assert(
+    noOpStore.getState().activeChangeSet?.id === changeSet.id &&
+      noOpStore.getState().activeChangeSet?.version === 0 &&
+      noOpStore.getState().activeChangeSet?.operations.length === 0,
+    'active change set recorded a no-op move',
+  )
 })
 
 await test('human moves join active change sets and screen management reconciles selection', async () => {
@@ -5009,8 +5164,9 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
     'visible drop instructions remain in the drop zone',
   )
   assert(
-    dropZoneSource.includes('validDrag && accepts'),
-    'drop affordance is not gated by an active valid drag',
+    dropZoneSource.includes('const showAffordance = validDrag') &&
+      dropZoneSource.includes("data-drop-outcome={validDrag ? accepts ? 'allowed' : 'invalid' : undefined}"),
+    'drop affordances do not distinguish active valid and invalid targets',
   )
   assert(
     !inspectorSource.includes('コンポーネント名'),
@@ -5138,6 +5294,7 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
   assert(
     canvasSource.includes('{...(!isRoot ? attributes : {})}') &&
       canvasSource.includes('{...(!isRoot ? listeners : {})}') &&
+      canvasSource.includes('tabIndex={0}') &&
       canvasSource.includes("data-canvas-draggable={!isRoot || undefined}") &&
       canvasSource.includes("data-drag-surface={!isRoot ? 'canvas' : undefined}") &&
       canvasSource.includes(
@@ -5158,7 +5315,8 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
   )
   assert(
     dndSource.includes('PointerSensor, { activationConstraint: { distance: 5 } }') &&
-      dndSource.includes('KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }'),
+      dndSource.includes('KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }') &&
+      dndSource.includes("return collisionArguments.pointerCoordinates\n            ? []\n            : closestCenter"),
     'click separation or keyboard DnD sensor support is missing',
   )
   assert(
@@ -5199,6 +5357,10 @@ await test('Canvas and Tree present modal roots as independent frames', async ()
     join(root, 'src/dnd/EditorDndContext.tsx'),
     'utf8',
   )
+  const placementSource = readFileSync(
+    join(root, 'src/domain/componentPlacement.ts'),
+    'utf8',
+  )
 
   assert(
     canvasSource.includes('screen.modalComponentIds.map') &&
@@ -5223,8 +5385,9 @@ await test('Canvas and Tree present modal roots as independent frames', async ()
   )
   assert(
     paletteSource.includes("if (item.kind !== 'modal')") &&
-      dndSource.includes("drag.kind === 'modal' ? null : target.parentId") &&
-      dndSource.includes("drag.kind === 'modal' ? undefined : target.position"),
+      dndSource.includes('outcome.parentId') &&
+      placementSource.includes("kind === 'modal' ? null : targetParentId") &&
+      placementSource.includes("kind === 'modal' ? undefined : dropPosition"),
     'palette click and drag do not route Modal creation to an independent root',
   )
 })
