@@ -3,7 +3,9 @@ import { getComponentDisplayLabel } from './componentDisplayLabel'
 import { getOwnEntity } from './entityMap'
 import type {
   EntityId,
+  ApiOperation,
   EventAction,
+  FieldBinding,
   HttpMethod,
   ProjectDocument,
   ScreenEvent,
@@ -55,7 +57,6 @@ export interface ResolvedApiBinding {
 export interface ComponentBehaviorProjection {
   events: ComponentBehaviorEvent[]
   validationRules: ValidationRule[]
-  requestBinding: ResolvedFieldBinding | null
   apiBindings: ResolvedApiBinding[]
   hasBehavior: boolean
 }
@@ -78,6 +79,25 @@ export interface EventEditorContext {
   screens: ResolvedScreenReference[]
   apiOperations: ResolvedApiReference[]
   alerts: ResolvedReference[]
+}
+
+export interface ApiEditorOperation {
+  operation: ApiOperation
+  reference: ResolvedApiReference
+  bindings: ResolvedFieldBinding[]
+  eventReferences: Array<{
+    event: ResolvedReference
+    actionCount: number
+  }>
+}
+
+export interface ApiEditorContext {
+  componentId: EntityId
+  screenId: EntityId
+  supportsApiEditing: boolean
+  operations: ApiEditorOperation[]
+  states: ResolvedReference[]
+  inputComponents: ResolvedReference[]
 }
 
 function resolveState(document: ProjectDocument, stateId: EntityId): ResolvedReference {
@@ -186,18 +206,6 @@ export function getComponentBehavior(
   const validationRules = component.config.kind === 'textInput'
     ? component.config.validationRules
     : []
-  const binding = (
-    component.config.kind === 'textInput' ||
-    component.config.kind === 'select'
-  )
-    ? component.config.requestBinding
-    : null
-  const requestBinding = binding
-    ? {
-        component: resolveComponent(document, binding.componentId, locale),
-        targetPath: binding.targetPath,
-      }
-    : null
   const apiBindings = Object.values(document.apiOperations).flatMap(operation =>
     operation.requestBindings
       .filter(apiBinding => apiBinding.componentId === componentId)
@@ -210,12 +218,10 @@ export function getComponentBehavior(
   return {
     events,
     validationRules,
-    requestBinding,
     apiBindings,
     hasBehavior: (
       events.length > 0 ||
       validationRules.length > 0 ||
-      requestBinding !== null ||
       apiBindings.length > 0
     ),
   }
@@ -266,6 +272,66 @@ export function getEventEditorContext(
       .map(operation => resolveApi(document, operation.id)),
     alerts: Object.values(document.components)
       .filter(candidate => candidate.screenId === screen.id && candidate.kind === 'alert')
+      .map(candidate => resolveComponent(document, candidate.id, locale)),
+  }
+}
+
+function resolveBinding(
+  document: ProjectDocument,
+  binding: FieldBinding,
+  locale: Locale,
+): ResolvedFieldBinding {
+  return {
+    component: resolveComponent(document, binding.componentId, locale),
+    targetPath: binding.targetPath,
+  }
+}
+
+export function getApiEditorContext(
+  document: ProjectDocument,
+  componentId: EntityId,
+  locale: Locale = 'en',
+): ApiEditorContext | null {
+  const component = getOwnEntity(document.components, componentId)
+  if (!component) return null
+  const screen = getOwnEntity(document.screens, component.screenId)
+  if (!screen) return null
+
+  const events = screen.eventIds.flatMap(eventId => {
+    const event = getOwnEntity(document.events, eventId)
+    return event ? [event] : []
+  })
+
+  return {
+    componentId,
+    screenId: screen.id,
+    supportsApiEditing: !CONTAINER_KINDS.includes(component.kind),
+    operations: Object.values(document.apiOperations)
+      .filter(operation => operation.screenId === screen.id)
+      .map(operation => ({
+        operation,
+        reference: resolveApi(document, operation.id),
+        bindings: operation.requestBindings.map(binding =>
+          resolveBinding(document, binding, locale),
+        ),
+        eventReferences: events.flatMap(event => {
+          const actionCount = event.actions.filter(action =>
+            action.type === 'callApi' && action.apiOperationId === operation.id,
+          ).length
+          return actionCount > 0
+            ? [{
+                event: { id: event.id, label: event.name },
+                actionCount,
+              }]
+            : []
+        }),
+      })),
+    states: screen.stateIds.map(stateId => resolveState(document, stateId)),
+    inputComponents: Object.values(document.components)
+      .filter(candidate =>
+        candidate.screenId === screen.id &&
+        (candidate.kind === 'textInput' || candidate.kind === 'select'),
+      )
       .map(candidate => resolveComponent(document, candidate.id, locale)),
   }
 }

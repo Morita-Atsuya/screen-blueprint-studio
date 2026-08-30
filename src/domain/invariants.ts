@@ -42,24 +42,6 @@ export function validateInvariants(doc: ProjectDocument): void {
     if (!hasOwnEntity(screens, comp.screenId)) {
       throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} references non-existent screen ${comp.screenId}`)
     }
-    if (
-      (comp.config.kind === 'textInput' || comp.config.kind === 'select') &&
-      comp.config.requestBinding !== null
-    ) {
-      const target = getOwnEntity(components, comp.config.requestBinding.componentId)
-      if (!target) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          `Component ${comp.id} requestBinding references non-existent component ${comp.config.requestBinding.componentId}`,
-        )
-      }
-      if (target.screenId !== comp.screenId) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          `Component ${comp.id} requestBinding target belongs to a different screen`,
-        )
-      }
-    }
   }
 
   for (const state of Object.values(doc.screenStates)) {
@@ -83,6 +65,8 @@ export function validateInvariants(doc: ProjectDocument): void {
     if (!hasOwnEntity(screens, apiOp.screenId)) {
       throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} references non-existent screen ${apiOp.screenId}`)
     }
+    const boundComponentIds = new Set<EntityId>()
+    const targetPaths = new Set<string>()
     for (const binding of apiOp.requestBindings) {
       const component = getOwnEntity(components, binding.componentId)
       if (!component) {
@@ -91,6 +75,21 @@ export function validateInvariants(doc: ProjectDocument): void {
       if (component.screenId !== apiOp.screenId) {
         throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding component belongs to a different screen`)
       }
+      if (component.kind !== 'textInput' && component.kind !== 'select') {
+        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding component must be an input`)
+      }
+      if (boundComponentIds.has(binding.componentId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} has duplicate binding component ${binding.componentId}`)
+      }
+      const targetPath = binding.targetPath.trim()
+      if (targetPath.length === 0) {
+        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding targetPath must not be empty`)
+      }
+      if (targetPaths.has(targetPath)) {
+        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} has duplicate binding targetPath ${targetPath}`)
+      }
+      boundComponentIds.add(binding.componentId)
+      targetPaths.add(targetPath)
     }
     if (apiOp.successStateId !== null) {
       const st = getOwnEntity(doc.screenStates, apiOp.successStateId)

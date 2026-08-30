@@ -85,17 +85,6 @@ function cleanupComponentRefs(removedIds: Set<EntityId>, doc: ProjectDocument): 
   for (const apiOp of Object.values(doc.apiOperations)) {
     apiOp.requestBindings = apiOp.requestBindings.filter(b => !removedIds.has(b.componentId))
   }
-
-  // 4. Clear component-level request bindings to removed components.
-  for (const component of Object.values(doc.components)) {
-    if (
-      (component.config.kind === 'textInput' || component.config.kind === 'select') &&
-      component.config.requestBinding !== null &&
-      removedIds.has(component.config.requestBinding.componentId)
-    ) {
-      component.config.requestBinding = null
-    }
-  }
 }
 
 // Clean up API operations belonging to a screen, plus callApi event actions
@@ -532,6 +521,21 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
 
     // ──────────── API commands ────────────
     case 'bindApiOperation': {
+      requireExactKeys(
+        command,
+        [
+          'type',
+          'operationId',
+          'screenId',
+          'name',
+          'method',
+          'path',
+          'requestBindings',
+          'successStateId',
+          'errorStateId',
+        ],
+        'bindApiOperation command',
+      )
       const { operationId, screenId, name, method, path, requestBindings, successStateId, errorStateId } = command
       if (!hasOwnEntity(next.screens, screenId)) {
         throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
@@ -552,7 +556,36 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       break
     }
 
+    case 'updateApiOperation': {
+      requireExactKeys(
+        command,
+        [
+          'type',
+          'operationId',
+          'name',
+          'method',
+          'path',
+          'requestBindings',
+          'successStateId',
+          'errorStateId',
+        ],
+        'updateApiOperation command',
+      )
+      const operation = getOwnEntity(next.apiOperations, command.operationId)
+      if (!operation) {
+        throw new DomainError('NOT_FOUND', `API operation ${command.operationId} not found`)
+      }
+      operation.name = command.name
+      operation.method = command.method
+      operation.path = command.path
+      operation.requestBindings = command.requestBindings
+      operation.successStateId = command.successStateId
+      operation.errorStateId = command.errorStateId
+      break
+    }
+
     case 'removeApiOperation': {
+      requireExactKeys(command, ['type', 'operationId'], 'removeApiOperation command')
       const op = getOwnEntity(next.apiOperations, command.operationId)
       if (!op) throw new DomainError('NOT_FOUND', `API operation ${command.operationId} not found`)
       // Remove callApi references to this operation in events

@@ -30,6 +30,7 @@ export type DomainCommand =
   | RemoveEventCommand
   // API commands
   | BindApiOperationCommand
+  | UpdateApiOperationCommand
   | RemoveApiOperationCommand
 
 // ============================================================
@@ -153,6 +154,17 @@ export interface BindApiOperationCommand {
   requestBindings?: FieldBinding[]
   successStateId?: EntityId
   errorStateId?: EntityId
+}
+
+export interface UpdateApiOperationCommand {
+  type: 'updateApiOperation'
+  operationId: EntityId
+  name: string
+  method: HttpMethod
+  path: string
+  requestBindings: FieldBinding[]
+  successStateId: EntityId | null
+  errorStateId: EntityId | null
 }
 
 export interface RemoveApiOperationCommand {

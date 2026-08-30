@@ -4,6 +4,7 @@ import { useAppStore } from '../../app/appStore'
 import type { EventEditorContext } from '../../domain/componentBehavior'
 import type { EventAction, ScreenEvent } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
+import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
 
 type DialogMode = 'create' | 'edit'
@@ -465,24 +466,4 @@ function MissingOption({
   return availableIds.includes(currentId)
     ? null
     : <option value={currentId}>{t('behavior.missingReference', { id: currentId })}</option>
-}
-
-function trapDialogFocus(
-  event: React.KeyboardEvent<HTMLDivElement>,
-  dialog: HTMLElement | null,
-) {
-  if (!dialog) return
-  const focusable = [...dialog.querySelectorAll<HTMLElement>(
-    'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-  )].filter(element => element.getClientRects().length > 0)
-  if (focusable.length === 0) return
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
 }

@@ -13,20 +13,6 @@ const layoutProperties = {
 
 const layoutRequired = ['layout', 'gap', 'columns', 'justify', 'align', 'wrap'] as const
 
-const fieldBindingSchema = {
-  type: 'object',
-  properties: {
-    componentId: { type: 'string', minLength: 1 },
-    targetPath: { type: 'string' },
-  },
-  required: ['componentId', 'targetPath'],
-  ...closed,
-}
-
-const nullableFieldBindingSchema = {
-  anyOf: [{ type: 'null' }, fieldBindingSchema],
-}
-
 const validationRuleSchema = {
   oneOf: [
     {
@@ -111,7 +97,6 @@ const configVariants = [
       placeholder: string,
       defaultValue: string,
       validationRules: { type: 'array', items: validationRuleSchema },
-      requestBinding: nullableFieldBindingSchema,
     },
     required: [
       'kind',
@@ -122,7 +107,6 @@ const configVariants = [
       'placeholder',
       'defaultValue',
       'validationRules',
-      'requestBinding',
     ],
   },
   {
@@ -142,9 +126,8 @@ const configVariants = [
         },
       },
       defaultValue: string,
-      requestBinding: nullableFieldBindingSchema,
     },
-    required: ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue', 'requestBinding'],
+    required: ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue'],
   },
   {
     kind: 'button',

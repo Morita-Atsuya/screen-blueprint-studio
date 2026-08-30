@@ -14,6 +14,7 @@ import { commandMessageKey } from '../../i18n/messages'
 import { DraftTextField } from '../../components/DraftTextField'
 import {
   getComponentBehavior,
+  getApiEditorContext,
   getEventEditorContext,
 } from '../../domain/componentBehavior'
 import { BehaviorDetails } from './BehaviorDetails'
@@ -41,6 +42,7 @@ export function Inspector() {
   const cfg = comp.config
   const behavior = getComponentBehavior(effectiveDocument, comp.id, locale)
   const eventEditor = getEventEditorContext(effectiveDocument, comp.id, locale)
+  const apiEditor = getApiEditorContext(effectiveDocument, comp.id, locale)
 
   function updateConfig(partial: Record<string, unknown>, field = 'settings'): boolean {
     return dispatch(
@@ -286,11 +288,12 @@ export function Inspector() {
         cfg.kind === 'modal') && (
         <LayoutFields layout={cfg} onUpdate={updateConfig} />
       )}
-      {behavior && eventEditor ? (
+      {behavior && eventEditor && apiEditor ? (
         <BehaviorDetails
           key={comp.id}
           behavior={behavior}
           eventEditor={eventEditor}
+          apiEditor={apiEditor}
         />
       ) : null}
       {activeState && activeState.id !== screen?.defaultStateId ? (

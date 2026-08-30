@@ -81,7 +81,6 @@ export type ComponentConfig =
       placeholder: string
       defaultValue: string
       validationRules: ValidationRule[]
-      requestBinding: FieldBinding | null
     }
   | {
       kind: 'select'
@@ -90,7 +89,6 @@ export type ComponentConfig =
       required: boolean
       options: Array<{ value: string; label: string }>
       defaultValue: string
-      requestBinding: FieldBinding | null
     }
   | {
       kind: 'button'

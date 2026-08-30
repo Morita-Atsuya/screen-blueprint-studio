@@ -235,7 +235,6 @@ interface TextInputConfig {
   placeholder: string;
   defaultValue: string;
   validationRules: ValidationRule[];
-  requestBinding: FieldBinding | null;
 }
 
 interface SelectConfig {
@@ -245,7 +244,6 @@ interface SelectConfig {
   required: boolean;
   options: Array<{ value: string; label: string }>;
   defaultValue: string;
-  requestBinding: FieldBinding | null;
 }
 
 interface ButtonConfig {
@@ -355,7 +353,7 @@ interface FieldBinding {
 }
 ```
 
-MVPではAPI仕様を記述するが、ネットワークリクエストは実行しない。選択中のTextInput／Selectに関係するrequest bindingはInspectorでoperationのmethod・path・name、target path、success/error stateとともにread-only表示する。デモの焦点を画面仕様の共同編集へ保ち、外部サービス依存を避けるためである。
+MVPではAPI仕様を記述するが、ネットワークリクエストは実行しない。`ApiOperation.requestBindings`をfield bindingの唯一の正準sourceとし、同screenのTextInput／Selectを送信元componentとしてtarget pathへ関連付ける。選択componentのInspectorから同screenのoperationを追加・編集・削除でき、method・path・name、順序付きrequest binding、nullableなsuccess/error stateをlocal draftから1 commandで確定する。operation削除時は参照する`callApi` actionへの影響を表示し、同一commandで参照を除去する。
 
 ## 6. モデルの不変条件
 
@@ -379,7 +377,7 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 16. component configはkindごとの必須field、型、enumだけを持ち、未知fieldを許可しない
 17. state overrideは対象component kindで有効なfieldだけを持ち、Selectの値を含めて有効範囲を検証する
 18. default stateのcomponent overridesは常に空とする
-19. textInput/selectのrequest bindingは存在する同一screen内componentだけを参照する
+19. API request bindingは同じscreenのTextInput／Selectだけを参照し、componentと空白除去後のtarget pathはoperation内でそれぞれ一意かつ空でない
 20. component common spec、event trigger/action、API operationは種類ごとの正確なruntime shapeを持ち、未知fieldを持たない
 21. UIのactive screen/state/selectionはeffective documentに存在し、同じscreenへ所属する
 22. schema versionは`1`、revisionは非負のsafe integerとし、上限を越える更新を拒否する
@@ -594,7 +592,7 @@ interface Diagnostic {
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。関連するevent、順序付きaction、API binding・結果state、validation ruleはread-only投影する。非default状態では基本仕様と分離した状態別設定を表示
+- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。関連するevent／順序付きactionと、同screenのAPI operation／binding／結果stateを編集し、validation ruleをread-only投影する。非default状態では基本仕様と分離した状態別設定を表示
 - `Changes`: operation一覧とbefore/after
 
 component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameはPage frameのeditor-only labelとして使い、previewへ表示する文字列はText childと表示スタイルとして編集する。

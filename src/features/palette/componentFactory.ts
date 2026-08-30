@@ -55,7 +55,6 @@ export function createDefaultComponentConfig(
         placeholder: '',
         defaultValue: '',
         validationRules: [],
-        requestBinding: null,
       }
     case 'select':
       return {
@@ -65,7 +64,6 @@ export function createDefaultComponentConfig(
         required: false,
         options: [],
         defaultValue: '',
-        requestBinding: null,
       }
     case 'button':
       return {

@@ -383,7 +383,6 @@ export function validateComponentConfig(
           'placeholder',
           'defaultValue',
           'validationRules',
-          'requestBinding',
         ],
         [],
         path,
@@ -398,14 +397,11 @@ export function validateComponentConfig(
       config.validationRules.forEach((rule, index) =>
         validateValidationRule(rule, `${path}.validationRules[${index}]`),
       )
-      if (config.requestBinding !== null) {
-        validateFieldBinding(config.requestBinding, `${path}.requestBinding`)
-      }
       return
     case 'select':
       exactKeys(
         config,
-        ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue', 'requestBinding'],
+        ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue'],
         [],
         path,
       )
@@ -430,9 +426,6 @@ export function validateComponentConfig(
       string(config.defaultValue, `${path}.defaultValue`)
       if (config.defaultValue !== '' && !optionValues.has(config.defaultValue)) {
         fail(`${path}.defaultValue`, 'must match a select option or be empty')
-      }
-      if (config.requestBinding !== null) {
-        validateFieldBinding(config.requestBinding, `${path}.requestBinding`)
       }
       return
     case 'button':

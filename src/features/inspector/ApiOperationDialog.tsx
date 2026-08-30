@@ -1,0 +1,466 @@
+import { useId, useRef, useState } from 'react'
+import { nanoid } from 'nanoid'
+import { useAppStore } from '../../app/appStore'
+import type {
+  ApiEditorContext,
+  ApiEditorOperation,
+} from '../../domain/componentBehavior'
+import type { FieldBinding, HttpMethod } from '../../domain/model'
+import { useI18n } from '../../i18n/I18nProvider'
+import { trapDialogFocus } from './dialogFocus'
+import styles from './EventDialog.module.css'
+
+type DialogMode = 'create' | 'edit'
+type DialogResult = 'cancelled' | 'saved' | 'deleted'
+
+interface DraftBinding {
+  key: string
+  value: FieldBinding
+}
+
+interface ApiOperationDialogProps {
+  mode: DialogMode
+  operationId?: string
+  editorOperation?: ApiEditorOperation
+  context: ApiEditorContext
+  onClose(result: DialogResult): void
+}
+
+const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+export function ApiOperationDialog({
+  mode,
+  operationId,
+  editorOperation,
+  context,
+  onClose,
+}: ApiOperationDialogProps) {
+  const { t } = useI18n()
+  const dispatch = useAppStore(state => state.dispatch)
+  const dialogRef = useRef<HTMLElement>(null)
+  const addBindingRef = useRef<HTMLButtonElement>(null)
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
+  const deleteCancelRef = useRef<HTMLButtonElement>(null)
+  const titleId = useId()
+  const operation = editorOperation?.operation
+  const persistedOperationId = operation?.id ?? operationId
+  const [name, setName] = useState(operation?.name ?? t('behavior.newApiOperationName'))
+  const [method, setMethod] = useState<HttpMethod>(operation?.method ?? 'GET')
+  const [path, setPath] = useState(operation?.path ?? '/api/')
+  const [successStateId, setSuccessStateId] = useState(operation?.successStateId ?? '')
+  const [errorStateId, setErrorStateId] = useState(operation?.errorStateId ?? '')
+  const [bindings, setBindings] = useState<DraftBinding[]>(() =>
+    (operation?.requestBindings ?? []).map(value => ({
+      key: nanoid(),
+      value: { ...value },
+    })),
+  )
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const operationAvailable = (
+    mode === 'create' ||
+    context.operations.some(candidate => candidate.operation.id === persistedOperationId)
+  )
+  const componentIds = bindings.map(binding => binding.value.componentId)
+  const targetPaths = bindings.map(binding => binding.value.targetPath.trim())
+  const statesAvailable = [successStateId, errorStateId].every(stateId =>
+    stateId === '' || context.states.some(state => state.id === stateId),
+  )
+  const canSubmit = (
+    name.trim().length > 0 &&
+    path.trim().length > 0 &&
+    operationAvailable &&
+    statesAvailable &&
+    bindings.every(binding =>
+      context.inputComponents.some(component => component.id === binding.value.componentId) &&
+      binding.value.targetPath.trim().length > 0
+    ) &&
+    new Set(componentIds).size === componentIds.length &&
+    new Set(targetPaths).size === targetPaths.length
+  )
+  const canAddBinding = new Set(componentIds).size < context.inputComponents.length
+  const referenceCount = editorOperation?.eventReferences.reduce(
+    (count, reference) => count + reference.actionCount,
+    0,
+  ) ?? 0
+
+  function save() {
+    if (!canSubmit || (mode === 'edit' && !persistedOperationId)) return
+    const requestBindings = bindings.map(binding => ({
+      componentId: binding.value.componentId,
+      targetPath: binding.value.targetPath.trim(),
+    }))
+    const normalizedName = name.trim()
+    const normalizedPath = path.trim()
+    const common = {
+      name: normalizedName,
+      method,
+      path: normalizedPath,
+      requestBindings,
+      successStateId: successStateId || null,
+      errorStateId: errorStateId || null,
+    }
+    let saved: boolean
+    if (mode === 'create') {
+      saved = dispatch({
+          type: 'bindApiOperation',
+          operationId: nanoid(),
+          screenId: context.screenId,
+          ...common,
+          successStateId: common.successStateId ?? undefined,
+          errorStateId: common.errorStateId ?? undefined,
+        }, `${t('behavior.addApiOperation')}: ${normalizedName}`)
+    } else {
+      if (!persistedOperationId) return
+      saved = dispatch({
+          type: 'updateApiOperation',
+          operationId: persistedOperationId,
+          ...common,
+        }, `${t('behavior.editApiOperation')}: ${normalizedName}`)
+    }
+    if (saved) onClose('saved')
+  }
+
+  function remove() {
+    if (!persistedOperationId) return
+    const removed = dispatch(
+      { type: 'removeApiOperation', operationId: persistedOperationId },
+      `${t('behavior.deleteApiOperation')}: ${name.trim()}`,
+    )
+    if (removed) onClose('deleted')
+  }
+
+  function updateBinding(index: number, value: FieldBinding) {
+    setBindings(current => current.map((binding, bindingIndex) =>
+      bindingIndex === index ? { ...binding, value } : binding,
+    ))
+  }
+
+  function moveBinding(index: number, offset: -1 | 1) {
+    setBindings(current => {
+      const destination = index + offset
+      if (destination < 0 || destination >= current.length) return current
+      const next = [...current]
+      const [binding] = next.splice(index, 1)
+      next.splice(destination, 0, binding)
+      return next
+    })
+  }
+
+  function addBinding() {
+    const used = new Set(bindings.map(binding => binding.value.componentId))
+    const componentId = context.inputComponents.find(component => !used.has(component.id))?.id
+      ?? context.inputComponents[0]?.id
+      ?? ''
+    setBindings(current => [
+      ...current,
+      { key: nanoid(), value: { componentId, targetPath: '' } },
+    ])
+  }
+
+  function removeBinding(key: string, index: number) {
+    setBindings(current => current.filter(candidate => candidate.key !== key))
+    requestAnimationFrame(() => {
+      const rows = dialogRef.current?.querySelectorAll<HTMLElement>('[data-api-binding]')
+      const nextRow = rows?.[Math.min(index, Math.max(0, (rows?.length ?? 1) - 1))]
+      const target = nextRow?.querySelector<HTMLElement>('select, input')
+        ?? addBindingRef.current
+      target?.focus()
+    })
+  }
+
+  function showDeleteConfirmation() {
+    setConfirmingDelete(true)
+    requestAnimationFrame(() => deleteCancelRef.current?.focus())
+  }
+
+  function hideDeleteConfirmation() {
+    setConfirmingDelete(false)
+    requestAnimationFrame(() => deleteButtonRef.current?.focus())
+  }
+
+  return (
+    <div
+      className={styles.backdrop}
+      onMouseDown={event => {
+        if (event.target === event.currentTarget) onClose('cancelled')
+      }}
+      onKeyDown={event => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          onClose('cancelled')
+          return
+        }
+        if (event.key === 'Tab') trapDialogFocus(event, dialogRef.current)
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-api-dialog={mode}
+      >
+        <div className={styles.header}>
+          <h2 id={titleId} className={styles.title}>
+            {t(mode === 'create'
+              ? 'behavior.createApiOperationTitle'
+              : 'behavior.editApiOperationTitle')}
+          </h2>
+          <button
+            type="button"
+            className={styles.close}
+            onClick={() => onClose('cancelled')}
+            aria-label={t('common.close')}
+          >
+            ×
+          </button>
+        </div>
+        <form
+          onSubmit={event => {
+            event.preventDefault()
+            save()
+          }}
+        >
+          <label className={styles.field}>
+            <span>{t('behavior.apiName')}</span>
+            <input
+              autoFocus
+              required
+              value={name}
+              onChange={event => setName(event.target.value)}
+            />
+          </label>
+          <label className={styles.field}>
+            <span>{t('behavior.apiMethod')}</span>
+            <select
+              value={method}
+              onChange={event => setMethod(event.target.value as HttpMethod)}
+            >
+              {METHODS.map(candidate => (
+                <option key={candidate} value={candidate}>{candidate}</option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>{t('behavior.apiPath')}</span>
+            <input
+              required
+              value={path}
+              onChange={event => setPath(event.target.value)}
+            />
+          </label>
+          <div className={styles.stateFields}>
+            <label className={styles.field}>
+              <span>{t('behavior.successState')}</span>
+              <StateSelect
+                value={successStateId}
+                context={context}
+                onChange={setSuccessStateId}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>{t('behavior.errorState')}</span>
+              <StateSelect
+                value={errorStateId}
+                context={context}
+                onChange={setErrorStateId}
+              />
+            </label>
+          </div>
+
+          <div className={styles.actionHeading}>
+            <h3>{t('behavior.bindings')}</h3>
+            <button
+              ref={addBindingRef}
+              type="button"
+              className={styles.secondary}
+              disabled={!canAddBinding}
+              onClick={addBinding}
+            >
+              + {t('behavior.addBinding')}
+            </button>
+          </div>
+          {bindings.length > 0 ? (
+            <ol className={styles.actionList}>
+              {bindings.map((binding, index) => {
+                const usedByOther = new Set(bindings.flatMap((candidate, candidateIndex) =>
+                  candidateIndex === index ? [] : [candidate.value.componentId],
+                ))
+                return (
+                  <li
+                    className={styles.actionCard}
+                    key={binding.key}
+                    data-api-binding={index}
+                  >
+                    <div className={styles.actionPosition}>
+                      <span>{index + 1}</span>
+                      <div className={styles.reorderActions}>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          disabled={index === 0}
+                          aria-label={t('behavior.moveBindingUp', { position: index + 1 })}
+                          onClick={() => moveBinding(index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          disabled={index === bindings.length - 1}
+                          aria-label={t('behavior.moveBindingDown', { position: index + 1 })}
+                          onClick={() => moveBinding(index, 1)}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+                    <div className={styles.actionFields}>
+                      <label className={styles.compactField}>
+                        <span>{t('behavior.bindingComponent')}</span>
+                        <select
+                          value={binding.value.componentId}
+                          onChange={event => updateBinding(index, {
+                            ...binding.value,
+                            componentId: event.target.value,
+                          })}
+                        >
+                          {!context.inputComponents.some(
+                            component => component.id === binding.value.componentId,
+                          ) ? (
+                            <option value={binding.value.componentId}>
+                              {t('behavior.missingReference', {
+                                id: binding.value.componentId,
+                              })}
+                            </option>
+                          ) : null}
+                          {context.inputComponents.map(component => (
+                            <option
+                              key={component.id}
+                              value={component.id}
+                              disabled={usedByOther.has(component.id)}
+                            >
+                              {component.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={styles.compactField}>
+                        <span>{t('behavior.targetPath')}</span>
+                        <input
+                          required
+                          value={binding.value.targetPath}
+                          onChange={event => updateBinding(index, {
+                            ...binding.value,
+                            targetPath: event.target.value,
+                          })}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.removeAction}
+                      aria-label={t('behavior.removeBinding', { position: index + 1 })}
+                      onClick={() => removeBinding(binding.key, index)}
+                    >
+                      ×
+                    </button>
+                  </li>
+                )
+              })}
+            </ol>
+          ) : (
+            <p className={styles.muted}>{t('behavior.noBindings')}</p>
+          )}
+
+          {!operationAvailable ? (
+            <p className={styles.unavailable} role="alert">
+              {t('behavior.apiUnavailable')}
+            </p>
+          ) : null}
+
+          {confirmingDelete && mode === 'edit' ? (
+            <div className={styles.confirm} role="alert">
+              <p>{t('behavior.deleteApiConfirm', { name: name.trim() })}</p>
+              <p>{t('behavior.deleteApiCleanup', { count: referenceCount })}</p>
+              {editorOperation && editorOperation.eventReferences.length > 0 ? (
+                <ul className={styles.impactList}>
+                  {editorOperation.eventReferences.map(reference => (
+                    <li key={reference.event.id}>
+                      {reference.event.label ?? reference.event.id} ({reference.actionCount})
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className={styles.actions}>
+                <button
+                  ref={deleteCancelRef}
+                  type="button"
+                  className={styles.secondary}
+                  onClick={hideDeleteConfirmation}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button type="button" className={styles.danger} onClick={remove}>
+                  {t('behavior.deleteApiOperation')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className={styles.actions}>
+              {mode === 'edit' ? (
+                <button
+                  ref={deleteButtonRef}
+                  type="button"
+                  className={styles.dangerOutline}
+                  onClick={showDeleteConfirmation}
+                  data-api-delete
+                >
+                  {t('behavior.deleteApiOperation')}
+                </button>
+              ) : null}
+              <span className={styles.spacer} />
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => onClose('cancelled')}
+              >
+                {t('common.cancel')}
+              </button>
+              <button type="submit" className={styles.primary} disabled={!canSubmit}>
+                {t(mode === 'create' ? 'behavior.addApiOperation' : 'common.save')}
+              </button>
+            </div>
+          )}
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function StateSelect({
+  value,
+  context,
+  onChange,
+}: {
+  value: string
+  context: ApiEditorContext
+  onChange(value: string): void
+}) {
+  const { t } = useI18n()
+  return (
+    <select value={value} onChange={event => onChange(event.target.value)}>
+      <option value="">{t('behavior.noState')}</option>
+      {value && !context.states.some(state => state.id === value) ? (
+        <option value={value}>
+          {t('behavior.missingReference', { id: value })}
+        </option>
+      ) : null}
+      {context.states.map(state => (
+        <option key={state.id} value={state.id}>{state.label}</option>
+      ))}
+    </select>
+  )
+}

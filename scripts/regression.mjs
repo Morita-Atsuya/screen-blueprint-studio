@@ -1236,28 +1236,23 @@ await test('alert target removal filters only matching showAlert actions', async
   )
 })
 
-await test('component request bindings reject invalid targets and clean up on removal', async () => {
+await test('API request bindings clean up on component removal and reload', async () => {
   memoryStorage.clear()
-  const store = await freshStore('component-binding-cleanup')
-  store.getState().dispatch({
-    type: 'updateComponentSpec',
-    componentId: 'comp-email-input',
-    patch: {
-      config: {
-        requestBinding: { componentId: 'comp-name-input', targetPath: 'name' },
-      },
-    },
-  })
+  const store = await freshStore('api-binding-cleanup')
   store.getState().dispatch({ type: 'removeComponent', componentId: 'comp-name-input' })
   assert(
-    store.getState().document.components['comp-email-input'].config.requestBinding === null,
-    'component requestBinding was not cleared when its target was removed',
+    !store.getState().document.apiOperations['api-save-user'].requestBindings.some(
+      binding => binding.componentId === 'comp-name-input',
+    ),
+    'API request binding was not cleared when its component was removed',
   )
 
-  const reloadedStore = await freshStore('component-binding-cleanup-reload')
+  const reloadedStore = await freshStore('api-binding-cleanup-reload')
   assert(
-    reloadedStore.getState().document.components['comp-email-input'].config.requestBinding === null,
-    'cleaned component requestBinding was not persisted',
+    !reloadedStore.getState().document.apiOperations['api-save-user'].requestBindings.some(
+      binding => binding.componentId === 'comp-name-input',
+    ),
+    'cleaned API request binding was not persisted',
   )
 })
 
@@ -4059,12 +4054,7 @@ await test('Inspector behavior projection resolves events APIs and validation', 
     actions: [],
   }
   expanded.screens['screen-edit'].eventIds.push('event-second')
-  expanded.components['comp-name-input'].config.requestBinding = {
-    componentId: 'comp-email-input',
-    targetPath: 'body.ownerEmail',
-  }
   const expandedSave = getComponentBehavior(expanded, 'comp-save-btn', 'en')
-  const expandedName = getComponentBehavior(expanded, 'comp-name-input', 'en')
   const alertAction = expandedSave.events[0].actions[2]
   const navigateAction = expandedSave.events[0].actions[3]
   assert(
@@ -4076,10 +4066,8 @@ await test('Inspector behavior projection resolves events APIs and validation', 
       alertAction.alert.label === 'User saved successfully.' &&
       navigateAction.type === 'navigate' &&
       navigateAction.screen.label === 'User List' &&
-      navigateAction.screen.route === '/users' &&
-      expandedName.requestBinding.component.label === 'Email address' &&
-      expandedName.requestBinding.targetPath === 'body.ownerEmail',
-    'action targets, event deduplication, or component binding resolution failed',
+      navigateAction.screen.route === '/users',
+    'action targets or event deduplication failed',
   )
 
   const dangling = structuredClone(expanded)
@@ -4343,6 +4331,250 @@ await test('Event editor saves validated ordered actions as one human operation'
       eventDialogSource.includes('setActions') &&
       !eventDialogSource.includes("type: 'bindApiOperation'"),
     'Inspector event UI is not draft-based or crossed into API operation editing',
+  )
+})
+
+await test('API editor commands preserve references and enforce canonical bindings', async () => {
+  memoryStorage.clear()
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'api-editor-domain')
+  )
+  const { getApiEditorContext } = await import(
+    moduleUrl(componentBehaviorBundle, 'api-editor-context')
+  )
+  const store = await freshStore('api-editor-history')
+  const original = structuredClone(store.getState().document.apiOperations['api-save-user'])
+  const originalEvent = structuredClone(store.getState().document.events['event-submit'])
+  const updateCommand = {
+    type: 'updateApiOperation',
+    operationId: 'api-save-user',
+    name: 'Save user profile',
+    method: 'PATCH',
+    path: '/api/users/{id}/profile/with/a/long/path',
+    requestBindings: [
+      { componentId: 'comp-role-select', targetPath: 'body.role' },
+      { componentId: 'comp-email-input', targetPath: 'body.contact.email' },
+    ],
+    successStateId: 'state-edit-success',
+    errorStateId: null,
+  }
+  const beforeRevision = store.getState().document.revision
+  const beforeHistory = store.getState().history.length
+  assert(store.getState().dispatch(updateCommand, 'Edit save API'), 'API update failed')
+  assert(
+    store.getState().document.revision === beforeRevision + 1 &&
+      store.getState().history.length === beforeHistory + 1 &&
+      store.getState().document.apiOperations['api-save-user'].method === 'PATCH' &&
+      store.getState().document.apiOperations['api-save-user'].requestBindings
+        .map(binding => binding.componentId)
+        .join(',') === 'comp-role-select,comp-email-input' &&
+      JSON.stringify(store.getState().document.events['event-submit']) ===
+        JSON.stringify(originalEvent),
+    'API draft did not commit atomically or changed its callApi reference',
+  )
+  store.getState().undo()
+  assert(
+    JSON.stringify(store.getState().document.apiOperations['api-save-user']) ===
+      JSON.stringify(original),
+    'Undo did not restore the API operation before editing',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.apiOperations['api-save-user'].name ===
+      'Save user profile',
+    'Redo did not restore the edited API operation',
+  )
+
+  const context = getApiEditorContext(
+    store.getState().effectiveDocument,
+    'comp-save-btn',
+    'en',
+  )
+  const operation = context?.operations.find(candidate =>
+    candidate.operation.id === 'api-save-user',
+  )
+  assert(
+    context?.supportsApiEditing === true &&
+      context.states.every(state => state.id.startsWith('state-edit-')) &&
+      context.inputComponents.map(component => component.id).join(',') ===
+        'comp-name-input,comp-email-input,comp-role-select' &&
+      operation?.bindings.map(binding => binding.component.label).join(',') ===
+        'Role,Email address' &&
+      operation.eventReferences.length === 1 &&
+      operation.eventReferences[0].event.id === 'event-submit' &&
+      operation.eventReferences[0].actionCount === 1,
+    'API editor candidates, binding labels, or callApi impacts are incomplete',
+  )
+  assert(
+    getApiEditorContext(
+      store.getState().effectiveDocument,
+      'comp-edit-page',
+      'en',
+    )?.supportsApiEditing === false,
+    'API editing was exposed from a structural component',
+  )
+
+  let documentWithForeignInput = applyCommandWithoutRevision(
+    store.getState().document,
+    {
+      type: 'addComponent',
+      componentId: 'foreign-input',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      kind: 'textInput',
+      config: {
+        kind: 'textInput',
+        fieldKey: 'foreign',
+        label: 'Foreign',
+        inputType: 'text',
+        required: false,
+        placeholder: '',
+        defaultValue: '',
+        validationRules: [],
+      },
+    },
+  )
+  for (const [label, requestBindings] of [
+    ['duplicate component', [
+      { componentId: 'comp-name-input', targetPath: 'body.name' },
+      { componentId: 'comp-name-input', targetPath: 'body.alias' },
+    ]],
+    ['duplicate target path', [
+      { componentId: 'comp-name-input', targetPath: 'body.name' },
+      { componentId: 'comp-email-input', targetPath: ' body.name ' },
+    ]],
+    ['empty target path', [
+      { componentId: 'comp-name-input', targetPath: '   ' },
+    ]],
+    ['non-input component', [
+      { componentId: 'comp-save-btn', targetPath: 'body.submit' },
+    ]],
+    ['cross-screen input', [
+      { componentId: 'foreign-input', targetPath: 'body.foreign' },
+    ]],
+  ]) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(documentWithForeignInput, {
+        ...updateCommand,
+        requestBindings,
+      })
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `${label} API binding was accepted`)
+  }
+  let unknownFieldRejected = false
+  try {
+    applyCommandWithoutRevision(documentWithForeignInput, {
+      ...updateCommand,
+      unexpected: true,
+    })
+  } catch {
+    unknownFieldRejected = true
+  }
+  assert(unknownFieldRejected, 'unknown API update command field was accepted')
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('api-editor-proposal')
+  proposalStore.getState().beginChangeSet('Edit API')
+  assert(
+    proposalStore.getState().dispatch(updateCommand, 'Edit save API'),
+    'human API edit failed in active change set',
+  )
+  assert(
+    proposalStore.getState().activeChangeSet.operations.length === 1 &&
+      proposalStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      proposalStore.getState().activeChangeSet.operations[0].command.type ===
+        'updateApiOperation' &&
+      proposalStore.getState().document.apiOperations['api-save-user'].name ===
+        original.name &&
+      proposalStore.getState().effectiveDocument.apiOperations['api-save-user'].name ===
+        'Save user profile',
+    'human API edit did not remain one effective-only change-set operation',
+  )
+  const proposalReload = await freshStore('api-editor-proposal-reload')
+  assert(
+    proposalReload.getState().activeChangeSet?.operations.length === 1 &&
+      proposalReload.getState().effectiveDocument.apiOperations['api-save-user'].name ===
+        'Save user profile',
+    'API edit did not survive active change-set reload',
+  )
+  proposalReload.getState().rejectChangeSet()
+  assert(
+    proposalReload.getState().document.apiOperations['api-save-user'].name ===
+      original.name,
+    'Reject did not discard the human API edit',
+  )
+  proposalReload.getState().beginChangeSet('Accept API edit')
+  proposalReload.getState().dispatch(updateCommand, 'Edit save API')
+  proposalReload.getState().acceptChangeSet()
+  assert(
+    proposalReload.getState().activeChangeSet === null &&
+      proposalReload.getState().document.apiOperations['api-save-user'].name ===
+        'Save user profile',
+    'Accept did not confirm the human API edit',
+  )
+
+  memoryStorage.clear()
+  const deleteStore = await freshStore('api-editor-delete')
+  deleteStore.getState().dispatch(
+    { type: 'removeApiOperation', operationId: 'api-save-user' },
+    'Delete save API',
+  )
+  assert(
+    deleteStore.getState().document.apiOperations['api-save-user'] === undefined &&
+      !deleteStore.getState().document.events['event-submit'].actions.some(
+        action => action.type === 'callApi',
+      ),
+    'API deletion did not clear the operation and callApi actions',
+  )
+  deleteStore.getState().undo()
+  assert(
+    deleteStore.getState().document.apiOperations['api-save-user'] !== undefined &&
+      deleteStore.getState().document.events['event-submit'].actions.some(
+        action => action.type === 'callApi' &&
+          action.apiOperationId === 'api-save-user',
+      ),
+    'Undo did not restore the API operation and callApi actions',
+  )
+
+  const legacyNullDocument = structuredClone(deleteStore.getState().document)
+  legacyNullDocument.components['comp-email-input'].config.requestBinding = null
+  legacyNullDocument.components['comp-role-select'].config.requestBinding = null
+  memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyNullDocument }))
+  const migratedStore = await freshStore('api-binding-null-migration')
+  assert(
+    migratedStore.getState().recoveryState === null &&
+      !Object.prototype.hasOwnProperty.call(
+        migratedStore.getState().document.components['comp-email-input'].config,
+        'requestBinding',
+      ),
+    'legacy null component bindings did not migrate safely',
+  )
+  const legacyValueDocument = structuredClone(migratedStore.getState().document)
+  legacyValueDocument.components['comp-email-input'].config.requestBinding = {
+    componentId: 'comp-name-input',
+    targetPath: 'body.name',
+  }
+  memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyValueDocument }))
+  const unsupportedLegacyStore = await freshStore('api-binding-value-recovery')
+  assert(
+    unsupportedLegacyStore.getState().recoveryState !== null,
+    'non-null legacy component binding was silently discarded',
+  )
+
+  const apiDialogSource = readFileSync(
+    join(root, 'src/features/inspector/ApiOperationDialog.tsx'),
+    'utf8',
+  )
+  assert(
+    apiDialogSource.includes("type: 'bindApiOperation'") &&
+      apiDialogSource.includes("type: 'updateApiOperation'") &&
+      apiDialogSource.includes("type: 'removeApiOperation'") &&
+      apiDialogSource.includes('setBindings') &&
+      !apiDialogSource.includes('validationRules'),
+    'Inspector API UI is not draft-based or crossed into validation editing',
   )
 })
 

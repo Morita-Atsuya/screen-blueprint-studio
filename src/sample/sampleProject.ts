@@ -145,7 +145,6 @@ export const sampleProject: ProjectDocument = {
           { id: 'vr-1', type: 'required', message: 'Name is required' },
           { id: 'vr-2', type: 'maxLength', value: 50, message: 'Enter no more than 50 characters' },
         ],
-        requestBinding: null,
       },
     },
     'comp-email-input': {
@@ -167,7 +166,6 @@ export const sampleProject: ProjectDocument = {
           { id: 'vr-3', type: 'required', message: 'Email address is required' },
           { id: 'vr-4', type: 'email', message: 'Enter a valid email address' },
         ],
-        requestBinding: null,
       },
     },
     'comp-role-select': {
@@ -187,7 +185,6 @@ export const sampleProject: ProjectDocument = {
           { value: 'admin', label: 'Administrator' },
         ],
         defaultValue: 'member',
-        requestBinding: null,
       },
     },
     'comp-actions': {

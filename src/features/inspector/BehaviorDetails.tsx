@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import type {
+  ApiEditorContext,
   ComponentBehaviorProjection,
   EventEditorContext,
   ResolvedApiReference,
@@ -10,29 +11,40 @@ import type { ValidationRule } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { EventDialog } from './EventDialog'
+import { ApiOperationDialog } from './ApiOperationDialog'
 import styles from './Inspector.module.css'
 
 export function BehaviorDetails({
   behavior,
   eventEditor,
+  apiEditor,
 }: {
   behavior: ComponentBehaviorProjection
   eventEditor: EventEditorContext
+  apiEditor: ApiEditorContext
 }) {
   const { t } = useI18n()
   const [dialog, setDialog] = useState<
-    { mode: 'create' } | { mode: 'edit'; eventId: string } | null
+    | { type: 'event'; mode: 'create' }
+    | { type: 'event'; mode: 'edit'; eventId: string }
+    | { type: 'api'; mode: 'create' }
+    | { type: 'api'; mode: 'edit'; operationId: string }
+    | null
   >(null)
   const openerRef = useRef<HTMLButtonElement | null>(null)
   const addButtonRef = useRef<HTMLButtonElement | null>(null)
+  const apiAddButtonRef = useRef<HTMLButtonElement | null>(null)
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const showEvents = behavior.events.length > 0 || eventEditor.supportsEventCreation
-  if (!behavior.hasBehavior && !showEvents) return null
+  const showApis = apiEditor.supportsApiEditing
+  if (!behavior.hasBehavior && !showEvents && !showApis) return null
 
   function closeDialog(result: 'cancelled' | 'saved' | 'deleted') {
-    const focusTarget = result === 'deleted'
-      ? addButtonRef.current ?? headingRef.current
-      : openerRef.current
+    const fallback = dialog?.type === 'api'
+      ? apiAddButtonRef.current ?? headingRef.current
+      : addButtonRef.current ?? headingRef.current
+    const opener = openerRef.current?.isConnected ? openerRef.current : null
+    const focusTarget = result === 'deleted' ? fallback : opener ?? fallback
     setDialog(null)
     requestAnimationFrame(() => focusTarget?.focus())
   }
@@ -50,7 +62,7 @@ export function BehaviorDetails({
               className={styles.behaviorAdd}
               onClick={event => {
                 openerRef.current = event.currentTarget
-                setDialog({ mode: 'create' })
+                setDialog({ type: 'event', mode: 'create' })
               }}
               data-event-add
             >
@@ -83,7 +95,7 @@ export function BehaviorDetails({
                       })}
                       onClick={clickEvent => {
                         openerRef.current = clickEvent.currentTarget
-                        setDialog({ mode: 'edit', eventId: event.id })
+                        setDialog({ type: 'event', mode: 'edit', eventId: event.id })
                       }}
                       data-event-edit={event.id}
                     >
@@ -121,36 +133,75 @@ export function BehaviorDetails({
           </ul>
         </BehaviorGroup>
       ) : null}
-      {behavior.requestBinding || behavior.apiBindings.length > 0 ? (
-        <BehaviorGroup title={t('behavior.requestBindings')}>
+      {showApis ? (
+        <BehaviorGroup
+          title={t('behavior.apiOperations')}
+          action={(
+            <button
+              ref={apiAddButtonRef}
+              type="button"
+              className={styles.behaviorAdd}
+              onClick={event => {
+                openerRef.current = event.currentTarget
+                setDialog({ type: 'api', mode: 'create' })
+              }}
+              data-api-add
+            >
+              + {t('behavior.addApiOperation')}
+            </button>
+          )}
+        >
           <div className={styles.behaviorCards}>
-            {behavior.requestBinding ? (
-              <div className={styles.behaviorCard}>
-                <strong>{t('behavior.componentBinding')}</strong>
-                <p className={styles.behaviorDetail}>
-                  {referenceLabel(behavior.requestBinding.component, t)}
-                  <span aria-hidden="true"> → </span>
-                  <code>{behavior.requestBinding.targetPath}</code>
-                </p>
-              </div>
-            ) : null}
-            {behavior.apiBindings.map((binding, index) => (
-              <div
+            {apiEditor.operations.map(editorOperation => (
+              <article
                 className={styles.behaviorCard}
-                key={`${binding.operation.id}:${binding.targetPath}:${index}`}
-                data-behavior-api={binding.operation.id}
+                key={editorOperation.operation.id}
+                data-behavior-api={editorOperation.operation.id}
               >
-                <ApiSummary operation={binding.operation} />
-                <p className={styles.behaviorDetail}>
-                  {t('behavior.targetPath')}: <code>{binding.targetPath}</code>
-                </p>
-                <ResultStates operation={binding.operation} />
-              </div>
+                <div className={styles.behaviorCardHeading}>
+                  <ApiSummary operation={editorOperation.reference} />
+                  <button
+                    type="button"
+                    className={styles.behaviorEdit}
+                    aria-label={t('behavior.editApiOperationAria', {
+                      name: editorOperation.operation.name,
+                    })}
+                    onClick={event => {
+                      openerRef.current = event.currentTarget
+                      setDialog({
+                        type: 'api',
+                        mode: 'edit',
+                        operationId: editorOperation.operation.id,
+                      })
+                    }}
+                    data-api-edit={editorOperation.operation.id}
+                  >
+                    {t('behavior.editApiOperation')}
+                  </button>
+                </div>
+                {editorOperation.bindings.length > 0 ? (
+                  <ol className={styles.actionList} aria-label={t('behavior.requestBindings')}>
+                    {editorOperation.bindings.map((binding, index) => (
+                      <li key={`${binding.component.id}:${binding.targetPath}:${index}`}>
+                        <span>{referenceLabel(binding.component, t)}</span>
+                        <span aria-hidden="true"> → </span>
+                        <code>{binding.targetPath}</code>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className={styles.behaviorMuted}>{t('behavior.noBindings')}</p>
+                )}
+                <ResultStates operation={editorOperation.reference} />
+              </article>
             ))}
+            {apiEditor.operations.length === 0 ? (
+              <p className={styles.behaviorMuted}>{t('behavior.noApiOperations')}</p>
+            ) : null}
           </div>
         </BehaviorGroup>
       ) : null}
-      {dialog ? (
+      {dialog?.type === 'event' ? (
         <EventDialog
           key={dialog.mode === 'create' ? 'new' : dialog.eventId}
           mode={dialog.mode}
@@ -161,6 +212,20 @@ export function BehaviorDetails({
               )?.event
             : undefined}
           context={eventEditor}
+          onClose={closeDialog}
+        />
+      ) : null}
+      {dialog?.type === 'api' ? (
+        <ApiOperationDialog
+          key={dialog.mode === 'create' ? 'new-api' : dialog.operationId}
+          mode={dialog.mode}
+          operationId={dialog.mode === 'edit' ? dialog.operationId : undefined}
+          editorOperation={dialog.mode === 'edit'
+            ? apiEditor.operations.find(candidate =>
+                candidate.operation.id === dialog.operationId,
+              )
+            : undefined}
+          context={apiEditor}
           onClose={closeDialog}
         />
       ) : null}
