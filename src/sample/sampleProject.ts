@@ -316,8 +316,24 @@ export const sampleProject: ProjectDocument = {
       trigger: { type: 'click', componentId: 'comp-save-btn' },
       actions: [
         { type: 'setState', stateId: 'state-edit-saving' },
+        { type: 'callApi', apiOperationId: 'api-save-user' },
       ],
     },
   },
-  apiOperations: {},
+  apiOperations: {
+    'api-save-user': {
+      id: 'api-save-user',
+      screenId: 'screen-edit',
+      name: 'Save user',
+      method: 'PUT',
+      path: '/api/users/{id}',
+      requestBindings: [
+        { componentId: 'comp-name-input', targetPath: 'body.name' },
+        { componentId: 'comp-email-input', targetPath: 'body.email' },
+        { componentId: 'comp-role-select', targetPath: 'body.role' },
+      ],
+      successStateId: 'state-edit-success',
+      errorStateId: 'state-edit-error',
+    },
+  },
 }

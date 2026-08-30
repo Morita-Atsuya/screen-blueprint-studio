@@ -12,9 +12,11 @@ import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { commandMessageKey } from '../../i18n/messages'
 import { DraftTextField } from '../../components/DraftTextField'
+import { getComponentBehavior } from '../../domain/componentBehavior'
+import { BehaviorDetails } from './BehaviorDetails'
 
 export function Inspector() {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const { effectiveDocument, ui, dispatch, activeChangeSet } = useAppStore()
   const { selectedComponentId, rightPanelTab } = ui
 
@@ -34,6 +36,7 @@ export function Inspector() {
   const screen = getOwnEntity(effectiveDocument.screens, comp.screenId)
 
   const cfg = comp.config
+  const behavior = getComponentBehavior(effectiveDocument, comp.id, locale)
 
   function updateConfig(partial: Record<string, unknown>, field = 'settings'): boolean {
     return dispatch(
@@ -279,6 +282,7 @@ export function Inspector() {
         cfg.kind === 'modal') && (
         <LayoutFields layout={cfg} onUpdate={updateConfig} />
       )}
+      {behavior ? <BehaviorDetails behavior={behavior} /> : null}
       {activeState && activeState.id !== screen?.defaultStateId ? (
         <>
           <hr className={styles.divider} />

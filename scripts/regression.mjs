@@ -74,6 +74,7 @@ const messagesBundle = join(temp, 'messages.mjs')
 const localeBundle = join(temp, 'locale.mjs')
 const rightPaneWidthBundle = join(temp, 'rightPaneWidth.mjs')
 const textDraftBundle = join(temp, 'textDraft.mjs')
+const componentBehaviorBundle = join(temp, 'componentBehavior.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -87,6 +88,7 @@ bundle('src/i18n/messages.ts', messagesBundle)
 bundle('src/i18n/locale.ts', localeBundle)
 bundle('src/app/rightPaneWidth.ts', rightPaneWidthBundle)
 bundle('src/components/textDraft.ts', textDraftBundle)
+bundle('src/domain/componentBehavior.ts', componentBehaviorBundle)
 
 let passed = 0
 
@@ -3986,6 +3988,182 @@ await test('brand assets integrate without duplicate accessible names', async ()
       `${name} SVG is missing its viewBox or contains an external dependency`,
     )
   }
+})
+
+await test('Inspector behavior projection resolves events APIs and validation', async () => {
+  memoryStorage.clear()
+  const { getComponentBehavior } = await import(
+    moduleUrl(componentBehaviorBundle, 'component-behavior')
+  )
+  const store = await freshStore('component-behavior-sample')
+  const document = store.getState().effectiveDocument
+
+  const saveBehavior = getComponentBehavior(document, 'comp-save-btn', 'en')
+  assert(
+    saveBehavior?.events.length === 1 &&
+      saveBehavior.events[0].name === 'Save button click' &&
+      saveBehavior.events[0].triggerType === 'click' &&
+      saveBehavior.events[0].configuredByButton &&
+      saveBehavior.events[0].triggeredByComponent &&
+      saveBehavior.events[0].actions.map(action => action.type).join(',') === 'setState,callApi',
+    'Save button event was missing, duplicated, or ordered incorrectly',
+  )
+  const setStateAction = saveBehavior.events[0].actions[0]
+  const callApiAction = saveBehavior.events[0].actions[1]
+  assert(
+    setStateAction.type === 'setState' &&
+      setStateAction.state.label === 'Saving' &&
+      callApiAction.type === 'callApi' &&
+      callApiAction.operation.method === 'PUT' &&
+      callApiAction.operation.path === '/api/users/{id}' &&
+      callApiAction.operation.label === 'Save user' &&
+      callApiAction.operation.successState?.label === 'Success' &&
+      callApiAction.operation.errorState?.label === 'Error',
+    'event action references were not resolved to readable API and state details',
+  )
+
+  const nameBehavior = getComponentBehavior(document, 'comp-name-input', 'en')
+  assert(
+    nameBehavior?.validationRules.length === 2 &&
+      nameBehavior.validationRules[0].type === 'required' &&
+      nameBehavior.validationRules[0].message === 'Name is required' &&
+      nameBehavior.validationRules[1].type === 'maxLength' &&
+      nameBehavior.validationRules[1].value === 50 &&
+      nameBehavior.validationRules[1].message === 'Enter no more than 50 characters' &&
+      nameBehavior.apiBindings.length === 1 &&
+      nameBehavior.apiBindings[0].targetPath === 'body.name' &&
+      nameBehavior.apiBindings[0].operation.method === 'PUT',
+    'TextInput validation or API request binding projection is incomplete',
+  )
+  const roleBehavior = getComponentBehavior(document, 'comp-role-select', 'ja')
+  assert(
+    roleBehavior?.validationRules.length === 0 &&
+      roleBehavior.apiBindings[0]?.targetPath === 'body.role',
+    'Select API request binding was not projected',
+  )
+  assert(
+    getComponentBehavior(document, 'comp-list-title', 'en')?.hasBehavior === false,
+    'unrelated leaf received an empty Behavior section',
+  )
+
+  const expanded = structuredClone(document)
+  expanded.events['event-submit'].actions.push(
+    { type: 'showAlert', componentId: 'comp-status-alert' },
+    { type: 'navigate', destinationScreenId: 'screen-list' },
+  )
+  expanded.events['event-second'] = {
+    id: 'event-second',
+    screenId: 'screen-edit',
+    name: 'Second save trigger',
+    trigger: { type: 'submit', componentId: 'comp-save-btn' },
+    actions: [],
+  }
+  expanded.screens['screen-edit'].eventIds.push('event-second')
+  expanded.components['comp-name-input'].config.requestBinding = {
+    componentId: 'comp-email-input',
+    targetPath: 'body.ownerEmail',
+  }
+  const expandedSave = getComponentBehavior(expanded, 'comp-save-btn', 'en')
+  const expandedName = getComponentBehavior(expanded, 'comp-name-input', 'en')
+  const alertAction = expandedSave.events[0].actions[2]
+  const navigateAction = expandedSave.events[0].actions[3]
+  assert(
+    expandedSave.events.length === 2 &&
+      new Set(expandedSave.events.map(event => event.id)).size === 2 &&
+      expandedSave.events[0].configuredByButton &&
+      !expandedSave.events[1].configuredByButton &&
+      alertAction.type === 'showAlert' &&
+      alertAction.alert.label === 'User saved successfully.' &&
+      navigateAction.type === 'navigate' &&
+      navigateAction.screen.label === 'User List' &&
+      navigateAction.screen.route === '/users' &&
+      expandedName.requestBinding.component.label === 'Email address' &&
+      expandedName.requestBinding.targetPath === 'body.ownerEmail',
+    'action targets, event deduplication, or component binding resolution failed',
+  )
+
+  const dangling = structuredClone(expanded)
+  dangling.events['event-submit'].actions = [
+    { type: 'setState', stateId: 'missing-state' },
+    { type: 'callApi', apiOperationId: 'missing-api' },
+    { type: 'showAlert', componentId: 'missing-alert' },
+    { type: 'navigate', destinationScreenId: 'missing-screen' },
+  ]
+  const danglingActions = getComponentBehavior(dangling, 'comp-save-btn', 'en').events[0].actions
+  assert(
+    danglingActions[0].state.label === null &&
+      danglingActions[1].operation.label === null &&
+      danglingActions[2].alert.label === null &&
+      danglingActions[3].screen.label === null &&
+      danglingActions.every(action => JSON.stringify(action).includes('missing-')),
+    'dangling behavior references were silently blanked or threw',
+  )
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('component-behavior-proposal')
+  proposalStore.getState().beginChangeSet('Propose behavior')
+  proposalStore.getState().dispatch({
+    type: 'bindApiOperation',
+    operationId: 'api-proposed',
+    screenId: 'screen-edit',
+    name: 'Validate role',
+    method: 'POST',
+    path: '/api/roles/validate',
+    requestBindings: [{ componentId: 'comp-role-select', targetPath: 'body.role' }],
+    successStateId: 'state-edit-success',
+    errorStateId: 'state-edit-error',
+  })
+  proposalStore.getState().dispatch({
+    type: 'connectEvent',
+    eventId: 'event-proposed',
+    screenId: 'screen-edit',
+    name: 'Cancel proposal event',
+    trigger: { type: 'click', componentId: 'comp-cancel-btn' },
+    actions: [{ type: 'callApi', apiOperationId: 'api-proposed' }],
+  })
+  assert(
+    !getComponentBehavior(
+      proposalStore.getState().document,
+      'comp-role-select',
+      'en',
+    ).apiBindings.some(binding => binding.operation.id === 'api-proposed') &&
+      getComponentBehavior(
+        proposalStore.getState().effectiveDocument,
+        'comp-role-select',
+        'en',
+      ).apiBindings.some(binding => binding.operation.id === 'api-proposed') &&
+      getComponentBehavior(
+        proposalStore.getState().effectiveDocument,
+        'comp-cancel-btn',
+        'en',
+      ).events.some(event => event.id === 'event-proposed'),
+    'active change-set behavior was not isolated to the effective document',
+  )
+  const reloaded = await freshStore('component-behavior-proposal-reload')
+  assert(
+    getComponentBehavior(
+      reloaded.getState().effectiveDocument,
+      'comp-cancel-btn',
+      'en',
+    ).events.some(event => event.id === 'event-proposed'),
+    'effective behavior projection did not survive active change-set reload',
+  )
+
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  const detailsSource = readFileSync(
+    join(root, 'src/features/inspector/BehaviorDetails.tsx'),
+    'utf8',
+  )
+  assert(
+    inspectorSource.includes('getComponentBehavior(effectiveDocument, comp.id, locale)') &&
+      inspectorSource.includes('<BehaviorDetails behavior={behavior} />') &&
+      detailsSource.includes('data-behavior-specification') &&
+      detailsSource.includes('missingReference(operation.id, t)'),
+    'Inspector does not render the effective behavior projection with visible fallbacks',
+  )
 })
 
 console.log(`\n${passed} regression groups passed`)

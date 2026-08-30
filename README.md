@@ -15,6 +15,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
+- Inspectorで選択componentのevent、実行順action、API request binding・結果state、validation ruleを参照
 - 自由に命名できる画面状態と状態別override
 - click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
 - API operationと画面項目、成功／失敗状態の関連付け
@@ -65,6 +66,7 @@ AIがchange setへ型付きoperationを追加
 - Screensタブで画面の追加、選択、名前・route編集、削除
 - canvas上部の`+`から任意名の状態を追加し、選択中の非default状態は`⋯`から名前・説明を編集または削除
 - 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
+- Buttonや入力componentを選択し、Inspectorの「振る舞い」でevent／API／validation仕様を確認
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 Page／Modal root、別screen、leaf、自分自身・子孫へのdropは拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。

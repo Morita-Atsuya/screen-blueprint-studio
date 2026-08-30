@@ -284,7 +284,7 @@ type ValidationRule =
   | { id: EntityId; type: "custom"; description: string; message: string };
 ```
 
-`custom`は仕様書、インスペクター、WebMCPで読み書きできるが、ワイヤーフレームpreviewでは自動評価しない。「手動確認が必要な仕様」と明示する。
+`custom`はInspectorで他のruleと同じくread-only表示し、WebMCPで読み書きできるが、ワイヤーフレームpreviewでは自動評価しない。「手動確認が必要な仕様」と明示する。
 
 ### 5.4 画面状態
 
@@ -332,7 +332,7 @@ interface ScreenEvent {
 }
 ```
 
-actionは配列順に実行される仕様として表示するが、MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
+actionは配列順に実行される仕様としてInspectorへ表示し、`setState`はstate名、`navigate`はscreen名とroute、`callApi`はmethod・path・operation名、`showAlert`は対象Alertのsemantic labelへ解決する。Buttonの`eventId`とtrigger側で同じeventを指す場合は重複表示しない。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
 
 ### 5.6 API操作
 
@@ -355,7 +355,7 @@ interface FieldBinding {
 }
 ```
 
-MVPではAPI仕様を記述するが、ネットワークリクエストは実行しない。デモの焦点を画面仕様の共同編集へ保ち、外部サービス依存を避けるためである。
+MVPではAPI仕様を記述するが、ネットワークリクエストは実行しない。選択中のTextInput／Selectに関係するrequest bindingはInspectorでoperationのmethod・path・name、target path、success/error stateとともにread-only表示する。デモの焦点を画面仕様の共同編集へ保ち、外部サービス依存を避けるためである。
 
 ## 6. モデルの不変条件
 
@@ -594,7 +594,7 @@ interface Diagnostic {
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。非default状態では基本仕様と分離した状態別設定を表示
+- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。関連するevent、順序付きaction、API binding・結果state、validation ruleはread-only投影する。非default状態では基本仕様と分離した状態別設定を表示
 - `Changes`: operation一覧とbefore/after
 
 component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameはPage frameのeditor-only labelとして使い、previewへ表示する文字列はText childと表示スタイルとして編集する。
