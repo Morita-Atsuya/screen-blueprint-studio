@@ -24,12 +24,6 @@
   letter-spacing: 0.02em;
 }
 
-.headerActions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .policyLabel {
   display: flex;
   align-items: center;

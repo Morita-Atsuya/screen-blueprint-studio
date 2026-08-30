@@ -20,7 +20,6 @@ export function App() {
     persistenceUnavailable,
     exportCurrentData,
     setErrorMessage,
-    beginChangeSet,
   } = useAppStore()
   const canUndo = history.length > 0 && !activeChangeSet
 
@@ -48,41 +47,19 @@ export function App() {
     )
   }
 
-  // ── Demo: begin change set for human testing ────────────────
-  function handleBeginDemo() {
-    try {
-      beginChangeSet('デモ提案: AIによる提案')
-      useAppStore.getState().setRightPanelTab('changes')
-    } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : String(e))
-    }
-  }
-
   // ── Main UI ─────────────────────────────────────────────────
   return (
     <div className={styles.root}>
       <header className={styles.header}>
         <span className={styles.logo}>Screen Blueprint Studio</span>
-        <div className={styles.headerActions}>
-          {!activeChangeSet && (
-            <button
-              className={styles.undoBtn}
-              onClick={handleBeginDemo}
-              title="デモ用: Change Set開始"
-              style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-            >
-              ＋ 提案開始
-            </button>
-          )}
-          <button
-            className={styles.undoBtn}
-            onClick={undo}
-            disabled={!canUndo}
-            title="Undo"
-          >
-            ↩ Undo
-          </button>
-        </div>
+        <button
+          className={styles.undoBtn}
+          onClick={undo}
+          disabled={!canUndo}
+          title="Undo"
+        >
+          ↩ Undo
+        </button>
       </header>
 
       {activeChangeSet && <ChangeSetBar />}

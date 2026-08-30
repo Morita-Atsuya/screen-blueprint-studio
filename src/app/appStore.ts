@@ -269,7 +269,10 @@ export const useAppStore = create<AppStore>((set, get) => {
         operations: [],
         createdAt: new Date().toISOString(),
       }
-      const nextUi = reconcileUiState(state.document, state.ui)
+      const nextUi = {
+        ...reconcileUiState(state.document, state.ui),
+        rightPanelTab: 'changes' as const,
+      }
       set({ activeChangeSet: changeSet, effectiveDocument: state.document, ui: nextUi })
       markPersistence(persistIfAvailable(state.document, changeSet, nextUi.activeScreenId))
       return changeSet

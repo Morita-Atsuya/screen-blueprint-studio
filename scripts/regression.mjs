@@ -169,6 +169,7 @@ await test('malformed rejected history is ignored and cannot block rejection', a
     assert(Array.isArray(store.getState().rejectedRecords), 'rejectedRecords is not an array')
     assert(store.getState().rejectedRecords.length === 0, 'invalid rejected record was retained')
     const changeSet = store.getState().beginChangeSet('Reject malformed history')
+    assert(store.getState().ui.rightPanelTab === 'changes', 'change set did not open the Changes tab')
     store.getState().rejectChangeSet()
     assert(store.getState().activeChangeSet === null, 'malformed history blocked rejection')
     assert(

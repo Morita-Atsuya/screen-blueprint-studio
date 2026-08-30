@@ -21,7 +21,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 
 ## 人間とAIの共同編集
 
-AIによる書き込みは確定モデルへ直接反映されません。まずactive change setを開始し、その中へoperationを追加します。変更は同じキャンバスへpreviewされ、人間が内容を確認して承認または却下します。
+AIによる書き込みは確定モデルへ直接反映されません。WebMCPの`begin_change_set`だけがactive change setを開始し、その中へoperationを追加します。通常時の人間操作は直接確定し、active change set中の修正だけが同じchange setへ入ります。変更は同じキャンバスへpreviewされ、人間が内容を確認して承認または却下します。
 
 ```text
 人間が画面やコンポーネントを選択
