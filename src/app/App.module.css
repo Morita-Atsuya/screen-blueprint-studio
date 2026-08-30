@@ -198,6 +198,14 @@
   border-bottom: 2px solid var(--accent);
 }
 
+.rightHeading {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .leftContent,
 .rightContent {
   flex: 1;

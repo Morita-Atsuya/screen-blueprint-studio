@@ -230,19 +230,23 @@ export function App() {
 
           {/* Right panel */}
           <aside className={styles.right} style={{ width: rightPaneWidth }}>
-            <div className={styles.tabs}>
-              {(['inspector', 'changes'] as const).map(tab => (
-                <button
-                  key={tab}
-                  className={`${styles.tab} ${ui.rightPanelTab === tab ? styles.tabActive : ''}`}
-                  onClick={() => useAppStore.getState().setRightPanelTab(tab)}
-                >
-                  {tab === 'inspector'
-                    ? t('tabs.inspector')
-                    : `${t('tabs.changes')}${activeChangeSet ? ` (${activeChangeSet.operations.length})` : ''}`}
-                </button>
-              ))}
-            </div>
+            {activeChangeSet ? (
+              <div className={styles.tabs}>
+                {(['inspector', 'changes'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    className={`${styles.tab} ${ui.rightPanelTab === tab ? styles.tabActive : ''}`}
+                    onClick={() => useAppStore.getState().setRightPanelTab(tab)}
+                  >
+                    {tab === 'inspector'
+                      ? t('tabs.inspector')
+                      : `${t('tabs.changes')} (${activeChangeSet.operations.length})`}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.rightHeading}>{t('tabs.inspector')}</div>
+            )}
             <div className={styles.rightContent}>
               <Inspector />
             </div>

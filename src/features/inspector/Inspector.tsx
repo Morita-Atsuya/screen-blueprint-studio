@@ -7,17 +7,18 @@ import type {
   ScreenComponent,
   ScreenState,
 } from '../../domain/model'
+import type { ChangeSet } from '../../domain/collaboration'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { commandMessageKey } from '../../i18n/messages'
 
 export function Inspector() {
   const { t } = useI18n()
-  const { effectiveDocument, ui, dispatch } = useAppStore()
+  const { effectiveDocument, ui, dispatch, activeChangeSet } = useAppStore()
   const { selectedComponentId, rightPanelTab } = ui
 
-  if (rightPanelTab === 'changes') {
-    return <ChangesPanel />
+  if (rightPanelTab === 'changes' && activeChangeSet) {
+    return <ChangesPanel changeSet={activeChangeSet} />
   }
 
   if (!selectedComponentId) {
@@ -428,16 +429,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function ChangesPanel() {
+function ChangesPanel({ changeSet }: { changeSet: ChangeSet }) {
   const { t } = useI18n()
-  const { activeChangeSet, acceptChangeSet, rejectChangeSet } = useAppStore()
-  if (!activeChangeSet) return <p className={styles.empty}>{t('changes.none')}</p>
+  const { acceptChangeSet, rejectChangeSet } = useAppStore()
 
   return (
     <div className={styles.changes}>
-      <p className={styles.changeSummary}>{activeChangeSet.summary}</p>
+      <p className={styles.changeSummary}>{changeSet.summary}</p>
       <ul className={styles.changeList}>
-        {activeChangeSet.operations.map(op => (
+        {changeSet.operations.map(op => (
           <li
             key={op.id}
             className={`${styles.changeItem} ${op.source === 'agent' ? styles.agentChange : ''}`}

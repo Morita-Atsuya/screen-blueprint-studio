@@ -179,6 +179,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       ? null
       : restoredChangeSet
     ui = initialUiState(confirmedDocument, loadResult.activeScreenId)
+    if (activeChangeSet) ui = { ...ui, rightPanelTab: 'changes' }
   } else if (loadResult.status === 'invalid') {
     recoveryState = { status: 'invalid', rawData: loadResult.rawData, error: loadResult.error }
   }
@@ -327,7 +328,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           ...state.history.slice(-(MAX_HISTORY - 1)),
           buildHistory(state.document, next, `Accept: ${state.activeChangeSet.summary}`, 'accepted-change-set'),
         ]
-        const nextUi = reconcileUiState(next, state.ui)
+        const nextUi = {
+          ...reconcileUiState(next, state.ui),
+          rightPanelTab: 'inspector' as const,
+        }
         set({ document: next, activeChangeSet: null, history: newHistory, effectiveDocument: next, ui: nextUi, errorMessage: null })
         markPersistence(persistIfAvailable(next, null, nextUi.activeScreenId))
       } catch (e) {
@@ -363,7 +367,10 @@ export const useAppStore = create<AppStore>((set, get) => {
       const rejectedRecords = Array.isArray(state.rejectedRecords)
         ? [record, ...state.rejectedRecords].slice(0, 20)
         : [record]
-      const nextUi = reconcileUiState(state.document, state.ui)
+      const nextUi = {
+        ...reconcileUiState(state.document, state.ui),
+        rightPanelTab: 'inspector' as const,
+      }
       set({ activeChangeSet: null, effectiveDocument: state.document, rejectedRecords, ui: nextUi })
       // Save the rejection first so a failed main write can be suppressed on reload
       // without deleting the last confirmed document.
@@ -423,7 +430,12 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     setRightPanelTab(tab) {
       requireWritable()
-      set(state => ({ ui: { ...state.ui, rightPanelTab: tab } }))
+      set(state => ({
+        ui: {
+          ...state.ui,
+          rightPanelTab: tab === 'changes' && !state.activeChangeSet ? 'inspector' : tab,
+        },
+      }))
     },
 
     setLeftPanelTab(tab) {

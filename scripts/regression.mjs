@@ -2331,5 +2331,76 @@ await test('right specification pane resizing clamps and persists safely', async
   )
 })
 
+await test('Changes review UI is contextual to active change sets', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('contextual-changes-inactive')
+  assert(
+    store.getState().activeChangeSet === null &&
+      store.getState().ui.rightPanelTab === 'inspector',
+    'inactive startup did not select Inspector',
+  )
+  store.getState().setRightPanelTab('changes')
+  assert(
+    store.getState().ui.rightPanelTab === 'inspector',
+    'inactive store allowed the hidden Changes panel to open',
+  )
+
+  store.getState().beginChangeSet('Contextual review')
+  assert(
+    store.getState().activeChangeSet !== null &&
+      store.getState().ui.rightPanelTab === 'changes',
+    'begin change set did not reveal and select Changes',
+  )
+  store.getState().setRightPanelTab('inspector')
+  assert(store.getState().ui.rightPanelTab === 'inspector', 'Inspector did not open during review')
+  store.getState().setRightPanelTab('changes')
+  assert(store.getState().ui.rightPanelTab === 'changes', 'Changes did not reopen during review')
+
+  const restored = await freshStore('contextual-changes-restored')
+  assert(
+    restored.getState().activeChangeSet !== null &&
+      restored.getState().ui.rightPanelTab === 'changes',
+    'restored active change set did not reveal and select Changes',
+  )
+  restored.getState().acceptChangeSet()
+  assert(
+    restored.getState().activeChangeSet === null &&
+      restored.getState().ui.rightPanelTab === 'inspector',
+    'accept did not hide Changes and restore Inspector',
+  )
+
+  restored.getState().beginChangeSet('Contextual rejection')
+  restored.getState().rejectChangeSet()
+  assert(
+    restored.getState().activeChangeSet === null &&
+      restored.getState().ui.rightPanelTab === 'inspector',
+    'reject did not hide Changes and restore Inspector',
+  )
+  const inactiveReload = await freshStore('contextual-changes-inactive-reload')
+  assert(
+    inactiveReload.getState().activeChangeSet === null &&
+      inactiveReload.getState().ui.rightPanelTab === 'inspector',
+    'inactive reload did not remain on Inspector',
+  )
+
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  const messageSource = readFileSync(join(root, 'src/i18n/messages.ts'), 'utf8')
+  assert(
+    appSource.includes('{activeChangeSet ? (') &&
+      appSource.includes('className={styles.rightHeading}') &&
+      appSource.includes("`${t('tabs.changes')} (${activeChangeSet.operations.length})`"),
+    'right pane does not conditionally render review tabs',
+  )
+  assert(
+    !inspectorSource.includes("t('changes.none')") &&
+      !messageSource.includes("'changes.none'"),
+    'obsolete empty Changes state remains in source',
+  )
+})
+
 console.log(`\n${passed} regression groups passed`)
 rmSync(temp, { recursive: true, force: true })
