@@ -4196,6 +4196,19 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     '[data-drag-surface="tree"][data-drag-component="comp-name-input"]',
   )
   assert(unlockedTreeHandle && !unlockedTreeHandle.disabled, 'Tree drag did not begin unlocked')
+  const unlockedCanvasComponent = document.querySelector(
+    '[data-component-id="comp-name-input"]',
+  )
+  const unlockedCanvasRoot = document.querySelector(
+    '[data-component-id="comp-edit-page"]',
+  )
+  assert(
+    unlockedCanvasComponent?.getAttribute('tabindex') === '0' &&
+      unlockedCanvasComponent.getAttribute('role') === 'button' &&
+      unlockedCanvasRoot?.getAttribute('tabindex') === '-1' &&
+      !unlockedCanvasRoot.hasAttribute('role'),
+    'Canvas unlocked component or root semantics are incomplete',
+  )
   harness.pointer(unlockedTreeHandle, 'pointerdown', { clientX: 400, clientY: 300 })
   harness.pointer(
     document,
@@ -4288,14 +4301,38 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   assert(
     canvasComponent &&
       !canvasComponent.hasAttribute('data-canvas-draggable') &&
-      !canvasComponent.hasAttribute('data-drag-surface'),
-    'Canvas component remains draggable during review',
+      !canvasComponent.hasAttribute('data-drag-surface') &&
+      canvasComponent.getAttribute('tabindex') === '-1' &&
+      !canvasComponent.hasAttribute('role'),
+    'Canvas component remains draggable or a dead keyboard stop during review',
+  )
+  const lockedCanvasRoot = document.querySelector('[data-component-id="comp-edit-page"]')
+  assert(
+    lockedCanvasRoot?.getAttribute('tabindex') === '-1' &&
+      !lockedCanvasRoot.hasAttribute('role'),
+    'Canvas root entered the review-mode tab order',
   )
   expectProtected('locked Canvas pointer drag', () => {
     harness.pointer(canvasComponent, 'pointerdown')
     harness.pointer(window, 'pointermove', { clientX: 180, clientY: 180 })
     harness.pointer(window, 'pointerup', { clientX: 180, clientY: 180 })
   })
+  const canvasMenuTarget = document.querySelector('[data-component-id="comp-role-select"]')
+  harness.contextMenu(canvasMenuTarget)
+  const canvasLockedMenu = document.querySelector('[data-component-add-menu]')
+  assert(
+    harness.state().selectedComponentId === 'comp-role-select' &&
+      canvasLockedMenu?.querySelector('[data-component-copy]') &&
+      !canvasLockedMenu.querySelector('[data-component-duplicate]') &&
+      !canvasLockedMenu.querySelector('[data-component-paste]') &&
+      !canvasLockedMenu.querySelector('[data-insert-placement]'),
+    'review-mode Canvas pointer context menu or selection is unavailable',
+  )
+  harness.keyDown(canvasLockedMenu, 'Escape', { code: 'Escape' })
+  assert(
+    !document.querySelector('[data-component-add-menu]'),
+    'Canvas context menu did not close before continuing review interactions',
+  )
 
   const stateMutationButtons = [
     document.querySelector('button[aria-label="Add state"]'),
@@ -7123,7 +7160,7 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
   assert(
     canvasSource.includes('{...(!isRoot && !reviewLocked ? attributes : {})}') &&
       canvasSource.includes('{...(!isRoot && !reviewLocked ? listeners : {})}') &&
-      canvasSource.includes('tabIndex={isRoot ? -1 : 0}') &&
+      canvasSource.includes('tabIndex={isRoot || reviewLocked ? -1 : 0}') &&
       canvasSource.includes("data-canvas-draggable={!isRoot && !reviewLocked || undefined}") &&
       canvasSource.includes("data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}") &&
       canvasSource.includes(
@@ -8456,6 +8493,84 @@ await test('Recovery actions use light-theme tokens with AA contrast', async () 
   )
 })
 
+await test('button focus and change count tokens meet light-theme contrast thresholds', async () => {
+  const globalStyles = readFileSync(join(root, 'src/styles/global.css'), 'utf8')
+  const changeSetBarStyles = readFileSync(
+    join(root, 'src/features/change-review/ChangeSetBar.module.css'),
+    'utf8',
+  )
+  const token = name => {
+    const match = globalStyles.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`))
+    assert(match, `missing opaque color token --${name}`)
+    return match[1]
+  }
+  const channels = hex => hex.slice(1).match(/../g).map(value => Number.parseInt(value, 16))
+  const color = values => `#${values
+    .map(value => Math.round(value).toString(16).padStart(2, '0'))
+    .join('')}`
+  const composite = (foreground, background, alpha) => {
+    const foregroundChannels = channels(foreground)
+    const backgroundChannels = channels(background)
+    return color(foregroundChannels.map(
+      (value, index) => value * alpha + backgroundChannels[index] * (1 - alpha),
+    ))
+  }
+  const luminance = hex => {
+    const values = channels(hex).map(value => {
+      const channel = value / 255
+      return channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2]
+  }
+  const contrast = (foreground, background) => {
+    const values = [luminance(foreground), luminance(background)]
+      .sort((left, right) => right - left)
+    return (values[0] + 0.05) / (values[1] + 0.05)
+  }
+
+  const focusRule = globalStyles.match(/button:focus-visible\s*\{([^}]*)\}/)?.[1] ?? ''
+  const focusRing = token('focus-ring')
+  assert(
+    focusRule.includes('outline: 3px solid var(--focus-ring)') &&
+      focusRule.includes('outline-offset: 2px'),
+    'global buttons do not use the opaque focus-ring token with sufficient separation',
+  )
+  for (const background of [
+    token('bg'),
+    token('bg-surface'),
+    token('bg-hover'),
+    token('bg-selected'),
+    token('danger-surface'),
+    '#f8fafc',
+  ]) {
+    assert(
+      contrast(focusRing, background) >= 3,
+      `button focus ring contrast is below 3:1 on ${background}`,
+    )
+  }
+
+  const agentChange = globalStyles.match(
+    /--agent-change:\s*rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)/,
+  )
+  assert(agentChange, 'missing translucent --agent-change token')
+  const agentForeground = color(agentChange.slice(1, 4).map(Number))
+  const agentAlpha = Number(agentChange[4])
+  const countRule = changeSetBarStyles.match(/\.count\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert(
+    countRule.includes('color: var(--text-muted)'),
+    'change set count does not use the readable muted text token',
+  )
+  for (const baseBackground of [token('bg'), token('bg-surface')]) {
+    const renderedBackground = composite(agentForeground, baseBackground, agentAlpha)
+    assert(
+      contrast(token('text-muted'), renderedBackground) >= 4.5,
+      `change set count contrast is below 4.5:1 on ${renderedBackground}`,
+    )
+  }
+})
+
 await test('brand assets integrate without duplicate accessible names', async () => {
   const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
@@ -9559,8 +9674,9 @@ await test('editor landmarks, active states, and canvas roots expose correct sem
       )
     }
     assert(
-      document.querySelector('[data-component-id="comp-name-input"]')?.getAttribute('tabindex') === '0',
-      `${locale} editable canvas components were removed from the tab order`,
+      document.querySelector('[data-component-id="comp-name-input"]')?.getAttribute('tabindex') === '-1' &&
+        !document.querySelector('[data-component-id="comp-name-input"]')?.hasAttribute('role'),
+      `${locale} review-mode canvas component remains a dead keyboard stop`,
     )
   }
 })

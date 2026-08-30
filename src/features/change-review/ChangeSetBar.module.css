@@ -20,7 +20,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.count { font-size: 0.75rem; color: var(--text-faint); }
+.count { font-size: 0.75rem; color: var(--text-muted); }
 .lockStatus {
   flex-basis: 100%;
   font-size: 0.75rem;

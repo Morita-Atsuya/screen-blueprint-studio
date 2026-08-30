@@ -6,6 +6,7 @@
   --bg-selected: #e8efff;
   --border: #d8dee9;
   --border-focus: #4f46e5;
+  --focus-ring: #4f46e5;
   --text: #1e293b;
   --text-muted: #475569;
   --text-faint: #64748b;
@@ -65,7 +66,7 @@ input:disabled, select:disabled, textarea:disabled {
 }
 
 button:focus-visible {
-  outline: 3px solid rgba(79, 70, 229, 0.22);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
