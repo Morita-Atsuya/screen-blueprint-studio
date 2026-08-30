@@ -6,22 +6,26 @@ import type {
   ResolvedApiReference,
   ResolvedEventAction,
   ResolvedReference,
+  ValidationRulesEditorContext,
 } from '../../domain/componentBehavior'
 import type { ValidationRule } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { EventDialog } from './EventDialog'
 import { ApiOperationDialog } from './ApiOperationDialog'
+import { ValidationRulesDialog } from './ValidationRulesDialog'
 import styles from './Inspector.module.css'
 
 export function BehaviorDetails({
   behavior,
   eventEditor,
   apiEditor,
+  validationEditor,
 }: {
   behavior: ComponentBehaviorProjection
   eventEditor: EventEditorContext
   apiEditor: ApiEditorContext
+  validationEditor: ValidationRulesEditorContext
 }) {
   const { t } = useI18n()
   const [dialog, setDialog] = useState<
@@ -29,20 +33,25 @@ export function BehaviorDetails({
     | { type: 'event'; mode: 'edit'; eventId: string }
     | { type: 'api'; mode: 'create' }
     | { type: 'api'; mode: 'edit'; operationId: string }
+    | { type: 'validation' }
     | null
   >(null)
   const openerRef = useRef<HTMLButtonElement | null>(null)
   const addButtonRef = useRef<HTMLButtonElement | null>(null)
   const apiAddButtonRef = useRef<HTMLButtonElement | null>(null)
+  const validationButtonRef = useRef<HTMLButtonElement | null>(null)
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const showEvents = behavior.events.length > 0 || eventEditor.supportsEventCreation
   const showApis = apiEditor.supportsApiEditing
-  if (!behavior.hasBehavior && !showEvents && !showApis) return null
+  const showValidation = validationEditor.supportsValidationEditing
+  if (!behavior.hasBehavior && !showEvents && !showApis && !showValidation) return null
 
   function closeDialog(result: 'cancelled' | 'saved' | 'deleted') {
     const fallback = dialog?.type === 'api'
       ? apiAddButtonRef.current ?? headingRef.current
-      : addButtonRef.current ?? headingRef.current
+      : dialog?.type === 'validation'
+        ? validationButtonRef.current ?? headingRef.current
+        : addButtonRef.current ?? headingRef.current
     const opener = openerRef.current?.isConnected ? openerRef.current : null
     const focusTarget = result === 'deleted' ? fallback : opener ?? fallback
     setDialog(null)
@@ -122,15 +131,37 @@ export function BehaviorDetails({
           )}
         </BehaviorGroup>
       ) : null}
-      {behavior.validationRules.length > 0 ? (
-        <BehaviorGroup title={t('behavior.validation')}>
-          <ul className={styles.behaviorCards}>
-            {behavior.validationRules.map(rule => (
-              <li className={styles.behaviorCard} key={rule.id}>
-                <ValidationDetails rule={rule} />
-              </li>
-            ))}
-          </ul>
+      {showValidation ? (
+        <BehaviorGroup
+          title={t('behavior.validation')}
+          action={(
+            <button
+              ref={validationButtonRef}
+              type="button"
+              className={styles.behaviorAdd}
+              onClick={event => {
+                openerRef.current = event.currentTarget
+                setDialog({ type: 'validation' })
+              }}
+              data-validation-manage
+            >
+              {behavior.validationRules.length > 0
+                ? t('behavior.editValidationRules')
+                : `+ ${t('behavior.addValidationRule')}`}
+            </button>
+          )}
+        >
+          {behavior.validationRules.length > 0 ? (
+            <ul className={styles.behaviorCards}>
+              {behavior.validationRules.map(rule => (
+                <li className={styles.behaviorCard} key={rule.id}>
+                  <ValidationDetails rule={rule} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={styles.behaviorMuted}>{t('behavior.noValidationRules')}</p>
+          )}
         </BehaviorGroup>
       ) : null}
       {showApis ? (
@@ -226,6 +257,12 @@ export function BehaviorDetails({
               )
             : undefined}
           context={apiEditor}
+          onClose={closeDialog}
+        />
+      ) : null}
+      {dialog?.type === 'validation' ? (
+        <ValidationRulesDialog
+          context={validationEditor}
           onClose={closeDialog}
         />
       ) : null}

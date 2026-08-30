@@ -100,6 +100,13 @@ export interface ApiEditorContext {
   inputComponents: ResolvedReference[]
 }
 
+export interface ValidationRulesEditorContext {
+  componentId: EntityId
+  label: string
+  supportsValidationEditing: boolean
+  rules: ValidationRule[]
+}
+
 function resolveState(document: ProjectDocument, stateId: EntityId): ResolvedReference {
   const state = getOwnEntity(document.screenStates, stateId)
   return { id: stateId, label: state?.name ?? null }
@@ -333,5 +340,21 @@ export function getApiEditorContext(
         (candidate.kind === 'textInput' || candidate.kind === 'select'),
       )
       .map(candidate => resolveComponent(document, candidate.id, locale)),
+  }
+}
+
+export function getValidationRulesEditorContext(
+  document: ProjectDocument,
+  componentId: EntityId,
+  locale: Locale = 'en',
+): ValidationRulesEditorContext | null {
+  const component = getOwnEntity(document.components, componentId)
+  if (!component) return null
+
+  return {
+    componentId,
+    label: getComponentDisplayLabel(component, locale),
+    supportsValidationEditing: component.config.kind === 'textInput',
+    rules: component.config.kind === 'textInput' ? component.config.validationRules : [],
   }
 }

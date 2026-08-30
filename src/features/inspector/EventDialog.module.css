@@ -85,6 +85,26 @@
   width: 100%;
 }
 
+.ruleFields {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ruleFields textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.fieldError {
+  margin: 2px 0 0;
+  color: var(--danger);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 .stateFields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

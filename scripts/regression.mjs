@@ -4657,5 +4657,223 @@ await test('API editor commands preserve references and enforce canonical bindin
   )
 })
 
+await test('Validation rules editor enforces invariants and commits as one human operation', async () => {
+  memoryStorage.clear()
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'validation-rules-domain')
+  )
+  const { getValidationRulesEditorContext } = await import(
+    moduleUrl(componentBehaviorBundle, 'validation-rules-context')
+  )
+  const store = await freshStore('validation-rules-history')
+  const original = structuredClone(
+    store.getState().document.components['comp-name-input'].config.validationRules,
+  )
+
+  const editedRules = [
+    { id: 'vr-1', type: 'required', message: 'Name is required' },
+    { id: 'vr-new', type: 'minLength', value: 2, message: 'Enter at least 2 characters' },
+    { id: 'vr-2', type: 'maxLength', value: 80, message: 'Enter no more than 80 characters' },
+  ]
+  const updateCommand = {
+    type: 'updateComponentSpec',
+    componentId: 'comp-name-input',
+    patch: { config: { validationRules: editedRules } },
+  }
+  const beforeRevision = store.getState().document.revision
+  const beforeHistory = store.getState().history.length
+  assert(
+    store.getState().dispatch(updateCommand, 'Edit validation rules'),
+    'validation rules update failed',
+  )
+  assert(
+    store.getState().document.revision === beforeRevision + 1 &&
+      store.getState().history.length === beforeHistory + 1 &&
+      store.getState().document.components['comp-name-input'].config.validationRules
+        .map(rule => `${rule.type}:${rule.value ?? ''}`)
+        .join(',') === 'required:,minLength:2,maxLength:80',
+    'validation rules draft did not commit as one ordered history entry',
+  )
+  store.getState().undo()
+  assert(
+    JSON.stringify(
+      store.getState().document.components['comp-name-input'].config.validationRules,
+    ) === JSON.stringify(original),
+    'Undo did not restore validation rules before editing',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.components['comp-name-input'].config.validationRules.length === 3,
+    'Redo did not restore the edited validation rules',
+  )
+
+  const context = getValidationRulesEditorContext(
+    store.getState().effectiveDocument,
+    'comp-name-input',
+    'en',
+  )
+  assert(
+    context?.supportsValidationEditing === true &&
+      context.label === 'Name' &&
+      context.rules.length === 3,
+    'validation rules editor context was not resolved correctly for a textInput',
+  )
+  assert(
+    getValidationRulesEditorContext(
+      store.getState().effectiveDocument,
+      'comp-role-select',
+      'en',
+    )?.supportsValidationEditing === false &&
+      getValidationRulesEditorContext(
+        store.getState().effectiveDocument,
+        'comp-save-btn',
+        'en',
+      )?.supportsValidationEditing === false,
+    'validation rule editing was exposed from a non-textInput component',
+  )
+
+  for (const [label, rules] of [
+    ['duplicate required', [
+      { id: 'a', type: 'required', message: 'm1' },
+      { id: 'b', type: 'required', message: 'm2' },
+    ]],
+    ['duplicate email', [
+      { id: 'a', type: 'email', message: 'm1' },
+      { id: 'b', type: 'email', message: 'm2' },
+    ]],
+    ['duplicate minLength', [
+      { id: 'a', type: 'minLength', value: 1, message: 'm1' },
+      { id: 'b', type: 'minLength', value: 2, message: 'm2' },
+    ]],
+    ['min greater than max', [
+      { id: 'a', type: 'minLength', value: 10, message: 'm1' },
+      { id: 'b', type: 'maxLength', value: 5, message: 'm2' },
+    ]],
+    ['empty message', [
+      { id: 'a', type: 'required', message: '   ' },
+    ]],
+    ['negative length value', [
+      { id: 'a', type: 'minLength', value: -1, message: 'm1' },
+    ]],
+    ['non safe integer length value', [
+      { id: 'a', type: 'minLength', value: 1.5, message: 'm1' },
+    ]],
+    ['empty pattern value', [
+      { id: 'a', type: 'pattern', value: '   ', message: 'm1' },
+    ]],
+    ['invalid pattern regex', [
+      { id: 'a', type: 'pattern', value: '(', message: 'm1' },
+    ]],
+    ['duplicate pattern value', [
+      { id: 'a', type: 'pattern', value: '^a+$', message: 'm1' },
+      { id: 'b', type: 'pattern', value: ' ^a+$ ', message: 'm2' },
+    ]],
+    ['empty custom description', [
+      { id: 'a', type: 'custom', description: '   ', message: 'm1' },
+    ]],
+    ['duplicate custom description', [
+      { id: 'a', type: 'custom', description: 'Must be unique', message: 'm1' },
+      { id: 'b', type: 'custom', description: ' Must be unique ', message: 'm2' },
+    ]],
+    ['duplicate rule id', [
+      { id: 'dup', type: 'required', message: 'm1' },
+      { id: 'dup', type: 'email', message: 'm2' },
+    ]],
+    ['unknown rule type', [
+      { id: 'a', type: 'unsupported', message: 'm1' },
+    ]],
+  ]) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(store.getState().document, {
+        type: 'updateComponentSpec',
+        componentId: 'comp-name-input',
+        patch: { config: { validationRules: rules } },
+      })
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `${label} validation rules were accepted`)
+  }
+
+  const reordered = [
+    ...store.getState().document.components['comp-name-input'].config.validationRules,
+  ].reverse()
+  const reorderedResult = applyCommandWithoutRevision(store.getState().document, {
+    type: 'updateComponentSpec',
+    componentId: 'comp-name-input',
+    patch: { config: { validationRules: reordered } },
+  })
+  assert(
+    reorderedResult.components['comp-name-input'].config.validationRules
+      .map(rule => rule.id)
+      .join(',') === reordered.map(rule => rule.id).join(','),
+    'reordering validation rules did not preserve the new order',
+  )
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('validation-rules-proposal')
+  proposalStore.getState().beginChangeSet('Edit validation rules')
+  assert(
+    proposalStore.getState().dispatch(updateCommand, 'Edit validation rules'),
+    'human validation rules edit failed in active change set',
+  )
+  assert(
+    proposalStore.getState().activeChangeSet.operations.length === 1 &&
+      proposalStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      proposalStore.getState().activeChangeSet.operations[0].command.type ===
+        'updateComponentSpec' &&
+      proposalStore.getState().document.components['comp-name-input'].config.validationRules
+        .length === original.length &&
+      proposalStore.getState().effectiveDocument.components['comp-name-input'].config
+        .validationRules.length === 3,
+    'human validation rules edit did not remain one effective-only change-set operation',
+  )
+  const proposalReload = await freshStore('validation-rules-proposal-reload')
+  assert(
+    proposalReload.getState().activeChangeSet?.operations.length === 1 &&
+      proposalReload.getState().effectiveDocument.components['comp-name-input'].config
+        .validationRules.length === 3,
+    'validation rules edit did not survive active change-set reload',
+  )
+  proposalReload.getState().rejectChangeSet()
+  assert(
+    proposalReload.getState().document.components['comp-name-input'].config.validationRules
+      .length === original.length,
+    'Reject did not discard the human validation rules edit',
+  )
+  proposalReload.getState().beginChangeSet('Accept validation rules edit')
+  proposalReload.getState().dispatch(updateCommand, 'Edit validation rules')
+  proposalReload.getState().acceptChangeSet()
+  assert(
+    proposalReload.getState().activeChangeSet === null &&
+      proposalReload.getState().document.components['comp-name-input'].config.validationRules
+        .length === 3,
+    'Accept did not confirm the human validation rules edit',
+  )
+
+  const validationDialogSource = readFileSync(
+    join(root, 'src/features/inspector/ValidationRulesDialog.tsx'),
+    'utf8',
+  )
+  assert(
+    validationDialogSource.includes("type: 'updateComponentSpec'") &&
+      validationDialogSource.includes('setRules') &&
+      !validationDialogSource.includes("type: 'connectEvent'") &&
+      !validationDialogSource.includes("type: 'bindApiOperation'"),
+    'Inspector validation rules UI is not draft-based or crossed into event/API editing',
+  )
+
+  const behaviorDetailsSource = readFileSync(
+    join(root, 'src/features/inspector/BehaviorDetails.tsx'),
+    'utf8',
+  )
+  assert(
+    behaviorDetailsSource.includes('ValidationRulesDialog') &&
+      behaviorDetailsSource.includes('supportsValidationEditing'),
+    'Behavior details did not wire the validation rules editor',
+  )
+})
+
 console.log(`\n${passed} regression groups passed`)
 rmSync(temp, { recursive: true, force: true })

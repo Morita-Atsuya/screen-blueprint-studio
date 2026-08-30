@@ -1,5 +1,6 @@
 const closed = { additionalProperties: false } as const
 const string = { type: 'string' } as const
+const nonEmptyString = { type: 'string', minLength: 1 } as const
 const nullableString = { type: ['string', 'null'] } as const
 
 const layoutProperties = {
@@ -17,13 +18,13 @@ const validationRuleSchema = {
   oneOf: [
     {
       type: 'object',
-      properties: { id: string, type: { const: 'required' }, message: string },
+      properties: { id: string, type: { const: 'required' }, message: nonEmptyString },
       required: ['id', 'type', 'message'],
       ...closed,
     },
     {
       type: 'object',
-      properties: { id: string, type: { const: 'email' }, message: string },
+      properties: { id: string, type: { const: 'email' }, message: nonEmptyString },
       required: ['id', 'type', 'message'],
       ...closed,
     },
@@ -32,15 +33,20 @@ const validationRuleSchema = {
       properties: {
         id: string,
         type: { const: type },
-        value: { type: 'integer', minimum: 0 },
-        message: string,
+        value: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        message: nonEmptyString,
       },
       required: ['id', 'type', 'value', 'message'],
       ...closed,
     })),
     {
       type: 'object',
-      properties: { id: string, type: { const: 'pattern' }, value: string, message: string },
+      properties: {
+        id: string,
+        type: { const: 'pattern' },
+        value: nonEmptyString,
+        message: nonEmptyString,
+      },
       required: ['id', 'type', 'value', 'message'],
       ...closed,
     },
@@ -49,8 +55,8 @@ const validationRuleSchema = {
       properties: {
         id: string,
         type: { const: 'custom' },
-        description: string,
-        message: string,
+        description: nonEmptyString,
+        message: nonEmptyString,
       },
       required: ['id', 'type', 'description', 'message'],
       ...closed,

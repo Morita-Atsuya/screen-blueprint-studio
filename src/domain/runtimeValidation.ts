@@ -329,13 +329,76 @@ function validateValidationRule(value: unknown, path: string): asserts value is 
   }
   string(rule.id, `${path}.id`)
   string(rule.message, `${path}.message`)
+  if (rule.message.trim().length === 0) fail(`${path}.message`, 'must not be empty')
   if (rule.type === 'minLength' || rule.type === 'maxLength') {
-    if (!Number.isInteger(rule.value) || (rule.value as number) < 0) {
-      fail(`${path}.value`, 'must be a non-negative integer')
+    if (!Number.isSafeInteger(rule.value) || (rule.value as number) < 0) {
+      fail(`${path}.value`, 'must be a non-negative safe integer')
     }
   }
-  if (rule.type === 'pattern') string(rule.value, `${path}.value`)
-  if (rule.type === 'custom') string(rule.description, `${path}.description`)
+  if (rule.type === 'pattern') {
+    string(rule.value, `${path}.value`)
+    if (rule.value.trim().length === 0) fail(`${path}.value`, 'must not be empty')
+    try {
+      new RegExp(rule.value)
+    } catch {
+      fail(`${path}.value`, 'must be a valid regular expression')
+    }
+  }
+  if (rule.type === 'custom') {
+    string(rule.description, `${path}.description`)
+    if (rule.description.trim().length === 0) fail(`${path}.description`, 'must not be empty')
+  }
+}
+
+const VALIDATION_RULE_SINGLETON_TYPES = new Set(['required', 'email', 'minLength', 'maxLength'])
+
+function validateValidationRules(value: unknown, path: string): asserts value is ValidationRule[] {
+  if (!Array.isArray(value)) fail(path, 'must be an array')
+  value.forEach((rule, index) => validateValidationRule(rule, `${path}[${index}]`))
+  const rules = value as ValidationRule[]
+
+  const seenIds = new Set<string>()
+  const seenSingletonTypes = new Set<string>()
+  const seenPatternValues = new Set<string>()
+  const seenCustomDescriptions = new Set<string>()
+
+  rules.forEach((rule, index) => {
+    if (seenIds.has(rule.id)) fail(`${path}[${index}].id`, 'must be unique within validationRules')
+    seenIds.add(rule.id)
+
+    if (VALIDATION_RULE_SINGLETON_TYPES.has(rule.type)) {
+      if (seenSingletonTypes.has(rule.type)) {
+        fail(`${path}[${index}]`, `duplicates another '${rule.type}' rule`)
+      }
+      seenSingletonTypes.add(rule.type)
+    }
+
+    if (rule.type === 'pattern') {
+      const normalized = rule.value.trim()
+      if (seenPatternValues.has(normalized)) {
+        fail(`${path}[${index}].value`, 'duplicates another pattern rule')
+      }
+      seenPatternValues.add(normalized)
+    }
+
+    if (rule.type === 'custom') {
+      const normalized = rule.description.trim()
+      if (seenCustomDescriptions.has(normalized)) {
+        fail(`${path}[${index}].description`, 'duplicates another custom rule')
+      }
+      seenCustomDescriptions.add(normalized)
+    }
+  })
+
+  const minRule = rules.find((rule): rule is Extract<ValidationRule, { type: 'minLength' }> =>
+    rule.type === 'minLength',
+  )
+  const maxRule = rules.find((rule): rule is Extract<ValidationRule, { type: 'maxLength' }> =>
+    rule.type === 'maxLength',
+  )
+  if (minRule && maxRule && minRule.value > maxRule.value) {
+    fail(path, 'minLength must not exceed maxLength')
+  }
 }
 
 export function validateComponentConfig(
@@ -393,10 +456,7 @@ export function validateComponentConfig(
       boolean(config.required, `${path}.required`)
       string(config.placeholder, `${path}.placeholder`)
       string(config.defaultValue, `${path}.defaultValue`)
-      if (!Array.isArray(config.validationRules)) fail(`${path}.validationRules`, 'must be an array')
-      config.validationRules.forEach((rule, index) =>
-        validateValidationRule(rule, `${path}.validationRules[${index}]`),
-      )
+      validateValidationRules(config.validationRules, `${path}.validationRules`)
       return
     case 'select':
       exactKeys(

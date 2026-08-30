@@ -282,7 +282,9 @@ type ValidationRule =
   | { id: EntityId; type: "custom"; description: string; message: string };
 ```
 
-`custom`はInspectorで他のruleと同じくread-only表示し、WebMCPで読み書きできるが、ワイヤーフレームpreviewでは自動評価しない。「手動確認が必要な仕様」と明示する。
+`validationRules`は`textInput`のInspectorから追加・編集・削除・並べ替えできる。編集dialogはlocal draftをSave時に1 commandとして確定し、Cancelで破棄する。ruleの`id`は内部生成のみでUIへ自由入力させない。typeごとに必要なfieldだけ表示し（length系は`value`、`pattern`は正規表現、`custom`は`description`、全typeで`message`）、`message`と`value`/`description`は空文字を許容しない。`required`・`email`・`minLength`・`maxLength`は同一component内で重複を拒否し、`minLength.value`は`maxLength.value`以下でなければならず、`pattern`の値や`custom`の`description`が他のruleと重複する場合も拒否する。`pattern`は有効な正規表現として解釈できる文字列に限る。これらの制約はdomain invariant（`validateComponentConfig`）で一元的に検証され、Inspector UIとWebMCP write経路の両方へ同じ基準で適用される。並べ替えた配列順は読み取り専用のBehavior投影にもそのまま反映される。
+
+`custom`はInspectorで他のruleと同じくfull CRUD対象だが、WebMCPで読み書きできる一方、ワイヤーフレームpreviewでは自動評価しない。「手動確認が必要な仕様」と明示する。
 
 ### 5.4 画面状態
 
@@ -330,7 +332,7 @@ interface ScreenEvent {
 }
 ```
 
-actionは配列順に実行される仕様としてInspectorへ表示し、`setState`は同screenのstate、`navigate`は任意screen、`callApi`は同screenの既存operation、`showAlert`は同screenのAlertから選択して、eventとactionを追加・編集・削除・並べ替えできる。編集dialogはlocal draftをSave時に1 commandとして確定する。`trigger.componentId`をcomponentとeventの正準な関連として扱い、Buttonの`eventId`は任意のprimary annotationに限定する。同じeventを両方が指しても一覧へ重複表示せず、event削除時はButton側の参照も解除する。API operationとvalidation rule自体の編集は別機能とする。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
+actionは配列順に実行される仕様としてInspectorへ表示し、`setState`は同screenのstate、`navigate`は任意screen、`callApi`は同screenの既存operation、`showAlert`は同screenのAlertから選択して、eventとactionを追加・編集・削除・並べ替えできる。編集dialogはlocal draftをSave時に1 commandとして確定する。`trigger.componentId`をcomponentとeventの正準な関連として扱い、Buttonの`eventId`は任意のprimary annotationに限定する。同じeventを両方が指しても一覧へ重複表示せず、event削除時はButton側の参照も解除する。API operationの編集は別機能とする。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
 
 ### 5.6 API操作
 
@@ -592,7 +594,7 @@ interface Diagnostic {
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。関連するevent／順序付きactionと、同screenのAPI operation／binding／結果stateを編集し、validation ruleをread-only投影する。非default状態では基本仕様と分離した状態別設定を表示
+- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。関連するevent／順序付きactionと、同screenのAPI operation／binding／結果stateを編集し、`textInput`のvalidation ruleを追加・編集・削除・並べ替え。非default状態では基本仕様と分離した状態別設定を表示
 - `Changes`: operation一覧とbefore/after
 
 component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameはPage frameのeditor-only labelとして使い、previewへ表示する文字列はText childと表示スタイルとして編集する。
@@ -785,6 +787,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - component treeの循環・不整合防止
 - subtree削除時の参照cleanup
 - state override適用
+- validation ruleの重複・矛盾（required/email/min/maxLengthの重複、min>max、空pattern/custom description、不正な正規表現等）の拒否
 - custom validation ruleの保存と非実行
 - change set承認、却下、revision conflict
 - Undo／Redo、revision単調増加、確定分岐時のredo破棄
