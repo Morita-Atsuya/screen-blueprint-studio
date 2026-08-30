@@ -26,6 +26,8 @@ import { draggableComponentId } from '../../dnd/editorDnd'
 import { StateDialog } from './StateDialog'
 import { useCanvasViewport } from './useCanvasViewport'
 import type { CanvasViewportControls } from './useCanvasViewport'
+import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
+import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
 import styles from './Canvas.module.css'
 
 export function Canvas() {
@@ -35,6 +37,7 @@ export function Canvas() {
   const [stateDialog, setStateDialog] = useState<'create' | 'edit' | null>(null)
   const [hoveredComponentId, setHoveredComponentId] = useState<EntityId | null>(null)
   const viewport = useCanvasViewport({ activeScreenId, selectedComponentId })
+  const componentAddMenu = useComponentAddMenu()
 
   if (!activeScreenId) {
     return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
@@ -149,6 +152,7 @@ export function Canvas() {
               spacePanActive={viewport.isSpacePanMode}
               consumeSuppressedClick={viewport.consumeSuppressedClick}
               beginPan={viewport.handleViewportPointerDown}
+              addMenu={componentAddMenu.trigger}
             />
             {screen.modalComponentIds.map((modalId, modalIndex) => (
               <CanvasFrame
@@ -168,6 +172,7 @@ export function Canvas() {
                 spacePanActive={viewport.isSpacePanMode}
                 consumeSuppressedClick={viewport.consumeSuppressedClick}
                 beginPan={viewport.handleViewportPointerDown}
+                addMenu={componentAddMenu.trigger}
               />
             ))}
           </div>
@@ -182,6 +187,7 @@ export function Canvas() {
           onClose={() => setStateDialog(null)}
         />
       ) : null}
+      {componentAddMenu.menu}
     </div>
   )
 }
@@ -269,6 +275,7 @@ interface CanvasComponentProps {
   spacePanActive: boolean
   consumeSuppressedClick(): boolean
   beginPan(event: React.PointerEvent<HTMLDivElement>): void
+  addMenu: ComponentAddMenuTrigger
   independentRoot?: boolean
 }
 
@@ -293,6 +300,7 @@ function CanvasFrame({
   spacePanActive,
   consumeSuppressedClick,
   beginPan,
+  addMenu,
 }: CanvasFrameProps) {
   const base = getOwnEntity(document.components, componentId)
   if (!base) return null
@@ -335,6 +343,7 @@ function CanvasFrame({
         spacePanActive={spacePanActive}
         consumeSuppressedClick={consumeSuppressedClick}
         beginPan={beginPan}
+        addMenu={addMenu}
         independentRoot
       />
     </section>
@@ -355,6 +364,7 @@ function CanvasComponent({
   spacePanActive,
   consumeSuppressedClick,
   beginPan,
+  addMenu,
   independentRoot = false,
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
@@ -433,11 +443,16 @@ function CanvasComponent({
       style={style}
       {...(!isRoot ? attributes : {})}
       {...(!isRoot ? listeners : {})}
-      aria-label={!isRoot ? t('canvas.dragAria', { label: displayName }) : undefined}
+      tabIndex={isRoot ? 0 : undefined}
+      aria-label={isRoot ? displayName : t('canvas.dragAria', { label: displayName })}
       onClick={event => {
         event.stopPropagation()
         if (consumeSuppressedClick()) return
         onSelect(component.id)
+      }}
+      onContextMenu={event => {
+        onSelect(component.id)
+        addMenu.openFromPointer(event, component.id)
       }}
       onPointerDown={event => {
         event.stopPropagation()
@@ -453,6 +468,10 @@ function CanvasComponent({
         if (!isRoot) listeners?.onTouchStart?.(event)
       }}
       onKeyDown={event => {
+        if (addMenu.openFromKeyboard(event, component.id)) {
+          onSelect(component.id)
+          return
+        }
         if (active) return
         event.stopPropagation()
         if (!isRoot) listeners?.onKeyDown?.(event)
@@ -516,6 +535,7 @@ function CanvasComponent({
                   spacePanActive={spacePanActive}
                   consumeSuppressedClick={consumeSuppressedClick}
                   beginPan={beginPan}
+                  addMenu={addMenu}
                 />
               </div>
             ))}

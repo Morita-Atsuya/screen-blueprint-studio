@@ -76,6 +76,7 @@ const rightPaneWidthBundle = join(temp, 'rightPaneWidth.mjs')
 const textDraftBundle = join(temp, 'textDraft.mjs')
 const componentBehaviorBundle = join(temp, 'componentBehavior.mjs')
 const canvasViewportMathBundle = join(temp, 'canvasViewportMath.mjs')
+const componentAddMenuModelBundle = join(temp, 'componentAddMenuModel.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -91,6 +92,7 @@ bundle('src/app/rightPaneWidth.ts', rightPaneWidthBundle)
 bundle('src/components/textDraft.ts', textDraftBundle)
 bundle('src/domain/componentBehavior.ts', componentBehaviorBundle)
 bundle('src/features/canvas/canvasViewportMath.ts', canvasViewportMathBundle)
+bundle('src/features/component-add-menu/componentAddMenuModel.ts', componentAddMenuModelBundle)
 
 let passed = 0
 
@@ -2560,6 +2562,143 @@ await test('Canvas auto-pan requires a fresh pointer or touch inside the viewpor
   )
 })
 
+await test('component add menu resolves valid positions and preserves atomic edit routing', async () => {
+  memoryStorage.clear()
+  const {
+    clampContextMenuPosition,
+    contextMenuPaletteItems,
+    isComponentMenuKey,
+    resolveComponentInsertTargets,
+  } = await import(moduleUrl(componentAddMenuModelBundle, 'component-add-menu-model'))
+  const { createAddComponentCommand } = await import(
+    moduleUrl(componentFactoryBundle, 'component-add-menu-factory')
+  )
+  const store = await freshStore('component-add-menu-history')
+
+  const placements = componentId =>
+    resolveComponentInsertTargets(store.getState().effectiveDocument, componentId)
+      .map(target => target.placement)
+      .join(',')
+  assert(placements('comp-list-page') === 'inside', 'page root exposed sibling positions')
+  assert(
+    placements('comp-list-section') === 'inside,before,after',
+    'container did not expose inside and sibling positions',
+  )
+  assert(
+    placements('comp-list-title') === 'before,after',
+    'leaf exposed an invalid inside position',
+  )
+  assert(placements('missing') === '', 'missing component exposed insertion positions')
+  assert(
+    contextMenuPaletteItems().map(item => item.kind).join(',') ===
+      'section,container,text,textInput,select,button,alert',
+    'context menu types diverged from Palette constraints',
+  )
+  assert(isComponentMenuKey('ContextMenu', false), 'Context Menu key was not recognized')
+  assert(isComponentMenuKey('F10', true), 'Shift+F10 was not recognized')
+  assert(!isComponentMenuKey('F10', false), 'plain F10 opened the component menu')
+  assert(
+    JSON.stringify(clampContextMenuPosition(
+      { x: 790, y: 590 },
+      { width: 220, height: 300 },
+      { width: 800, height: 600 },
+    )) === JSON.stringify({ x: 572, y: 292 }) &&
+      JSON.stringify(clampContextMenuPosition(
+        { x: -20, y: -30 },
+        { width: 220, height: 300 },
+        { width: 800, height: 600 },
+      )) === JSON.stringify({ x: 8, y: 8 }),
+    'context menu position did not stay inside the viewport',
+  )
+
+  const beforeTarget = resolveComponentInsertTargets(
+    store.getState().effectiveDocument,
+    'comp-list-title',
+  ).find(target => target.placement === 'before')
+  assert(beforeTarget, 'before insertion target was unavailable')
+  const command = createAddComponentCommand(
+    store.getState().effectiveDocument,
+    beforeTarget.screenId,
+    beforeTarget.parentId,
+    'button',
+    'en',
+    beforeTarget.position,
+  )
+  const beforeHistory = store.getState().history.length
+  assert(store.getState().dispatch(command, 'Add Button'), 'context menu add failed')
+  store.getState().setSelectedComponent(command.componentId)
+  assert(
+    store.getState().history.length === beforeHistory + 1 &&
+      store.getState().document.components[beforeTarget.parentId].childIds[0] ===
+        command.componentId &&
+      store.getState().ui.selectedComponentId === command.componentId,
+    'context menu add was not one selected history operation at the requested position',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().document.components[command.componentId] === undefined,
+    'Undo did not remove the context-menu component',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.components[command.componentId] !== undefined,
+    'Redo did not restore the context-menu component',
+  )
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('component-add-menu-change-set')
+  proposalStore.getState().beginChangeSet('Add from component menu')
+  const insideTarget = resolveComponentInsertTargets(
+    proposalStore.getState().effectiveDocument,
+    'comp-list-section',
+  ).find(target => target.placement === 'inside')
+  assert(insideTarget, 'inside insertion target was unavailable')
+  const proposed = createAddComponentCommand(
+    proposalStore.getState().effectiveDocument,
+    insideTarget.screenId,
+    insideTarget.parentId,
+    'text',
+    'en',
+    insideTarget.position,
+  )
+  proposalStore.getState().dispatch(proposed, 'Add Text')
+  assert(
+    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
+      proposalStore.getState().activeChangeSet?.operations[0].source === 'human' &&
+      proposalStore.getState().document.components[proposed.componentId] === undefined &&
+      proposalStore.getState().effectiveDocument.components[proposed.componentId] !== undefined,
+    'context menu add bypassed active change-set human routing',
+  )
+  proposalStore.getState().rejectChangeSet()
+  assert(
+    proposalStore.getState().effectiveDocument.components[proposed.componentId] === undefined,
+    'Reject retained the context-menu component',
+  )
+  proposalStore.getState().beginChangeSet('Accept component menu add')
+  proposalStore.getState().dispatch(proposed, 'Add Text')
+  proposalStore.getState().acceptChangeSet()
+  assert(
+    proposalStore.getState().document.components[proposed.componentId] !== undefined,
+    'Accept did not confirm the context-menu component',
+  )
+
+  const menuSource = readFileSync(
+    join(root, 'src/features/component-add-menu/ComponentAddMenu.tsx'),
+    'utf8',
+  )
+  assert(
+    menuSource.includes('role="menu"') &&
+      menuSource.includes('role="menuitem"') &&
+      menuSource.includes('createAddComponentCommand') &&
+      menuSource.includes('openFromKeyboard') &&
+      menuSource.includes("event.key === 'Escape'") &&
+      menuSource.includes("event.key === 'Enter' || event.key === ' '") &&
+      menuSource.includes("event.key === 'Home'") &&
+      menuSource.includes("event.key === 'End'"),
+    'shared component menu lost its command or keyboard accessibility path',
+  )
+})
+
 await test('component display labels separate structure from visible content', async () => {
   memoryStorage.clear()
   const { getComponentDisplayLabel } = await import(
@@ -2749,14 +2888,18 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
       canvasSource.includes('{...(!isRoot ? listeners : {})}') &&
       canvasSource.includes("data-canvas-draggable={!isRoot || undefined}") &&
       canvasSource.includes("data-drag-surface={!isRoot ? 'canvas' : undefined}") &&
-      canvasSource.includes("aria-label={!isRoot ? t('canvas.dragAria'"),
+      canvasSource.includes(
+        "aria-label={isRoot ? displayName : t('canvas.dragAria', { label: displayName })}",
+      ),
     'non-root Canvas wrappers are not accessible whole-surface drag activators',
   )
   assert(
     canvasSource.includes('disabled: { draggable: isRoot, droppable: true }') &&
       canvasSource.includes('if (!isRoot) listeners?.onPointerDown?.(event)') &&
       canvasSource.includes('if (!isRoot) listeners?.onTouchStart?.(event)') &&
-    canvasSource.match(/onKeyDown=\{event => \{\s*if \(active\) return\s*event\.stopPropagation\(\)/) &&
+    canvasSource.match(
+      /onKeyDown=\{event => \{[\s\S]*?if \(active\) return\s*event\.stopPropagation\(\)/,
+    ) &&
     canvasSource.includes('if (!isRoot) listeners?.onKeyDown?.(event)') &&
     canvasSource.match(/onPointerDown=\{event => \{\s*event\.stopPropagation\(\)/),
     'root gating or nested activator event isolation is missing',

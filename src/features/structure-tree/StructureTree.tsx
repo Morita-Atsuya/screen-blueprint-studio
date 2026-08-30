@@ -16,6 +16,8 @@ import {
   resolveInitialStructureTreePreferences,
   type StructureTreePreferences,
 } from './structureTreePreferences'
+import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
+import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
 import styles from './StructureTree.module.css'
 
 function browserStorage(): Storage | undefined {
@@ -122,6 +124,7 @@ export function StructureTree() {
   const [treePreferences, setTreePreferences] = useState<StructureTreePreferences>(() =>
     resolveInitialStructureTreePreferences(browserStorage()),
   )
+  const componentAddMenu = useComponentAddMenu()
   const nodeRefs = useRef(new Map<EntityId, HTMLDivElement>())
   const lastScrolledKeyRef = useRef<string | null>(null)
   const screen = activeScreenId ? getOwnEntity(effectiveDocument.screens, activeScreenId) : undefined
@@ -193,43 +196,10 @@ export function StructureTree() {
   if (!screen) return null
 
   return (
-    <ul className={styles.root}>
-      <TreeNode
-        componentId={screen.rootComponentId}
-        depth={0}
-        document={effectiveDocument}
-        activeState={activeState}
-        selectedComponentId={selectedComponentId}
-        onSelect={setSelectedComponent}
-        onMove={move}
-        onRemove={remove}
-        locale={locale}
-        t={t}
-        collapsedIds={activeScreenCollapsedIds}
-        onToggleCollapse={componentId =>
-          setTreePreferences(previous =>
-            updateScreenCollapsedIds(previous, activeScreenId, current => {
-              if (current.has(componentId)) {
-                current.delete(componentId)
-              } else {
-                current.add(componentId)
-              }
-              return current
-            }),
-          )
-        }
-        registerNodeRef={(componentId, element) => {
-          if (element) {
-            nodeRefs.current.set(componentId, element)
-          } else {
-            nodeRefs.current.delete(componentId)
-          }
-        }}
-      />
-      {screen.modalComponentIds.map(modalId => (
+    <>
+      <ul className={styles.root}>
         <TreeNode
-          key={modalId}
-          componentId={modalId}
+          componentId={screen.rootComponentId}
           depth={0}
           document={effectiveDocument}
           activeState={activeState}
@@ -252,6 +222,7 @@ export function StructureTree() {
               }),
             )
           }
+          addMenu={componentAddMenu.trigger}
           registerNodeRef={(componentId, element) => {
             if (element) {
               nodeRefs.current.set(componentId, element)
@@ -260,8 +231,45 @@ export function StructureTree() {
             }
           }}
         />
-      ))}
-    </ul>
+        {screen.modalComponentIds.map(modalId => (
+          <TreeNode
+            key={modalId}
+            componentId={modalId}
+            depth={0}
+            document={effectiveDocument}
+            activeState={activeState}
+            selectedComponentId={selectedComponentId}
+            onSelect={setSelectedComponent}
+            onMove={move}
+            onRemove={remove}
+            locale={locale}
+            t={t}
+            collapsedIds={activeScreenCollapsedIds}
+            onToggleCollapse={componentId =>
+              setTreePreferences(previous =>
+                updateScreenCollapsedIds(previous, activeScreenId, current => {
+                  if (current.has(componentId)) {
+                    current.delete(componentId)
+                  } else {
+                    current.add(componentId)
+                  }
+                  return current
+                }),
+              )
+            }
+            addMenu={componentAddMenu.trigger}
+            registerNodeRef={(componentId, element) => {
+              if (element) {
+                nodeRefs.current.set(componentId, element)
+              } else {
+                nodeRefs.current.delete(componentId)
+              }
+            }}
+          />
+        ))}
+      </ul>
+      {componentAddMenu.menu}
+    </>
   )
 }
 
@@ -278,6 +286,7 @@ interface TreeNodeProps {
   t: ReturnType<typeof useI18n>['t']
   collapsedIds: Set<EntityId>
   onToggleCollapse(componentId: EntityId): void
+  addMenu: ComponentAddMenuTrigger
   registerNodeRef(componentId: EntityId, element: HTMLDivElement | null): void
 }
 
@@ -294,6 +303,7 @@ function TreeNode({
   t,
   collapsedIds,
   onToggleCollapse,
+  addMenu,
   registerNodeRef,
 }: TreeNodeProps) {
   const baseComponent = getOwnEntity(document.components, componentId)
@@ -376,7 +386,15 @@ function TreeNode({
         }}
         className={`${styles.node} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
         style={style}
+        tabIndex={isIndependentRoot ? 0 : -1}
         onClick={() => onSelect(component.id)}
+        onContextMenu={event => {
+          onSelect(component.id)
+          addMenu.openFromPointer(event, component.id)
+        }}
+        onKeyDown={event => {
+          if (addMenu.openFromKeyboard(event, component.id)) onSelect(component.id)
+        }}
       >
         <span className={styles.disclosureSlot}>
           {hasChildren ? (
@@ -476,6 +494,7 @@ function TreeNode({
                   t={t}
                   collapsedIds={collapsedIds}
                   onToggleCollapse={onToggleCollapse}
+                  addMenu={addMenu}
                   registerNodeRef={registerNodeRef}
                 />
               </Fragment>
