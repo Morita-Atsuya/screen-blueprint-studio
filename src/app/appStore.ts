@@ -38,7 +38,6 @@ export interface UiState {
   activeStateId: EntityId | null
   selectedComponentId: EntityId | null
   rightPanelTab: 'inspector' | 'changes'
-  leftPanelTab: 'screens' | 'palette' | 'structure'
 }
 
 export interface RecoveryState {
@@ -74,7 +73,6 @@ export interface AppStore {
   setActiveState(stateId: EntityId | null): void
   setSelectedComponent(componentId: EntityId | null): void
   setRightPanelTab(tab: UiState['rightPanelTab']): void
-  setLeftPanelTab(tab: UiState['leftPanelTab']): void
 
   initializeWithRecovery(choice: 'sample' | 'download'): void
   exportCurrentData(): void
@@ -91,7 +89,6 @@ function initialUiState(doc: ProjectDocument, activeScreenId?: string): UiState 
     activeStateId: screen?.defaultStateId ?? null,
     selectedComponentId: null,
     rightPanelTab: 'inspector',
-    leftPanelTab: 'structure',
   }
 }
 
@@ -525,11 +522,6 @@ export const useAppStore = create<AppStore>((set, get) => {
           rightPanelTab: tab === 'changes' && !state.activeChangeSet ? 'inspector' : tab,
         },
       }))
-    },
-
-    setLeftPanelTab(tab) {
-      requireWritable()
-      set(state => ({ ui: { ...state.ui, leftPanelTab: tab } }))
     },
 
     initializeWithRecovery(choice) {
