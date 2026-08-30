@@ -1932,6 +1932,31 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
   )
 })
 
+await test('active state descriptions stay in accessible editor chrome', async () => {
+  const canvasSource = readFileSync(
+    join(root, 'src/features/canvas/Canvas.tsx'),
+    'utf8',
+  )
+  const canvasStyles = readFileSync(
+    join(root, 'src/features/canvas/Canvas.module.css'),
+    'utf8',
+  )
+  assert(
+    canvasSource.includes('activeState?.description.trim()') &&
+      canvasSource.includes('aria-describedby={isActive ? activeStateDescriptionId : undefined}') &&
+      canvasSource.includes('className={styles.stateDescription}') &&
+      canvasSource.indexOf('className={styles.stateDescription}') <
+        canvasSource.indexOf('className={styles.wireframe}'),
+    'active state description is not conditionally linked to its pill in editor chrome',
+  )
+  assert(
+    canvasStyles.includes('.stateDescription') &&
+      canvasStyles.includes('overflow-wrap: anywhere') &&
+      canvasStyles.includes('white-space: pre-wrap'),
+    'state description does not wrap safely at narrow widths',
+  )
+})
+
 await test('container layouts drive preview, DnD, and palette feedback', async () => {
   const canvasSource = readFileSync(
     join(root, 'src/features/canvas/Canvas.tsx'),

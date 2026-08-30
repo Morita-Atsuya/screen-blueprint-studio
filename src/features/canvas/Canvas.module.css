@@ -3,13 +3,21 @@
 
 .stateBar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--bg-surface);
+}
+
+.stateToolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
 }
 
 .stateTabs {
@@ -17,12 +25,14 @@
   flex: 1;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 .stateActions {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .stateBtn {
@@ -52,6 +62,16 @@
   border-color: var(--accent);
   background: var(--bg-hover);
   color: var(--accent);
+}
+
+.stateDescription {
+  margin: 0;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .wireframe {

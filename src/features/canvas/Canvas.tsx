@@ -45,55 +45,68 @@ export function Canvas() {
   const activeState = activeStateId
     ? getOwnEntity(effectiveDocument.screenStates, activeStateId)
     : undefined
+  const activeStateDescription = activeState?.description.trim()
+  const activeStateDescriptionId = activeStateDescription
+    ? 'active-state-description'
+    : undefined
 
   return (
     <div className={styles.root} onClick={() => setSelectedComponent(null)}>
       <div className={styles.stateBar}>
-        <div className={styles.stateTabs}>
-          {screen.stateIds.map(stateId => {
-            const state = getOwnEntity(effectiveDocument.screenStates, stateId)
-            if (!state) return null
-            return (
+        <div className={styles.stateToolbar}>
+          <div className={styles.stateTabs}>
+            {screen.stateIds.map(stateId => {
+              const state = getOwnEntity(effectiveDocument.screenStates, stateId)
+              if (!state) return null
+              const isActive = activeStateId === stateId
+              return (
+                <button
+                  key={stateId}
+                  className={`${styles.stateBtn} ${isActive ? styles.stateBtnActive : ''}`}
+                  onClick={event => { event.stopPropagation(); setActiveState(stateId) }}
+                  aria-pressed={isActive}
+                  aria-describedby={isActive ? activeStateDescriptionId : undefined}
+                  title={state.id === screen.defaultStateId ? t('states.defaultLocked') : undefined}
+                >
+                  {state.name}
+                </button>
+              )
+            })}
+          </div>
+          <div className={styles.stateActions}>
+            {activeState && activeState.id !== screen.defaultStateId ? (
               <button
-                key={stateId}
-                className={`${styles.stateBtn} ${activeStateId === stateId ? styles.stateBtnActive : ''}`}
-                onClick={event => { event.stopPropagation(); setActiveState(stateId) }}
-                aria-pressed={activeStateId === stateId}
-                title={state.id === screen.defaultStateId ? t('states.defaultLocked') : undefined}
+                type="button"
+                className={styles.stateIconBtn}
+                onClick={event => {
+                  event.stopPropagation()
+                  setStateDialog('edit')
+                }}
+                title={t('states.manage')}
+                aria-label={t('states.manageAria', { name: activeState?.name ?? '' })}
               >
-                {state.name}
+                ⋯
               </button>
-            )
-          })}
-        </div>
-        <div className={styles.stateActions}>
-          {activeState && activeState.id !== screen.defaultStateId ? (
+            ) : null}
             <button
               type="button"
               className={styles.stateIconBtn}
               onClick={event => {
                 event.stopPropagation()
-                setStateDialog('edit')
+                setStateDialog('create')
               }}
-              title={t('states.manage')}
-              aria-label={t('states.manageAria', { name: activeState?.name ?? '' })}
+              title={t('states.add')}
+              aria-label={t('states.add')}
             >
-              ⋯
+              +
             </button>
-          ) : null}
-          <button
-            type="button"
-            className={styles.stateIconBtn}
-            onClick={event => {
-              event.stopPropagation()
-              setStateDialog('create')
-            }}
-            title={t('states.add')}
-            aria-label={t('states.add')}
-          >
-            +
-          </button>
+          </div>
         </div>
+        {activeStateDescription ? (
+          <p id={activeStateDescriptionId} className={styles.stateDescription}>
+            {activeStateDescription}
+          </p>
+        ) : null}
       </div>
       <div className={styles.wireframe}>
         <CanvasComponent
