@@ -7,9 +7,11 @@ import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import {
   getComponentHierarchyLabel,
+  getComponentTreeLabel,
 } from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
-import { effectiveComponent } from '../../domain/selectors'
+import { resolveEffectiveComponentState } from '../../domain/selectors'
+import { createResetComponentOverrideCommand } from '../../domain/stateOverrides'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
@@ -152,6 +154,13 @@ export function StructureTree() {
     dispatch({ type: 'removeComponent', componentId: id }, 'Delete component')
   }
 
+  function resetOverride(id: EntityId) {
+    if (!activeState) return
+    const command = createResetComponentOverrideCommand(activeState, id)
+    if (!command) return
+    dispatch(command, `Reset ${activeState.name} override: ${id}`)
+  }
+
   useEffect(() => {
     setTreePreferences(previous => normalizeStructureTreePreferences(effectiveDocument, previous))
   }, [effectiveDocument])
@@ -209,6 +218,7 @@ export function StructureTree() {
           onSelect={setSelectedComponent}
           onMove={move}
           onRemove={remove}
+          onResetOverride={resetOverride}
           locale={locale}
           t={t}
           collapsedIds={activeScreenCollapsedIds}
@@ -244,6 +254,7 @@ export function StructureTree() {
             onSelect={setSelectedComponent}
             onMove={move}
             onRemove={remove}
+            onResetOverride={resetOverride}
             locale={locale}
             t={t}
             collapsedIds={activeScreenCollapsedIds}
@@ -284,6 +295,7 @@ interface TreeNodeProps {
   onSelect(id: EntityId): void
   onMove(id: EntityId, direction: -1 | 1): void
   onRemove(id: EntityId): void
+  onResetOverride(id: EntityId): void
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
   collapsedIds: Set<EntityId>
@@ -301,6 +313,7 @@ function TreeNode({
   onSelect,
   onMove,
   onRemove,
+  onResetOverride,
   locale,
   t,
   collapsedIds,
@@ -309,9 +322,10 @@ function TreeNode({
   registerNodeRef,
 }: TreeNodeProps) {
   const baseComponent = getOwnEntity(document.components, componentId)
-  const component = baseComponent
-    ? effectiveComponent(baseComponent, activeState)
+  const effectiveState = baseComponent
+    ? resolveEffectiveComponentState(baseComponent, activeState)
     : undefined
+  const component = effectiveState?.component
   const ownerScreen = component
     ? getOwnEntity(document.screens, component.screenId)
     : undefined
@@ -322,7 +336,9 @@ function TreeNode({
   const spokenLabel = component
     ? isPageRoot
       ? ownerScreen?.name ?? kindLabel
-      : getComponentHierarchyLabel(document, component, locale)
+      : isModalRoot
+        ? getComponentHierarchyLabel(document, component, locale)
+        : getComponentTreeLabel(component, locale)
     : ''
   const visibleLabel = component
     ? CONTAINER_KINDS.includes(component.kind) && !isPageRoot && !isModalRoot
@@ -354,6 +370,10 @@ function TreeNode({
   const isContainer = CONTAINER_KINDS.includes(component.kind)
   const hasChildren = isContainer && component.childIds.length > 0
   const isCollapsed = hasChildren && collapsedIds.has(component.id)
+  const isHidden = !component.common.visible
+  const isDisabled = !component.common.enabled
+  const hasOverride = effectiveState?.hasOverride ?? false
+  const hasStateStatus = isHidden || isDisabled || hasOverride
   const disclosureLabel = hasChildren
     ? t(isCollapsed ? 'tree.disclosureExpand' : 'tree.disclosureCollapse', { label: spokenLabel })
     : ''
@@ -383,6 +403,9 @@ function TreeNode({
         className={`${styles.node} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
         style={style}
         tabIndex={isIndependentRoot ? 0 : -1}
+        data-state-hidden={isHidden || undefined}
+        data-state-disabled={isDisabled || undefined}
+        data-state-overridden={hasOverride || undefined}
         onClick={() => onSelect(component.id)}
         onContextMenu={event => {
           onSelect(component.id)
@@ -427,8 +450,55 @@ function TreeNode({
             ⠿
           </button>
         )}
-        <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
-        {visibleLabel ? <span className={styles.name}>{visibleLabel}</span> : null}
+        <span className={styles.nodeBody}>
+          <span className={styles.nodeLabel}>
+            <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
+            {visibleLabel ? <span className={styles.name} title={visibleLabel}>{visibleLabel}</span> : null}
+          </span>
+          {hasStateStatus ? (
+            <span className={styles.stateStatus} data-editor-chrome>
+              {isHidden ? (
+                <span
+                  className={styles.stateBadge}
+                  aria-label={t('tree.stateHidden')}
+                  title={t('tree.stateHidden')}
+                >
+                  {t('tree.stateHiddenBadge')}
+                </span>
+              ) : null}
+              {isDisabled ? (
+                <span
+                  className={styles.stateBadge}
+                  aria-label={t('tree.stateDisabled')}
+                  title={t('tree.stateDisabled')}
+                >
+                  {t('tree.stateDisabledBadge')}
+                </span>
+              ) : null}
+              {hasOverride && activeState ? (
+                <button
+                  type="button"
+                  className={`${styles.stateBadge} ${styles.resetOverride}`}
+                  aria-label={t('tree.resetOverride', {
+                    label: spokenLabel,
+                    state: activeState.name,
+                  })}
+                  title={t('tree.resetOverride', {
+                    label: spokenLabel,
+                    state: activeState.name,
+                  })}
+                  onClick={event => {
+                    event.stopPropagation()
+                    onResetOverride(component.id)
+                  }}
+                >
+                  {t('tree.stateOverrideBadge')}
+                  <span aria-hidden="true"> ×</span>
+                </button>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
         {!isPageRoot && (
           <div className={styles.nodeActions}>
             {!isIndependentRoot ? (
@@ -486,6 +556,7 @@ function TreeNode({
                   onSelect={onSelect}
                   onMove={onMove}
                   onRemove={onRemove}
+                  onResetOverride={onResetOverride}
                   locale={locale}
                   t={t}
                   collapsedIds={collapsedIds}

@@ -34,9 +34,27 @@ export function effectiveComponent(
   comp: ScreenComponent,
   state: ScreenState | undefined,
 ): ScreenComponent {
-  if (!state) return comp
-  const override = getOwnEntity(state.componentOverrides, comp.id)
-  return applyStateOverride(comp, override)
+  return resolveEffectiveComponentState(comp, state).component
+}
+
+export interface EffectiveComponentState {
+  component: ScreenComponent
+  override: ComponentOverride | null
+  hasOverride: boolean
+}
+
+export function resolveEffectiveComponentState(
+  comp: ScreenComponent,
+  state: ScreenState | undefined,
+): EffectiveComponentState {
+  const override = state
+    ? getOwnEntity(state.componentOverrides, comp.id) ?? null
+    : null
+  return {
+    component: applyStateOverride(comp, override ?? undefined),
+    override,
+    hasOverride: override !== null && Object.keys(override).length > 0,
+  }
 }
 
 /** Get all components in a screen as a flat record */

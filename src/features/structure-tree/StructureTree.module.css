@@ -73,6 +73,19 @@
   transition: transform 120ms ease;
 }
 
+.nodeBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+.nodeLabel {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
 .kind {
   font-size: 0.72rem;
   color: var(--accent);
@@ -91,6 +104,39 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.stateStatus {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.stateBadge {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.resetOverride {
+  border-color: var(--agent-change-border);
+  color: var(--agent-accent);
+}
+.resetOverride:hover,
+.resetOverride:focus-visible {
+  background: var(--agent-change);
+  color: var(--agent-accent);
+}
+.resetOverride:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .nodeActions {

@@ -49,6 +49,22 @@ export function getComponentDisplayLabel(
   }
 }
 
+export function getComponentTreeLabel(
+  component: ScreenComponent,
+  locale: Locale = 'en',
+): string {
+  const label = getComponentDisplayLabel(component, locale)
+  const config = component.config
+  if (config.kind !== 'textInput' && config.kind !== 'select') return label
+
+  const value = config.kind === 'select'
+    ? config.options.find(option => option.value === config.defaultValue)?.label ??
+      config.defaultValue
+    : config.defaultValue
+  if (!value.trim()) return label
+  return readableText(`${label}: ${value}`, label)
+}
+
 export function getComponentHierarchyLabel(
   document: ProjectDocument,
   component: ScreenComponent,

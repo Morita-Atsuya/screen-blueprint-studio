@@ -77,6 +77,7 @@ const textDraftBundle = join(temp, 'textDraft.mjs')
 const componentBehaviorBundle = join(temp, 'componentBehavior.mjs')
 const canvasViewportMathBundle = join(temp, 'canvasViewportMath.mjs')
 const componentAddMenuModelBundle = join(temp, 'componentAddMenuModel.mjs')
+const stateOverridesBundle = join(temp, 'stateOverrides.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -93,6 +94,7 @@ bundle('src/components/textDraft.ts', textDraftBundle)
 bundle('src/domain/componentBehavior.ts', componentBehaviorBundle)
 bundle('src/features/canvas/canvasViewportMath.ts', canvasViewportMathBundle)
 bundle('src/features/component-add-menu/componentAddMenuModel.ts', componentAddMenuModelBundle)
+bundle('src/domain/stateOverrides.ts', stateOverridesBundle)
 
 let passed = 0
 
@@ -2889,6 +2891,185 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
   )
 })
 
+await test('Tree state presentation uses effective values and atomic override resets', async () => {
+  memoryStorage.clear()
+  const {
+    getComponentTreeLabel,
+  } = await import(moduleUrl(componentDisplayLabelBundle, 'tree-effective-labels'))
+  const {
+    resolveEffectiveComponentState,
+  } = await import(moduleUrl(selectorsBundle, 'tree-effective-state'))
+  const {
+    createResetComponentOverrideCommand,
+  } = await import(moduleUrl(stateOverridesBundle, 'tree-reset-override'))
+  const store = await freshStore('tree-effective-state')
+  const document = store.getState().document
+  const loading = document.screenStates['state-list-loading']
+  const success = document.screenStates['state-edit-success']
+
+  const loadingTitle = resolveEffectiveComponentState(
+    document.components['comp-list-title'],
+    loading,
+  )
+  assert(
+    loadingTitle.hasOverride &&
+      loadingTitle.component.config.text === 'Loading users...' &&
+      !loadingTitle.component.common.enabled &&
+      getComponentTreeLabel(loadingTitle.component) === 'Loading users...',
+    'Text Tree presentation did not match the Canvas effective state',
+  )
+  const defaultTitle = resolveEffectiveComponentState(
+    document.components['comp-list-title'],
+    document.screenStates['state-list-default'],
+  )
+  assert(
+    !defaultTitle.hasOverride &&
+      defaultTitle.component.config.text === 'User List' &&
+      defaultTitle.component.common.enabled,
+    'default state incorrectly exposed an override',
+  )
+
+  const successRole = resolveEffectiveComponentState(
+    document.components['comp-role-select'],
+    success,
+  )
+  assert(
+    successRole.hasOverride &&
+      successRole.component.config.defaultValue === 'admin' &&
+      getComponentTreeLabel(successRole.component) === 'Role: Administrator',
+    'Select Tree presentation did not resolve the effective option label',
+  )
+  const textInputWithValue = resolveEffectiveComponentState(
+    document.components['comp-name-input'],
+    {
+      ...success,
+      componentOverrides: {
+        'comp-name-input': { value: 'Alex Morgan' },
+      },
+    },
+  )
+  assert(
+    getComponentTreeLabel(textInputWithValue.component) === 'Name: Alex Morgan',
+    'TextInput Tree presentation did not include its effective value',
+  )
+
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().setActiveState(success.id)
+  const beforeResetHistory = store.getState().history.length
+  const reset = createResetComponentOverrideCommand(
+    store.getState().effectiveDocument.screenStates[success.id],
+    'comp-role-select',
+  )
+  assert(reset, 'existing Select override did not produce a reset command')
+  store.getState().dispatch(reset, 'Reset Role override')
+  assert(
+    store.getState().history.length === beforeResetHistory + 1 &&
+      !store.getState().document.screenStates[success.id]
+        .componentOverrides['comp-role-select'] &&
+      store.getState().document.screenStates[success.id]
+        .componentOverrides['comp-status-alert'] &&
+      store.getState().document.screenStates[success.id]
+        .componentOverrides['comp-actions'],
+    'reset was not one operation or removed unrelated component overrides',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().document.screenStates[success.id]
+      .componentOverrides['comp-role-select'].value === 'admin',
+    'Undo did not restore the reset override',
+  )
+  store.getState().redo()
+  assert(
+    !store.getState().document.screenStates[success.id]
+      .componentOverrides['comp-role-select'],
+    'Redo did not remove the override again',
+  )
+  const reloaded = await freshStore('tree-effective-state-reload')
+  assert(
+    !reloaded.getState().document.screenStates[success.id]
+      .componentOverrides['comp-role-select'],
+    'reset override did not survive reload',
+  )
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('tree-reset-change-set')
+  proposalStore.getState().setActiveScreen('screen-edit')
+  proposalStore.getState().setActiveState(success.id)
+  proposalStore.getState().beginChangeSet('Reset state override')
+  const proposalReset = createResetComponentOverrideCommand(
+    proposalStore.getState().effectiveDocument.screenStates[success.id],
+    'comp-role-select',
+  )
+  proposalStore.getState().dispatch(proposalReset, 'Reset Role override')
+  assert(
+    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
+      proposalStore.getState().activeChangeSet?.operations[0].source === 'human' &&
+      proposalStore.getState().document.screenStates[success.id]
+        .componentOverrides['comp-role-select'].value === 'admin' &&
+      !proposalStore.getState().effectiveDocument.screenStates[success.id]
+        .componentOverrides['comp-role-select'],
+    'reset bypassed active change-set human preview routing',
+  )
+  proposalStore.getState().rejectChangeSet()
+  assert(
+    proposalStore.getState().effectiveDocument.screenStates[success.id]
+      .componentOverrides['comp-role-select'].value === 'admin',
+    'Reject did not restore the effective override',
+  )
+  proposalStore.getState().beginChangeSet('Accept state override reset')
+  const acceptedReset = createResetComponentOverrideCommand(
+    proposalStore.getState().effectiveDocument.screenStates[success.id],
+    'comp-role-select',
+  )
+  proposalStore.getState().dispatch(acceptedReset, 'Reset Role override')
+  proposalStore.getState().acceptChangeSet()
+  assert(
+    !proposalStore.getState().document.screenStates[success.id]
+      .componentOverrides['comp-role-select'],
+    'Accept did not persist the override reset',
+  )
+  proposalStore.getState().dispatch({
+    type: 'removeScreenState',
+    stateId: success.id,
+  }, 'Remove Success state')
+  assert(
+    proposalStore.getState().ui.activeStateId === 'state-edit-default',
+    'state deletion left the removed state active in Tree',
+  )
+  assert(
+    createResetComponentOverrideCommand(
+      proposalStore.getState().effectiveDocument.screenStates['state-edit-default'],
+      'comp-role-select',
+    ) === null,
+    'default state exposed a reset command without an override',
+  )
+
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+  const treeStyles = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.module.css'),
+    'utf8',
+  )
+  assert(
+    treeSource.includes('resolveEffectiveComponentState') &&
+      treeSource.includes('getComponentTreeLabel') &&
+      treeSource.includes('data-state-hidden') &&
+      treeSource.includes('data-state-disabled') &&
+      treeSource.includes('data-state-overridden') &&
+      treeSource.includes('createResetComponentOverrideCommand'),
+    'Tree lost its shared effective-state presentation or reset path',
+  )
+  assert(
+    treeStyles.includes('.nodeBody') &&
+      treeStyles.includes('flex-direction: column') &&
+      treeStyles.includes('.stateStatus') &&
+      treeStyles.includes('flex-wrap: wrap'),
+    'Tree state markers no longer preserve narrow label space',
+  )
+})
+
 await test('editor-only drop affordances and internal names stay out of idle UI', async () => {
   const dropZoneSource = readFileSync(
     join(root, 'src/dnd/ComponentDropZone.tsx'),
@@ -4004,7 +4185,7 @@ await test('Select state values share one validated effective path', async () =>
     'Canvas still bypasses the effective Select config',
   )
   assert(
-    treeSource.includes('effectiveComponent(baseComponent, activeState)') &&
+    treeSource.includes('resolveEffectiveComponentState(baseComponent, activeState)') &&
       toolsSource.includes('effectiveComponent(baseComponent, activeState)'),
     'Tree or get_component does not use the domain effective-component selector',
   )
