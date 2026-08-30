@@ -85,6 +85,17 @@ export function App() {
     rightPaneWidthRef.current = rightPaneWidth
   }, [rightPaneWidth])
 
+  useEffect(() => {
+    if (!errorMessage) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setErrorMessage(null)
+    }
+
+    globalThis.addEventListener('keydown', handleKeyDown)
+    return () => globalThis.removeEventListener('keydown', handleKeyDown)
+  }, [errorMessage, setErrorMessage])
+
   function updateRightPaneWidth(nextWidth: number, persist = false) {
     const clamped = clampRightPaneWidth(nextWidth, viewportWidth)
     rightPaneWidthRef.current = clamped
@@ -196,12 +207,22 @@ export function App() {
         )}
 
         {errorMessage && (
-          <div
-            className={styles.toast}
-            onClick={() => setErrorMessage(null)}
-            role="alert"
-          >
-            {formatMessage(errorMessage)}
+          <div className={styles.toast} role="alert">
+            <span className={styles.toastMessage}>{formatMessage(errorMessage)}</span>
+            <button
+              className={styles.toastClose}
+              aria-label={t('common.close')}
+              title={t('common.close')}
+              onClick={() => setErrorMessage(null)}
+              onKeyDown={event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                event.currentTarget.click()
+              }}
+              type="button"
+            >
+              ×
+            </button>
           </div>
         )}
 
