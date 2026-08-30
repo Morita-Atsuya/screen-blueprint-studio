@@ -5,6 +5,8 @@ import type { ScreenState } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import { useI18n } from '../../i18n/I18nProvider'
 import styles from './StateDialog.module.css'
+import { useDialogReviewLock } from '../../app/reviewLock'
+import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 interface StateDialogProps {
   mode: 'create' | 'edit'
@@ -16,6 +18,7 @@ interface StateDialogProps {
 export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps) {
   const { t } = useI18n()
   const { dispatch, effectiveDocument, requestHumanDelete, setActiveState } = useAppStore()
+  const { reviewLocked, staleAfterReview } = useDialogReviewLock()
   const screen = getOwnEntity(effectiveDocument.screens, screenId)
   const isDefault = state?.id === screen?.defaultStateId
   const [name, setName] = useState(state?.name ?? t('states.newName'))
@@ -24,7 +27,7 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
   const canSubmit = name.trim().length > 0
 
   function save() {
-    if (!canSubmit) return
+    if (reviewLocked || staleAfterReview || !canSubmit) return
     let saved = false
     if (mode === 'create') {
       const stateId = nanoid()
@@ -95,6 +98,12 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
             save()
           }}
         >
+          {reviewLocked || staleAfterReview ? (
+            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+              {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
+            </p>
+          ) : null}
+          {reviewLocked ? <DialogReviewActions /> : null}
           <label className={styles.field}>
             <span>{t('states.name')}</span>
             <input
@@ -119,6 +128,7 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
                 type="button"
                 className={styles.dangerOutline}
                 onClick={remove}
+                disabled={reviewLocked || staleAfterReview}
                 data-state-delete
               >
                 {t('states.delete')}
@@ -128,7 +138,11 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
             <button type="button" className={styles.secondary} onClick={onClose}>
               {t('common.cancel')}
             </button>
-            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+            <button
+              type="submit"
+              className={styles.primary}
+              disabled={reviewLocked || staleAfterReview || !canSubmit}
+            >
               {t(mode === 'create' ? 'states.create' : 'common.save')}
             </button>
           </div>

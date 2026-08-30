@@ -31,6 +31,7 @@ export function DeleteConfirmationDialog() {
     confirmPendingDelete,
     acknowledgePendingDeleteImpact,
     cancelPendingDelete,
+    activeChangeSet,
   } = useAppStore()
   const dialogRef = useRef<HTMLElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -114,6 +115,9 @@ export function DeleteConfirmationDialog() {
           {t('delete.question', { label: targetLabel })}
         </p>
         <p className={styles.intro}>{t('delete.impactIntro')}</p>
+        {activeChangeSet ? (
+          <p className={styles.notice} role="status">{t('changes.dialogDraftLocked')}</p>
+        ) : null}
         <ul className={styles.impactList}>
           {impacts.map(([key, count]) => (
             <li key={key}>{t(COUNT_MESSAGE_KEYS[key], { count })}</li>
@@ -149,7 +153,7 @@ export function DeleteConfirmationDialog() {
             type="button"
             className={styles.delete}
             onClick={confirmPendingDelete}
-            disabled={pendingDelete.needsReviewAcknowledgement}
+            disabled={Boolean(activeChangeSet) || pendingDelete.needsReviewAcknowledgement}
           >
             {t('delete.confirm')}
           </button>

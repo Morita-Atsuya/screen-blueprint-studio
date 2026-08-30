@@ -1,5 +1,9 @@
 import { applyCommandWithoutRevision } from './applyCommand'
-import type { ChangeSet, ChangeSetOperation } from './collaboration'
+import {
+  assertAgentChangeSetOperations,
+  type ChangeSet,
+  type ChangeSetOperation,
+} from './collaboration'
 import type { ProjectDocument } from './model'
 
 export interface ChangeSetOperationSnapshot {
@@ -12,6 +16,7 @@ export function replayChangeSetOperations(
   baseDocument: ProjectDocument,
   operations: ChangeSetOperation[],
 ): ProjectDocument {
+  assertAgentChangeSetOperations(operations)
   let current = baseDocument
   for (const operation of operations) {
     current = applyCommandWithoutRevision(current, operation.command)
@@ -22,6 +27,7 @@ export function replayChangeSetOperations(
 export function getChangeSetOperationSnapshots(
   changeSet: ChangeSet,
 ): ChangeSetOperationSnapshot[] {
+  assertAgentChangeSetOperations(changeSet.operations)
   const snapshots: ChangeSetOperationSnapshot[] = []
   let before = changeSet.baseDocument
   for (const operation of changeSet.operations) {

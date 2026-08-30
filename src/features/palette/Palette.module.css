@@ -1,4 +1,10 @@
 .root { display: flex; flex-direction: column; gap: 4px; }
+.reviewLock {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
 .list { display: flex; flex-direction: column; gap: 3px; }
 .item {
   display: flex;

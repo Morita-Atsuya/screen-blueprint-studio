@@ -2,7 +2,11 @@ import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type { ProjectDocument, EntityId } from '../domain/model'
 import type { ComponentSubtreeSnapshot, DomainCommand } from '../domain/commands'
-import type { ChangeSet, RejectedChangeSetRecord } from '../domain/collaboration'
+import {
+  assertAgentChangeSetOperations,
+  type ChangeSet,
+  type RejectedChangeSetRecord,
+} from '../domain/collaboration'
 import { replayChangeSetOperations } from '../domain/changeSetReplay'
 import {
   applyCommand,
@@ -86,6 +90,8 @@ export interface AppStore {
   toast: ToastState | null
   pendingDelete: PendingDeleteRequest | null
   componentClipboard: ComponentSubtreeSnapshot | null
+  reviewDraftProtectionIds: string[]
+  reviewDraftDocument: ProjectDocument | null
   persistenceUnavailable: boolean
   // effectiveDocument = computeEffective(document, activeChangeSet)
   effectiveDocument: ProjectDocument
@@ -95,7 +101,7 @@ export interface AppStore {
   copyComponent(componentId: EntityId): boolean
   pasteComponent(destinationComponentId: EntityId, label: string): boolean
   beginChangeSet(summary: string): ChangeSet
-  dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'human' | 'agent'): void
+  dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'agent'): void
   acceptChangeSet(historyLabel?: string): void
   rejectChangeSet(): void
   undo(): void
@@ -105,6 +111,7 @@ export interface AppStore {
   setActiveState(stateId: EntityId | null): void
   setSelectedComponent(componentId: EntityId | null): void
   setRightPanelTab(tab: UiState['rightPanelTab']): void
+  setReviewDraftProtected(id: string, protectedDraft: boolean): void
 
   initializeWithRecovery(choice: 'sample' | 'download'): void
   exportCurrentData(): void
@@ -112,6 +119,7 @@ export interface AppStore {
   showToast(input: ToastInput): EntityId
   dismissToast(toastId?: EntityId): void
   runToastAction(toastId: EntityId): boolean
+  notifyReviewLock(): void
   requestHumanDelete(
     command: DeleteCommand,
     historyLabel: string,
@@ -270,9 +278,7 @@ function createErrorToast(message: UiMessage): ToastState {
   return createToast({ severity: 'error', message })
 }
 
-type DeleteUndoToken =
-  | { kind: 'history'; historyEntryId: EntityId }
-  | { kind: 'change-set'; changeSetId: EntityId; operationId: EntityId }
+type DeleteUndoToken = { kind: 'history'; historyEntryId: EntityId }
 
 export const useAppStore = create<AppStore>((set, get) => {
   const loadResult = loadFromStorage()
@@ -368,38 +374,23 @@ export const useAppStore = create<AppStore>((set, get) => {
     })
   }
 
+  function notifyReviewLock(): void {
+    const state = get()
+    if (state.toast?.message.key === 'changes.editLocked') return
+    state.showToast({
+      severity: 'info',
+      message: { key: 'changes.editLocked' },
+    })
+  }
+
   function undoDelete(token: DeleteUndoToken): void {
     const state = get()
-    if (token.kind === 'history') {
-      const currentEntry = state.history[state.history.length - 1]
-      if (state.activeChangeSet || currentEntry?.id !== token.historyEntryId) {
-        state.showToast({ severity: 'error', message: { key: 'delete.undoUnavailable' } })
-        return
-      }
-      state.undo()
-      return
-    }
-
-    const changeSet = state.activeChangeSet
-    const lastOperation = changeSet?.operations[changeSet.operations.length - 1]
-    if (
-      !changeSet ||
-      changeSet.id !== token.changeSetId ||
-      lastOperation?.id !== token.operationId
-    ) {
+    const currentEntry = state.history[state.history.length - 1]
+    if (state.activeChangeSet || currentEntry?.id !== token.historyEntryId) {
       state.showToast({ severity: 'error', message: { key: 'delete.undoUnavailable' } })
       return
     }
-
-    const nextChangeSet: ChangeSet = {
-      ...changeSet,
-      version: changeSet.version + 1,
-      operations: changeSet.operations.slice(0, -1),
-    }
-    const effective = computeEffective(state.document, nextChangeSet)
-    const nextUi = reconcileUiState(effective, state.ui)
-    set({ activeChangeSet: nextChangeSet, effectiveDocument: effective, ui: nextUi })
-    markPersistence(persistIfAvailable(state.document, nextChangeSet, nextUi.activeScreenId))
+    state.undo()
   }
 
   function executeHumanDelete(
@@ -408,39 +399,17 @@ export const useAppStore = create<AppStore>((set, get) => {
     onDeleted?: () => void,
   ): boolean {
     const before = get()
-    const previousChangeSetId = before.activeChangeSet?.id
-    const previousOperationCount = before.activeChangeSet?.operations.length ?? 0
     if (!before.dispatch(command, historyLabel)) return false
 
     const after = get()
-    let token: DeleteUndoToken
-    if (previousChangeSetId) {
-      const operation = after.activeChangeSet?.operations[previousOperationCount]
-      if (
-        after.activeChangeSet?.id !== previousChangeSetId ||
-        !operation ||
-        operation.command !== command
-      ) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          'The delete operation was not appended to the active change set',
-        )
-      }
-      token = {
-        kind: 'change-set',
-        changeSetId: previousChangeSetId,
-        operationId: operation.id,
-      }
-    } else {
-      const historyEntry = after.history[after.history.length - 1]
-      if (!historyEntry || historyEntry.before !== before.document) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          'The delete operation did not create a history entry',
-        )
-      }
-      token = { kind: 'history', historyEntryId: historyEntry.id }
+    const historyEntry = after.history[after.history.length - 1]
+    if (!historyEntry || historyEntry.before !== before.document) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        'The delete operation did not create a history entry',
+      )
     }
+    const token: DeleteUndoToken = { kind: 'history', historyEntryId: historyEntry.id }
 
     onDeleted?.()
     showDeleteUndoToast(token)
@@ -459,12 +428,18 @@ export const useAppStore = create<AppStore>((set, get) => {
     toast: null,
     pendingDelete: null,
     componentClipboard: null,
+    reviewDraftProtectionIds: [],
+    reviewDraftDocument: null,
     persistenceUnavailable,
     effectiveDocument: effectiveDoc,
 
     dispatch(command, label = 'Edit') {
       requireWritable()
       const state = get()
+      if (state.activeChangeSet) {
+        notifyReviewLock()
+        return false
+      }
       if (command.type === 'moveComponent') {
         const outcome = classifyComponentMove(
           state.effectiveDocument,
@@ -473,16 +448,6 @@ export const useAppStore = create<AppStore>((set, get) => {
           command.position,
         )
         if (outcome.status === 'no-op') return true
-      }
-      // While a change set is active, human edits go into the change set, not the confirmed doc
-      if (state.activeChangeSet) {
-        try {
-          state.dispatchToChangeSet(state.activeChangeSet.id, command, 'human')
-        } catch (e) {
-          set({ toast: createErrorToast(toUiMessage(e)) })
-          return false
-        }
-        return true
       }
       try {
         const next = applyCommand(state.document, command)
@@ -628,15 +593,27 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       const nextUi = {
         ...reconcileUiState(state.document, state.ui),
-        rightPanelTab: 'changes' as const,
       }
-      set({ activeChangeSet: changeSet, effectiveDocument: state.document, ui: nextUi })
+      set({
+        activeChangeSet: changeSet,
+        effectiveDocument: state.document,
+        ui: nextUi,
+        reviewDraftDocument: state.reviewDraftProtectionIds.length > 0
+          ? state.document
+          : state.reviewDraftDocument,
+      })
       markPersistence(persistIfAvailable(state.document, changeSet, nextUi.activeScreenId))
       return changeSet
     },
 
     dispatchToChangeSet(changeSetId, command, source = 'agent') {
       requireWritable()
+      if (source !== 'agent') {
+        throw new DomainError(
+          'INVALID_CHANGE_SET_SOURCE',
+          'Human operations cannot be added to an active change set',
+        )
+      }
       const state = get()
       if (!state.activeChangeSet || state.activeChangeSet.id !== changeSetId) {
         throw new DomainError('CHANGE_SET_REQUIRED', 'No matching active change set')
@@ -666,7 +643,15 @@ export const useAppStore = create<AppStore>((set, get) => {
         operations: [...state.activeChangeSet.operations, operation],
       }
       const effective = computeEffective(state.document, newChangeSet)
-      const nextUi = reconcileUiState(effective, state.ui)
+      const reconciledUi = reconcileUiState(effective, state.ui)
+      const nextUi = state.reviewDraftProtectionIds.length > 0
+        ? {
+            ...reconciledUi,
+            activeScreenId: state.ui.activeScreenId,
+            activeStateId: state.ui.activeStateId,
+            selectedComponentId: state.ui.selectedComponentId,
+          }
+        : reconciledUi
       set({ activeChangeSet: newChangeSet, effectiveDocument: effective, ui: nextUi })
       markPersistence(persistIfAvailable(state.document, newChangeSet, nextUi.activeScreenId))
     },
@@ -676,6 +661,20 @@ export const useAppStore = create<AppStore>((set, get) => {
       const state = get()
       if (!state.activeChangeSet) throw new DomainError('CHANGE_SET_NOT_ACTIVE', 'No active change set')
       try {
+        assertAgentChangeSetOperations(state.activeChangeSet.operations)
+        if (state.activeChangeSet.operations.length === 0) {
+          const nextUi = {
+            ...reconcileUiState(state.document, state.ui),
+            rightPanelTab: 'inspector' as const,
+          }
+          set({
+            activeChangeSet: null,
+            effectiveDocument: state.document,
+            ui: nextUi,
+          })
+          markPersistence(persistIfAvailable(state.document, null, nextUi.activeScreenId))
+          return
+        }
         // Atomic re-validation: apply all ops on baseDocument
         const next = applyTransaction(
           state.activeChangeSet.baseDocument,
@@ -695,8 +694,16 @@ export const useAppStore = create<AppStore>((set, get) => {
             { before: selectedBefore, after: state.ui.selectedComponentId },
           ),
         ]
+        const reconciledUi = reconcileUiState(next, state.ui)
         const nextUi = {
-          ...reconcileUiState(next, state.ui),
+          ...(state.reviewDraftProtectionIds.length > 0
+            ? {
+                ...reconciledUi,
+                activeScreenId: state.ui.activeScreenId,
+                activeStateId: state.ui.activeStateId,
+                selectedComponentId: state.ui.selectedComponentId,
+              }
+            : reconciledUi),
           rightPanelTab: 'inspector' as const,
         }
         set({
@@ -748,7 +755,9 @@ export const useAppStore = create<AppStore>((set, get) => {
       const nextUi = {
         ...reconcileUiState(state.document, {
           ...state.ui,
-          selectedComponentId: selectedBefore,
+          selectedComponentId: state.reviewDraftProtectionIds.length > 0
+            ? state.ui.selectedComponentId
+            : selectedBefore,
         }),
         rightPanelTab: 'inspector' as const,
       }
@@ -905,6 +914,28 @@ export const useAppStore = create<AppStore>((set, get) => {
       })
     },
 
+    setReviewDraftProtected(id, protectedDraft) {
+      set(state => {
+        const exists = state.reviewDraftProtectionIds.includes(id)
+        if (exists === protectedDraft) return state
+        const reviewDraftProtectionIds = protectedDraft
+          ? [...state.reviewDraftProtectionIds, id]
+          : state.reviewDraftProtectionIds.filter(candidate => candidate !== id)
+        const protectionEnded = reviewDraftProtectionIds.length === 0
+        return {
+          reviewDraftProtectionIds,
+          reviewDraftDocument: protectionEnded
+            ? null
+            : state.reviewDraftDocument ??
+              state.activeChangeSet?.baseDocument ??
+              null,
+          ...(protectionEnded
+            ? { ui: reconcileUiState(state.effectiveDocument, state.ui) }
+            : {}),
+        }
+      })
+    },
+
     runToastAction(toastId) {
       let callback: (() => void) | undefined
       set(state => {
@@ -921,8 +952,14 @@ export const useAppStore = create<AppStore>((set, get) => {
       return true
     },
 
+    notifyReviewLock,
+
     requestHumanDelete(command, historyLabel, onDeleted) {
       const state = get()
+      if (state.activeChangeSet) {
+        notifyReviewLock()
+        return 'failed'
+      }
       if (state.pendingDelete) {
         state.showToast({ severity: 'error', message: { key: 'delete.requestPending' } })
         return 'failed'
@@ -956,6 +993,10 @@ export const useAppStore = create<AppStore>((set, get) => {
       const request = state.pendingDelete
       if (!request) return
       if (request.needsReviewAcknowledgement) return
+      if (state.activeChangeSet) {
+        notifyReviewLock()
+        return
+      }
       try {
         const analysis = analyzeDeleteImpact(state.effectiveDocument, request.command)
         const routingKey = deleteRoutingKey(state)
@@ -1014,6 +1055,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         toast: null,
         pendingDelete: null,
         componentClipboard: null,
+        reviewDraftProtectionIds: [],
+        reviewDraftDocument: null,
       })
       const cleared = clearStorage()
       markPersistence(cleared && persistIfAvailable(sampleProject, null, nextUi.activeScreenId))

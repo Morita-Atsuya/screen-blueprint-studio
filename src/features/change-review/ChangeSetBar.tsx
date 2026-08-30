@@ -16,6 +16,9 @@ export function ChangeSetBar() {
         <span className={styles.count}>
           {formatMessage(changeSetOperationCountMessage(activeChangeSet.operations.length))}
         </span>
+        <span className={styles.lockStatus} role="status">
+          {t('changes.editLockedStatus')}
+        </span>
       </div>
       <div className={styles.actions}>
         <button

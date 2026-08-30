@@ -28,6 +28,14 @@
   white-space: nowrap;
 }
 
+.reviewLock {
+  max-width: 240px;
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .item {
   width: 100%;
   padding: 7px 8px;

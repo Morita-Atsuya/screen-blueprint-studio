@@ -59,11 +59,19 @@ export function App() {
   const nextUndo = history[history.length - 1]
   const nextRedo = redoStack[redoStack.length - 1]
   const undoTitle = nextUndo
-    ? t('app.undoAction', { label: nextUndo.label })
-    : t('app.undo')
+    ? activeChangeSet
+      ? t('changes.editLocked')
+      : t('app.undoAction', { label: nextUndo.label })
+    : activeChangeSet
+      ? t('changes.editLocked')
+      : t('app.undo')
   const redoTitle = nextRedo
-    ? t('app.redoAction', { label: nextRedo.label })
-    : t('app.redo')
+    ? activeChangeSet
+      ? t('changes.editLocked')
+      : t('app.redoAction', { label: nextRedo.label })
+    : activeChangeSet
+      ? t('changes.editLocked')
+      : t('app.redo')
   const activeScreen = ui.activeScreenId
     ? getOwnEntity(effectiveDocument.screens, ui.activeScreenId)
     : undefined

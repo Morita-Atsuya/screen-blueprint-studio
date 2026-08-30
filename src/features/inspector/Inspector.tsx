@@ -52,6 +52,8 @@ export function Inspector() {
     copyComponent,
     pasteComponent,
     componentClipboard,
+    reviewDraftProtectionIds,
+    reviewDraftDocument,
     activeChangeSet,
     setSelectedComponent,
     requestHumanDelete,
@@ -73,14 +75,37 @@ export function Inspector() {
     return <p className={styles.empty}>{t('inspector.selectComponent')}</p>
   }
 
-  const comp = getOwnEntity(effectiveDocument.components, selectedComponentId)
+  const selectedEffectiveComponent = getOwnEntity(
+    effectiveDocument.components,
+    selectedComponentId,
+  )
+  const protectedActiveStateMissing = Boolean(
+    ui.activeStateId &&
+    !getOwnEntity(effectiveDocument.screenStates, ui.activeStateId),
+  )
+  const inspectorDialogProtected = reviewDraftProtectionIds.some(id =>
+    id.startsWith('dialog:')
+  )
+  const inspectorDocument = (
+    reviewDraftProtectionIds.length > 0 &&
+    reviewDraftDocument &&
+    (
+      inspectorDialogProtected ||
+      !selectedEffectiveComponent ||
+      protectedActiveStateMissing
+    )
+  )
+    ? reviewDraftDocument
+    : effectiveDocument
+  const comp = selectedEffectiveComponent ??
+    getOwnEntity(inspectorDocument.components, selectedComponentId)
   if (!comp) return null
   const activeState = ui.activeStateId
-    ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
+    ? getOwnEntity(inspectorDocument.screenStates, ui.activeStateId)
     : undefined
-  const screen = getOwnEntity(effectiveDocument.screens, comp.screenId)
+  const screen = getOwnEntity(inspectorDocument.screens, comp.screenId)
   const selectionContext = getComponentSelectionContext(
-    effectiveDocument,
+    inspectorDocument,
     selectedComponentId,
     locale,
     activeState,
@@ -88,12 +113,14 @@ export function Inspector() {
   if (!selectionContext) return null
 
   const cfg = comp.config
-  const behavior = getComponentBehavior(effectiveDocument, comp.id, locale)
-  const eventEditor = getEventEditorContext(effectiveDocument, comp.id, locale)
-  const apiEditor = getApiEditorContext(effectiveDocument, comp.id, locale)
-  const validationEditor = getValidationRulesEditorContext(effectiveDocument, comp.id, locale)
-  const canCopy = canDuplicateComponent(effectiveDocument, comp.id)
-  const canPaste = canPasteComponent(effectiveDocument, componentClipboard, comp.id)
+  const behavior = getComponentBehavior(inspectorDocument, comp.id, locale)
+  const eventEditor = getEventEditorContext(inspectorDocument, comp.id, locale)
+  const apiEditor = getApiEditorContext(inspectorDocument, comp.id, locale)
+  const validationEditor = getValidationRulesEditorContext(inspectorDocument, comp.id, locale)
+  const canCopy = Boolean(selectedEffectiveComponent) &&
+    canDuplicateComponent(effectiveDocument, comp.id)
+  const canPaste = Boolean(selectedEffectiveComponent) &&
+    canPasteComponent(effectiveDocument, componentClipboard, comp.id)
   const canDelete = screen?.rootComponentId !== comp.id
   const hasContent = componentHasContentSection(cfg.kind)
   const hasBehaviorSection = Boolean(
@@ -257,6 +284,11 @@ export function Inspector() {
           {t('inspector.hierarchyShortcutHint')}
         </p>
       </header>
+      {activeChangeSet ? (
+        <p id="inspector-review-lock" className={styles.reviewLock}>
+          {t('changes.editLocked')}
+        </p>
+      ) : null}
       <InspectorSection
         sectionId="basic"
         title={t('inspector.sectionBasic')}

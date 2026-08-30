@@ -9,11 +9,23 @@
   flex-shrink: 0;
 }
 
-.info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.info { display: flex; min-width: 0; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .label { font-size: 0.78rem; color: var(--agent-accent); font-weight: 700; }
-.summary { font-size: 0.83rem; color: var(--text); }
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.83rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .count { font-size: 0.75rem; color: var(--text-faint); }
+.lockStatus {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 
 .actions { display: flex; gap: 8px; flex-shrink: 0; }
 
@@ -39,3 +51,20 @@
   cursor: pointer;
 }
 .accept:hover { background: var(--accent-hover); }
+
+@media (max-width: 640px) {
+  .bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .actions button {
+    flex: 1;
+  }
+}

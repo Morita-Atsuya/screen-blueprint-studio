@@ -99,7 +99,7 @@ function validateActiveChangeSet(value: unknown, document: ProjectDocument): Cha
     if (!isRecord(operation)) throw new Error(`activeChangeSet.operations[${index}] must be an object`)
     requireString(operation.id, `activeChangeSet.operations[${index}].id`)
     requireString(operation.issuedAt, `activeChangeSet.operations[${index}].issuedAt`)
-    if (operation.source !== 'human' && operation.source !== 'agent') {
+    if (operation.source !== 'agent') {
       throw new Error(`activeChangeSet.operations[${index}].source is invalid`)
     }
     if (!isRecord(operation.command) || !COMMAND_TYPES.has(String(operation.command.type))) {
@@ -155,6 +155,19 @@ export function loadFromStorage(): LoadResult {
       status: 'success',
       document: data.document,
       activeScreenId: data.activeScreenId,
+    }
+  }
+  if (
+    isRecord(data.activeChangeSet) &&
+    Array.isArray(data.activeChangeSet.operations) &&
+    data.activeChangeSet.operations.some(operation =>
+      isRecord(operation) && (operation as { source: unknown }).source === 'human'
+    )
+  ) {
+    return {
+      status: 'invalid',
+      rawData: raw,
+      error: 'The saved change set contains human edits and requires explicit recovery',
     }
   }
   try {

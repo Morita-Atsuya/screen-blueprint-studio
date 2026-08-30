@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type { EventEditorContext } from '../../domain/componentBehavior'
@@ -6,6 +7,8 @@ import type { EventAction, ScreenEvent } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
+import { useDialogReviewLock } from '../../app/reviewLock'
+import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 type DialogMode = 'create' | 'edit'
 type DialogResult = 'cancelled' | 'saved' | 'deleted'
@@ -33,6 +36,7 @@ export function EventDialog({
 }: EventDialogProps) {
   const { t } = useI18n()
   const { dispatch, requestHumanDelete } = useAppStore()
+  const { reviewLocked, staleAfterReview } = useDialogReviewLock()
   const dialogRef = useRef<HTMLElement>(null)
   const titleId = useId()
   const [name, setName] = useState(event?.name ?? t('behavior.newEventName'))
@@ -54,7 +58,7 @@ export function EventDialog({
   )
 
   function save() {
-    if (!canSubmit || (mode === 'edit' && !persistedEventId)) return
+    if (reviewLocked || staleAfterReview || !canSubmit || (mode === 'edit' && !persistedEventId)) return
     const eventActions = actions.map(action => action.value)
     let saved: boolean
     if (mode === 'create') {
@@ -109,7 +113,8 @@ export function EventDialog({
     onClose('cancelled')
   }
 
-  return (
+  return createPortal(
+    (
     <div
       className={styles.backdrop}
       onMouseDown={event => {
@@ -152,6 +157,12 @@ export function EventDialog({
             save()
           }}
         >
+          {reviewLocked || staleAfterReview ? (
+            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+              {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
+            </p>
+          ) : null}
+          {reviewLocked ? <DialogReviewActions /> : null}
           <label className={styles.field}>
             <span>{t('behavior.eventName')}</span>
             <input
@@ -273,6 +284,7 @@ export function EventDialog({
                 type="button"
                 className={styles.dangerOutline}
                 onClick={remove}
+                disabled={reviewLocked || staleAfterReview}
                 data-event-delete
               >
                 {t('behavior.deleteEvent')}
@@ -282,13 +294,19 @@ export function EventDialog({
             <button type="button" className={styles.secondary} onClick={close}>
               {t('common.cancel')}
             </button>
-            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+            <button
+              type="submit"
+              className={styles.primary}
+              disabled={reviewLocked || staleAfterReview || !canSubmit}
+            >
               {t(mode === 'create' ? 'behavior.addEvent' : 'common.save')}
             </button>
           </div>
         </form>
       </section>
     </div>
+    ),
+    document.body,
   )
 }
 

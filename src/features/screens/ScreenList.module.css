@@ -1,4 +1,10 @@
 .root { display: flex; flex-direction: column; gap: 4px; }
+.reviewLock {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
 
 .actions { padding: 4px 0 8px; }
 
@@ -29,6 +35,7 @@
   border-color: var(--accent-hover);
   color: var(--accent-hover);
 }
+.addBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .list { display: flex; flex-direction: column; gap: 2px; }
 

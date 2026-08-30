@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type { ValidationRulesEditorContext } from '../../domain/componentBehavior'
@@ -7,6 +8,8 @@ import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
+import { useDialogReviewLock } from '../../app/reviewLock'
+import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 type RuleType = ValidationRule['type']
 type DialogResult = 'cancelled' | 'saved'
@@ -174,6 +177,7 @@ export function ValidationRulesDialog({
 }: ValidationRulesDialogProps) {
   const { t } = useI18n()
   const dispatch = useAppStore(state => state.dispatch)
+  const { reviewLocked, staleAfterReview } = useDialogReviewLock()
   const dialogRef = useRef<HTMLElement>(null)
   const addRuleRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
@@ -189,7 +193,7 @@ export function ValidationRulesDialog({
   }
 
   function save() {
-    if (!canSubmit) return
+    if (reviewLocked || staleAfterReview || !canSubmit) return
     const saved = dispatch(
       {
         type: 'updateComponentSpec',
@@ -240,7 +244,8 @@ export function ValidationRulesDialog({
     })
   }
 
-  return (
+  return createPortal(
+    (
     <div
       className={styles.backdrop}
       onMouseDown={event => {
@@ -283,6 +288,12 @@ export function ValidationRulesDialog({
             save()
           }}
         >
+          {reviewLocked || staleAfterReview ? (
+            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+              {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
+            </p>
+          ) : null}
+          {reviewLocked ? <DialogReviewActions /> : null}
           <div className={styles.actionHeading}>
             <h3>{t('behavior.validation')}</h3>
             <button
@@ -420,12 +431,18 @@ export function ValidationRulesDialog({
             <button type="button" className={styles.secondary} onClick={close}>
               {t('common.cancel')}
             </button>
-            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+            <button
+              type="submit"
+              className={styles.primary}
+              disabled={reviewLocked || staleAfterReview || !canSubmit}
+            >
               {t('common.save')}
             </button>
           </div>
         </form>
       </section>
     </div>
+    ),
+    document.body,
   )
 }

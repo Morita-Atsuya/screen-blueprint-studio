@@ -380,7 +380,7 @@ await test('malformed rejected history is ignored and cannot block rejection', a
     assert(Array.isArray(store.getState().rejectedRecords), 'rejectedRecords is not an array')
     assert(store.getState().rejectedRecords.length === 0, 'invalid rejected record was retained')
     const changeSet = store.getState().beginChangeSet('Reject malformed history')
-    assert(store.getState().ui.rightPanelTab === 'changes', 'change set did not open the Changes tab')
+    assert(store.getState().ui.rightPanelTab === 'inspector', 'change set did not preserve the active Inspector context')
     store.getState().rejectChangeSet()
     assert(store.getState().activeChangeSet === null, 'malformed history blocked rejection')
     assert(
@@ -575,6 +575,39 @@ await test('persisted preview reloads separately and reject permanently clears i
   assert(
     finalStore.getState().document.screens['screen-list'].name === confirmedName,
     'confirmed document changed after rejecting the reloaded preview',
+  )
+})
+
+await test('persisted legacy human change set operations require explicit recovery', async () => {
+  localStorage.clear()
+  const baselineStore = await freshStore('mixed-change-set-baseline')
+  const document = clone(baselineStore.getState().document)
+  const activeChangeSet = {
+    id: 'legacy-mixed-change-set',
+    summary: 'Legacy mixed review',
+    baseRevision: document.revision,
+    version: 1,
+    baseDocument: document,
+    operations: [{
+      id: 'legacy-human-operation',
+      source: 'human',
+      command: {
+        type: 'updateScreen',
+        screenId: 'screen-list',
+        name: 'Legacy human preview',
+      },
+      issuedAt: new Date().toISOString(),
+    }],
+    createdAt: new Date().toISOString(),
+  }
+  const raw = JSON.stringify({ document, activeChangeSet })
+  localStorage.setItem(storageKey, raw)
+  const recovered = await freshStore('mixed-change-set-recovery')
+  assert(
+    recovered.getState().recoveryState?.rawData === raw &&
+      recovered.getState().activeChangeSet === null &&
+      memoryStorage.getItem(storageKey) === raw,
+    'legacy human change set data was discarded or treated as AI instead of entering recovery',
   )
 })
 
@@ -1047,13 +1080,28 @@ await test('component duplication preserves selection through history and change
   store.getState().resetToSample()
   store.getState().setActiveScreen('screen-edit')
   store.getState().setSelectedComponent('comp-actions')
-  store.getState().beginChangeSet('Duplicate subtree')
-  store.getState().duplicateComponent('comp-actions', 'Duplicate component')
+  const duplicateReview = store.getState().beginChangeSet('Duplicate subtree')
+  assert(
+    !store.getState().duplicateComponent('comp-actions', 'Duplicate component') &&
+      duplicateReview.operations.length === 0 &&
+      store.getState().ui.selectedComponentId === 'comp-actions',
+    'human duplicate was not blocked during review',
+  )
+  const { createDuplicateComponentCommand } = await import(
+    moduleUrl(componentDuplicationBundle, 'duplicate-review-command')
+  )
+  let duplicateId = 0
+  const duplicateCommand = createDuplicateComponentCommand(
+    store.getState().effectiveDocument,
+    'comp-actions',
+    () => `review-duplicate-${duplicateId++}`,
+  )
+  assert(duplicateCommand, 'agent duplicate command could not be created')
+  store.getState().dispatchToChangeSet(duplicateReview.id, duplicateCommand)
+  const previewRootId = duplicateCommand.componentIdMap['comp-actions']
+  store.getState().setSelectedComponent(previewRootId)
   const changeSet = store.getState().activeChangeSet
   const operation = changeSet?.operations[0]
-  const previewRootId = operation?.command.type === 'duplicateComponent'
-    ? operation.command.componentIdMap['comp-actions']
-    : null
   const { presentChangeSetOperations } = await import(
     moduleUrl(changeSetPresentationBundle, 'duplicate-presentation')
   )
@@ -1326,16 +1374,29 @@ await test('pasteComponent remains reviewable and selection-safe in active chang
   store.getState().setSelectedComponent('comp-actions')
   store.getState().copyComponent('comp-actions')
   store.getState().setSelectedComponent('comp-edit-section')
-  store.getState().beginChangeSet('Paste subtree')
+  const pasteReview = store.getState().beginChangeSet('Paste subtree')
   assert(
-    store.getState().pasteComponent('comp-edit-section', 'Paste component'),
-    'active change set paste failed',
+    !store.getState().pasteComponent('comp-edit-section', 'Paste component') &&
+      pasteReview.operations.length === 0 &&
+      store.getState().ui.selectedComponentId === 'comp-edit-section',
+    'human paste was not blocked during review',
   )
+  const { createPasteComponentCommand } = await import(
+    moduleUrl(componentDuplicationBundle, 'paste-review-command')
+  )
+  let pasteId = 0
+  const pasteCommand = createPasteComponentCommand(
+    store.getState().effectiveDocument,
+    store.getState().componentClipboard,
+    'comp-edit-section',
+    () => `review-paste-${pasteId++}`,
+  )
+  assert(pasteCommand, 'agent paste command could not be created')
+  store.getState().dispatchToChangeSet(pasteReview.id, pasteCommand)
+  const pastedRootId = pasteCommand.componentIdMap[pasteCommand.snapshot.rootComponentId]
+  store.getState().setSelectedComponent(pastedRootId)
   const changeSet = store.getState().activeChangeSet
   const command = changeSet?.operations[0]?.command
-  const pastedRootId = command?.type === 'pasteComponent'
-    ? command.componentIdMap[command.snapshot.rootComponentId]
-    : null
   const { presentChangeSetOperations } = await import(
     moduleUrl(changeSetPresentationBundle, 'paste-presentation')
   )
@@ -1585,8 +1646,8 @@ await test('redo restores human operations and respects review and persistence b
   )
 
   reviewStore.getState().undo()
-  reviewStore.getState().beginChangeSet('Accept branches history')
-  reviewStore.getState().dispatch({
+  const acceptBranch = reviewStore.getState().beginChangeSet('Accept branches history')
+  reviewStore.getState().dispatchToChangeSet(acceptBranch.id, {
     type: 'updateScreen',
     screenId: 'screen-list',
     name: 'Accepted branch',
@@ -2946,8 +3007,8 @@ await test('modal roots own independent trees and clean references on removal', 
     'modal subtree removal left roots, descendants, or references behind',
   )
 
-  store.getState().beginChangeSet('Add modal frame')
-  store.getState().dispatch({
+  const modalReview = store.getState().beginChangeSet('Add modal frame')
+  store.getState().dispatchToChangeSet(modalReview.id, {
     type: 'addComponent',
     componentId: 'human-modal-root',
     screenId: 'screen-list',
@@ -2957,10 +3018,10 @@ await test('modal roots own independent trees and clean references on removal', 
   })
   const state = store.getState()
   assert(
-    state.activeChangeSet.operations.at(-1)?.source === 'human' &&
+    state.activeChangeSet.operations.at(-1)?.source === 'agent' &&
       state.effectiveDocument.screens['screen-list'].modalComponentIds.includes('human-modal-root') &&
       !state.document.screens['screen-list'].modalComponentIds.includes('human-modal-root'),
-    'human modal addition did not route through the active change set',
+    'agent modal addition did not route through the active change set',
   )
 })
 
@@ -3208,12 +3269,14 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
   )
 })
 
-await test('human moves join active change sets and screen management reconciles selection', async () => {
+await test('review lock blocks human document mutations and screen management reconciles selection', async () => {
   memoryStorage.clear()
   const changeSetStore = await freshStore('direct-edit-change-set')
   const beforeOrder = changeSetStore.getState().document.components['comp-actions'].childIds.join(',')
-  changeSetStore.getState().beginChangeSet('Human direct manipulation')
-  changeSetStore.getState().dispatch({
+  const lockChangeSet = changeSetStore.getState().beginChangeSet('AI review lock')
+  const beforeLockedAttempt = changeSetStore.getState()
+  const persistedBeforeLockedAttempt = memoryStorage.getItem(storageKey)
+  const applied = changeSetStore.getState().dispatch({
     type: 'moveComponent',
     componentId: 'comp-cancel-btn',
     newParentId: 'comp-actions',
@@ -3221,17 +3284,98 @@ await test('human moves join active change sets and screen management reconciles
   }, 'Human drag')
   const changeSet = changeSetStore.getState().activeChangeSet
   assert(
-    changeSet?.operations.at(-1)?.source === 'human' &&
-      changeSet.operations.at(-1)?.command.type === 'moveComponent',
-    'human drag did not join the active change set',
+    !applied &&
+      changeSet?.id === lockChangeSet.id &&
+      changeSet.operations.length === 0 &&
+      changeSet.version === 0 &&
+      changeSetStore.getState().document === beforeLockedAttempt.document &&
+      changeSetStore.getState().effectiveDocument === beforeLockedAttempt.effectiveDocument &&
+      changeSetStore.getState().history === beforeLockedAttempt.history &&
+      changeSetStore.getState().redoStack === beforeLockedAttempt.redoStack &&
+      changeSetStore.getState().document.components['comp-actions'].childIds.join(',') === beforeOrder &&
+      memoryStorage.getItem(storageKey) === persistedBeforeLockedAttempt &&
+      changeSetStore.getState().toast?.message.key === 'changes.editLocked',
+    'human mutation changed review state, history, document, or persistence',
   )
   assert(
-    changeSetStore.getState().document.components['comp-actions'].childIds.join(',') === beforeOrder,
-    'human drag mutated the confirmed document during review',
+    changeSetStore.getState().copyComponent('comp-actions') &&
+      changeSetStore.getState().componentClipboard?.rootComponentId === 'comp-actions',
+    'review lock blocked the non-mutating component copy operation',
   )
+  let invalidSourceRejected = false
+  try {
+    changeSetStore.getState().dispatchToChangeSet(lockChangeSet.id, {
+      type: 'updateScreen',
+      screenId: 'screen-list',
+      name: 'Must not be previewed',
+    }, 'human')
+  } catch (error) {
+    invalidSourceRejected = error?.code === 'INVALID_CHANGE_SET_SOURCE'
+  }
   assert(
-    changeSetStore.getState().effectiveDocument.components['comp-actions'].childIds.join(',') !== beforeOrder,
-    'human drag did not update the change set preview',
+    invalidSourceRejected &&
+      changeSetStore.getState().activeChangeSet?.operations.length === 0,
+    'the central change set API accepted a human operation',
+  )
+  changeSetStore.getState().setActiveScreen('screen-edit')
+  changeSetStore.getState().setActiveState('state-edit-saving')
+  changeSetStore.getState().setSelectedComponent('comp-save-btn')
+  changeSetStore.getState().setReviewDraftProtected('regression-dialog', true)
+  changeSetStore.getState().dispatchToChangeSet(lockChangeSet.id, {
+    type: 'removeScreenState',
+    stateId: 'state-edit-saving',
+  })
+  changeSetStore.getState().dispatchToChangeSet(lockChangeSet.id, {
+    type: 'removeComponent',
+    componentId: 'comp-save-btn',
+  })
+  assert(
+    changeSetStore.getState().ui.activeScreenId === 'screen-edit' &&
+      changeSetStore.getState().ui.activeStateId === 'state-edit-saving' &&
+      changeSetStore.getState().ui.selectedComponentId === 'comp-save-btn' &&
+      !changeSetStore.getState().effectiveDocument.screenStates['state-edit-saving'] &&
+      !changeSetStore.getState().effectiveDocument.components['comp-save-btn'],
+    'agent preview removal discarded the confirmed dialog selection or state context',
+  )
+  changeSetStore.getState().rejectChangeSet()
+  assert(
+    changeSetStore.getState().ui.activeStateId === 'state-edit-saving' &&
+      changeSetStore.getState().ui.selectedComponentId === 'comp-save-btn' &&
+      changeSetStore.getState().effectiveDocument.screenStates['state-edit-saving'] &&
+      changeSetStore.getState().effectiveDocument.components['comp-save-btn'],
+    'Reject did not restore a preview-removed dialog selection or state context',
+  )
+  changeSetStore.getState().setReviewDraftProtected('regression-dialog', false)
+  const documentBeforeEmptyAccept = changeSetStore.getState().document
+  const historyBeforeEmptyAccept = changeSetStore.getState().history
+  changeSetStore.getState().beginChangeSet('Empty review')
+  changeSetStore.getState().acceptChangeSet()
+  assert(
+    changeSetStore.getState().document === documentBeforeEmptyAccept &&
+      changeSetStore.getState().document.revision === documentBeforeEmptyAccept.revision &&
+      changeSetStore.getState().history === historyBeforeEmptyAccept &&
+      changeSetStore.getState().activeChangeSet === null,
+    'accepting an empty change set changed the document revision or history',
+  )
+  changeSetStore.getState().setSelectedComponent('comp-save-btn')
+  changeSetStore.getState().setReviewDraftProtected('accepted-dialog', true)
+  const acceptedRemoval = changeSetStore.getState().beginChangeSet('Accepted dialog removal')
+  changeSetStore.getState().dispatchToChangeSet(acceptedRemoval.id, {
+    type: 'removeComponent',
+    componentId: 'comp-save-btn',
+  })
+  changeSetStore.getState().acceptChangeSet()
+  assert(
+    changeSetStore.getState().ui.selectedComponentId === 'comp-save-btn' &&
+      changeSetStore.getState().reviewDraftDocument?.components['comp-save-btn'] &&
+      !changeSetStore.getState().document.components['comp-save-btn'],
+    'Accept discarded a protected dialog before its stale draft could be closed',
+  )
+  changeSetStore.getState().setReviewDraftProtected('accepted-dialog', false)
+  assert(
+    changeSetStore.getState().ui.selectedComponentId === null &&
+      changeSetStore.getState().reviewDraftDocument === null,
+    'closing an accepted stale dialog did not reconcile its removed selection',
   )
 
   memoryStorage.clear()
@@ -3356,21 +3500,21 @@ await test('human moves join active change sets and screen management reconciles
       'state edits were not persisted',
     )
 
-    reloaded.getState().beginChangeSet('Human state change set edit')
+    const stateReview = reloaded.getState().beginChangeSet('AI state change set edit')
     const confirmedDescription =
       reloaded.getState().document.screenStates['state-human-error'].description
-    reloaded.getState().dispatch({
+    reloaded.getState().dispatchToChangeSet(stateReview.id, {
       type: 'updateScreenState',
       stateId: 'state-human-error',
       description: 'Edited during review',
-    }, 'Edit state in change set')
+    })
     assert(
-      reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'human' &&
+      reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'agent' &&
         reloaded.getState().document.screenStates['state-human-error'].description ===
           confirmedDescription &&
         reloaded.getState().effectiveDocument.screenStates['state-human-error'].description ===
           'Edited during review',
-      'human state edit did not stay inside the active change set',
+      'agent state edit did not stay inside the active change set',
     )
     reloaded.getState().rejectChangeSet()
     reloaded.getState().setActiveState('state-human-error')
@@ -3393,6 +3537,99 @@ await test('human moves join active change sets and screen management reconciles
       screenStore.getState().document.screens['screen-list'] === undefined &&
       screenStore.getState().ui.activeScreenId === 'screen-edit',
     'screen edit, delete, or active-screen reconciliation failed',
+  )
+})
+
+await test('review lock wiring covers every human mutation surface and keeps review controls visible', async () => {
+  const sources = Object.fromEntries([
+    'src/app/App.tsx',
+    'src/app/EditorKeyboardShortcuts.tsx',
+    'src/app/DeleteConfirmationDialog.tsx',
+    'src/features/change-review/ChangeSetBar.tsx',
+    'src/features/change-review/DialogReviewActions.tsx',
+    'src/features/screens/ScreenList.tsx',
+    'src/features/palette/Palette.tsx',
+    'src/features/component-add-menu/ComponentAddMenu.tsx',
+    'src/features/structure-tree/StructureTree.tsx',
+    'src/features/canvas/Canvas.tsx',
+    'src/features/inspector/Inspector.tsx',
+    'src/features/inspector/InspectorSection.tsx',
+    'src/features/inspector/EventDialog.tsx',
+    'src/features/inspector/ApiOperationDialog.tsx',
+    'src/features/inspector/ValidationRulesDialog.tsx',
+    'src/features/canvas/StateDialog.tsx',
+    'src/dnd/EditorDndContext.tsx',
+    'src/components/DraftTextField.tsx',
+  ].map(path => [path, readFileSync(join(root, path), 'utf8')]))
+  const dialogPaths = [
+    'src/features/inspector/EventDialog.tsx',
+    'src/features/inspector/ApiOperationDialog.tsx',
+    'src/features/inspector/ValidationRulesDialog.tsx',
+    'src/features/canvas/StateDialog.tsx',
+  ]
+  assert(
+    !sources['src/app/App.tsx'].includes("key={activeChangeSet?.id ?? 'editable'}") &&
+      sources['src/app/EditorKeyboardShortcuts.tsx'].includes('state.notifyReviewLock()') &&
+      sources['src/dnd/EditorDndContext.tsx'].includes('if (state.activeChangeSet)') &&
+      sources['src/dnd/EditorDndContext.tsx'].includes("completedDrop.current = { status: 'cancelled' }") &&
+      sources['src/dnd/EditorDndContext.tsx'].includes("code: 'Escape'") &&
+      sources['src/features/screens/ScreenList.tsx'].includes('disabled={Boolean(activeChangeSet)}') &&
+      sources['src/features/palette/Palette.tsx'].includes('disabled={!activeScreenId || reviewLocked}') &&
+      sources['src/features/component-add-menu/ComponentAddMenu.tsx'].includes(
+        'const canDuplicate = canCopy && !reviewLocked',
+      ) &&
+      sources['src/features/structure-tree/StructureTree.tsx'].includes(
+        'disabled: { draggable: isIndependentRoot || reviewLocked',
+      ) &&
+      sources['src/features/canvas/Canvas.tsx'].includes(
+        'disabled: { draggable: isRoot || reviewLocked',
+      ),
+    'Canvas, Tree, Palette, menu, DnD, Screen, or shortcut review locks are incomplete',
+  )
+  assert(
+    sources['src/features/inspector/Inspector.tsx'].includes('id="inspector-review-lock"') &&
+      sources['src/features/inspector/InspectorSection.tsx'].includes('<fieldset') &&
+      sources['src/features/inspector/InspectorSection.tsx'].includes('disabled={reviewLocked}') &&
+      dialogPaths.every(path =>
+        sources[path].includes('useDialogReviewLock()') &&
+        sources[path].includes('reviewLocked || staleAfterReview') &&
+        sources[path].includes('<DialogReviewActions />')
+      ) &&
+      sources['src/components/DraftTextField.tsx'].includes(
+        'revision !== baselineRevision',
+      ) &&
+      sources['src/components/DraftTextField.tsx'].includes(
+        "revision: typeof parsed.revision === 'number' ? parsed.revision : null",
+      ) &&
+      sources['src/features/inspector/Inspector.tsx'].includes('inspectorDocument') &&
+      sources['src/features/inspector/Inspector.tsx'].includes('reviewDraftDocument') &&
+      sources['src/features/inspector/Inspector.tsx'].includes(
+        'protectedActiveStateMissing',
+      ) &&
+      sources['src/features/inspector/Inspector.tsx'].includes(
+        'inspectorDialogProtected',
+      ) &&
+      sources['src/features/screens/ScreenList.tsx'].includes(
+        'reviewDraftDocument.screens',
+      ) &&
+      sources['src/app/DeleteConfirmationDialog.tsx'].includes(
+        'disabled={Boolean(activeChangeSet) || pendingDelete.needsReviewAcknowledgement}',
+      ),
+    'Inspector, dialog draft, or pending delete review locks are incomplete',
+  )
+  assert(
+    sources['src/features/change-review/ChangeSetBar.tsx'].includes(
+      "t('changes.editLockedStatus')",
+    ) &&
+      sources['src/features/change-review/ChangeSetBar.tsx'].includes("role=\"status\""),
+    'review mode does not expose a visible accessible lock status beside Accept and Reject',
+  )
+  assert(
+    sources['src/features/change-review/DialogReviewActions.tsx'].includes(
+      'activeElement?.isConnected',
+    ) &&
+      sources['src/features/change-review/DialogReviewActions.tsx'].includes('?.focus()'),
+    'dialog review resolution does not restore focus after its active button unmounts',
   )
 })
 
@@ -3954,42 +4191,37 @@ await test('human delete flow confirms impact and only undoes the current deleti
   )
 
   store.getState().resetToSample()
-  store.getState().beginChangeSet('Human delete preview')
-  store.getState().requestHumanDelete(
+  const deleteReview = store.getState().beginChangeSet('AI review blocks delete')
+  const lockedDeleteResult = store.getState().requestHumanDelete(
     { type: 'removeComponent', componentId: 'comp-edit-title' },
     'Delete component',
   )
-  const changeSetUndoId = store.getState().toast.id
   assert(
-    store.getState().activeChangeSet?.operations.length === 1 &&
-      !store.getState().effectiveDocument.components['comp-edit-title'],
-    'active change set human deletion was not routed to preview',
-  )
-  store.getState().runToastAction(changeSetUndoId)
-  assert(
+    lockedDeleteResult === 'failed' &&
+    store.getState().activeChangeSet?.id === deleteReview.id &&
+    store.getState().activeChangeSet?.version === 0 &&
     store.getState().activeChangeSet?.operations.length === 0 &&
-      store.getState().effectiveDocument.components['comp-edit-title'] &&
-      store.getState().history.length === 0,
-    'delete Undo did not safely remove the latest human change set operation',
+    store.getState().effectiveDocument.components['comp-edit-title'] &&
+    store.getState().pendingDelete === null &&
+    !store.getState().toast?.action,
+    'review lock created a human delete operation, confirmation, or Undo action',
   )
 
+  store.getState().rejectChangeSet()
   store.getState().requestHumanDelete(
     { type: 'removeComponent', componentId: 'comp-edit-title' },
     'Delete component',
   )
-  const staleChangeSetUndoId = store.getState().toast.id
-  store.getState().dispatch({
-    type: 'updateScreen',
-    screenId: 'screen-edit',
-    name: 'Later preview edit',
-  })
-  store.getState().runToastAction(staleChangeSetUndoId)
+  const deleteUndoBeforeReview = store.getState().toast.id
+  const secondReview = store.getState().beginChangeSet('AI review blocks delete Undo')
+  store.getState().runToastAction(deleteUndoBeforeReview)
   assert(
-    store.getState().activeChangeSet?.operations.length === 2 &&
-      !store.getState().effectiveDocument.components['comp-edit-title'] &&
-      store.getState().effectiveDocument.screens['screen-edit'].name === 'Later preview edit' &&
-      store.getState().toast?.message.key === 'delete.undoUnavailable',
-    'stale change set delete Undo removed a later preview operation',
+    store.getState().activeChangeSet?.id === secondReview.id &&
+    store.getState().activeChangeSet?.version === 0 &&
+    store.getState().activeChangeSet?.operations.length === 0 &&
+    !store.getState().effectiveDocument.components['comp-edit-title'] &&
+    store.getState().toast?.message.key === 'delete.undoUnavailable',
+    'delete Undo changed a document while review lock was active',
   )
 
   const humanDeleteSources = [
@@ -4165,7 +4397,7 @@ await test('component add menu resolves valid positions and preserves atomic edi
 
   memoryStorage.clear()
   const changeSetStore = await freshStore('component-add-menu-change-set')
-  changeSetStore.getState().beginChangeSet('Add from component menu')
+  const addReview = changeSetStore.getState().beginChangeSet('Add from component menu')
   const insideTarget = resolveComponentInsertTargets(
     changeSetStore.getState().effectiveDocument,
     'comp-list-section',
@@ -4179,21 +4411,21 @@ await test('component add menu resolves valid positions and preserves atomic edi
     'en',
     insideTarget.position,
   )
-  changeSetStore.getState().dispatch(proposed, 'Add Text')
+  changeSetStore.getState().dispatchToChangeSet(addReview.id, proposed)
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
-      changeSetStore.getState().activeChangeSet?.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet?.operations[0].source === 'agent' &&
       changeSetStore.getState().document.components[proposed.componentId] === undefined &&
       changeSetStore.getState().effectiveDocument.components[proposed.componentId] !== undefined,
-    'context menu add bypassed active change set human routing',
+    'agent component addition bypassed active change set routing',
   )
   changeSetStore.getState().rejectChangeSet()
   assert(
     changeSetStore.getState().effectiveDocument.components[proposed.componentId] === undefined,
     'Reject retained the context-menu component',
   )
-  changeSetStore.getState().beginChangeSet('Accept component menu add')
-  changeSetStore.getState().dispatch(proposed, 'Add Text')
+  const acceptAddReview = changeSetStore.getState().beginChangeSet('Accept component menu add')
+  changeSetStore.getState().dispatchToChangeSet(acceptAddReview.id, proposed)
   changeSetStore.getState().acceptChangeSet()
   assert(
     changeSetStore.getState().document.components[proposed.componentId] !== undefined,
@@ -4358,7 +4590,7 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
   memoryStorage.clear()
   const changeSetStore = await freshStore('inspector-selection-change-set')
   changeSetStore.getState().setActiveScreen('screen-edit')
-  changeSetStore.getState().beginChangeSet('Inspector selection reconcile')
+  const selectionReview = changeSetStore.getState().beginChangeSet('Inspector selection reconcile')
   const proposed = createAddComponentCommand(
     changeSetStore.getState().effectiveDocument,
     'screen-edit',
@@ -4366,11 +4598,11 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
     'button',
     'en',
   )
-  changeSetStore.getState().dispatch(proposed, 'Add Button')
+  changeSetStore.getState().dispatchToChangeSet(selectionReview.id, proposed)
   changeSetStore.getState().setSelectedComponent(proposed.componentId)
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
-      changeSetStore.getState().activeChangeSet?.operations[0].source === 'human',
+      changeSetStore.getState().activeChangeSet?.operations[0].source === 'agent',
     'selection changed active change set operations',
   )
   changeSetStore.getState().rejectChangeSet()
@@ -4378,8 +4610,8 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
     changeSetStore.getState().ui.selectedComponentId === null,
     'Reject left a selection pointing at a rejected component',
   )
-  changeSetStore.getState().beginChangeSet('Inspector selection accept')
-  changeSetStore.getState().dispatch(proposed, 'Add Button')
+  const selectionAccept = changeSetStore.getState().beginChangeSet('Inspector selection accept')
+  changeSetStore.getState().dispatchToChangeSet(selectionAccept.id, proposed)
   changeSetStore.getState().setSelectedComponent(proposed.componentId)
   changeSetStore.getState().acceptChangeSet()
   assert(
@@ -4516,20 +4748,20 @@ await test('Tree state presentation uses effective values and atomic override re
   const changeSetStore = await freshStore('tree-reset-change-set')
   changeSetStore.getState().setActiveScreen('screen-edit')
   changeSetStore.getState().setActiveState(success.id)
-  changeSetStore.getState().beginChangeSet('Reset state override')
+  const resetReview = changeSetStore.getState().beginChangeSet('Reset state override')
   const changeSetReset = createResetComponentOverrideCommand(
     changeSetStore.getState().effectiveDocument.screenStates[success.id],
     'comp-role-select',
   )
-  changeSetStore.getState().dispatch(changeSetReset, 'Reset Role override')
+  changeSetStore.getState().dispatchToChangeSet(resetReview.id, changeSetReset)
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
-      changeSetStore.getState().activeChangeSet?.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet?.operations[0].source === 'agent' &&
       changeSetStore.getState().document.screenStates[success.id]
         .componentOverrides['comp-role-select'].value === 'admin' &&
       !changeSetStore.getState().effectiveDocument.screenStates[success.id]
         .componentOverrides['comp-role-select'],
-    'reset bypassed active change set human preview routing',
+    'agent reset bypassed active change set preview routing',
   )
   changeSetStore.getState().rejectChangeSet()
   assert(
@@ -4537,12 +4769,12 @@ await test('Tree state presentation uses effective values and atomic override re
       .componentOverrides['comp-role-select'].value === 'admin',
     'Reject did not restore the effective override',
   )
-  changeSetStore.getState().beginChangeSet('Accept state override reset')
+  const resetAccept = changeSetStore.getState().beginChangeSet('Accept state override reset')
   const acceptedReset = createResetComponentOverrideCommand(
     changeSetStore.getState().effectiveDocument.screenStates[success.id],
     'comp-role-select',
   )
-  changeSetStore.getState().dispatch(acceptedReset, 'Reset Role override')
+  changeSetStore.getState().dispatchToChangeSet(resetAccept.id, acceptedReset)
   changeSetStore.getState().acceptChangeSet()
   assert(
     !changeSetStore.getState().document.screenStates[success.id]
@@ -4696,14 +4928,14 @@ await test('Inspector keeps base values separate from field-level state override
   const changeSetStore = await freshStore('inspector-field-override-change-set')
   changeSetStore.getState().setActiveScreen('screen-edit')
   changeSetStore.getState().setActiveState('state-edit-success')
-  changeSetStore.getState().beginChangeSet('Edit one override field')
+  const overrideReview = changeSetStore.getState().beginChangeSet('Edit one override field')
   const changeSet = createSetComponentOverrideFieldCommand(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
     'comp-status-alert',
     'message',
     'Preview-only message',
   )
-  changeSetStore.getState().dispatch(changeSet, 'Override Alert message')
+  changeSetStore.getState().dispatchToChangeSet(overrideReview.id, changeSet)
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
       changeSetStore.getState().document.screenStates['state-edit-success']
@@ -4718,14 +4950,14 @@ await test('Inspector keeps base values separate from field-level state override
       .componentOverrides['comp-status-alert'].message === 'User saved successfully.',
     'Reject did not restore the prior field override',
   )
-  changeSetStore.getState().beginChangeSet('Accept one override field')
+  const overrideAccept = changeSetStore.getState().beginChangeSet('Accept one override field')
   const accepted = createSetComponentOverrideFieldCommand(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
     'comp-status-alert',
     'message',
     'Accepted message',
   )
-  changeSetStore.getState().dispatch(accepted, 'Override Alert message')
+  changeSetStore.getState().dispatchToChangeSet(overrideAccept.id, accepted)
   changeSetStore.getState().acceptChangeSet()
   assert(
     changeSetStore.getState().document.screenStates['state-edit-success']
@@ -5188,12 +5420,25 @@ await test('change set review presents sequential diffs for every command type',
     baseDocument,
     operations: commands.map(command => ({
       id: `review-op-${++operationNumber}`,
-      source: operationNumber % 2 === 0 ? 'human' : 'agent',
+      source: 'agent',
       command,
       issuedAt: '2026-01-01T00:00:00.000Z',
     })),
     createdAt: '2026-01-01T00:00:00.000Z',
   })
+  let mixedReviewRejected = false
+  try {
+    const mixed = makeChangeSet([{
+      type: 'updateScreen',
+      screenId: 'screen-list',
+      name: 'Legacy mixed review',
+    }])
+    mixed.operations[0].source = 'human'
+    presentChangeSetOperations(mixed, 'en')
+  } catch (error) {
+    mixedReviewRejected = error?.code === 'INVALID_CHANGE_SET_SOURCE'
+  }
+  assert(mixedReviewRejected, 'change set presenter treated a legacy human operation as AI')
 
   const screenRows = presentChangeSetOperations(makeChangeSet([
     {
@@ -6018,24 +6263,24 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
     'Canvas still renders a dedicated drag grip',
   )
   assert(
-    canvasSource.includes('{...(!isRoot ? attributes : {})}') &&
-      canvasSource.includes('{...(!isRoot ? listeners : {})}') &&
+    canvasSource.includes('{...(!isRoot && !reviewLocked ? attributes : {})}') &&
+      canvasSource.includes('{...(!isRoot && !reviewLocked ? listeners : {})}') &&
       canvasSource.includes('tabIndex={0}') &&
-      canvasSource.includes("data-canvas-draggable={!isRoot || undefined}") &&
-      canvasSource.includes("data-drag-surface={!isRoot ? 'canvas' : undefined}") &&
+      canvasSource.includes("data-canvas-draggable={!isRoot && !reviewLocked || undefined}") &&
+      canvasSource.includes("data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}") &&
       canvasSource.includes(
-        "aria-label={isRoot ? displayName : t('canvas.dragAria', { label: displayName })}",
+        "aria-label={isRoot || reviewLocked ? displayName : t('canvas.dragAria', { label: displayName })}",
       ),
     'non-root Canvas wrappers are not accessible whole-surface drag activators',
   )
   assert(
-    canvasSource.includes('disabled: { draggable: isRoot, droppable: true }') &&
-      canvasSource.includes('if (!isRoot) listeners?.onPointerDown?.(event)') &&
-      canvasSource.includes('if (!isRoot) listeners?.onTouchStart?.(event)') &&
+    canvasSource.includes('disabled: { draggable: isRoot || reviewLocked, droppable: true }') &&
+      canvasSource.includes('if (!isRoot && !reviewLocked) listeners?.onPointerDown?.(event)') &&
+      canvasSource.includes('if (!isRoot && !reviewLocked) listeners?.onTouchStart?.(event)') &&
     canvasSource.match(
       /onKeyDown=\{event => \{[\s\S]*?if \(active\) return\s*event\.stopPropagation\(\)/,
     ) &&
-    canvasSource.includes('if (!isRoot) listeners?.onKeyDown?.(event)') &&
+    canvasSource.includes('if (!isRoot && !reviewLocked) listeners?.onKeyDown?.(event)') &&
     canvasSource.match(/onPointerDown=\{event => \{\s*event\.stopPropagation\(\)/),
     'root gating or nested activator event isolation is missing',
   )
@@ -6236,18 +6481,18 @@ await test('semantic containers replace legacy layout kinds across commands and 
     'container layout command was not applied',
   )
 
-  const changeSet = store.getState().beginChangeSet('Human layout adjustment')
-  store.getState().dispatch({
+  const changeSet = store.getState().beginChangeSet('AI layout adjustment')
+  store.getState().dispatchToChangeSet(changeSet.id, {
     type: 'updateComponentSpec',
     componentId: containerCommand.componentId,
     patch: { config: { layout: 'horizontal', wrap: true, justify: 'between' } },
-  }, 'Adjust layout')
+  })
   const active = store.getState().activeChangeSet
   assert(
     active?.id === changeSet.id &&
-      active.operations.at(-1)?.source === 'human' &&
+      active.operations.at(-1)?.source === 'agent' &&
       store.getState().effectiveDocument.components[containerCommand.componentId].config.layout === 'horizontal',
-    'human layout edit did not join the active change set',
+    'agent layout edit did not join the active change set',
   )
   store.getState().acceptChangeSet()
   const reloaded = await freshStore('semantic-container-layout-reload')
@@ -6335,16 +6580,16 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
     )
   }
 
-  store.getState().beginChangeSet('Change text role')
-  store.getState().dispatch({
+  const textRoleReview = store.getState().beginChangeSet('Change text role')
+  store.getState().dispatchToChangeSet(textRoleReview.id, {
     type: 'updateComponentSpec',
     componentId: 'comp-list-title',
     patch: { config: { style: 'heading3' } },
-  }, 'Update text display style')
+  })
   assert(
-    store.getState().activeChangeSet.operations.at(-1)?.source === 'human' &&
+    store.getState().activeChangeSet.operations.at(-1)?.source === 'agent' &&
       store.getState().effectiveDocument.components['comp-list-title'].config.style === 'heading3',
-    'human Text style edit did not route through the active change set',
+    'agent Text style edit did not route through the active change set',
   )
   store.getState().acceptChangeSet()
   const reloaded = await freshStore('styled-text-reload')
@@ -6788,8 +7033,8 @@ await test('Changes review UI is contextual to active change sets', async () => 
   store.getState().beginChangeSet('Contextual review')
   assert(
     store.getState().activeChangeSet !== null &&
-      store.getState().ui.rightPanelTab === 'changes',
-    'begin change set did not reveal and select Changes',
+      store.getState().ui.rightPanelTab === 'inspector',
+    'begin change set did not reveal Changes while preserving the active Inspector context',
   )
   store.getState().setRightPanelTab('inspector')
   assert(store.getState().ui.rightPanelTab === 'inspector', 'Inspector did not open during review')
@@ -6927,25 +7172,25 @@ await test('Select state values share one validated effective path', async () =>
     'Select state override did not survive reload',
   )
 
-  reloaded.getState().beginChangeSet('Human Select override')
+  const selectReview = reloaded.getState().beginChangeSet('AI Select override')
   const confirmedSavingValue =
     reloaded.getState().document.screenStates[savingState.id]
       .componentOverrides['comp-role-select'].value
-  reloaded.getState().dispatch({
+  reloaded.getState().dispatchToChangeSet(selectReview.id, {
     type: 'updateScreenState',
     stateId: savingState.id,
     overrides: {
       ...reloaded.getState().effectiveDocument.screenStates[savingState.id].componentOverrides,
       'comp-role-select': { value: 'member' },
     },
-  }, 'Edit Select override during review')
+  })
   assert(
-    reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'human' &&
+    reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'agent' &&
       reloaded.getState().document.screenStates[savingState.id]
         .componentOverrides['comp-role-select'].value === confirmedSavingValue &&
       reloaded.getState().effectiveDocument.screenStates[savingState.id]
         .componentOverrides['comp-role-select'].value === 'member',
-    'human Select override did not remain inside the active change set',
+    'agent Select override did not remain inside the active change set',
   )
 
   memoryStorage.clear()
@@ -7132,7 +7377,7 @@ await test('text drafts commit as one human operation', async () => {
     'duplicate route was reported as a successful text commit',
   )
 
-  reloaded.getState().beginChangeSet('Atomic human text edit')
+  const textReview = reloaded.getState().beginChangeSet('Atomic AI text edit')
   let changeSetDraft = ''
   for (let index = 0; index < 50; index += 1) changeSetDraft += String.fromCharCode(65 + (index % 26))
   const changeSetResult = reloaded.getState().dispatch({
@@ -7142,10 +7387,12 @@ await test('text drafts commit as one human operation', async () => {
   }, 'Update text text: comp-list-title')
   const changeSet = reloaded.getState().activeChangeSet
   assert(
-    changeSetResult &&
-      changeSet?.operations.length === 1 &&
-      changeSet.operations[0].source === 'human',
-    '50-character draft did not create exactly one human change set operation',
+    !changeSetResult &&
+      changeSet?.id === textReview.id &&
+      changeSet.operations.length === 0 &&
+      reloaded.getState().document.components['comp-list-title'].config.text !== changeSetDraft &&
+      reloaded.getState().effectiveDocument.components['comp-list-title'].config.text !== changeSetDraft,
+    '50-character human draft changed the document during review lock',
   )
   const invalidChangeSetRoute = reloaded.getState().dispatch({
     type: 'updateScreen',
@@ -7153,8 +7400,8 @@ await test('text drafts commit as one human operation', async () => {
     route: '/users',
   }, 'Update screen route: Edit User')
   assert(
-    !invalidChangeSetRoute && reloaded.getState().activeChangeSet?.operations.length === 1,
-    'invalid route was added to the active change set',
+    !invalidChangeSetRoute && reloaded.getState().activeChangeSet?.operations.length === 0,
+    'human route edit was added to the active change set',
   )
 
   const draftSource = readFileSync(
@@ -7181,7 +7428,8 @@ await test('text drafts commit as one human operation', async () => {
       draftSource.includes("window.addEventListener('pagehide', flush)") &&
       draftSource.includes('window.sessionStorage.setItem(storageKey(draftId)') &&
       draftSource.includes('onCompositionStart: handleCompositionStart') &&
-      draftSource.includes('draftCache.set(draftId'),
+        draftSource.includes('draftCache.set(draftId') &&
+        draftSource.includes('if (validationError || externalChanged) return false'),
     'draft field does not preserve and flush local edits safely',
   )
   assert(
@@ -7214,11 +7462,11 @@ await test('AI writes expose only the change set review flow', async () => {
     screenId: 'screen-list',
     name: 'Confirmed human edit',
   })
-  store.getState().beginChangeSet('Reviewed AI edit')
-  store.getState().dispatch({
+  const aiReview = store.getState().beginChangeSet('Reviewed AI edit')
+  store.getState().dispatchToChangeSet(aiReview.id, {
     type: 'updateScreen',
     screenId: 'screen-list',
-    name: 'Human adjustment in review',
+    name: 'AI adjustment in review',
   })
   store.getState().acceptChangeSet()
   assert(
@@ -7269,7 +7517,8 @@ await test('AI writes expose only the change set review flow', async () => {
     !designSource.toLowerCase().includes(obsoleteMode) &&
       !designSource.includes(obsoleteEntryDisplay) &&
       !designSource.includes(obsoleteEntrySelection) &&
-      readmeSource.includes('反映・破棄は人間向けUIからのみ行います'),
+    readmeSource.includes('active change set中はreview lockとなり') &&
+    designSource.includes('新しいactive change setへ追加できるのは`source: "agent"`だけ'),
     'documentation still describes a deleted collaboration or entry concept',
   )
 })
@@ -7497,8 +7746,8 @@ await test('Inspector behavior projection resolves events APIs and validation', 
 
   memoryStorage.clear()
   const changeSetStore = await freshStore('component-behavior-change-set')
-  changeSetStore.getState().beginChangeSet('Edit behavior in change set')
-  changeSetStore.getState().dispatch({
+  const behaviorReview = changeSetStore.getState().beginChangeSet('Edit behavior in change set')
+  changeSetStore.getState().dispatchToChangeSet(behaviorReview.id, {
     type: 'bindApiOperation',
     operationId: 'api-proposed',
     screenId: 'screen-edit',
@@ -7509,7 +7758,7 @@ await test('Inspector behavior projection resolves events APIs and validation', 
     successStateId: 'state-edit-success',
     errorStateId: 'state-edit-error',
   })
-  changeSetStore.getState().dispatch({
+  changeSetStore.getState().dispatchToChangeSet(behaviorReview.id, {
     type: 'connectEvent',
     eventId: 'event-proposed',
     screenId: 'screen-edit',
@@ -7554,7 +7803,7 @@ await test('Inspector behavior projection resolves events APIs and validation', 
     'utf8',
   )
   assert(
-    inspectorSource.includes('getComponentBehavior(effectiveDocument, comp.id, locale)') &&
+    inspectorSource.includes('getComponentBehavior(inspectorDocument, comp.id, locale)') &&
       inspectorSource.includes('eventEditor={eventEditor}') &&
       detailsSource.includes('data-behavior-specification') &&
       detailsSource.includes('missingReference(operation.id, t)'),
@@ -7668,19 +7917,16 @@ await test('Event editor saves validated ordered actions as one human operation'
 
   memoryStorage.clear()
   const changeSetStore = await freshStore('event-editor-change-set')
-  changeSetStore.getState().beginChangeSet('Edit event')
-  assert(
-    changeSetStore.getState().dispatch(updateCommand, 'Edit save event'),
-    'human event edit failed in active change set',
-  )
+  const eventReview = changeSetStore.getState().beginChangeSet('Edit event')
+  changeSetStore.getState().dispatchToChangeSet(eventReview.id, updateCommand)
   assert(
     changeSetStore.getState().activeChangeSet.operations.length === 1 &&
-      changeSetStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet.operations[0].source === 'agent' &&
       changeSetStore.getState().activeChangeSet.operations[0].command.type === 'updateEvent' &&
       changeSetStore.getState().document.events['event-submit'].name === original.name &&
       changeSetStore.getState().effectiveDocument.events['event-submit'].name ===
         'Save and return',
-    'human event edit did not remain one effective-only change set operation',
+    'agent event edit did not remain one effective-only change set operation',
   )
   const changeSetReload = await freshStore('event-editor-change-set-reload')
   assert(
@@ -7692,16 +7938,16 @@ await test('Event editor saves validated ordered actions as one human operation'
   changeSetReload.getState().rejectChangeSet()
   assert(
     changeSetReload.getState().document.events['event-submit'].name === original.name,
-    'Reject did not discard the human event edit',
+    'Reject did not discard the agent event edit',
   )
 
-  changeSetReload.getState().beginChangeSet('Accept event edit')
-  changeSetReload.getState().dispatch(updateCommand, 'Edit save event')
+  const eventAccept = changeSetReload.getState().beginChangeSet('Accept event edit')
+  changeSetReload.getState().dispatchToChangeSet(eventAccept.id, updateCommand)
   changeSetReload.getState().acceptChangeSet()
   assert(
     changeSetReload.getState().activeChangeSet === null &&
       changeSetReload.getState().document.events['event-submit'].name === 'Save and return',
-    'Accept did not confirm the human event edit',
+    'Accept did not confirm the agent event edit',
   )
 
   memoryStorage.clear()
@@ -7885,21 +8131,18 @@ await test('API editor commands preserve references and enforce canonical bindin
 
   memoryStorage.clear()
   const changeSetStore = await freshStore('api-editor-change-set')
-  changeSetStore.getState().beginChangeSet('Edit API')
-  assert(
-    changeSetStore.getState().dispatch(updateCommand, 'Edit save API'),
-    'human API edit failed in active change set',
-  )
+  const apiReview = changeSetStore.getState().beginChangeSet('Edit API')
+  changeSetStore.getState().dispatchToChangeSet(apiReview.id, updateCommand)
   assert(
     changeSetStore.getState().activeChangeSet.operations.length === 1 &&
-      changeSetStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet.operations[0].source === 'agent' &&
       changeSetStore.getState().activeChangeSet.operations[0].command.type ===
         'updateApiOperation' &&
       changeSetStore.getState().document.apiOperations['api-save-user'].name ===
         original.name &&
       changeSetStore.getState().effectiveDocument.apiOperations['api-save-user'].name ===
         'Save user profile',
-    'human API edit did not remain one effective-only change set operation',
+    'agent API edit did not remain one effective-only change set operation',
   )
   const changeSetReload = await freshStore('api-editor-change-set-reload')
   assert(
@@ -7912,16 +8155,16 @@ await test('API editor commands preserve references and enforce canonical bindin
   assert(
     changeSetReload.getState().document.apiOperations['api-save-user'].name ===
       original.name,
-    'Reject did not discard the human API edit',
+    'Reject did not discard the agent API edit',
   )
-  changeSetReload.getState().beginChangeSet('Accept API edit')
-  changeSetReload.getState().dispatch(updateCommand, 'Edit save API')
+  const apiAccept = changeSetReload.getState().beginChangeSet('Accept API edit')
+  changeSetReload.getState().dispatchToChangeSet(apiAccept.id, updateCommand)
   changeSetReload.getState().acceptChangeSet()
   assert(
     changeSetReload.getState().activeChangeSet === null &&
       changeSetReload.getState().document.apiOperations['api-save-user'].name ===
         'Save user profile',
-    'Accept did not confirm the human API edit',
+    'Accept did not confirm the agent API edit',
   )
 
   memoryStorage.clear()
@@ -8150,21 +8393,18 @@ await test('Validation rules editor enforces invariants and commits as one human
 
   memoryStorage.clear()
   const changeSetStore = await freshStore('validation-rules-change-set')
-  changeSetStore.getState().beginChangeSet('Edit validation rules')
-  assert(
-    changeSetStore.getState().dispatch(updateCommand, 'Edit validation rules'),
-    'human validation rules edit failed in active change set',
-  )
+  const validationReview = changeSetStore.getState().beginChangeSet('Edit validation rules')
+  changeSetStore.getState().dispatchToChangeSet(validationReview.id, updateCommand)
   assert(
     changeSetStore.getState().activeChangeSet.operations.length === 1 &&
-      changeSetStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet.operations[0].source === 'agent' &&
       changeSetStore.getState().activeChangeSet.operations[0].command.type ===
         'updateComponentSpec' &&
       changeSetStore.getState().document.components['comp-name-input'].config.validationRules
         .length === original.length &&
       changeSetStore.getState().effectiveDocument.components['comp-name-input'].config
         .validationRules.length === 3,
-    'human validation rules edit did not remain one effective-only change set operation',
+    'agent validation rules edit did not remain one effective-only change set operation',
   )
   const changeSetReload = await freshStore('validation-rules-change-set-reload')
   assert(
@@ -8177,16 +8417,16 @@ await test('Validation rules editor enforces invariants and commits as one human
   assert(
     changeSetReload.getState().document.components['comp-name-input'].config.validationRules
       .length === original.length,
-    'Reject did not discard the human validation rules edit',
+    'Reject did not discard the agent validation rules edit',
   )
-  changeSetReload.getState().beginChangeSet('Accept validation rules edit')
-  changeSetReload.getState().dispatch(updateCommand, 'Edit validation rules')
+  const validationAccept = changeSetReload.getState().beginChangeSet('Accept validation rules edit')
+  changeSetReload.getState().dispatchToChangeSet(validationAccept.id, updateCommand)
   changeSetReload.getState().acceptChangeSet()
   assert(
     changeSetReload.getState().activeChangeSet === null &&
       changeSetReload.getState().document.components['comp-name-input'].config.validationRules
         .length === 3,
-    'Accept did not confirm the human validation rules edit',
+    'Accept did not confirm the agent validation rules edit',
   )
 
   const validationDialogSource = readFileSync(

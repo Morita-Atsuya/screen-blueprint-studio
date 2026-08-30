@@ -378,7 +378,7 @@ const getScreenDiagnostics: ToolDefinition = {
 
 const getPendingChangeSet: ToolDefinition = {
   name: 'get_pending_change_set',
-  description: 'Get the active change set, including agent and human operations.',
+  description: 'Get the active change set and its AI operations.',
   annotations: { readOnlyHint: true },
   inputSchema: { type: 'object', properties: {}, required: [], ...CLOSED_OBJECT },
   execute() {

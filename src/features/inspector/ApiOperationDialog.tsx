@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type {
@@ -9,6 +10,8 @@ import type { FieldBinding, HttpMethod } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
+import { useDialogReviewLock } from '../../app/reviewLock'
+import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 type DialogMode = 'create' | 'edit'
 type DialogResult = 'cancelled' | 'saved' | 'deleted'
@@ -37,6 +40,7 @@ export function ApiOperationDialog({
 }: ApiOperationDialogProps) {
   const { t } = useI18n()
   const { dispatch, requestHumanDelete } = useAppStore()
+  const { reviewLocked, staleAfterReview } = useDialogReviewLock()
   const dialogRef = useRef<HTMLElement>(null)
   const addBindingRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
@@ -76,7 +80,7 @@ export function ApiOperationDialog({
   )
   const canAddBinding = new Set(componentIds).size < context.inputComponents.length
   function save() {
-    if (!canSubmit || (mode === 'edit' && !persistedOperationId)) return
+    if (reviewLocked || staleAfterReview || !canSubmit || (mode === 'edit' && !persistedOperationId)) return
     const requestBindings = bindings.map(binding => ({
       componentId: binding.value.componentId,
       targetPath: binding.value.targetPath.trim(),
@@ -160,7 +164,8 @@ export function ApiOperationDialog({
     })
   }
 
-  return (
+  return createPortal(
+    (
     <div
       className={styles.backdrop}
       onMouseDown={event => {
@@ -205,6 +210,12 @@ export function ApiOperationDialog({
             save()
           }}
         >
+          {reviewLocked || staleAfterReview ? (
+            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+              {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
+            </p>
+          ) : null}
+          {reviewLocked ? <DialogReviewActions /> : null}
           <label className={styles.field}>
             <span>{t('behavior.apiName')}</span>
             <input
@@ -369,6 +380,7 @@ export function ApiOperationDialog({
                 type="button"
                 className={styles.dangerOutline}
                 onClick={remove}
+                disabled={reviewLocked || staleAfterReview}
                 data-api-delete
               >
                 {t('behavior.deleteApiOperation')}
@@ -382,13 +394,19 @@ export function ApiOperationDialog({
             >
               {t('common.cancel')}
             </button>
-            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+            <button
+              type="submit"
+              className={styles.primary}
+              disabled={reviewLocked || staleAfterReview || !canSubmit}
+            >
               {t(mode === 'create' ? 'behavior.addApiOperation' : 'common.save')}
             </button>
           </div>
         </form>
       </section>
     </div>
+    ),
+    document.body,
   )
 }
 

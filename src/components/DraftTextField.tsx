@@ -10,6 +10,7 @@ import type {
   FocusEvent,
   KeyboardEvent,
 } from 'react'
+import { useAppStore } from '../app/appStore'
 import { useI18n } from '../i18n/I18nProvider'
 import {
   shouldCommitTextKey,
@@ -20,6 +21,7 @@ import styles from './DraftTextField.module.css'
 interface CachedDraft {
   draft: string
   baseline: string
+  revision: number | null
 }
 
 const draftCache = new Map<string, CachedDraft>()
@@ -38,7 +40,19 @@ function loadStoredDraft(draftId: string): CachedDraft | undefined {
       window.sessionStorage.removeItem(storageKey(draftId))
       return undefined
     }
-    return { draft: parsed.draft, baseline: parsed.baseline }
+    if (
+      parsed.revision !== undefined &&
+      parsed.revision !== null &&
+      typeof parsed.revision !== 'number'
+    ) {
+      window.sessionStorage.removeItem(storageKey(draftId))
+      return undefined
+    }
+    return {
+      draft: parsed.draft,
+      baseline: parsed.baseline,
+      revision: typeof parsed.revision === 'number' ? parsed.revision : null,
+    }
   } catch {
     return undefined
   }
@@ -87,19 +101,28 @@ export function DraftTextField({
   disabled = false,
 }: DraftTextFieldProps) {
   const { t } = useI18n()
+  const revision = useAppStore(state => state.document.revision)
+  const setReviewDraftProtected = useAppStore(state => state.setReviewDraftProtected)
   const errorId = useId()
   const cached = useRef(draftCache.get(draftId) ?? loadStoredDraft(draftId))
   const [draft, setDraft] = useState(() => cached.current?.draft ?? value)
   const [baseline, setBaseline] = useState(() => cached.current?.baseline ?? value)
+  const [baselineRevision, setBaselineRevision] = useState(
+    () => cached.current ? cached.current.revision : revision,
+  )
   const [dirty, setDirty] = useState(() => cached.current !== undefined && draft !== value)
   const dirtyRef = useRef(dirty)
   const composing = useRef(false)
-  const draftSnapshot = useRef<CachedDraft>({ draft, baseline })
-  draftSnapshot.current = { draft, baseline }
+  const draftSnapshot = useRef<CachedDraft>({ draft, baseline, revision: baselineRevision })
+  draftSnapshot.current = { draft, baseline, revision: baselineRevision }
   dirtyRef.current = dirty
 
   const validationError = validate?.(draft) ?? null
-  const externalChanged = dirty && value !== baseline
+  const externalChanged = dirty && (
+    value !== baseline ||
+    baselineRevision === null ||
+    revision !== baselineRevision
+  )
   const error = validationError ?? (
     externalChanged ? t('errors.draftChangedExternally') : null
   )
@@ -109,12 +132,19 @@ export function DraftTextField({
       clearDraft(draftId)
       setDraft(value)
       setBaseline(value)
+      setBaselineRevision(revision)
       setDirty(false)
       dirtyRef.current = false
     } else {
-      draftCache.set(draftId, { draft, baseline })
+      draftCache.set(draftId, { draft, baseline, revision: baselineRevision })
     }
-  }, [draft, draftId, dirty, value])
+  }, [baseline, baselineRevision, draft, draftId, dirty, revision, value])
+
+  useEffect(() => {
+    const id = `text:${draftId}`
+    setReviewDraftProtected(id, dirty)
+    return () => setReviewDraftProtected(id, false)
+  }, [dirty, draftId, setReviewDraftProtected])
 
   useEffect(() => () => {
     if (dirtyRef.current) {
@@ -124,10 +154,11 @@ export function DraftTextField({
 
   function commitDraft(): boolean {
     if (!dirty) return true
-    if (validationError) return false
+    if (validationError || externalChanged) return false
     if (draft === value) {
       clearDraft(draftId)
       setBaseline(value)
+      setBaselineRevision(revision)
       setDirty(false)
       dirtyRef.current = false
       return true
@@ -136,6 +167,7 @@ export function DraftTextField({
     if (committed) {
       clearDraft(draftId)
       setBaseline(draft)
+      setBaselineRevision(revision)
       setDirty(false)
       dirtyRef.current = false
     }
@@ -169,13 +201,20 @@ export function DraftTextField({
     if (nextDraft === value) {
       clearDraft(draftId)
       setBaseline(value)
+      setBaselineRevision(revision)
       setDirty(false)
       dirtyRef.current = false
       return
     }
     const nextBaseline = dirty ? baseline : value
-    draftCache.set(draftId, { draft: nextDraft, baseline: nextBaseline })
+    const nextBaselineRevision = dirty ? baselineRevision : revision
+    draftCache.set(draftId, {
+      draft: nextDraft,
+      baseline: nextBaseline,
+      revision: nextBaselineRevision,
+    })
     setBaseline(nextBaseline)
+    setBaselineRevision(nextBaselineRevision)
     setDirty(true)
     dirtyRef.current = true
   }
@@ -184,6 +223,7 @@ export function DraftTextField({
     clearDraft(draftId)
     setDraft(value)
     setBaseline(value)
+    setBaselineRevision(revision)
     setDirty(false)
     dirtyRef.current = false
   }

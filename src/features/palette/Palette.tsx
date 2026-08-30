@@ -9,9 +9,13 @@ import styles from './Palette.module.css'
 export function Palette() {
   const { t } = useI18n()
   const activeScreenId = useAppStore(state => state.ui.activeScreenId)
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
 
   return (
     <div className={styles.root}>
+      {reviewLocked ? (
+        <p className={styles.reviewLock}>{t('changes.editLocked')}</p>
+      ) : null}
       <ul className={styles.list}>
         {/* Modal stays on the independent root; regression coverage still looks for: if (item.kind !== 'modal') */}
         {PALETTE_ITEMS.map(item => {
@@ -22,7 +26,7 @@ export function Palette() {
               item={item}
               label={label}
               dragLabel={t('palette.dragToAdd', { label })}
-              disabled={!activeScreenId}
+              disabled={!activeScreenId || reviewLocked}
             />
           )
         })}

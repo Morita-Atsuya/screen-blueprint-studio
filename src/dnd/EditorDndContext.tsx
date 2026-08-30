@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -42,6 +42,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
   const { locale, t } = useI18n()
   const [dragLabel, setDragLabel] = useState<string | null>(null)
   const [isPaletteDrag, setIsPaletteDrag] = useState(false)
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const completedDrop = useRef<CompletedDropOutcome | null>(null)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -49,7 +50,27 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
+  useEffect(() => {
+    if (!reviewLocked) return
+    completedDrop.current = { status: 'cancelled' }
+    if (dragLabel !== null) {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+      }))
+    }
+    setDragLabel(null)
+    setIsPaletteDrag(false)
+  }, [dragLabel, reviewLocked])
+
   function handleDragStart(event: DragStartEvent) {
+    if (useAppStore.getState().activeChangeSet) {
+      completedDrop.current = { status: 'cancelled' }
+      setDragLabel(null)
+      setIsPaletteDrag(false)
+      return
+    }
     const drag = event.active.data.current
     completedDrop.current = null
     setDragLabel(isEditorDragData(drag) ? drag.label : null)
@@ -68,6 +89,10 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
     }
 
     const state = useAppStore.getState()
+    if (state.activeChangeSet) {
+      completedDrop.current = { status: 'cancelled' }
+      return
+    }
     const outcome = resolveEditorDrop(state.effectiveDocument, drag, target)
     completedDrop.current = outcome
     if (outcome.status === 'no-op') return

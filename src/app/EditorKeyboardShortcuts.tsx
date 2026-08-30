@@ -44,14 +44,22 @@ export function EditorKeyboardShortcuts({
         return
       }
       if (shortcut === 'undo') {
-        if (state.activeChangeSet || state.history.length === 0) return
+        if (state.history.length === 0) return
         event.preventDefault()
+        if (state.activeChangeSet) {
+          state.notifyReviewLock()
+          return
+        }
         state.undo()
         return
       }
       if (shortcut === 'redo') {
-        if (state.activeChangeSet || state.redoStack.length === 0) return
+        if (state.redoStack.length === 0) return
         event.preventDefault()
+        if (state.activeChangeSet) {
+          state.notifyReviewLock()
+          return
+        }
         state.redo()
         return
       }
@@ -73,12 +81,20 @@ export function EditorKeyboardShortcuts({
           return
         }
         event.preventDefault()
+        if (state.activeChangeSet) {
+          state.notifyReviewLock()
+          return
+        }
         state.pasteComponent(selectedId, t('componentMenu.pasteHistory'))
         return
       }
       if (shortcut === 'duplicate-selection') {
         if (!canDuplicateComponent(state.effectiveDocument, selectedId)) return
         event.preventDefault()
+        if (state.activeChangeSet) {
+          state.notifyReviewLock()
+          return
+        }
         state.duplicateComponent(selectedId, t('componentMenu.duplicateHistory'))
         return
       }
@@ -97,6 +113,10 @@ export function EditorKeyboardShortcuts({
           severity: 'error',
           message: { key: 'errors.cannotDeleteRoot' },
         })
+        return
+      }
+      if (state.activeChangeSet) {
+        state.notifyReviewLock()
         return
       }
       state.requestHumanDelete(

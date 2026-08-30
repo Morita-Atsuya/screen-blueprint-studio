@@ -14,10 +14,16 @@ export function ScreenList() {
     dispatch,
     requestHumanDelete,
     setActiveScreen,
+    activeChangeSet,
+    reviewDraftProtectionIds,
+    reviewDraftDocument,
   } = useAppStore()
   const { project, screens } = effectiveDocument
   const activeScreen = ui.activeScreenId
-    ? getOwnEntity(screens, ui.activeScreenId)
+    ? getOwnEntity(screens, ui.activeScreenId) ??
+      (reviewDraftProtectionIds.length > 0 && reviewDraftDocument
+        ? getOwnEntity(reviewDraftDocument.screens, ui.activeScreenId)
+        : undefined)
     : undefined
 
   function addScreen() {
@@ -52,8 +58,18 @@ export function ScreenList() {
 
   return (
     <div className={styles.root}>
+      {activeChangeSet ? (
+        <p className={styles.reviewLock}>{t('changes.editLocked')}</p>
+      ) : null}
       <div className={styles.actions}>
-        <button className={styles.addBtn} onClick={addScreen}>+ {t('screens.add')}</button>
+        <button
+          className={styles.addBtn}
+          onClick={addScreen}
+          disabled={Boolean(activeChangeSet)}
+          title={activeChangeSet ? t('changes.editLocked') : undefined}
+        >
+          + {t('screens.add')}
+        </button>
       </div>
       <ul className={styles.list}>
         {project.screenIds.map(id => {
@@ -83,6 +99,7 @@ export function ScreenList() {
               ariaLabel={t('screens.name')}
               className={styles.input}
               value={activeScreen.name}
+              disabled={Boolean(activeChangeSet)}
               onCommit={name => dispatch({
                 type: 'updateScreen',
                 screenId: activeScreen.id,
@@ -98,6 +115,7 @@ export function ScreenList() {
               ariaLabel={t('screens.route')}
               className={styles.input}
               value={activeScreen.route}
+              disabled={Boolean(activeChangeSet)}
               validate={route => Object.values(screens).some(
                 screen => screen.id !== activeScreen.id && screen.route === route,
               )
@@ -113,7 +131,8 @@ export function ScreenList() {
           <div className={styles.manageActions}>
             <button
               className={styles.deleteBtn}
-              disabled={project.screenIds.length <= 1}
+              disabled={Boolean(activeChangeSet) || project.screenIds.length <= 1}
+              title={activeChangeSet ? t('changes.editLocked') : undefined}
               onClick={removeActiveScreen}
             >
               {t('screens.delete')}

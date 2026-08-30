@@ -311,6 +311,9 @@ export function StructureTree() {
 
   return (
     <>
+      {activeChangeSet ? (
+        <p className={styles.reviewLock}>{t('changes.editLocked')}</p>
+      ) : null}
       <ul
         className={styles.root}
         role="tree"
@@ -444,6 +447,7 @@ function TreeNode({
   registerNodeRef,
   componentStatuses,
 }: TreeNodeProps) {
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const baseComponent = getOwnEntity(document.components, componentId)
   const effectiveState = baseComponent
     ? resolveEffectiveComponentState(baseComponent, activeState)
@@ -485,7 +489,7 @@ function TreeNode({
           label: spokenLabel,
         }
       : undefined,
-    disabled: { draggable: isIndependentRoot, droppable: true },
+    disabled: { draggable: isIndependentRoot || reviewLocked, droppable: true },
   })
 
   if (!component) return null
@@ -599,7 +603,8 @@ function TreeNode({
           <button
             className={styles.dragHandle}
             aria-label={t('tree.dragAria', { label: spokenLabel })}
-            title={t('tree.drag')}
+            title={reviewLocked ? t('changes.editLocked') : t('tree.drag')}
+            disabled={reviewLocked}
             data-drag-surface="tree"
             data-drag-component={component.id}
             onClick={event => event.stopPropagation()}
@@ -645,6 +650,7 @@ function TreeNode({
                 <button
                   type="button"
                   className={`${styles.stateBadge} ${styles.resetOverride}`}
+                  disabled={reviewLocked}
                   aria-label={t('tree.resetOverride', {
                     label: spokenLabel,
                     state: activeState.name,
@@ -673,22 +679,23 @@ function TreeNode({
                   className={styles.iconBtn}
                   title={t('tree.moveUp')}
                   aria-label={t('tree.moveUpAria', { label: spokenLabel })}
-                  disabled={siblingIndex <= 0}
+                  disabled={reviewLocked || siblingIndex <= 0}
                   onClick={event => { event.stopPropagation(); onMove(component.id, -1) }}
                 >↑</button>
                 <button
                   className={styles.iconBtn}
                   title={t('tree.moveDown')}
                   aria-label={t('tree.moveDownAria', { label: spokenLabel })}
-                  disabled={!parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
+                  disabled={reviewLocked || !parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
                   onClick={event => { event.stopPropagation(); onMove(component.id, 1) }}
                 >↓</button>
               </>
             ) : null}
             <button
               className={`${styles.iconBtn} ${styles.danger}`}
-              title={t('tree.delete')}
+              title={reviewLocked ? t('changes.editLocked') : t('tree.delete')}
               aria-label={t('tree.deleteAria', { label: spokenLabel })}
+              disabled={reviewLocked}
               onClick={event => { event.stopPropagation(); onRemove(component.id) }}
             >×</button>
           </div>

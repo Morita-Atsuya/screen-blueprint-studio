@@ -182,6 +182,17 @@
   font-size: 0.78rem;
 }
 
+.reviewLockNotice {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--agent-change-border);
+  border-radius: 6px;
+  background: var(--agent-change);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .unavailable {
   margin-top: 12px;
   color: var(--danger);

@@ -4,6 +4,7 @@ import {
   preserveTextDraftOnSectionToggle,
 } from '../../components/textDraft'
 import styles from './Inspector.module.css'
+import { useAppStore } from '../../app/appStore'
 
 export interface InspectorSectionBadge {
   label: string
@@ -28,6 +29,7 @@ export function InspectorSection({
 }) {
   const contentId = useId()
   const contentRef = useRef<HTMLDivElement>(null)
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
 
   function preserveDirtyDraft() {
     const draft = contentRef.current
@@ -95,7 +97,13 @@ export function InspectorSection({
         aria-label={title}
         hidden={!expanded}
       >
-        {children}
+        <fieldset
+          className={styles.inspectorSectionFields}
+          disabled={reviewLocked}
+          aria-describedby={reviewLocked ? 'inspector-review-lock' : undefined}
+        >
+          {children}
+        </fieldset>
       </div>
     </section>
   )

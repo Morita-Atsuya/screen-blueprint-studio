@@ -20,8 +20,8 @@ MVPでは次の体験を完成させる。
 1. 人間がAIなしでも画面仕様を作成、編集できる
 2. エージェントが現在の画面、選択、未保存状態をWebMCPで取得できる
 3. エージェントの変更は直接確定せず、同じ画面上のchange setとして表示される
-4. 人間が変更セットを確認、修正、反映、破棄できる
-5. エージェントがchange set内の人間の修正を読み、次の変更へ反映できる
+4. 人間が変更セットを確認し、反映または破棄できる
+5. 人間が破棄理由をエージェントへ伝え、次の変更セットへ反映できる
 
 WebMCPは状態管理そのものではなく、アプリ内の読み取り・更新操作をエージェントへ公開する境界である。人間向けUIとWebMCPツールは、同じcommand層と検証処理を使用する。
 
@@ -41,7 +41,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - クリックまたは送信イベント
 - API操作と成功・失敗状態の関連付け
 - 同時に1件のAI change set
-- change setの確認、手動修正、反映、破棄
+- change setの確認、反映、破棄
 - 確定操作のUndo／Redo
 - `localStorage`への保存
 - 10個のWebMCPツール
@@ -79,7 +79,7 @@ ReactコンポーネントやWebMCPツールからモデルを直接変更しな
 
 - 通常時の人間操作: commandを直ちに確定モデルへ適用する
 - AI操作: WebMCPで開始したactive change setへcommandを追加する
-- change set表示中の人間操作: change setのpreviewへ追加する
+- active change set中の人間操作: ProjectDocument変更を拒否し、反映または破棄を先に求める
 
 同じcommandと検証処理を使い、更新ロジックを二重実装しない。
 
@@ -400,7 +400,7 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 ```ts
 interface ChangeSetOperation<T extends DomainCommand = DomainCommand> {
   id: EntityId;
-  source: "human" | "agent";
+  source: "agent";
   issuedAt: string;
   command: T;
 }
@@ -421,7 +421,7 @@ type DomainCommand =
   | BindApiOperationCommand;
 ```
 
-commandは成功時に全体適用、失敗時に無変更とする。
+新しいactive change setへ追加できるのは`source: "agent"`だけとする。未リリース中の旧保存データにhuman operationがある場合はAI operationとして扱わず、読み込み時はRecoveryを要求する。commandは成功時に全体適用、失敗時に無変更とする。
 
 screen追加時はroot pageとdefault stateを同一commandで作成する。screen削除時は配下のcomponent、state、event、APIをまとめて削除する。他screenの`navigate`から参照されているscreenは、参照を外すまで削除できない。選択中screenを削除したUIは、残った先頭screenへ選択をreconcileする。
 
@@ -477,19 +477,20 @@ interface CollaborationState {
        ↓
      active change set
        ├─ AIがcommand追加
-       ├─ 人間がpreviewを修正
+       ├─ 人間はpreview・差分を確認
+       ├─ 人間のdocument編集とUndo／Redoをlock
        ├─ 人間が反映 ──────────> 確定モデル + history
        └─ 人間が破棄 ──────────> 確定モデル
 ```
 
-active change set中は、人間によるキャンバス・インスペクター編集もchange setへ追加する。確定モデルを裏で変更しない。UI上部に「変更セットを確認中」と明示する。
+active change set中はreview lockとし、人間によるProjectDocument変更を中央store入口で拒否する。Inspector、Screen／state／Event／API／Validation編集、追加・削除・複製・Paste、DnD、Undo／RedoもUIで無効化し、確定document、base document、operations、version、history、永続化payloadを変更しない。選択、Treeの開閉、Canvasのzoom/pan/fit、Flow／Changes閲覧、locale、pane resize、アプリ内Copyは継続できる。UI上部にlock理由と反映／破棄導線を表示する。
 
-change setの`version`はAI・人間を問わずoperation追加ごとに1増加する。WebMCPのwrite toolは`expectedRevision`と`expectedChangeSetVersion`を受け取り、次を検証する。
+change setの`version`はAI operation追加ごとに1増加し、`operations.length`と一致する。WebMCPのwrite toolは`expectedRevision`と`expectedChangeSetVersion`を受け取り、次を検証する。
 
 - `expectedRevision === activeChangeSet.baseRevision === document.revision`
 - `expectedChangeSetVersion === activeChangeSet.version`
 
-これにより、別タブで確定モデルが更新された場合と、tool呼び出しの間に人間がchange setを修正した場合の両方でstale writeを拒否できる。
+これにより、別タブで確定モデルが更新された場合と、tool呼び出しの間に別のAI operationが追加された場合の両方でstale writeを拒否できる。
 
 ### 8.3 反映
 
@@ -520,7 +521,7 @@ interface HistoryEntry {
 
 - 人間の通常commandは1操作につき1entry
 - controlled text fieldは打鍵中にモデルを変更せずlocal draftを保持し、単一行のEnterまたはblur、複数行のblurで1command・1entryとして確定する。IME変換中のEnterは確定triggerにしない
-- active change set中のtext field確定も文字数ではなく1編集sessionにつき1件のhuman operationとする
+- active change set開始前から開いているfield／dialogのlocal draftは自動確定・破棄せず保持し、保存を無効化してCancelを許可する。破棄後は保存を再開でき、反映後は変更されたrevisionに対するstale draftとして閉じて開き直すまで保存しない
 - 外部document更新と競合した未確定draftは上書きせず保持し、再確定またはEscape取消をユーザーが選べる。reload時はまず同期的なcommand確定を試し、validationで確定できないdraftだけをsessionStorageへ退避して同じfieldへ復元する
 - change set反映は全operationsで1entry
 - Undoは`before`を復元し、revisionを新しく採番する
@@ -635,7 +636,7 @@ AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIで�
 | `get_current_screen_context` | project概要と現在の作業対象を取得 | project、screen一覧、active screen、revision、selected component/state、active change set |
 | `get_component` | ID指定または選択中componentの仕様を取得 | component、state override、関連event/API |
 | `get_screen_diagnostics` | fieldKeyなどの軽量な構造診断を取得 | screen ID、diagnostics |
-| `get_pending_change_set` | 未反映の変更セットと人間修正を取得 | summary、operations、diff、base revision |
+| `get_pending_change_set` | 未反映の変更セットを取得 | summary、AI operations、diff、base revision |
 
 ### 11.2 Change set開始
 
@@ -771,6 +772,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - 読み込み時にschema versionと不変条件を検証
 - 不正データの場合は自動初期化せず、復旧またはsample再読み込みを選べるエラー画面を表示
 - 確定documentが正常でactive change setだけが不正または再生不能な場合は、確定documentを通常起動し、pending change setだけを破棄して永続noticeで通知する
+- active change setに旧`source: human` operationが含まれる場合は黙って破棄またはAI扱いせず、raw JSONを保持したRecovery画面で明示対応を求める
 - 書き込み失敗時は永続警告bannerを表示し、確定documentとpreview中のeffective documentをJSONで退避できる
 - change set破棄の保存に失敗した場合は古いactive payloadを削除し、rejected IDとの照合でも再復元を防ぐ
 - recovery中はJSON退避とsample初期化以外のwriteを拒否し、WebMCP readにはrecovery状態だけを公開する
@@ -807,9 +809,10 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 
 ### 15.2 Store integration tests
 
-- 人間commandは即時確定される
+- active change setがない通常時の人間commandは即時確定される
 - AI commandはactive change set内で確定モデルを変えずpreviewだけを変える
-- active change set中の人間編集はpreviewへ入る
+- active change set中の人間編集は中央guardで拒否され、document、change set、history、storageが不変
+- active change set中も選択、閲覧、zoom/pan、Flow、locale、pane resize等のUI-only操作は利用できる
 - acceptで1transactionとして確定される
 - rejectで確定モデルが変わらない
 - 永続化後に同じeffective documentを復元する
@@ -856,11 +859,11 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 
 1. active change setとeffective document
 2. operation差分表示
-3. change set内の人間修正
-4. 反映、破棄、Undo／Redo
+3. active change set中のreview lock
+4. 反映、破棄、通常時のUndo／Redo
 5. refresh後のactive change set復元
 
-完了条件: AI相当のcommand列をpreviewし、人間が修正後に一括反映または破棄できる。
+完了条件: AI相当のcommand列をpreviewし、人間が確認後に一括反映または破棄できる。
 
 ### Phase 4: WebMCP
 
@@ -888,9 +891,9 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 2. canvas、tree、inspectorが同じモデルを表示する
 3. 破損した親子参照や存在しないIDを保存できない
 4. AI write toolは確定モデルを直接変更せず、screenとcomponent構造の追加・更新・移動・削除と既存stateの修正をactive change set上で行える
-5. AI変更とchange set内の人間修正を視覚的に区別できる
+5. active change set中はreview lockを表示し、人間のProjectDocument変更を全入口で拒否できる
 6. 人間だけがchange setを反映・破棄できる
-7. active change setに対する人間修正をエージェントがread toolで取得できる
+7. active change setにはAI operationだけが入り、旧human operationを明示的にinvalidとして扱える
 8. 反映したchange set全体を1回のUndoで戻し、Redoで再適用できる
 9. WebMCP非対応でも人間向けアプリが動作する
 10. 10個のtoolがDevToolsで確認でき、型付き入力で実行できる

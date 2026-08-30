@@ -42,6 +42,8 @@ export function Canvas() {
   const {
     effectiveDocument,
     activeChangeSet,
+    reviewDraftProtectionIds,
+    reviewDraftDocument,
     ui,
     setSelectedComponent,
     setActiveState,
@@ -61,10 +63,16 @@ export function Canvas() {
     return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
   }
 
-  const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
+  const screen = getOwnEntity(effectiveDocument.screens, activeScreenId) ??
+    (reviewDraftProtectionIds.length > 0 && reviewDraftDocument
+      ? getOwnEntity(reviewDraftDocument.screens, activeScreenId)
+      : undefined)
   if (!screen) return null
   const activeState = activeStateId
-    ? getOwnEntity(effectiveDocument.screenStates, activeStateId)
+    ? getOwnEntity(effectiveDocument.screenStates, activeStateId) ??
+      (reviewDraftProtectionIds.length > 0 && reviewDraftDocument
+        ? getOwnEntity(reviewDraftDocument.screenStates, activeStateId)
+        : undefined)
     : undefined
   const activeStateDescription = activeState?.description.trim()
   const activeStateDescriptionId = activeStateDescription
@@ -111,11 +119,12 @@ export function Canvas() {
               <button
                 type="button"
                 className={styles.stateIconBtn}
+                disabled={Boolean(activeChangeSet)}
                 onClick={event => {
                   event.stopPropagation()
                   setStateDialog('edit')
                 }}
-                title={t('states.manage')}
+                title={activeChangeSet ? t('changes.editLocked') : t('states.manage')}
                 aria-label={t('states.manageAria', { name: activeState?.name ?? '' })}
               >
                 ⋯
@@ -124,11 +133,12 @@ export function Canvas() {
             <button
               type="button"
               className={styles.stateIconBtn}
+              disabled={Boolean(activeChangeSet)}
               onClick={event => {
                 event.stopPropagation()
                 setStateDialog('create')
               }}
-              title={t('states.add')}
+              title={activeChangeSet ? t('changes.editLocked') : t('states.add')}
               aria-label={t('states.add')}
             >
               +
@@ -406,6 +416,7 @@ function CanvasComponent({
   componentStatuses,
   independentRoot = false,
 }: CanvasComponentProps) {
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const base = getOwnEntity(document.components, componentId)
   const component = base ? effectiveComponent(base, activeState) : undefined
   const displayName = component
@@ -431,7 +442,7 @@ function CanvasComponent({
           label: displayName,
         }
       : undefined,
-    disabled: { draggable: isRoot, droppable: true },
+    disabled: { draggable: isRoot || reviewLocked, droppable: true },
   })
 
   if (!component) return null
@@ -481,10 +492,11 @@ function CanvasComponent({
         component.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}
       style={style}
-      {...(!isRoot ? attributes : {})}
-      {...(!isRoot ? listeners : {})}
+      {...(!isRoot && !reviewLocked ? attributes : {})}
+      {...(!isRoot && !reviewLocked ? listeners : {})}
       tabIndex={0}
-      aria-label={isRoot ? displayName : t('canvas.dragAria', { label: displayName })}
+      aria-label={isRoot || reviewLocked ? displayName : t('canvas.dragAria', { label: displayName })}
+      title={reviewLocked && !isRoot ? t('changes.editLocked') : undefined}
       onClick={event => {
         event.stopPropagation()
         if (consumeSuppressedClick()) return
@@ -503,12 +515,12 @@ function CanvasComponent({
           beginPan(event)
           return
         }
-        if (!isRoot) listeners?.onPointerDown?.(event)
+        if (!isRoot && !reviewLocked) listeners?.onPointerDown?.(event)
       }}
       onTouchStart={event => {
         event.stopPropagation()
         if (spacePanActive) return
-        if (!isRoot) listeners?.onTouchStart?.(event)
+        if (!isRoot && !reviewLocked) listeners?.onTouchStart?.(event)
       }}
       onKeyDown={event => {
         if (addMenu.openFromKeyboard(event, component.id)) {
@@ -517,7 +529,7 @@ function CanvasComponent({
         }
         if (active) return
         event.stopPropagation()
-        if (!isRoot) listeners?.onKeyDown?.(event)
+        if (!isRoot && !reviewLocked) listeners?.onKeyDown?.(event)
       }}
       onPointerMove={event => {
         event.stopPropagation()
@@ -527,9 +539,9 @@ function CanvasComponent({
       data-editor-hovered={isHovered || undefined}
       data-editor-selected={isSelected || undefined}
       data-component-visible={component.common.visible}
-      data-canvas-draggable={!isRoot || undefined}
-      data-drag-surface={!isRoot ? 'canvas' : undefined}
-      data-drag-component={!isRoot ? component.id : undefined}
+      data-canvas-draggable={!isRoot && !reviewLocked || undefined}
+      data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}
+      data-drag-component={!isRoot && !reviewLocked ? component.id : undefined}
       data-component-change={changeStatus}
     >
       {changeStatus ? (

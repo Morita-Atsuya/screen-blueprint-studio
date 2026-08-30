@@ -66,6 +66,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const pasteComponent = useAppStore(state => state.pasteComponent)
   const componentClipboard = useAppStore(state => state.componentClipboard)
   const setSelectedComponent = useAppStore(state => state.setSelectedComponent)
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null)
   const [position, setPosition] = useState<MenuPoint | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -108,17 +109,18 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const component = openMenu
     ? getOwnEntity(effectiveDocument.components, openMenu.componentId)
     : undefined
-  const targets = openMenu
+  const targets = openMenu && !reviewLocked
     ? resolveComponentInsertTargets(effectiveDocument, openMenu.componentId)
     : []
   const label = component ? getComponentDisplayLabel(component, locale) : ''
-  const canDuplicate = openMenu
+  const canCopy = openMenu
     ? canDuplicateComponent(effectiveDocument, openMenu.componentId)
     : false
-  const canPaste = openMenu
+  const canDuplicate = canCopy && !reviewLocked
+  const canPaste = openMenu && !reviewLocked
     ? canPasteComponent(effectiveDocument, componentClipboard, openMenu.componentId)
     : false
-  const hasComponentActions = canDuplicate || canPaste
+  const hasComponentActions = canCopy || canDuplicate || canPaste
 
   useEffect(() => {
     if (openMenu && !component) close(false)
@@ -177,7 +179,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   }
 
   function copy() {
-    if (!openMenu || !canDuplicate) return
+    if (!openMenu || !canCopy) return
     if (!copyComponent(openMenu.componentId)) return
     close()
   }
@@ -259,12 +261,17 @@ export function useComponentAddMenu(): ComponentAddMenuController {
                 ? 'componentMenu.chooseAction'
                 : 'componentMenu.chooseType')}
             </div>
+            {reviewLocked ? (
+              <div className={styles.reviewLock} role="note">
+                {t('changes.editLocked')}
+              </div>
+            ) : null}
             {openMenu.stage === 'position'
               ? (
                   <>
                     {hasComponentActions ? (
                       <>
-                        {canDuplicate ? (
+                        {canCopy ? (
                           <>
                             <button
                               type="button"
@@ -275,15 +282,17 @@ export function useComponentAddMenu(): ComponentAddMenuController {
                             >
                               {t('componentMenu.copy')}
                             </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className={styles.item}
-                              data-component-duplicate
-                              onClick={duplicate}
-                            >
-                              {t('componentMenu.duplicate')}
-                            </button>
+                            {canDuplicate ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className={styles.item}
+                                data-component-duplicate
+                                onClick={duplicate}
+                              >
+                                {t('componentMenu.duplicate')}
+                              </button>
+                            ) : null}
                           </>
                         ) : null}
                         {canPaste ? (

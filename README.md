@@ -31,7 +31,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 
 ## 人間とAIの共同編集
 
-AIによる書き込みは確定モデルへ直接反映されません。WebMCPの`begin_change_set`だけがactive change setを開始し、その中へoperationを追加します。通常時の人間操作は直接確定し、active change set中の修正だけが同じchange setへ入ります。変更は同じキャンバスへpreviewされ、反映・破棄は人間向けUIからのみ行います。
+AIによる書き込みは確定モデルへ直接反映されません。WebMCPの`begin_change_set`だけがactive change setを開始し、その中へAI operationを追加します。active change setがない通常時だけ、人間操作は直接確定します。active change set中はreview lockとなり、選択、閲覧、Canvasのzoom/pan、Flow切替などは利用できますが、ProjectDocumentの編集、Undo／Redo、DnDはできません。先に変更セットを反映または破棄します。
 
 ```text
 人間が画面やコンポーネントを選択
@@ -42,7 +42,7 @@ AIがchange setへ型付きoperationを追加
   ↓
 同じUIでpreview
   ↓
-人間が修正・反映・破棄
+人間が確認し、反映または破棄
 ```
 
 確定済みの`document`とpreview用の`effectiveDocument`は分離されています。無効なoperation、古いrevision、壊れた参照、型不一致は共通のdomain validationで拒否されます。
@@ -76,7 +76,7 @@ AIがchange setへ型付きoperationを追加
 - Buttonや入力componentを選択し、Inspectorの「振る舞い」でeventと実行順action、API operationとrequest bindingを編集。field bindingの正準sourceは`ApiOperation.requestBindings`のみ。`textInput`ではvalidation rule（required／minLength／maxLength／pattern／email／custom）を追加・編集・削除・並べ替え
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
-Page／Modal root、別screen、leaf、自分自身・子孫へのdropは理由別に拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。同じ位置へ戻すdropは正常なno-opとしてToast、history、change set operationを生成せず、対象外でdragを終えた場合やEscapeは通常cancelとして扱います。active change set中の有効なdragや編集は、人間によるoperationとして同じchange setへ追加されます。
+Page／Modal root、別screen、leaf、自分自身・子孫へのdropは理由別に拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。同じ位置へ戻すdropは正常なno-opとしてToast、history、change set operationを生成せず、対象外でdragを終えた場合やEscapeは通常cancelとして扱います。active change setが始まると進行中のdragは安全にcancelされ、反映または破棄まで新しいdragを開始できません。
 drop位置はdrag中だけ挿入line・outlineで示し、無効な位置は別のchromeで識別できます。preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Section／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。treeとdrag表示はleafのlabel／textなどの仕様値、または構造kindのeditor-only名を使います。
 
 ## ローカル実行

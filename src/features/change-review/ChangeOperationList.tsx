@@ -33,7 +33,7 @@ export function ChangeOperationList({ changeSet }: { changeSet: ChangeSet }) {
       {operations.map((operation, index) => (
         <li
           key={operation.operationId}
-          className={`${styles.item} ${operation.source === 'agent' ? styles.agentItem : ''}`}
+          className={`${styles.item} ${styles.agentItem}`}
           data-command-type={operation.commandType}
         >
           {operation.navigation ? (
@@ -76,7 +76,7 @@ function OperationContent({
           <span className={styles.badges}>
             <span className={styles.action}>{operation.action}</span>
             <span className={styles.source}>
-              {t(operation.source === 'agent' ? 'changes.sourceAgent' : 'changes.sourceHuman')}
+              {t('changes.sourceAgent')}
             </span>
           </span>
           <strong className={styles.target} title={operation.targetLabel}>
