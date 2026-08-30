@@ -78,6 +78,7 @@ const componentBehaviorBundle = join(temp, 'componentBehavior.mjs')
 const canvasViewportMathBundle = join(temp, 'canvasViewportMath.mjs')
 const componentAddMenuModelBundle = join(temp, 'componentAddMenuModel.mjs')
 const stateOverridesBundle = join(temp, 'stateOverrides.mjs')
+const changeSetPresentationBundle = join(temp, 'changeSetPresentation.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -95,6 +96,7 @@ bundle('src/domain/componentBehavior.ts', componentBehaviorBundle)
 bundle('src/features/canvas/canvasViewportMath.ts', canvasViewportMathBundle)
 bundle('src/features/component-add-menu/componentAddMenuModel.ts', componentAddMenuModelBundle)
 bundle('src/domain/stateOverrides.ts', stateOverridesBundle)
+bundle('src/domain/changeSetPresentation.ts', changeSetPresentationBundle)
 
 let passed = 0
 
@@ -3067,6 +3069,318 @@ await test('Tree state presentation uses effective values and atomic override re
       treeStyles.includes('.stateStatus') &&
       treeStyles.includes('flex-wrap: wrap'),
     'Tree state markers no longer preserve narrow label space',
+  )
+})
+
+await test('change-set review presents sequential diffs for every command type', async () => {
+  memoryStorage.clear()
+  const { presentChangeSetOperations } = await import(
+    moduleUrl(changeSetPresentationBundle, 'change-set-presenter')
+  )
+  const { createAddComponentCommand } = await import(
+    moduleUrl(componentFactoryBundle, 'change-set-presenter-factory')
+  )
+  const store = await freshStore('change-set-presenter')
+  const baseDocument = store.getState().document
+  let operationNumber = 0
+  const makeChangeSet = commands => ({
+    id: `review-${operationNumber}`,
+    summary: 'Review operations',
+    baseRevision: baseDocument.revision,
+    version: commands.length,
+    baseDocument,
+    operations: commands.map(command => ({
+      id: `review-op-${++operationNumber}`,
+      source: operationNumber % 2 === 0 ? 'human' : 'agent',
+      command,
+      issuedAt: '2026-01-01T00:00:00.000Z',
+    })),
+    createdAt: '2026-01-01T00:00:00.000Z',
+  })
+
+  const screenRows = presentChangeSetOperations(makeChangeSet([
+    {
+      type: 'addScreen',
+      screenId: 'screen-review',
+      rootComponentId: 'comp-review-page',
+      defaultStateId: 'state-review-default',
+      name: 'Review screen',
+      route: '/review',
+    },
+    {
+      type: 'updateScreen',
+      screenId: 'screen-review',
+      name: 'Review screen updated',
+      route: '/review/updated',
+    },
+    { type: 'removeScreen', screenId: 'screen-review' },
+  ]), 'en')
+  assert(
+    screenRows[0].navigation?.componentId === 'comp-review-page' &&
+      screenRows[1].changes.some(change =>
+        change.field === 'Name' &&
+        change.before.text === 'Review screen' &&
+        change.after.text === 'Review screen updated'
+      ) &&
+      screenRows[2].targetLabel === 'Review screen updated' &&
+      screenRows[2].navigation === null &&
+      screenRows[2].impact.includes('1 components') &&
+      screenRows[2].impact.includes('1 states'),
+    'screen add/update/delete review lost sequential values, navigation, or cleanup impact',
+  )
+
+  const addedComponent = createAddComponentCommand(
+    baseDocument,
+    'screen-list',
+    'comp-list-section',
+    'button',
+    'en',
+    0,
+  )
+  const componentRows = presentChangeSetOperations(makeChangeSet([
+    addedComponent,
+    {
+      type: 'updateComponentSpec',
+      componentId: addedComponent.componentId,
+      patch: { config: { label: 'First label' } },
+    },
+    {
+      type: 'updateComponentSpec',
+      componentId: addedComponent.componentId,
+      patch: { config: { label: 'Second label\nwith another line' } },
+    },
+    {
+      type: 'moveComponent',
+      componentId: addedComponent.componentId,
+      newParentId: 'comp-list-section',
+      position: 1,
+    },
+    {
+      type: 'moveComponent',
+      componentId: addedComponent.componentId,
+      newParentId: 'comp-list-grid',
+      position: 0,
+    },
+    { type: 'removeComponent', componentId: addedComponent.componentId },
+  ]), 'en')
+  assert(
+    componentRows[0].changes.some(change => change.field === 'Type') &&
+      componentRows[0].navigation?.componentId === addedComponent.componentId &&
+      componentRows[2].changes.some(change =>
+        change.field === 'Label' &&
+        change.before.text === 'First label' &&
+        change.after.fullText === 'Second label ↵ with another line'
+      ) &&
+      componentRows[3].action === 'Reorder component' &&
+      componentRows[4].action === 'Move component to another parent' &&
+      componentRows[4].changes.some(change =>
+        change.field === 'Parent' &&
+        change.before.text === 'Section' &&
+        change.after.text === 'Container'
+      ) &&
+      componentRows[5].navigation === null,
+    'component review lost nested config, immediate snapshots, move semantics, or navigation',
+  )
+
+  const nestedComponentRows = presentChangeSetOperations(makeChangeSet([
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-name-input',
+      patch: {
+        common: { visible: false, enabled: false },
+        config: {
+          placeholder: '',
+          validationRules: [
+            { id: 'review-required', type: 'required', message: 'Required\nmessage' },
+            { id: 'review-max', type: 'maxLength', value: 10, message: 'Ten max' },
+          ],
+        },
+      },
+    },
+  ]), 'en')
+  assert(
+    nestedComponentRows[0].changes.some(change =>
+      change.field === 'Visible' && change.before.text === 'Yes' && change.after.text === 'No'
+    ) &&
+      nestedComponentRows[0].changes.some(change =>
+        change.field === 'Placeholder' && change.after.text === 'Empty string'
+      ) &&
+      nestedComponentRows[0].changes.some(change =>
+        change.field === 'Validation rules' &&
+        change.after.fullText.includes('Required: Required ↵ message') &&
+        change.after.fullText.includes('Maximum length (10): Ten max')
+      ),
+    'component review did not distinguish booleans, empty strings, newlines, or validation arrays',
+  )
+
+  const stateRows = presentChangeSetOperations(makeChangeSet([
+    {
+      type: 'createScreenState',
+      stateId: 'state-review',
+      screenId: 'screen-list',
+      name: 'Review',
+      description: '',
+      overrides: { 'comp-list-title': { text: 'Draft' } },
+    },
+    {
+      type: 'updateScreenState',
+      stateId: 'state-review',
+      name: 'Review updated',
+      description: 'Ready',
+      overrides: { 'comp-list-title': { text: 'Published', enabled: false } },
+    },
+    { type: 'removeScreenState', stateId: 'state-review' },
+  ]), 'en')
+  assert(
+    stateRows[0].changes.some(change =>
+      change.field === 'State overrides' && change.after.fullText.includes('Text=Draft')
+    ) &&
+      stateRows[1].changes.some(change =>
+        change.field === 'State overrides' &&
+        change.before.fullText.includes('Text=Draft') &&
+        change.after.fullText.includes('Text=Published') &&
+        change.after.fullText.includes('Enabled=No')
+      ) &&
+      stateRows[1].navigation?.componentId === 'comp-list-title' &&
+      stateRows[1].navigation?.stateId === 'state-review' &&
+      stateRows[2].navigation === null,
+    'state review lost nested overrides, component navigation, or deletion semantics',
+  )
+
+  const eventRows = presentChangeSetOperations(makeChangeSet([
+    {
+      type: 'connectEvent',
+      eventId: 'event-review',
+      screenId: 'screen-edit',
+      name: 'Cancel review',
+      trigger: { type: 'click', componentId: 'comp-cancel-btn' },
+      actions: [
+        { type: 'setState', stateId: 'state-edit-saving' },
+        { type: 'callApi', apiOperationId: 'api-save-user' },
+      ],
+    },
+    {
+      type: 'updateEvent',
+      eventId: 'event-review',
+      name: 'Cancel review updated',
+      trigger: { type: 'submit', componentId: 'comp-cancel-btn' },
+      actions: [
+        { type: 'showAlert', componentId: 'comp-status-alert' },
+        { type: 'navigate', destinationScreenId: 'screen-list' },
+      ],
+    },
+    { type: 'removeEvent', eventId: 'event-review' },
+  ]), 'en')
+  assert(
+    eventRows[0].changes.some(change =>
+      change.field === 'Actions' &&
+      change.after.fullText.includes('Set state: Saving') &&
+      change.after.fullText.includes('Call API: PUT /api/users/{id}')
+    ) &&
+      eventRows[1].changes.some(change =>
+        change.field === 'Trigger' &&
+        change.before.text.includes('Click') &&
+        change.after.text.includes('Submit')
+      ) &&
+      eventRows[1].changes.some(change =>
+        change.field === 'Actions' &&
+        change.after.fullText.includes('Show alert') &&
+        change.after.fullText.includes('Navigate: User List')
+      ) &&
+      eventRows[1].navigation?.componentId === 'comp-cancel-btn' &&
+      eventRows[2].navigation === null,
+    'event review lost ordered actions, resolved references, trigger diff, or navigation',
+  )
+
+  const apiRows = presentChangeSetOperations(makeChangeSet([
+    {
+      type: 'bindApiOperation',
+      operationId: 'api-review',
+      screenId: 'screen-edit',
+      name: 'Review API',
+      method: 'POST',
+      path: '/api/review',
+      requestBindings: [
+        { componentId: 'comp-name-input', targetPath: 'body.name' },
+      ],
+      successStateId: 'state-edit-success',
+    },
+    {
+      type: 'updateApiOperation',
+      operationId: 'api-review',
+      name: 'Review API updated',
+      method: 'PATCH',
+      path: '/api/review/{id}',
+      requestBindings: [
+        { componentId: 'comp-email-input', targetPath: 'body.email' },
+        { componentId: 'comp-role-select', targetPath: 'body.role' },
+      ],
+      successStateId: null,
+      errorStateId: 'state-edit-error',
+    },
+    { type: 'removeApiOperation', operationId: 'api-review' },
+  ]), 'en')
+  assert(
+    apiRows[0].changes.some(change =>
+      change.field === 'Request bindings' &&
+      change.after.fullText === 'Name → body.name'
+    ) &&
+      apiRows[1].changes.some(change =>
+        change.field === 'Request bindings' &&
+        change.before.fullText === 'Name → body.name' &&
+        change.after.fullText.includes('Email address → body.email') &&
+        change.after.fullText.includes('Role → body.role')
+      ) &&
+      apiRows[1].changes.some(change =>
+        change.field === 'Success state' &&
+        change.before.text === 'Success' &&
+        change.after.text === 'None'
+      ) &&
+      apiRows[1].navigation?.componentId === 'comp-email-input' &&
+      apiRows[2].navigation === null,
+    'API review lost binding arrays, null state references, or navigation',
+  )
+
+  const allRows = [
+    ...screenRows,
+    ...componentRows,
+    ...nestedComponentRows,
+    ...stateRows,
+    ...eventRows,
+    ...apiRows,
+  ]
+  assert(
+    new Set(allRows.map(row => row.commandType)).size === 16,
+    'change-set presenter does not cover all DomainCommand variants',
+  )
+
+  let invalidRaised = false
+  try {
+    presentChangeSetOperations(makeChangeSet([
+      {
+        type: 'updateComponentSpec',
+        componentId: 'missing-component',
+        patch: { common: { visible: false } },
+      },
+    ]), 'en')
+  } catch {
+    invalidRaised = true
+  }
+  assert(invalidRaised, 'invalid change-set operation was silently presented')
+
+  const listSource = readFileSync(
+    join(root, 'src/features/change-review/ChangeOperationList.tsx'),
+    'utf8',
+  )
+  assert(
+    listSource.includes('presentChangeSetOperations') &&
+      listSource.includes('data-command-type') &&
+      listSource.includes('setActiveScreen') &&
+      listSource.includes('setActiveState') &&
+      listSource.includes('setSelectedComponent') &&
+      listSource.includes('setRightPanelTab') &&
+      listSource.includes('operation.navigation ? ('),
+    'Changes UI lost sequential presentation, safe navigation, or static deletion rows',
   )
 })
 

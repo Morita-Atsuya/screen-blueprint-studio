@@ -10,7 +10,6 @@ import type {
 import type { ChangeSet } from '../../domain/collaboration'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
-import { commandMessageKey } from '../../i18n/messages'
 import { DraftTextField } from '../../components/DraftTextField'
 import {
   getComponentBehavior,
@@ -20,6 +19,7 @@ import {
 } from '../../domain/componentBehavior'
 import { BehaviorDetails } from './BehaviorDetails'
 import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
+import { ChangeOperationList } from '../change-review/ChangeOperationList'
 
 export function Inspector() {
   const { locale, t } = useI18n()
@@ -616,16 +616,7 @@ function ChangesPanel({ changeSet }: { changeSet: ChangeSet }) {
   return (
     <div className={styles.changes}>
       <p className={styles.changeSummary}>{changeSet.summary}</p>
-      <ul className={styles.changeList}>
-        {changeSet.operations.map(op => (
-          <li
-            key={op.id}
-            className={`${styles.changeItem} ${op.source === 'agent' ? styles.agentChange : ''}`}
-          >
-            [{t(op.source === 'agent' ? 'changes.sourceAgent' : 'changes.sourceHuman')}] {t(commandMessageKey(op.command))}
-          </li>
-        ))}
-      </ul>
+      <ChangeOperationList changeSet={changeSet} />
       <div className={styles.changeActions}>
         <button className={styles.acceptBtn} onClick={acceptChangeSet}>{t('changes.accept')}</button>
         <button className={styles.rejectBtn} onClick={rejectChangeSet}>{t('changes.reject')}</button>

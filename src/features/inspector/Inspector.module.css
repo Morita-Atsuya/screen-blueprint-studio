@@ -263,19 +263,6 @@
 }
 .changes { display: flex; flex-direction: column; gap: 10px; }
 .changeSummary { font-size: 0.85rem; color: var(--text-muted); }
-.changeList { display: flex; flex-direction: column; gap: 4px; }
-.changeItem {
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: var(--bg-hover);
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-.agentChange {
-  border-left: 3px solid var(--agent-accent);
-  background: var(--agent-change);
-  color: var(--agent-accent);
-}
 .changeActions { display: flex; gap: 8px; margin-top: 2px; }
 .acceptBtn,
 .rejectBtn {

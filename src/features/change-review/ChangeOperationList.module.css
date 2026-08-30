@@ -1,0 +1,178 @@
+.list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.agentItem {
+  border-left: 3px solid var(--agent-accent);
+  background: var(--agent-change);
+}
+
+.operationButton,
+.operationStatic {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.operationButton {
+  cursor: pointer;
+}
+
+.operationButton:hover {
+  background: var(--bg-hover);
+}
+
+.operationButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.heading {
+  display: flex;
+  min-width: 0;
+  gap: 7px;
+}
+
+.number {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.headingText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.action,
+.source {
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.action {
+  color: var(--accent-hover);
+}
+
+.source {
+  color: var(--text-faint);
+}
+
+.target {
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.context {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.fields {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.fieldName,
+.valueLabel {
+  color: var(--text-faint);
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.values {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: 4px;
+}
+
+.value {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.valueLabel {
+  display: block;
+}
+
+.arrow {
+  padding-top: 13px;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+}
+
+.impact,
+.unavailable {
+  display: block;
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.impact strong {
+  color: var(--text);
+}
+
+.unavailable {
+  color: var(--text-faint);
+}
