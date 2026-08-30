@@ -7,6 +7,7 @@ import { Inspector } from '../features/inspector/Inspector'
 import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
 import { EditorDndProvider } from '../dnd/EditorDndContext'
 import { EditorKeyboardShortcuts } from './EditorKeyboardShortcuts'
+import { Toast } from './Toast'
 import { useI18n } from '../i18n/I18nProvider'
 import { getOwnEntity } from '../domain/entityMap'
 import {
@@ -45,10 +46,11 @@ export function App() {
     initializeWithRecovery,
     startupNotice,
     dismissStartupNotice,
-    errorMessage,
+    toast,
     persistenceUnavailable,
     exportCurrentData,
-    setErrorMessage,
+    dismissToast,
+    runToastAction,
   } = useAppStore()
   const canUndo = history.length > 0 && !activeChangeSet
   const canRedo = redoStack.length > 0 && !activeChangeSet
@@ -88,15 +90,15 @@ export function App() {
   }, [rightPaneWidth])
 
   useEffect(() => {
-    if (!errorMessage) return
+    if (!toast) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setErrorMessage(null)
+      if (event.key === 'Escape') dismissToast(toast.id)
     }
 
     globalThis.addEventListener('keydown', handleKeyDown)
     return () => globalThis.removeEventListener('keydown', handleKeyDown)
-  }, [errorMessage, setErrorMessage])
+  }, [dismissToast, toast])
 
   function updateRightPaneWidth(nextWidth: number, persist = false) {
     const clamped = clampRightPaneWidth(nextWidth, viewportWidth)
@@ -208,25 +210,7 @@ export function App() {
           </div>
         )}
 
-        {errorMessage && (
-          <div className={styles.toast} role="alert">
-            <span className={styles.toastMessage}>{formatMessage(errorMessage)}</span>
-            <button
-              className={styles.toastClose}
-              aria-label={t('common.close')}
-              title={t('common.close')}
-              onClick={() => setErrorMessage(null)}
-              onKeyDown={event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                event.currentTarget.click()
-              }}
-              type="button"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        <Toast toast={toast} dismiss={dismissToast} runAction={runToastAction} />
 
         <div className={styles.main}>
           {/* Left panel */}

@@ -14,6 +14,7 @@ import { DomainError } from '../domain/errors'
 import { getOwnEntity, hasOwnEntity } from '../domain/entityMap'
 import type { UiMessage } from '../i18n/messages'
 import { domainErrorMessage } from '../i18n/messages'
+import type { ToastInput, ToastState } from './toastModel'
 import { sampleProject } from '../sample/sampleProject'
 import {
   clearStorage,
@@ -57,7 +58,7 @@ export interface AppStore {
   ui: UiState
   recoveryState: RecoveryState | null
   startupNotice: UiMessage | null
-  errorMessage: UiMessage | null
+  toast: ToastState | null
   persistenceUnavailable: boolean
   // effectiveDocument = computeEffective(document, activeChangeSet)
   effectiveDocument: ProjectDocument
@@ -78,7 +79,9 @@ export interface AppStore {
   initializeWithRecovery(choice: 'sample' | 'download'): void
   exportCurrentData(): void
   dismissStartupNotice(): void
-  setErrorMessage(message: UiMessage | null): void
+  showToast(input: ToastInput): EntityId
+  dismissToast(toastId?: EntityId): void
+  runToastAction(toastId: EntityId): boolean
   resetToSample(): void
 }
 
@@ -178,6 +181,14 @@ function toUiMessage(error: unknown): UiMessage {
   }
 }
 
+function createToast(input: ToastInput): ToastState {
+  return { id: nanoid(), ...input }
+}
+
+function createErrorToast(message: UiMessage): ToastState {
+  return createToast({ severity: 'error', message })
+}
+
 export const useAppStore = create<AppStore>((set, get) => {
   const loadResult = loadFromStorage()
   const rejectedRecords = loadRejectedRecords()
@@ -264,7 +275,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     ui,
     recoveryState,
     startupNotice,
-    errorMessage: null,
+    toast: null,
     persistenceUnavailable,
     effectiveDocument: effectiveDoc,
 
@@ -276,7 +287,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         try {
           state.dispatchToChangeSet(state.activeChangeSet.id, command, 'human')
         } catch (e) {
-          set({ errorMessage: toUiMessage(e) })
+          set({ toast: createErrorToast(toUiMessage(e)) })
           return false
         }
         return true
@@ -294,12 +305,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           redoStack: [],
           effectiveDocument: next,
           ui: newUi,
-          errorMessage: null,
         })
         markPersistence(persistIfAvailable(next, null, newUi.activeScreenId))
         return true
       } catch (e) {
-        set({ errorMessage: toUiMessage(e) })
+        set({ toast: createErrorToast(toUiMessage(e)) })
         return false
       }
     },
@@ -340,7 +350,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         applyCommandWithoutRevision(previewDoc, command)
       } catch (error) {
         const domainError = toDomainError(error)
-        set({ errorMessage: domainErrorMessage(domainError.code) })
+        set({ toast: createErrorToast(domainErrorMessage(domainError.code)) })
         throw domainError
       }
       const operation = { id: nanoid(), source, command, issuedAt: new Date().toISOString() }
@@ -351,7 +361,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       const effective = computeEffective(state.document, newChangeSet)
       const nextUi = reconcileUiState(effective, state.ui)
-      set({ activeChangeSet: newChangeSet, effectiveDocument: effective, ui: nextUi, errorMessage: null })
+      set({ activeChangeSet: newChangeSet, effectiveDocument: effective, ui: nextUi })
       markPersistence(persistIfAvailable(state.document, newChangeSet, nextUi.activeScreenId))
     },
 
@@ -380,18 +390,17 @@ export const useAppStore = create<AppStore>((set, get) => {
           redoStack: [],
           effectiveDocument: next,
           ui: nextUi,
-          errorMessage: null,
         })
         markPersistence(persistIfAvailable(next, null, nextUi.activeScreenId))
       } catch (e) {
         if (e instanceof DomainError) {
-          set({ errorMessage: domainErrorMessage(e.code) })
+          set({ toast: createErrorToast(domainErrorMessage(e.code)) })
         } else {
           set({
-            errorMessage: {
+            toast: createErrorToast({
               key: 'errors.acceptFailed',
               params: { message: e instanceof Error ? e.message : String(e) },
-            },
+            }),
           })
         }
       }
@@ -429,7 +438,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       markPersistence(documentSaved && rejectionSaved)
       if (!documentSaved || !rejectionSaved) {
         set({
-          errorMessage: { key: 'errors.rejectionPersistence' },
+          toast: createErrorToast({ key: 'errors.rejectionPersistence' }),
         })
       }
     },
@@ -539,8 +548,33 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ startupNotice: null })
     },
 
-    setErrorMessage(message) {
-      set({ errorMessage: message })
+    showToast(input) {
+      const toast = createToast(input)
+      set({ toast })
+      return toast.id
+    },
+
+    dismissToast(toastId) {
+      set(state => {
+        if (!state.toast || (toastId && state.toast.id !== toastId)) return {}
+        return { toast: null }
+      })
+    },
+
+    runToastAction(toastId) {
+      let callback: (() => void) | undefined
+      set(state => {
+        if (state.toast?.id !== toastId || !state.toast.action) return {}
+        callback = state.toast.action.callback
+        return { toast: null }
+      })
+      if (!callback) return false
+      try {
+        callback()
+      } catch (error) {
+        get().showToast({ severity: 'error', message: toUiMessage(error) })
+      }
+      return true
     },
 
     resetToSample() {
@@ -554,7 +588,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         recoveryState: null,
         effectiveDocument: sampleProject,
         startupNotice: null,
-        errorMessage: null,
+        toast: null,
       })
       const cleared = clearStorage()
       markPersistence(cleared && persistIfAvailable(sampleProject, null, nextUi.activeScreenId))

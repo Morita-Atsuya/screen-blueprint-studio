@@ -12,9 +12,15 @@
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --danger: #b42318;
+  --danger-surface: #fef2f2;
+  --danger-border: #fca5a5;
   --warning: #b45309;
   --success: #047857;
+  --success-surface: #ecfdf5;
+  --success-border: #6ee7b7;
   --info: #1d4ed8;
+  --info-surface: #eff6ff;
+  --info-border: #93c5fd;
   --agent-accent: #7c3aed;
   --agent-change: rgba(124, 58, 237, 0.08);
   --agent-change-border: rgba(124, 58, 237, 0.3);

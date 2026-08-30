@@ -7,6 +7,9 @@ export type MessageParams = Record<string, string | number>
 const en = {
   'language.label': 'Language',
   'common.close': 'Close',
+  'toast.severity.info': 'Information',
+  'toast.severity.success': 'Success',
+  'toast.severity.error': 'Error',
   'common.cancel': 'Cancel',
   'common.save': 'Save',
   'app.undo': 'Undo',
@@ -399,6 +402,9 @@ export type MessageKey = keyof typeof en
 const ja: Record<MessageKey, string> = {
   'language.label': '言語',
   'common.close': '閉じる',
+  'toast.severity.info': '情報',
+  'toast.severity.success': '成功',
+  'toast.severity.error': 'エラー',
   'common.cancel': 'キャンセル',
   'common.save': '保存',
   'app.undo': '元に戻す',

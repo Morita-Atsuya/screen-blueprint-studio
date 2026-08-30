@@ -68,6 +68,7 @@ const screenNamingBundle = join(temp, 'screenNaming.mjs')
 const componentFactoryBundle = join(temp, 'componentFactory.mjs')
 const editorDndBundle = join(temp, 'editorDnd.mjs')
 const editorShortcutsBundle = join(temp, 'editorShortcuts.mjs')
+const toastModelBundle = join(temp, 'toastModel.mjs')
 const componentDisplayLabelBundle = join(temp, 'componentDisplayLabel.mjs')
 const selectorsBundle = join(temp, 'selectors.mjs')
 const messagesBundle = join(temp, 'messages.mjs')
@@ -88,6 +89,7 @@ bundle('src/features/screens/screenNaming.ts', screenNamingBundle)
 bundle('src/features/palette/componentFactory.ts', componentFactoryBundle)
 bundle('src/dnd/editorDnd.ts', editorDndBundle)
 bundle('src/app/editorShortcuts.ts', editorShortcutsBundle)
+bundle('src/app/toastModel.ts', toastModelBundle)
 bundle('src/domain/componentDisplayLabel.ts', componentDisplayLabelBundle)
 bundle('src/domain/selectors.ts', selectorsBundle)
 bundle('src/i18n/messages.ts', messagesBundle)
@@ -387,7 +389,10 @@ await test('malformed rejected history is ignored and cannot block rejection', a
   writeFailureStore.getState().rejectChangeSet()
   memoryStorage.throwOnSetKeys.delete(rejectedKey)
   assert(writeFailureStore.getState().activeChangeSet === null, 'history save failure blocked rejection')
-  assert(writeFailureStore.getState().errorMessage !== null, 'history save failure did not set a warning')
+  assert(
+    writeFailureStore.getState().toast?.severity === 'error',
+    'history save failure did not set an error toast',
+  )
   const reloadedStore = await freshStore('rejected-write-failure-reload')
   assert(reloadedStore.getState().activeChangeSet === null, 'failed history save restored rejected proposal')
 })
@@ -2640,6 +2645,88 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
       inspectorSource.includes('data-hierarchy-shortcut-scope="inspector"') &&
       inspectorSource.includes("t('inspector.hierarchyShortcutHint')"),
     'hierarchy shortcut scope, DnD guard, or discovery UI was not wired',
+  )
+})
+
+await test('Toast severity, replacement, and action APIs are token safe', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('toast-severity-action')
+  const { TOAST_AUTO_DISMISS_MS } = await import(moduleUrl(toastModelBundle, 'toast-model'))
+  let actionCalls = 0
+
+  const infoId = store.getState().showToast({
+    severity: 'info',
+    message: { key: 'errors.invalidDrop' },
+  })
+  assert(
+    store.getState().toast?.id === infoId &&
+      store.getState().toast?.severity === 'info' &&
+      TOAST_AUTO_DISMISS_MS.info === 5_000 &&
+      TOAST_AUTO_DISMISS_MS.success === 5_000 &&
+      TOAST_AUTO_DISMISS_MS.error === 8_000,
+    'Toast severity or auto-dismiss policy was not retained',
+  )
+
+  const actionId = store.getState().showToast({
+    severity: 'success',
+    message: { key: 'errors.invalidDrop' },
+    action: {
+      label: { key: 'app.undo' },
+      callback: () => {
+        actionCalls += 1
+      },
+    },
+  })
+  store.getState().dismissToast(infoId)
+  assert(
+    store.getState().toast?.id === actionId,
+    'a stale dismiss removed the replacement Toast',
+  )
+  assert(
+    store.getState().runToastAction(infoId) === false &&
+      store.getState().runToastAction(actionId) === true &&
+      store.getState().runToastAction(actionId) === false &&
+      actionCalls === 1 &&
+      store.getState().toast === null,
+    'Toast action was stale, repeated, or not dismissed atomically',
+  )
+
+  const errorId = store.getState().showToast({
+    severity: 'error',
+    message: { key: 'errors.unexpected', params: { message: 'test' } },
+  })
+  store.getState().dismissToast(errorId)
+  assert(store.getState().toast === null, 'current Toast could not be dismissed by token')
+  const throwingActionId = store.getState().showToast({
+    severity: 'info',
+    message: { key: 'errors.invalidDrop' },
+    action: {
+      label: { key: 'app.undo' },
+      callback: () => {
+        throw new Error('action failed')
+      },
+    },
+  })
+  assert(
+    store.getState().runToastAction(throwingActionId) === true &&
+      store.getState().toast?.severity === 'error',
+    'Toast action errors were not surfaced as a replacement error Toast',
+  )
+
+  const toastSource = readFileSync(join(root, 'src/app/Toast.tsx'), 'utf8')
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const toastStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  assert(
+    toastSource.includes('role="status"') &&
+      toastSource.includes('role="alert"') &&
+      toastSource.includes('role="group"') &&
+      toastSource.includes('TOAST_AUTO_DISMISS_MS[toast.severity]') &&
+      toastSource.includes('data-toast-paused={paused || undefined}') &&
+      toastSource.includes('returnFocus.focus({ preventScroll: true })') &&
+      appSource.includes('<Toast toast={toast}') &&
+      appSource.includes('dismissToast(toast.id)') &&
+      toastStyles.includes('@media (max-width: 640px)'),
+    'Toast live region, timer pause, focus return, Escape, or narrow layout wiring was lost',
   )
 })
 
@@ -5118,7 +5205,7 @@ await test('text drafts commit as one human operation', async () => {
     !duplicateRoute &&
       reloaded.getState().document.screens['screen-edit'].route === '/users/:id/edit' &&
       reloaded.getState().history.length === historyBeforeInvalidRoute &&
-      reloaded.getState().errorMessage !== null,
+      reloaded.getState().toast?.severity === 'error',
     'duplicate route was reported as a successful text commit',
   )
 
@@ -5326,7 +5413,11 @@ await test('Recovery actions use light-theme tokens with AA contrast', async () 
   assert(
     appStyles.includes('.logo') &&
       appStyles.includes('color: var(--accent-hover)') &&
-      appStyles.includes('background: var(--danger)') &&
+      appStyles.includes('.toast[data-toast-severity="error"]') &&
+      appStyles.includes('background: var(--danger-surface)') &&
+      contrast(token('info'), token('info-surface')) >= 4.5 &&
+      contrast(token('success'), token('success-surface')) >= 4.5 &&
+      contrast(token('danger'), token('danger-surface')) >= 4.5 &&
       !appStyles.includes('#3730a3') &&
       !appStyles.includes('#991b1b') &&
       !appStyles.includes('#7f1d1d'),

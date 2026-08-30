@@ -44,7 +44,10 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
     const target = event.over?.data.current
     if (!isEditorDragData(drag)) return
     if (!isComponentDropData(target)) {
-      useAppStore.getState().setErrorMessage({ key: 'errors.invalidDrop' })
+      useAppStore.getState().showToast({
+        severity: 'error',
+        message: { key: 'errors.invalidDrop' },
+      })
       return
     }
 
@@ -65,7 +68,10 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
 
     const resolution = resolveComponentDrop(state.effectiveDocument, drag.componentId, target)
     if (!resolution.ok) {
-      state.setErrorMessage({ key: 'errors.invalidDrop' })
+      state.showToast({
+        severity: 'error',
+        message: { key: 'errors.invalidDrop' },
+      })
       return
     }
     state.dispatch({
