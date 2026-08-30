@@ -6,7 +6,6 @@ export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], Messag
   page: 'component.page',
   section: 'component.section',
   container: 'component.container',
-  heading: 'component.heading',
   text: 'component.text',
   textInput: 'component.textInput',
   select: 'component.select',
@@ -37,7 +36,6 @@ export function getComponentDisplayLabel(
     case 'modal':
     case 'container':
       return fallback
-    case 'heading':
     case 'text':
       return readableText(config.text, fallback)
     case 'textInput':

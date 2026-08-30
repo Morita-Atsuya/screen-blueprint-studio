@@ -439,10 +439,22 @@ function ComponentView({
     case 'section':
     case 'container':
       return null
-    case 'heading':
-      return <div className={`${styles.heading} ${styles[`h${cfg.level}`]}`}>{cfg.text}</div>
-    case 'text':
-      return <p className={styles.textComp}>{cfg.text}</p>
+    case 'text': {
+      const TextElement = cfg.style === 'heading1'
+        ? 'h1'
+        : cfg.style === 'heading2'
+          ? 'h2'
+          : cfg.style === 'heading3'
+            ? 'h3'
+            : cfg.style === 'caption'
+              ? 'small'
+              : 'p'
+      return (
+        <TextElement className={`${styles.textComp} ${styles[cfg.style]}`}>
+          {cfg.text}
+        </TextElement>
+      )
+    }
     case 'textInput':
       return (
         <div className={styles.field}>

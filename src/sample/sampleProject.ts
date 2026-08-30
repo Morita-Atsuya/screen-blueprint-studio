@@ -51,19 +51,19 @@ export const sampleProject: ProjectDocument = {
       id: 'comp-list-section',
       screenId: 'screen-list',
       parentId: 'comp-list-page',
-      childIds: ['comp-list-heading', 'comp-list-grid'],
+      childIds: ['comp-list-title', 'comp-list-grid'],
       kind: 'section',
       common: { description: '', visible: true, enabled: true },
       config: { kind: 'section', ...DEFAULT_COMPONENT_LAYOUT },
     },
-    'comp-list-heading': {
-      id: 'comp-list-heading',
+    'comp-list-title': {
+      id: 'comp-list-title',
       screenId: 'screen-list',
       parentId: 'comp-list-section',
       childIds: [],
-      kind: 'heading',
+      kind: 'text',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'heading', text: 'User List', level: 1 },
+      config: { kind: 'text', text: 'User List', style: 'heading1' },
     },
     'comp-list-grid': {
       id: 'comp-list-grid',
@@ -87,7 +87,7 @@ export const sampleProject: ProjectDocument = {
       childIds: [],
       kind: 'text',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'text', text: 'Active users: 24' },
+      config: { kind: 'text', text: 'Active users: 24', style: 'body' },
     },
     'comp-list-invited': {
       id: 'comp-list-invited',
@@ -96,7 +96,7 @@ export const sampleProject: ProjectDocument = {
       childIds: [],
       kind: 'text',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'text', text: 'Pending invitations: 3' },
+      config: { kind: 'text', text: 'Pending invitations: 3', style: 'body' },
     },
     // Edit user screen
     'comp-edit-page': {
@@ -112,19 +112,19 @@ export const sampleProject: ProjectDocument = {
       id: 'comp-edit-section',
       screenId: 'screen-edit',
       parentId: 'comp-edit-page',
-      childIds: ['comp-edit-heading', 'comp-name-input', 'comp-email-input', 'comp-status-alert', 'comp-actions'],
+      childIds: ['comp-edit-title', 'comp-name-input', 'comp-email-input', 'comp-status-alert', 'comp-actions'],
       kind: 'section',
       common: { description: '', visible: true, enabled: true },
       config: { kind: 'section', ...DEFAULT_COMPONENT_LAYOUT },
     },
-    'comp-edit-heading': {
-      id: 'comp-edit-heading',
+    'comp-edit-title': {
+      id: 'comp-edit-title',
       screenId: 'screen-edit',
       parentId: 'comp-edit-section',
       childIds: [],
-      kind: 'heading',
+      kind: 'text',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'heading', text: 'User Details', level: 2 },
+      config: { kind: 'text', text: 'User Details', style: 'heading2' },
     },
     'comp-name-input': {
       id: 'comp-name-input',
@@ -247,7 +247,7 @@ export const sampleProject: ProjectDocument = {
       name: 'Loading',
       description: 'Loading the user list',
       componentOverrides: {
-        'comp-list-heading': { text: 'Loading users...', enabled: false },
+        'comp-list-title': { text: 'Loading users...', enabled: false },
       },
     },
     'state-edit-default': {

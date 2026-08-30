@@ -179,7 +179,6 @@ type ComponentKind =
   | "page"
   | "section"
   | "container"
-  | "heading"
   | "text"
   | "textInput"
   | "select"
@@ -211,8 +210,11 @@ type ComponentConfig =
   | ({ kind: "page" } & ComponentLayout)
   | ({ kind: "section" } & ComponentLayout)
   | ({ kind: "container" } & ComponentLayout)
-  | { kind: "heading"; text: string; level: 1 | 2 | 3 }
-  | { kind: "text"; text: string }
+  | {
+      kind: "text";
+      text: string;
+      style: "heading1" | "heading2" | "heading3" | "body" | "caption";
+    }
   | TextInputConfig
   | SelectConfig
   | ButtonConfig
@@ -267,7 +269,7 @@ interface AlertConfig {
 type ModalConfig = { kind: "modal" } & ComponentLayout;
 ```
 
-`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。見出しと本文はchildの`heading`／`text`、操作固有文言は`button`、`textInput`、`select`、`alert`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。`CommonComponentSpec.description`は仕様metadataであり、Canvas contentへ自動描画しない。
+`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。見出し、本文、補足はchildの`text`と`style`で表現する。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`、`alert`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。`CommonComponentSpec.description`は仕様metadataであり、Canvas contentへ自動描画しない。
 
 `vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`page`は`rootComponentId`、各`modal`は`modalComponentIds`で参照され、いずれも`parentId: null`の独立rootとなる。Modalのchildrenは通常componentと同じtree操作に対応するが、Modal root自体はPageや他のcontainerへreparentしない。CanvasではPage artboard外の独立frameとして常時編集でき、状態別のvisible overrideはframeのeditor chromeで示す。
 
@@ -599,7 +601,7 @@ interface Diagnostic {
 - `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。非default状態では基本仕様と分離した状態別設定を表示
 - `Changes`: operation一覧とbefore/after
 
-component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameはPage frameのeditor-only labelとして使い、previewへ表示する文字列はHeading／Text等のchildとして編集する。
+component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameはPage frameのeditor-only labelとして使い、previewへ表示する文字列はText childと表示スタイルとして編集する。
 
 UI static copyは型付きJA/EN辞書へ集約し、headerで即時切替する。localeは専用localStorage keyへbest-effortで保存し、利用不能でもnavigator languageによる初期化と画面操作を継続する。sample documentのユーザーcontentは英語へ統一し、UI localeによる自動翻訳対象にはしない。
 

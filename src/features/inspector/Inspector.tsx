@@ -71,22 +71,21 @@ export function Inspector() {
       </div>
       <hr className={styles.divider} />
       {/* Kind-specific fields */}
-      {cfg.kind === 'heading' && (
+      {cfg.kind === 'text' && (
         <>
           <Field label={t('inspector.text')}>
-            <input className={styles.input} value={cfg.text} onChange={e => updateConfig({ text: e.target.value })} />
+            <textarea className={styles.textarea} value={cfg.text} rows={3} onChange={e => updateConfig({ text: e.target.value })} />
           </Field>
-          <Field label={t('inspector.level')}>
-            <select className={styles.input} value={cfg.level} onChange={e => updateConfig({ level: Number(e.target.value) })}>
-              <option value={1}>H1</option><option value={2}>H2</option><option value={3}>H3</option>
+          <Field label={t('inspector.textStyle')}>
+            <select className={styles.input} value={cfg.style} onChange={e => updateConfig({ style: e.target.value })}>
+              <option value="heading1">{t('inspector.textStyleHeading1')}</option>
+              <option value="heading2">{t('inspector.textStyleHeading2')}</option>
+              <option value="heading3">{t('inspector.textStyleHeading3')}</option>
+              <option value="body">{t('inspector.textStyleBody')}</option>
+              <option value="caption">{t('inspector.textStyleCaption')}</option>
             </select>
           </Field>
         </>
-      )}
-      {cfg.kind === 'text' && (
-        <Field label={t('inspector.text')}>
-          <textarea className={styles.textarea} value={cfg.text} rows={3} onChange={e => updateConfig({ text: e.target.value })} />
-        </Field>
       )}
       {cfg.kind === 'textInput' && (
         <>
@@ -371,7 +370,7 @@ function overrideContent(component: ScreenComponent): {
   baseValue: string
 } | null {
   const config = component.config
-  if (config.kind === 'heading' || config.kind === 'text') {
+  if (config.kind === 'text') {
     return { key: 'text', labelKey: 'overrides.text', baseValue: config.text }
   }
   if (config.kind === 'alert') {

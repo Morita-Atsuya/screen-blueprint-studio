@@ -506,7 +506,7 @@ const changeScreenStructure: ToolDefinition = {
 }
 
 const nonModalComponentKinds: ComponentKind[] = [
-  'section', 'container', 'heading', 'text',
+  'section', 'container', 'text',
   'textInput', 'select', 'button', 'alert',
 ]
 

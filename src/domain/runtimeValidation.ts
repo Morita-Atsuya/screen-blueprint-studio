@@ -134,7 +134,6 @@ export function validateScreenComponent(
       'page',
       'section',
       'container',
-      'heading',
       'text',
       'textInput',
       'select',
@@ -363,14 +362,14 @@ export function validateComponentConfig(
       )
       validateComponentLayout(config, path)
       return
-    case 'heading':
-      exactKeys(config, ['kind', 'text', 'level'], [], path)
-      string(config.text, `${path}.text`)
-      enumValue(config.level, [1, 2, 3], `${path}.level`)
-      return
     case 'text':
-      exactKeys(config, ['kind', 'text'], [], path)
+      exactKeys(config, ['kind', 'text', 'style'], [], path)
       string(config.text, `${path}.text`)
+      enumValue(
+        config.style,
+        ['heading1', 'heading2', 'heading3', 'body', 'caption'],
+        `${path}.style`,
+      )
       return
     case 'textInput':
       exactKeys(
@@ -463,7 +462,7 @@ export function validateComponentOverride(
 ): asserts value is ComponentOverride {
   const override = record(value, path)
   const optionalKeys = ['visible', 'enabled']
-  if (component.kind === 'heading' || component.kind === 'text') optionalKeys.push('text')
+  if (component.kind === 'text') optionalKeys.push('text')
   if (component.kind === 'alert') optionalKeys.push('message')
   if (component.kind === 'textInput' || component.kind === 'select') optionalKeys.push('value')
   exactKeys(override, [], optionalKeys, path)

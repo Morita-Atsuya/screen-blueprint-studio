@@ -89,18 +89,16 @@ const configVariants = [
     required: ['kind', ...layoutRequired],
   },
   {
-    kind: 'heading',
-    properties: {
-      kind: { const: 'heading' },
-      text: string,
-      level: { type: 'integer', enum: [1, 2, 3] },
-    },
-    required: ['kind', 'text', 'level'],
-  },
-  {
     kind: 'text',
-    properties: { kind: { const: 'text' }, text: string },
-    required: ['kind', 'text'],
+    properties: {
+      kind: { const: 'text' },
+      text: string,
+      style: {
+        type: 'string',
+        enum: ['heading1', 'heading2', 'heading3', 'body', 'caption'],
+      },
+    },
+    required: ['kind', 'text', 'style'],
   },
   {
     kind: 'textInput',

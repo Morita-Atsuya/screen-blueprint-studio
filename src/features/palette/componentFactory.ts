@@ -12,7 +12,6 @@ export interface PaletteItem {
 export const PALETTE_ITEMS: PaletteItem[] = [
   { kind: 'section' },
   { kind: 'container' },
-  { kind: 'heading' },
   { kind: 'text' },
   { kind: 'textInput' },
   { kind: 'select' },
@@ -44,10 +43,8 @@ export function createDefaultComponentConfig(
     case 'section':
     case 'container':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
-    case 'heading':
-      return { kind, text: translate(locale, 'defaults.headingText'), level: 2 }
     case 'text':
-      return { kind, text: translate(locale, 'defaults.text') }
+      return { kind, text: translate(locale, 'defaults.text'), style: 'body' }
     case 'textInput':
       return {
         kind,

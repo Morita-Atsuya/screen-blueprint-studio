@@ -29,7 +29,6 @@ export type ComponentKind =
   | 'page'
   | 'section'
   | 'container'
-  | 'heading'
   | 'text'
   | 'textInput'
   | 'select'
@@ -42,7 +41,7 @@ export const CONTAINER_KINDS: ComponentKind[] = [
 ]
 
 export const LEAF_KINDS: ComponentKind[] = [
-  'heading', 'text', 'textInput', 'select', 'button', 'alert',
+  'text', 'textInput', 'select', 'button', 'alert',
 ]
 
 // ============================================================
@@ -66,12 +65,13 @@ export const DEFAULT_COMPONENT_LAYOUT: ComponentLayout = {
   wrap: false,
 }
 
+export type TextStyle = 'heading1' | 'heading2' | 'heading3' | 'body' | 'caption'
+
 export type ComponentConfig =
   | ({ kind: 'page' } & ComponentLayout)
   | ({ kind: 'section' } & ComponentLayout)
   | ({ kind: 'container' } & ComponentLayout)
-  | { kind: 'heading'; text: string; level: 1 | 2 | 3 }
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; style: TextStyle }
   | {
       kind: 'textInput'
       fieldKey: string

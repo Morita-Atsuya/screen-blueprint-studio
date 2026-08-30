@@ -288,7 +288,7 @@ await test('recovery blocks mutations and exposes only recovery context', async 
   memoryStorage.clear()
   const baselineStore = await freshStore('recovery-gate-baseline')
   const poisoned = clone(baselineStore.getState().document)
-  poisoned.components['comp-list-heading'].name = { poison: true }
+  poisoned.components['comp-list-title'].name = { poison: true }
   const raw = JSON.stringify({ document: poisoned })
   memoryStorage.setItem(storageKey, raw)
 
@@ -443,35 +443,39 @@ await test('poisoned component config and default overrides enter recovery state
   const poisonedDocuments = []
 
   const objectText = clone(baseline)
-  objectText.components['comp-list-heading'].config.text = { evil: 1 }
+  objectText.components['comp-list-title'].config.text = { evil: 1 }
   poisonedDocuments.push(objectText)
 
-  const invalidLevel = clone(baseline)
-  invalidLevel.components['comp-list-heading'].config.level = 99
-  poisonedDocuments.push(invalidLevel)
+  const invalidTextStyle = clone(baseline)
+  invalidTextStyle.components['comp-list-title'].config.style = 'display'
+  poisonedDocuments.push(invalidTextStyle)
+
+  const missingTextStyle = clone(baseline)
+  delete missingTextStyle.components['comp-list-title'].config.style
+  poisonedDocuments.push(missingTextStyle)
 
   const foreignConfigKey = clone(baseline)
-  foreignConfigKey.components['comp-list-heading'].config.evil = true
+  foreignConfigKey.components['comp-list-title'].config.evil = true
   poisonedDocuments.push(foreignConfigKey)
 
   const invalidOverride = clone(baseline)
-  invalidOverride.screenStates['state-list-loading'].componentOverrides['comp-list-heading'] = {
-    value: 'not valid for a heading',
+  invalidOverride.screenStates['state-list-loading'].componentOverrides['comp-list-title'] = {
+    value: 'not valid for text',
   }
   poisonedDocuments.push(invalidOverride)
 
   const defaultOverride = clone(baseline)
-  defaultOverride.screenStates['state-list-default'].componentOverrides['comp-list-heading'] = {
+  defaultOverride.screenStates['state-list-default'].componentOverrides['comp-list-title'] = {
     text: 'not allowed',
   }
   poisonedDocuments.push(defaultOverride)
 
   const invalidCommonType = clone(baseline)
-  invalidCommonType.components['comp-list-heading'].common.visible = 'yes'
+  invalidCommonType.components['comp-list-title'].common.visible = 'yes'
   poisonedDocuments.push(invalidCommonType)
 
   const foreignCommonKey = clone(baseline)
-  foreignCommonKey.components['comp-list-heading'].common.evil = true
+  foreignCommonKey.components['comp-list-title'].common.evil = true
   poisonedDocuments.push(foreignCommonKey)
 
   const invalidTrigger = clone(baseline)
@@ -576,10 +580,10 @@ await test('invalid schema, revision, and entity metadata enter recovery state',
   screenKeyMismatch.screens['screen-list'].id = 'different-screen-id'
   poisonedDocuments.push(screenKeyMismatch)
   const componentName = clone(baseline)
-  componentName.components['comp-list-heading'].name = { invalid: true }
+  componentName.components['comp-list-title'].name = { invalid: true }
   poisonedDocuments.push(componentName)
   const componentKeyMismatch = clone(baseline)
-  componentKeyMismatch.components['comp-list-heading'].id = 'different-component-id'
+  componentKeyMismatch.components['comp-list-title'].id = 'different-component-id'
   poisonedDocuments.push(componentKeyMismatch)
   const stateDescription = clone(baseline)
   stateDescription.screenStates['state-list-loading'].description = { invalid: true }
@@ -596,7 +600,7 @@ await test('invalid schema, revision, and entity metadata enter recovery state',
     enumerable: true,
     writable: true,
     value: {
-      ...dangerousMapKey.components['comp-list-heading'],
+      ...dangerousMapKey.components['comp-list-title'],
       id: '__proto__',
     },
   })
@@ -916,7 +920,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       },
       {
         type: 'updateComponentSpec',
-        componentId: 'comp-list-heading',
+        componentId: 'comp-list-title',
         patch: { name: { invalid: true } },
       },
       {
@@ -949,24 +953,24 @@ await test('event actions and API bindings reject cross-screen references', asyn
         componentId: 'safe-component',
         screenId: 'toString',
         parentId: 'comp-list-page',
-        kind: 'heading',
-        config: { kind: 'heading', text: 'Wrong', level: 2 },
+        kind: 'text',
+        config: { kind: 'text', text: 'Wrong', style: 'body' },
       },
       {
         type: 'addComponent',
         componentId: '__proto__',
         screenId: 'screen-list',
         parentId: 'comp-list-page',
-        kind: 'heading',
-        config: { kind: 'heading', text: 'Wrong', level: 2 },
+        kind: 'text',
+        config: { kind: 'text', text: 'Wrong', style: 'body' },
       },
       {
         type: 'addComponent',
         componentId: 'cross-screen-component',
         screenId: 'screen-edit',
         parentId: 'comp-list-page',
-        kind: 'heading',
-        config: { kind: 'heading', text: 'Wrong', level: 2 },
+        kind: 'text',
+        config: { kind: 'text', text: 'Wrong', style: 'body' },
       },
       {
         type: 'bindApiOperation',
@@ -1068,7 +1072,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       eventId: 'cross-state',
       screenId: 'screen-list',
       name: 'Cross state',
-      trigger: { type: 'click', componentId: 'comp-list-heading' },
+      trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [{ type: 'setState', stateId: 'state-edit-default' }],
     },
     {
@@ -1076,7 +1080,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       eventId: 'cross-api',
       screenId: 'screen-list',
       name: 'Cross API',
-      trigger: { type: 'click', componentId: 'comp-list-heading' },
+      trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [{ type: 'callApi', apiOperationId: 'edit-api' }],
     },
     {
@@ -1084,7 +1088,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       eventId: 'cross-alert',
       screenId: 'screen-list',
       name: 'Cross alert',
-      trigger: { type: 'click', componentId: 'comp-list-heading' },
+      trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [{ type: 'showAlert', componentId: 'edit-alert' }],
     },
     {
@@ -1145,8 +1149,8 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'add',
       screenId: 'screen-list',
       parentId: 'ghost',
-      kind: 'heading',
-      config: { kind: 'heading', text: 'Ghost', level: 2 },
+      kind: 'text',
+      config: { kind: 'text', text: 'Ghost', style: 'body' },
     }],
     ['change_component_structure', { ...common, operation: 'remove', componentId: 'ghost' }],
     ['change_component_structure', {
@@ -1154,24 +1158,24 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'add',
       screenId: 'screen-list',
       parentId: 'comp-list-page',
-      kind: 'heading',
-      config: { kind: 'heading', text: { evil: 1 }, level: 2 },
+      kind: 'text',
+      config: { kind: 'text', text: { evil: 1 }, style: 'body' },
     }],
     ['change_component_structure', {
       ...common,
       operation: 'add',
       screenId: 'screen-list',
       parentId: 'comp-list-page',
-      kind: 'heading',
-      config: { kind: 'heading', text: 'Bad', level: 99 },
+      kind: 'text',
+      config: { kind: 'text', text: 'Bad', style: 'display' },
     }],
     ['change_component_structure', {
       ...common,
       operation: 'add',
       screenId: 'screen-list',
       parentId: 'comp-list-page',
-      kind: 'heading',
-      config: { kind: 'heading', text: 'Bad', level: 2, evil: true },
+      kind: 'text',
+      config: { kind: 'text', text: 'Bad', style: 'body', evil: true },
     }],
     ['change_component_structure', {
       ...common,
@@ -1212,22 +1216,22 @@ await test('ten tools register and invalid writes fail without adding operations
     ['update_component_spec', { ...common, componentId: 'ghost', patch: { name: 'Ghost' } }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { config: { text: { evil: 1 } } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
-      patch: { config: { level: 99 } },
+      componentId: 'comp-list-title',
+      patch: { config: { style: 'display' } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { config: { evil: true } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { config: { requestBinding: { componentId: 'ghost', targetPath: 'value' } } },
     }],
     ['update_component_spec', {
@@ -1238,26 +1242,26 @@ await test('ten tools register and invalid writes fail without adding operations
     ['update_component_spec', {
       ...common,
       componentId: 'comp-name-input',
-      patch: { config: { requestBinding: { componentId: 'comp-list-heading', targetPath: 'value' } } },
+      patch: { config: { requestBinding: { componentId: 'comp-list-title', targetPath: 'value' } } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { common: { visible: 'yes' } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { common: { evil: true } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { common: 'wrong type' },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { name: { invalid: true } },
     }],
     ['change_screen_structure', {
@@ -1272,7 +1276,7 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       name: 'Bad override',
       overrides: {
-        'comp-list-heading': { value: 'not valid for a heading' },
+        'comp-list-title': { value: 'not valid for text' },
       },
     }],
     ['upsert_screen_state', {
@@ -1281,7 +1285,7 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       name: 'Object override',
       overrides: {
-        'comp-list-heading': { text: { evil: 1 } },
+        'comp-list-title': { text: { evil: 1 } },
       },
     }],
     ['upsert_screen_state', {
@@ -1296,7 +1300,7 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'update',
       stateId: 'state-list-default',
       overrides: {
-        'comp-list-heading': { text: 'default override' },
+        'comp-list-title': { text: 'default override' },
       },
     }],
     ['connect_behavior', {
@@ -1312,7 +1316,7 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'connectEvent',
       screenId: 'screen-list',
       name: 'Hover event',
-      trigger: { type: 'hover', componentId: 'comp-list-heading' },
+      trigger: { type: 'hover', componentId: 'comp-list-title' },
       actions: [],
     }],
     ['connect_behavior', {
@@ -1320,7 +1324,7 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'connectEvent',
       screenId: 'screen-list',
       name: 'Unknown action',
-      trigger: { type: 'click', componentId: 'comp-list-heading' },
+      trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [{ type: 'unknown', value: true }],
     }],
     ['connect_behavior', {
@@ -1328,7 +1332,7 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'connectEvent',
       screenId: 'screen-list',
       name: 'Foreign action key',
-      trigger: { type: 'click', componentId: 'comp-list-heading' },
+      trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [{ type: 'navigate', destinationScreenId: 'screen-edit', evil: true }],
     }],
     ['connect_behavior', {
@@ -1363,7 +1367,7 @@ await test('ten tools register and invalid writes fail without adding operations
       name: 'Invalid target path',
       method: 'POST',
       path: '/users',
-      requestBindings: [{ componentId: 'comp-list-heading', targetPath: { evil: true } }],
+      requestBindings: [{ componentId: 'comp-list-title', targetPath: { evil: true } }],
     }],
     ['connect_behavior', {
       ...common,
@@ -1472,8 +1476,8 @@ await test('representative screen/component/state/event/API writes reach the cha
     operation: 'add',
     screenId: 'screen-list',
     parentId: addedContainerId,
-    kind: 'heading',
-    config: { kind: 'heading', text: 'Agent heading', level: 2 },
+    kind: 'text',
+    config: { kind: 'text', text: 'Agent text', style: 'heading2' },
   })
   const addedComponentId = latestCommand().componentId
   execute('change_component_structure', {
@@ -1483,7 +1487,7 @@ await test('representative screen/component/state/event/API writes reach the cha
   })
   execute('update_component_spec', {
     componentId: addedComponentId,
-    patch: { config: { text: 'Updated heading' } },
+    patch: { config: { text: 'Updated text', style: 'caption' } },
   })
   execute('change_component_structure', { operation: 'remove', componentId: addedComponentId })
   execute('change_component_structure', { operation: 'remove', componentId: addedContainerId })
@@ -1545,7 +1549,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     name: 'Agent error state',
     description: 'Updated',
     overrides: {
-      'comp-list-heading': { text: 'Could not load users.' },
+      'comp-list-title': { text: 'Could not load users.' },
     },
   })
 
@@ -1562,7 +1566,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     operation: 'connectEvent',
     screenId: 'screen-list',
     name: 'Load list',
-    trigger: { type: 'click', componentId: 'comp-list-heading' },
+    trigger: { type: 'click', componentId: 'comp-list-title' },
     actions: [{ type: 'callApi', apiOperationId: addedApiId }],
   })
   const addedEventId = latestCommand().eventId
@@ -1616,7 +1620,7 @@ await test('palette factory and component drops use validated commands', async (
 
   const resolution = resolveComponentDrop(
     store.getState().document,
-    'comp-list-heading',
+    'comp-list-title',
     {
       type: 'component-drop',
       parentId: 'comp-list-section',
@@ -1671,18 +1675,18 @@ await test('modal roots own independent trees and clean references on removal', 
   })
   document = applyCommandWithoutRevision(document, {
     type: 'moveComponent',
-    componentId: 'comp-list-heading',
+    componentId: 'comp-list-title',
     newParentId: 'modal-root',
     position: 0,
   })
   assert(
-    document.components['comp-list-heading'].parentId === 'modal-root' &&
-      document.components['modal-root'].childIds[0] === 'comp-list-heading',
+    document.components['comp-list-title'].parentId === 'modal-root' &&
+      document.components['modal-root'].childIds[0] === 'comp-list-title',
     'page child could not be moved into a modal tree',
   )
   document = applyCommandWithoutRevision(document, {
     type: 'moveComponent',
-    componentId: 'comp-list-heading',
+    componentId: 'comp-list-title',
     newParentId: 'comp-list-section',
     position: 0,
   })
@@ -1713,11 +1717,11 @@ await test('modal roots own independent trees and clean references on removal', 
     },
     {
       type: 'addComponent',
-      componentId: 'orphan-heading',
+      componentId: 'orphan-text',
       screenId: 'screen-list',
       parentId: null,
-      kind: 'heading',
-      config: { kind: 'heading', text: 'Orphan', level: 2 },
+      kind: 'text',
+      config: { kind: 'text', text: 'Orphan', style: 'body' },
     },
     {
       type: 'moveComponent',
@@ -1830,7 +1834,7 @@ await test('component reorder and reparent reject invalid targets', async () => 
     },
     {
       type: 'moveComponent',
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       newParentId: 'comp-edit-section',
       position: 0,
     },
@@ -1855,7 +1859,7 @@ await test('component reorder and reparent reject invalid targets', async () => 
     ['comp-edit-page', 'comp-edit-section'],
     ['comp-edit-section', 'comp-actions'],
     ['comp-cancel-btn', 'comp-name-input'],
-    ['comp-list-heading', 'comp-edit-section'],
+    ['comp-list-title', 'comp-edit-section'],
     ['comp-name-input', 'comp-edit-section', 1],
   ]
   for (const [componentId, parentId, position = 0] of invalidDrops) {
@@ -1931,7 +1935,7 @@ await test('human moves join active change sets and screen management reconciles
       name: 'Request complete',
       description: 'Updated in the human UI',
       overrides: {
-        'comp-list-heading': {
+        'comp-list-title': {
           visible: true,
           enabled: false,
           text: 'Users loaded.',
@@ -1942,18 +1946,18 @@ await test('human moves join active change sets and screen management reconciles
     assert(
       updated.name === 'Request complete' &&
         updated.description === 'Updated in the human UI' &&
-        updated.componentOverrides['comp-list-heading'].text === 'Users loaded.',
+        updated.componentOverrides['comp-list-title'].text === 'Users loaded.',
       'state metadata or overrides were not updated',
     )
 
     const { effectiveComponent } = await import(moduleUrl(selectorsBundle, 'state-override-preview'))
-    const effectiveHeading = effectiveComponent(
-      store.getState().document.components['comp-list-heading'],
+    const effectiveText = effectiveComponent(
+      store.getState().document.components['comp-list-title'],
       updated,
     )
     assert(
-      effectiveHeading.config.text === 'Users loaded.' &&
-        effectiveHeading.common.enabled === false,
+      effectiveText.config.text === 'Users loaded.' &&
+        effectiveText.common.enabled === false,
       'state override was not reflected in the effective component',
     )
     const successAlert = effectiveComponent(
@@ -1999,7 +2003,7 @@ await test('human moves join active change sets and screen management reconciles
     store.getState().dispatch({
       type: 'updateScreenState',
       stateId: 'state-list-default',
-      overrides: { 'comp-list-heading': { text: 'Not allowed' } },
+      overrides: { 'comp-list-title': { text: 'Not allowed' } },
     }, 'Invalid default state edit')
     store.getState().dispatch({
       type: 'removeScreenState',
@@ -2118,10 +2122,10 @@ await test('component display labels separate structure from visible content', a
     getComponentDisplayLabel(document.components['comp-edit-page'], 'ja') === 'ページ',
     'page label did not use the selected locale',
   )
-  const longHeading = clone(document.components['comp-list-heading'])
-  longHeading.config.text = '1234567890123456789012345678901234567890'
+  const longText = clone(document.components['comp-list-title'])
+  longText.config.text = '1234567890123456789012345678901234567890'
   assert(
-    getComponentDisplayLabel(longHeading).endsWith('…'),
+    getComponentDisplayLabel(longText).endsWith('…'),
     'long visible text was not truncated',
   )
 })
@@ -2354,7 +2358,7 @@ await test('semantic containers replace legacy layout kinds across commands and 
   )
   const kinds = PALETTE_ITEMS.map(item => item.kind)
   assert(kinds.includes('section') && kinds.includes('container'), 'semantic containers are missing from palette')
-  assert(kinds.length === 9, 'palette exposes an unexpected component kind')
+  assert(kinds.length === 8, 'palette exposes an unexpected component kind')
 
   const containerCommand = createAddComponentCommand(
     store.getState().document,
@@ -2441,7 +2445,7 @@ await test('semantic containers replace legacy layout kinds across commands and 
     },
     {
       type: 'updateComponentSpec',
-      componentId: 'comp-list-heading',
+      componentId: 'comp-list-title',
       patch: { config: { layout: 'grid' } },
     },
   ]
@@ -2459,6 +2463,144 @@ await test('semantic containers replace legacy layout kinds across commands and 
   }
 })
 
+await test('Text styles replace Heading across model, UI, persistence, and WebMCP', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('styled-text')
+  const baseline = store.getState().document
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'styled-text-domain'))
+  const { createAddComponentCommand, PALETTE_ITEMS } = await import(
+    moduleUrl(componentFactoryBundle, 'styled-text-factory')
+  )
+  const styles = ['heading1', 'heading2', 'heading3', 'body', 'caption']
+
+  assert(
+    PALETTE_ITEMS.filter(item => item.kind === 'text').length === 1 &&
+      !PALETTE_ITEMS.some(item => item.kind === 'heading'),
+    'palette does not expose exactly one Text item',
+  )
+  const textCommand = createAddComponentCommand(
+    baseline,
+    'screen-list',
+    'comp-list-section',
+    'text',
+    'en',
+  )
+  assert(
+    textCommand.config.kind === 'text' &&
+      textCommand.config.text === 'Text' &&
+      textCommand.config.style === 'body',
+    'Text factory did not default to body style',
+  )
+
+  for (const style of styles) {
+    const styled = applyCommandWithoutRevision(baseline, {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-title',
+      patch: { config: { style } },
+    })
+    assert(
+      styled.components['comp-list-title'].config.style === style,
+      `Text style ${style} was not accepted by the domain`,
+    )
+  }
+
+  store.getState().beginChangeSet('Change text role')
+  store.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: 'comp-list-title',
+    patch: { config: { style: 'heading3' } },
+  }, 'Update text display style')
+  assert(
+    store.getState().activeChangeSet.operations.at(-1)?.source === 'human' &&
+      store.getState().effectiveDocument.components['comp-list-title'].config.style === 'heading3',
+    'human Text style edit did not route through the active change set',
+  )
+  store.getState().acceptChangeSet()
+  const reloaded = await freshStore('styled-text-reload')
+  assert(
+    reloaded.getState().document.components['comp-list-title'].config.style === 'heading3' &&
+      reloaded.getState().document.screenStates['state-list-loading']
+        .componentOverrides['comp-list-title'].text === 'Loading users...',
+    'Text style or text state override did not survive reload',
+  )
+
+  const legacyDocument = clone(baseline)
+  legacyDocument.components['comp-list-title'].kind = 'heading'
+  legacyDocument.components['comp-list-title'].config = {
+    kind: 'heading',
+    text: 'Legacy heading',
+    level: 1,
+  }
+  memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyDocument }))
+  const legacyReload = await freshStore('legacy-heading-document')
+  assert(legacyReload.getState().recoveryState !== null, 'legacy Heading document did not enter recovery')
+
+  let directRejected = false
+  try {
+    applyCommandWithoutRevision(baseline, {
+      type: 'addComponent',
+      componentId: 'legacy-heading',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      kind: 'heading',
+      config: { kind: 'heading', text: 'Legacy heading', level: 2 },
+    })
+  } catch {
+    directRejected = true
+  }
+  assert(directRejected, 'direct command accepted legacy Heading')
+
+  memoryStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'legacy-heading-webmcp'))
+  const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const begin = byName('begin_change_set').execute({ summary: 'Reject legacy Heading' })
+  assert(begin.ok, 'legacy Heading change set did not begin')
+  const common = {
+    changeSetId: begin.data.changeSetId,
+    expectedRevision: begin.data.baseRevision,
+    expectedChangeSetVersion: 0,
+  }
+  const addTool = byName('change_component_structure')
+  const schemaJson = JSON.stringify(addTool.inputSchema)
+  assert(
+    !schemaJson.includes('"const":"heading"') &&
+      schemaJson.includes('"heading1"') &&
+      schemaJson.includes('"caption"'),
+    'WebMCP schema still exposes Heading or omits Text styles',
+  )
+  const webResult = addTool.execute({
+    ...common,
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: 'comp-list-section',
+    kind: 'heading',
+    config: { kind: 'heading', text: 'Legacy heading', level: 2 },
+  })
+  assert(!webResult.ok, 'WebMCP accepted legacy Heading')
+  assert(
+    byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
+    'rejected Heading changed pending operations',
+  )
+
+  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const canvasStyles = readFileSync(join(root, 'src/features/canvas/Canvas.module.css'), 'utf8')
+  const inspectorSource = readFileSync(join(root, 'src/features/inspector/Inspector.tsx'), 'utf8')
+  assert(
+    styles.every(style => canvasSource.includes(`'${style}'`) || canvasStyles.includes(`.${style}`)) &&
+      canvasSource.includes("? 'h1'") &&
+      canvasSource.includes("? 'h2'") &&
+      canvasSource.includes("? 'h3'") &&
+      canvasSource.includes("? 'small'") &&
+      canvasSource.includes(": 'p'"),
+    'Canvas does not map all Text styles to visual and semantic output',
+  )
+  assert(
+    styles.every(style => inspectorSource.includes(`value="${style}"`)) &&
+      inspectorSource.includes("t('inspector.textStyle')"),
+    'Inspector does not expose all Text display styles',
+  )
+})
+
 await test('component name metadata is rejected across document, command, and WebMCP inputs', async () => {
   memoryStorage.clear()
   const store = await freshStore('component-name-removed')
@@ -2473,7 +2615,7 @@ await test('component name metadata is rejected across document, command, and We
   )
 
   const legacyDocument = clone(baseline)
-  legacyDocument.components['comp-list-heading'].name = 'Legacy component name'
+  legacyDocument.components['comp-list-title'].name = 'Legacy component name'
   memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyDocument }))
   const legacyReload = await freshStore('legacy-component-name')
   assert(legacyReload.getState().recoveryState !== null, 'legacy component name did not enter recovery')
@@ -2486,9 +2628,9 @@ await test('component name metadata is rejected across document, command, and We
       componentId: 'legacy-component',
       screenId: 'screen-list',
       parentId: 'comp-list-page',
-      kind: 'heading',
+      kind: 'text',
       name: 'Legacy component name',
-      config: { kind: 'heading', text: 'Legacy', level: 2 },
+      config: { kind: 'text', text: 'Legacy', style: 'body' },
     })
   } catch {
     directRejected = true
@@ -2517,14 +2659,14 @@ await test('component name metadata is rejected across document, command, and We
     operation: 'add',
     screenId: 'screen-list',
     parentId: 'comp-list-page',
-    kind: 'heading',
+    kind: 'text',
     name: 'Legacy component name',
-    config: { kind: 'heading', text: 'Legacy', level: 2 },
+    config: { kind: 'text', text: 'Legacy', style: 'body' },
   })
   assert(!addResult.ok, 'WebMCP add accepted legacy component name')
   const updateResult = updateTool.execute({
     ...common,
-    componentId: 'comp-list-heading',
+    componentId: 'comp-list-title',
     patch: {
       name: 'Legacy component name',
       config: { text: 'Changed' },
@@ -2535,7 +2677,7 @@ await test('component name metadata is rejected across document, command, and We
     byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
     'legacy component name changed the pending operations',
   )
-  const componentResult = byName('get_component').execute({ componentId: 'comp-list-heading' })
+  const componentResult = byName('get_component').execute({ componentId: 'comp-list-title' })
   assert(componentResult.ok && !Object.hasOwn(componentResult.data.component, 'name'), 'read tool returned component name')
 })
 
@@ -2631,9 +2773,9 @@ await test('structural components reject content titles across every write path'
     'Page and modal editor frames do not use contextual editor-only labels',
   )
   assert(
-    baseline.components['comp-list-heading'].config.text === 'User List' &&
-      baseline.components['comp-edit-heading'].config.text === 'User Details',
-    'sample visible structure was not represented by Heading children',
+    baseline.components['comp-list-title'].config.text === 'User List' &&
+      baseline.components['comp-edit-title'].config.text === 'User Details',
+    'sample visible structure was not represented by styled Text children',
   )
 })
 

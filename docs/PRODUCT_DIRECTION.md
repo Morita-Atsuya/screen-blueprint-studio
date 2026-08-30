@@ -76,7 +76,7 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 - Container: Page、Section、Container、Modal
 - Layout properties: vertical、horizontal、grid、gap、distribution、alignment、wrap
 - Navigation: Header、Sidebar、Tabs、Breadcrumbs
-- Content: Heading、Text、Image、Card、Table
+- Content: Text（heading／body／caption styles）、Image、Card、Table
 - Form: Text Input、Textarea、Select、Checkbox、Radio、Date Input
 - Action: Button、Link
 - Feedback: Alert、Inline Error、Modal、Toast、Loading、Empty State
