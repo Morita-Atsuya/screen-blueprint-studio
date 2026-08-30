@@ -24,6 +24,10 @@ import {
   resolveInitialStructureTreePreferences,
   type StructureTreePreferences,
 } from './structureTreePreferences'
+import {
+  getVisibleTreeItemIds,
+  resolveTreeKeyboardIntent,
+} from './structureTreeKeyboard'
 import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
 import { ComponentChangeBadge } from '../change-review/ComponentChangeBadge'
@@ -142,8 +146,14 @@ export function StructureTree() {
     resolveInitialStructureTreePreferences(browserStorage()),
   )
   const componentAddMenu = useComponentAddMenu()
-  const nodeRefs = useRef(new Map<EntityId, HTMLDivElement>())
+  const nodeRefs = useRef(new Map<EntityId, HTMLLIElement>())
+  const lastRevealedSelectionKeyRef = useRef<string | null>(null)
   const lastScrolledKeyRef = useRef<string | null>(null)
+  const previousSelectedIdRef = useRef<EntityId | null>(null)
+  const pendingSelectedIdRef = useRef<EntityId | null>(selectedComponentId)
+  const treeHasFocusRef = useRef(false)
+  const menuWasOpenRef = useRef(false)
+  const [focusedComponentId, setFocusedComponentId] = useState<EntityId | null>(null)
   const screen = activeScreenId ? getOwnEntity(effectiveDocument.screens, activeScreenId) : undefined
   const activeState = ui.activeStateId
     ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
@@ -190,30 +200,105 @@ export function StructureTree() {
     () => new Set(activeScreenId ? treePreferences.collapsedByScreen[activeScreenId] ?? [] : []),
     [treePreferences, activeScreenId],
   )
+  const visibleItemIds = useMemo(
+    () => screen
+      ? getVisibleTreeItemIds(effectiveDocument, screen, activeScreenCollapsedIds)
+      : [],
+    [activeScreenCollapsedIds, effectiveDocument, screen],
+  )
+
+  function focusTreeItem(componentId: EntityId) {
+    setFocusedComponentId(componentId)
+    nodeRefs.current.get(componentId)?.focus()
+  }
+
+  function toggleCollapse(componentId: EntityId) {
+    if (!activeScreenId) return
+    const willCollapse = !activeScreenCollapsedIds.has(componentId)
+    if (
+      willCollapse &&
+      selectedComponentId &&
+      getAncestorIds(effectiveDocument, selectedComponentId).includes(componentId)
+    ) {
+      const revealKey = `${activeScreenId}:${selectedComponentId}`
+      lastRevealedSelectionKeyRef.current = revealKey
+    }
+    if (
+      willCollapse &&
+      focusedComponentId &&
+      focusedComponentId !== componentId &&
+      getAncestorIds(effectiveDocument, focusedComponentId).includes(componentId)
+    ) {
+      focusTreeItem(componentId)
+    }
+    setTreePreferences(previous =>
+      updateScreenCollapsedIds(previous, activeScreenId, current => {
+        if (current.has(componentId)) {
+          current.delete(componentId)
+        } else {
+          current.add(componentId)
+        }
+        return current
+      }),
+    )
+  }
+
+  useEffect(() => {
+    if (previousSelectedIdRef.current !== selectedComponentId) {
+      previousSelectedIdRef.current = selectedComponentId
+      pendingSelectedIdRef.current = selectedComponentId
+    }
+    const pendingSelectedId = pendingSelectedIdRef.current
+    if (pendingSelectedId && visibleItemIds.includes(pendingSelectedId)) {
+      pendingSelectedIdRef.current = null
+      setFocusedComponentId(pendingSelectedId)
+      return
+    }
+    if (focusedComponentId && visibleItemIds.includes(focusedComponentId)) return
+    const fallback = selectedComponentId && visibleItemIds.includes(selectedComponentId)
+      ? selectedComponentId
+      : visibleItemIds[0] ?? null
+    setFocusedComponentId(fallback)
+    if (fallback && treeHasFocusRef.current) {
+      requestAnimationFrame(() => nodeRefs.current.get(fallback)?.focus())
+    }
+  }, [focusedComponentId, selectedComponentId, visibleItemIds])
+
+  useEffect(() => {
+    const wasOpen = menuWasOpenRef.current
+    menuWasOpenRef.current = componentAddMenu.isOpen
+    if (!wasOpen || componentAddMenu.isOpen || !focusedComponentId) return
+    nodeRefs.current.get(focusedComponentId)?.focus()
+  }, [componentAddMenu.isOpen, focusedComponentId])
 
   useEffect(() => {
     if (!selectedComponentId) {
+      lastRevealedSelectionKeyRef.current = null
       lastScrolledKeyRef.current = null
       return
     }
     const selected = getOwnEntity(effectiveDocument.components, selectedComponentId)
     if (!selected || selected.screenId !== activeScreenId) {
+      lastRevealedSelectionKeyRef.current = null
       lastScrolledKeyRef.current = null
       return
     }
     const revealKey = `${activeScreenId}:${selectedComponentId}`
-    const collapsedAncestors = getAncestorIds(effectiveDocument, selectedComponentId).filter(
-      ancestorId => activeScreenCollapsedIds.has(ancestorId),
-    )
-    if (collapsedAncestors.length > 0) {
-      lastScrolledKeyRef.current = null
-      setTreePreferences(previous =>
-        updateScreenCollapsedIds(previous, activeScreenId, current => {
-          for (const ancestorId of collapsedAncestors) current.delete(ancestorId)
-          return current
-        }),
+    if (lastRevealedSelectionKeyRef.current !== revealKey) {
+      lastRevealedSelectionKeyRef.current = revealKey
+      const collapsedAncestors = getAncestorIds(effectiveDocument, selectedComponentId).filter(
+        ancestorId => activeScreenCollapsedIds.has(ancestorId),
       )
-      return
+      if (collapsedAncestors.length > 0) {
+        lastScrolledKeyRef.current = null
+        setTreePreferences(previous =>
+          updateScreenCollapsedIds(previous, activeScreenId, current => {
+            for (const ancestorId of collapsedAncestors) current.delete(ancestorId)
+            return current
+          }),
+        )
+        return
+      }
     }
     if (lastScrolledKeyRef.current === revealKey) return
     nodeRefs.current.get(selectedComponentId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -225,7 +310,19 @@ export function StructureTree() {
 
   return (
     <>
-      <ul className={styles.root}>
+      <ul
+        className={styles.root}
+        role="tree"
+        aria-label={t('tree.label')}
+        onFocusCapture={() => {
+          treeHasFocusRef.current = true
+        }}
+        onBlurCapture={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            treeHasFocusRef.current = false
+          }
+        }}
+      >
         <TreeNode
           componentId={screen.rootComponentId}
           depth={0}
@@ -239,18 +336,11 @@ export function StructureTree() {
           locale={locale}
           t={t}
           collapsedIds={activeScreenCollapsedIds}
-          onToggleCollapse={componentId =>
-            setTreePreferences(previous =>
-              updateScreenCollapsedIds(previous, activeScreenId, current => {
-                if (current.has(componentId)) {
-                  current.delete(componentId)
-                } else {
-                  current.add(componentId)
-                }
-                return current
-              }),
-            )
-          }
+          onToggleCollapse={toggleCollapse}
+          focusedComponentId={focusedComponentId}
+          visibleItemIds={visibleItemIds}
+          onFocusItem={focusTreeItem}
+          onSetFocusedItem={setFocusedComponentId}
           addMenu={componentAddMenu.trigger}
           registerNodeRef={(componentId, element) => {
             if (element) {
@@ -276,18 +366,11 @@ export function StructureTree() {
             locale={locale}
             t={t}
             collapsedIds={activeScreenCollapsedIds}
-            onToggleCollapse={componentId =>
-              setTreePreferences(previous =>
-                updateScreenCollapsedIds(previous, activeScreenId, current => {
-                  if (current.has(componentId)) {
-                    current.delete(componentId)
-                  } else {
-                    current.add(componentId)
-                  }
-                  return current
-                }),
-              )
-            }
+            onToggleCollapse={toggleCollapse}
+            focusedComponentId={focusedComponentId}
+            visibleItemIds={visibleItemIds}
+            onFocusItem={focusTreeItem}
+            onSetFocusedItem={setFocusedComponentId}
             addMenu={componentAddMenu.trigger}
             registerNodeRef={(componentId, element) => {
               if (element) {
@@ -329,8 +412,12 @@ interface TreeNodeProps {
   t: ReturnType<typeof useI18n>['t']
   collapsedIds: Set<EntityId>
   onToggleCollapse(componentId: EntityId): void
+  focusedComponentId: EntityId | null
+  visibleItemIds: readonly EntityId[]
+  onFocusItem(componentId: EntityId): void
+  onSetFocusedItem(componentId: EntityId): void
   addMenu: ComponentAddMenuTrigger
-  registerNodeRef(componentId: EntityId, element: HTMLDivElement | null): void
+  registerNodeRef(componentId: EntityId, element: HTMLLIElement | null): void
   componentStatuses?: ReadonlyMap<EntityId, ComponentChangeStatus>
 }
 
@@ -348,6 +435,10 @@ function TreeNode({
   t,
   collapsedIds,
   onToggleCollapse,
+  focusedComponentId,
+  visibleItemIds,
+  onFocusItem,
+  onSetFocusedItem,
   addMenu,
   registerNodeRef,
   componentStatuses,
@@ -398,6 +489,7 @@ function TreeNode({
 
   if (!component) return null
   const isSelected = selectedComponentId === component.id
+  const isFocused = focusedComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
   const hasChildren = isContainer && component.childIds.length > 0
   const isCollapsed = hasChildren && collapsedIds.has(component.id)
@@ -423,30 +515,62 @@ function TreeNode({
 
   return (
     <li
+      ref={element => registerNodeRef(component.id, element)}
       className={`${styles.nodeWrapper} ${isIndependentRoot ? styles.independentRoot : ''} ${isModalRoot ? styles.modalRoot : ''}`}
       data-tree-root={isPageRoot ? 'page' : isModalRoot ? 'modal' : undefined}
-      aria-label={spokenLabel || undefined}
+      role="treeitem"
+      aria-label={spokenLabel}
+      aria-level={depth + 1}
+      aria-selected={isSelected}
+      aria-expanded={hasChildren ? !isCollapsed : undefined}
+      tabIndex={isFocused ? 0 : -1}
+      onFocus={event => {
+        if ((event.target as HTMLElement).closest('[role="treeitem"]') === event.currentTarget) {
+          onSetFocusedItem(component.id)
+        }
+      }}
+      onContextMenu={event => {
+        event.stopPropagation()
+        onSelect(component.id)
+        addMenu.openFromPointer(event, component.id)
+      }}
+      onKeyDown={event => {
+        if (addMenu.openFromKeyboard(event, component.id)) {
+          onSelect(component.id)
+          return
+        }
+        if (event.target !== event.currentTarget) return
+        const intent = resolveTreeKeyboardIntent({
+          key: event.key,
+          componentId: component.id,
+          visibleIds: visibleItemIds,
+          document,
+          collapsedIds,
+        })
+        if (!intent) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (intent.type === 'focus') {
+          onFocusItem(intent.componentId)
+        } else if (intent.type === 'select') {
+          onSelect(intent.componentId)
+        } else {
+          onToggleCollapse(intent.componentId)
+        }
+      }}
     >
       <div
-        ref={element => {
-          setNodeRef(element)
-          registerNodeRef(component.id, element)
-        }}
+        ref={setNodeRef}
         className={`${styles.node} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
         style={style}
-        tabIndex={isIndependentRoot ? 0 : -1}
         data-state-hidden={isHidden || undefined}
         data-state-disabled={isDisabled || undefined}
         data-state-overridden={hasOverride || undefined}
         data-component-change={changeStatus}
         data-tree-component-id={component.id}
-        onClick={() => onSelect(component.id)}
-        onContextMenu={event => {
+        onClick={() => {
+          onFocusItem(component.id)
           onSelect(component.id)
-          addMenu.openFromPointer(event, component.id)
-        }}
-        onKeyDown={event => {
-          if (addMenu.openFromKeyboard(event, component.id)) onSelect(component.id)
         }}
       >
         <span className={styles.disclosureSlot}>
@@ -574,10 +698,10 @@ function TreeNode({
           items={component.childIds.map(id => draggableComponentId('tree', id))}
           strategy={verticalListSortingStrategy}
         >
-          <ul className={styles.children}>
+          <ul className={styles.children} role="group">
             {component.childIds.map((childId, index) => (
               <Fragment key={childId}>
-                <li className={styles.dropItem}>
+                <li className={styles.dropItem} role="none" aria-hidden="true">
                   <ComponentDropZone
                     surface="tree"
                     parentId={component.id}
@@ -602,13 +726,17 @@ function TreeNode({
                   t={t}
                   collapsedIds={collapsedIds}
                   onToggleCollapse={onToggleCollapse}
+                  focusedComponentId={focusedComponentId}
+                  visibleItemIds={visibleItemIds}
+                  onFocusItem={onFocusItem}
+                  onSetFocusedItem={onSetFocusedItem}
                   addMenu={addMenu}
                   registerNodeRef={registerNodeRef}
                   componentStatuses={componentStatuses}
                 />
               </Fragment>
             ))}
-            <li className={styles.dropItem}>
+            <li className={styles.dropItem} role="none" aria-hidden="true">
               <ComponentDropZone
                 surface="tree"
                 parentId={component.id}
@@ -621,8 +749,8 @@ function TreeNode({
         </SortableContext>
       )}
       {hasChildren && isCollapsed && (
-        <ul className={styles.children}>
-          <li className={styles.dropItem}>
+        <ul className={styles.children} role="group">
+          <li className={styles.dropItem} role="none" aria-hidden="true">
             <ComponentDropZone
               surface="tree"
               parentId={component.id}

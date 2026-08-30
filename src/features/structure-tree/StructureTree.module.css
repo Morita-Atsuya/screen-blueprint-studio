@@ -29,6 +29,13 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+.nodeWrapper:focus-visible {
+  outline: none;
+}
+.nodeWrapper:focus-visible > .node {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .selected { background: var(--bg-selected); }
 
 .node[data-component-change] {

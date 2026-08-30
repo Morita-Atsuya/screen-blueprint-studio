@@ -40,6 +40,7 @@ export interface ComponentAddMenuTrigger {
 export interface ComponentAddMenuController {
   trigger: ComponentAddMenuTrigger
   menu: ReactNode
+  isOpen: boolean
 }
 
 const placementKeys: Record<ComponentInsertPlacement, 'componentMenu.inside' | 'componentMenu.before' | 'componentMenu.after'> = {
@@ -269,5 +270,5 @@ export function useComponentAddMenu(): ComponentAddMenuController {
       )
     : null
 
-  return { trigger, menu }
+  return { trigger, menu, isOpen: openMenu !== null }
 }

@@ -80,6 +80,7 @@ const componentAddMenuModelBundle = join(temp, 'componentAddMenuModel.mjs')
 const stateOverridesBundle = join(temp, 'stateOverrides.mjs')
 const changeSetPresentationBundle = join(temp, 'changeSetPresentation.mjs')
 const changeSetComponentChangesBundle = join(temp, 'changeSetComponentChanges.mjs')
+const structureTreeKeyboardBundle = join(temp, 'structureTreeKeyboard.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -99,6 +100,7 @@ bundle('src/features/component-add-menu/componentAddMenuModel.ts', componentAddM
 bundle('src/domain/stateOverrides.ts', stateOverridesBundle)
 bundle('src/domain/changeSetPresentation.ts', changeSetPresentationBundle)
 bundle('src/domain/changeSetComponentChanges.ts', changeSetComponentChangesBundle)
+bundle('src/features/structure-tree/structureTreeKeyboard.ts', structureTreeKeyboardBundle)
 
 let passed = 0
 
@@ -3686,6 +3688,98 @@ await test('central editor screen context follows the effective active screen', 
       appStyles.includes('.canvas') &&
       appStyles.includes('min-height: 0'),
     'screen context lost its fixed, truncating, route-readable central-pane layout',
+  )
+})
+
+await test('Structure Tree keyboard model follows the ARIA tree pattern', async () => {
+  memoryStorage.clear()
+  const {
+    getVisibleTreeItemIds,
+    resolveTreeKeyboardIntent,
+  } = await import(moduleUrl(structureTreeKeyboardBundle, 'structure-tree-keyboard'))
+  const store = await freshStore('structure-tree-keyboard')
+  const document = store.getState().effectiveDocument
+  const screen = document.screens['screen-list']
+  const expandedIds = getVisibleTreeItemIds(document, screen, new Set())
+  assert(
+    expandedIds.join(',') === [
+      'comp-list-page',
+      'comp-list-section',
+      'comp-list-title',
+      'comp-list-grid',
+      'comp-list-active',
+      'comp-list-invited',
+    ].join(','),
+    'visible Tree order does not follow the expanded hierarchy',
+  )
+
+  const collapsedIds = new Set(['comp-list-grid'])
+  const visibleIds = getVisibleTreeItemIds(document, screen, collapsedIds)
+  const intent = (key, componentId, ids = visibleIds, collapsed = collapsedIds) =>
+    resolveTreeKeyboardIntent({
+      key,
+      componentId,
+      visibleIds: ids,
+      document,
+      collapsedIds: collapsed,
+    })
+  assert(
+    visibleIds.join(',') === [
+      'comp-list-page',
+      'comp-list-section',
+      'comp-list-title',
+      'comp-list-grid',
+    ].join(',') &&
+      intent('ArrowDown', 'comp-list-title')?.componentId === 'comp-list-grid' &&
+      intent('ArrowUp', 'comp-list-grid')?.componentId === 'comp-list-title' &&
+      intent('Home', 'comp-list-grid')?.componentId === 'comp-list-page' &&
+      intent('End', 'comp-list-page')?.componentId === 'comp-list-grid',
+    'Tree previous/next/Home/End navigation does not use visible items',
+  )
+  assert(
+    intent('ArrowRight', 'comp-list-grid')?.type === 'expand' &&
+      intent('ArrowRight', 'comp-list-section', expandedIds, new Set())?.componentId ===
+        'comp-list-title' &&
+      intent('ArrowLeft', 'comp-list-section', expandedIds, new Set())?.type === 'collapse' &&
+      intent('ArrowLeft', 'comp-list-title', expandedIds, new Set())?.componentId ===
+        'comp-list-section' &&
+      intent('Enter', 'comp-list-title')?.type === 'select' &&
+      intent(' ', 'comp-list-title')?.type === 'select',
+    'Tree expand/collapse/parent/child/selection keyboard intents are incomplete',
+  )
+
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+  const treeStyles = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.module.css'),
+    'utf8',
+  )
+  assert(
+    treeSource.includes('role="tree"') &&
+      treeSource.includes('role="treeitem"') &&
+      treeSource.includes('role="group"') &&
+      treeSource.includes('aria-level={depth + 1}') &&
+      treeSource.includes('aria-selected={isSelected}') &&
+      treeSource.includes('aria-expanded={hasChildren ? !isCollapsed : undefined}') &&
+      treeSource.includes('tabIndex={isFocused ? 0 : -1}'),
+    'Structure Tree lost ARIA hierarchy or roving tabindex semantics',
+  )
+  assert(
+    treeSource.includes('event.target !== event.currentTarget') &&
+      treeSource.includes("intent.type === 'focus'") &&
+      treeSource.includes("intent.type === 'select'") &&
+      treeSource.includes('data-drag-surface="tree"') &&
+      treeSource.includes('{...listeners}') &&
+      treeSource.includes('lastRevealedSelectionKeyRef.current !== revealKey') &&
+      treeSource.includes('lastRevealedSelectionKeyRef.current = revealKey'),
+    'Tree keys conflict with internal controls/DnD or selection reveal reopens user collapse',
+  )
+  assert(
+    treeStyles.includes('.nodeWrapper:focus-visible > .node') &&
+      treeStyles.includes('outline: 2px solid var(--accent)'),
+    'Treeitem focus ring is not visibly preserved',
   )
 })
 
