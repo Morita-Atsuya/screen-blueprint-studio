@@ -1,8 +1,8 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { Fragment } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '../../app/appStore'
-import type { EntityId, ProjectDocument, ScreenState } from '../../domain/model'
+import type { EntityId, ProjectDocument, Screen, ScreenState } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
@@ -11,17 +11,120 @@ import { effectiveComponent } from '../../domain/selectors'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
+import {
+  persistStructureTreePreferences,
+  resolveInitialStructureTreePreferences,
+  type StructureTreePreferences,
+} from './structureTreePreferences'
 import styles from './StructureTree.module.css'
+
+function browserStorage(): Storage | undefined {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function getScreenRootIds(screen: Screen) {
+  return [screen.rootComponentId, ...screen.modalComponentIds]
+}
+
+function getTreeDescendantIds(document: ProjectDocument, rootIds: EntityId[]): Set<EntityId> {
+  const visited = new Set<EntityId>()
+  const queue = [...rootIds]
+  while (queue.length > 0) {
+    const componentId = queue.shift()!
+    if (visited.has(componentId)) continue
+    const component = getOwnEntity(document.components, componentId)
+    if (!component) continue
+    visited.add(component.id)
+    queue.push(...component.childIds)
+  }
+  return visited
+}
+
+function getAncestorIds(document: ProjectDocument, componentId: EntityId): EntityId[] {
+  const ancestors: EntityId[] = []
+  const visited = new Set<EntityId>()
+  let current = getOwnEntity(document.components, componentId)
+  while (current?.parentId) {
+    const parent = getOwnEntity(document.components, current.parentId)
+    if (!parent || visited.has(parent.id)) break
+    ancestors.push(parent.id)
+    visited.add(parent.id)
+    current = parent
+  }
+  return ancestors
+}
+
+function normalizeStructureTreePreferences(
+  document: ProjectDocument,
+  preferences: StructureTreePreferences,
+): StructureTreePreferences {
+  let changed = false
+  const collapsedByScreen: Record<string, string[]> = {}
+  for (const [screenId, componentIds] of Object.entries(preferences.collapsedByScreen)) {
+    const screen = getOwnEntity(document.screens, screenId)
+    if (!screen) {
+      changed = true
+      continue
+    }
+    const validIds = getTreeDescendantIds(document, getScreenRootIds(screen))
+    const nextIds: string[] = []
+    const seen = new Set<string>()
+    for (const componentId of componentIds) {
+      if (seen.has(componentId) || !validIds.has(componentId)) {
+        if (validIds.has(componentId)) changed = true
+        continue
+      }
+      seen.add(componentId)
+      nextIds.push(componentId)
+    }
+    if (nextIds.length > 0) {
+      collapsedByScreen[screenId] = nextIds
+    }
+    if (nextIds.length !== componentIds.length) changed = true
+  }
+  return changed ? { collapsedByScreen } : preferences
+}
+
+function updateScreenCollapsedIds(
+  preferences: StructureTreePreferences,
+  screenId: EntityId,
+  updater: (collapsedIds: Set<EntityId>) => Set<EntityId>,
+): StructureTreePreferences {
+  const currentCollapsedIds = new Set(preferences.collapsedByScreen[screenId] ?? [])
+  const nextCollapsedIds = updater(new Set(currentCollapsedIds))
+  let changed = currentCollapsedIds.size !== nextCollapsedIds.size
+  if (!changed) {
+    for (const componentId of currentCollapsedIds) {
+      if (!nextCollapsedIds.has(componentId)) {
+        changed = true
+        break
+      }
+    }
+  }
+  if (!changed) return preferences
+  const nextCollapsedByScreen = { ...preferences.collapsedByScreen }
+  if (nextCollapsedIds.size === 0) {
+    delete nextCollapsedByScreen[screenId]
+  } else {
+    nextCollapsedByScreen[screenId] = [...nextCollapsedIds]
+  }
+  return { collapsedByScreen: nextCollapsedByScreen }
+}
 
 export function StructureTree() {
   const { locale, t } = useI18n()
   const { effectiveDocument, ui, setSelectedComponent, dispatch } = useAppStore()
   const { activeScreenId, selectedComponentId } = ui
-
-  if (!activeScreenId) return <p className={styles.empty}>{t('tree.selectScreen')}</p>
-
-  const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
-  if (!screen) return null
+  const [treePreferences, setTreePreferences] = useState<StructureTreePreferences>(() =>
+    resolveInitialStructureTreePreferences(browserStorage()),
+  )
+  const nodeRefs = useRef(new Map<EntityId, HTMLDivElement>())
+  const lastScrolledKeyRef = useRef<string | null>(null)
+  const screen = activeScreenId ? getOwnEntity(effectiveDocument.screens, activeScreenId) : undefined
   const activeState = ui.activeStateId
     ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
     : undefined
@@ -44,6 +147,51 @@ export function StructureTree() {
     dispatch({ type: 'removeComponent', componentId: id }, 'Delete component')
   }
 
+  useEffect(() => {
+    setTreePreferences(previous => normalizeStructureTreePreferences(effectiveDocument, previous))
+  }, [effectiveDocument])
+
+  useEffect(() => {
+    persistStructureTreePreferences(browserStorage(), treePreferences)
+  }, [treePreferences])
+
+  const activeScreenCollapsedIds = useMemo(
+    () => new Set(activeScreenId ? treePreferences.collapsedByScreen[activeScreenId] ?? [] : []),
+    [treePreferences, activeScreenId],
+  )
+
+  useEffect(() => {
+    if (!selectedComponentId) {
+      lastScrolledKeyRef.current = null
+      return
+    }
+    const selected = getOwnEntity(effectiveDocument.components, selectedComponentId)
+    if (!selected || selected.screenId !== activeScreenId) {
+      lastScrolledKeyRef.current = null
+      return
+    }
+    const revealKey = `${activeScreenId}:${selectedComponentId}`
+    const collapsedAncestors = getAncestorIds(effectiveDocument, selectedComponentId).filter(
+      ancestorId => activeScreenCollapsedIds.has(ancestorId),
+    )
+    if (collapsedAncestors.length > 0) {
+      lastScrolledKeyRef.current = null
+      setTreePreferences(previous =>
+        updateScreenCollapsedIds(previous, activeScreenId, current => {
+          for (const ancestorId of collapsedAncestors) current.delete(ancestorId)
+          return current
+        }),
+      )
+      return
+    }
+    if (lastScrolledKeyRef.current === revealKey) return
+    nodeRefs.current.get(selectedComponentId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    lastScrolledKeyRef.current = revealKey
+  }, [activeScreenCollapsedIds, activeScreenId, effectiveDocument, selectedComponentId])
+
+  if (!activeScreenId) return <p className={styles.empty}>{t('tree.selectScreen')}</p>
+  if (!screen) return null
+
   return (
     <ul className={styles.root}>
       <TreeNode
@@ -57,6 +205,26 @@ export function StructureTree() {
         onRemove={remove}
         locale={locale}
         t={t}
+        collapsedIds={activeScreenCollapsedIds}
+        onToggleCollapse={componentId =>
+          setTreePreferences(previous =>
+            updateScreenCollapsedIds(previous, activeScreenId, current => {
+              if (current.has(componentId)) {
+                current.delete(componentId)
+              } else {
+                current.add(componentId)
+              }
+              return current
+            }),
+          )
+        }
+        registerNodeRef={(componentId, element) => {
+          if (element) {
+            nodeRefs.current.set(componentId, element)
+          } else {
+            nodeRefs.current.delete(componentId)
+          }
+        }}
       />
       {screen.modalComponentIds.map(modalId => (
         <TreeNode
@@ -71,6 +239,26 @@ export function StructureTree() {
           onRemove={remove}
           locale={locale}
           t={t}
+          collapsedIds={activeScreenCollapsedIds}
+          onToggleCollapse={componentId =>
+            setTreePreferences(previous =>
+              updateScreenCollapsedIds(previous, activeScreenId, current => {
+                if (current.has(componentId)) {
+                  current.delete(componentId)
+                } else {
+                  current.add(componentId)
+                }
+                return current
+              }),
+            )
+          }
+          registerNodeRef={(componentId, element) => {
+            if (element) {
+              nodeRefs.current.set(componentId, element)
+            } else {
+              nodeRefs.current.delete(componentId)
+            }
+          }}
         />
       ))}
     </ul>
@@ -88,6 +276,9 @@ interface TreeNodeProps {
   onRemove(id: EntityId): void
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
+  collapsedIds: Set<EntityId>
+  onToggleCollapse(componentId: EntityId): void
+  registerNodeRef(componentId: EntityId, element: HTMLDivElement | null): void
 }
 
 function TreeNode({
@@ -101,6 +292,9 @@ function TreeNode({
   onRemove,
   locale,
   t,
+  collapsedIds,
+  onToggleCollapse,
+  registerNodeRef,
 }: TreeNodeProps) {
   const baseComponent = getOwnEntity(document.components, componentId)
   const component = baseComponent
@@ -152,6 +346,8 @@ function TreeNode({
   if (!component) return null
   const isSelected = selectedComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
+  const hasChildren = isContainer && component.childIds.length > 0
+  const isCollapsed = hasChildren && collapsedIds.has(component.id)
   const parent = component.parentId
     ? getOwnEntity(document.components, component.parentId)
     : undefined
@@ -171,11 +367,35 @@ function TreeNode({
       aria-label={spokenLabel || undefined}
     >
       <div
-        ref={setNodeRef}
+        ref={element => {
+          setNodeRef(element)
+          registerNodeRef(component.id, element)
+        }}
         className={`${styles.node} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
         style={style}
         onClick={() => onSelect(component.id)}
       >
+        <span className={styles.disclosureSlot}>
+          {hasChildren ? (
+            <button
+              type="button"
+              className={`${styles.disclosure} ${isCollapsed ? styles.disclosureCollapsed : ''}`}
+              aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${spokenLabel}`}
+              aria-expanded={!isCollapsed}
+              title={isCollapsed ? 'Expand children' : 'Collapse children'}
+              onClick={event => {
+                event.stopPropagation()
+                onToggleCollapse(component.id)
+              }}
+            >
+              <span className={styles.disclosureIcon} aria-hidden="true">
+                ▾
+              </span>
+            </button>
+          ) : (
+            <span className={styles.disclosurePlaceholder} aria-hidden="true" />
+          )}
+        </span>
         {!isIndependentRoot && (
           <button
             className={styles.dragHandle}
@@ -221,7 +441,7 @@ function TreeNode({
           </div>
         )}
       </div>
-      {isContainer && (
+      {hasChildren && !isCollapsed && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('tree', id))}
           strategy={verticalListSortingStrategy}
@@ -251,6 +471,9 @@ function TreeNode({
                   onRemove={onRemove}
                   locale={locale}
                   t={t}
+                  collapsedIds={collapsedIds}
+                  onToggleCollapse={onToggleCollapse}
+                  registerNodeRef={registerNodeRef}
                 />
               </Fragment>
             ))}
@@ -265,6 +488,19 @@ function TreeNode({
             </li>
           </ul>
         </SortableContext>
+      )}
+      {hasChildren && isCollapsed && (
+        <ul className={styles.children}>
+          <li className={styles.dropItem}>
+            <ComponentDropZone
+              surface="tree"
+              parentId={component.id}
+              screenId={component.screenId}
+              position={0}
+              label={t('dnd.first', { label: spokenLabel })}
+            />
+          </li>
+        </ul>
       )}
     </li>
   )

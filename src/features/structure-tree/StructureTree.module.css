@@ -9,6 +9,7 @@
   border-top: 1px solid var(--border);
 }
 .dropItem { list-style: none; }
+.children .dropItem:last-child { margin-bottom: 0; }
 
 .node {
   display: flex;
@@ -18,12 +19,55 @@
   border-radius: 6px;
   cursor: pointer;
   min-height: 30px;
+  scroll-margin-block: 8px;
 }
 .node:hover,
 .node:focus-within {
   background: var(--bg-hover);
 }
 .selected { background: var(--bg-selected); }
+
+.disclosureSlot {
+  flex: 0 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.disclosure,
+.disclosurePlaceholder {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  padding: 0;
+}
+
+.disclosure {
+  cursor: pointer;
+}
+
+.disclosure:hover,
+.disclosure:focus-visible {
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.disclosureCollapsed .disclosureIcon {
+  transform: rotate(-90deg);
+}
+
+.disclosureIcon {
+  display: inline-block;
+  font-size: 0.7rem;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
 
 .kind {
   font-size: 0.72rem;
@@ -61,11 +105,16 @@
 }
 
 .dragHandle {
-  padding: 0 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--text-faint);
   cursor: grab;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   touch-action: none;
 }
 .dragHandle:active { cursor: grabbing; }
