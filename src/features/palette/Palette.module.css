@@ -2,6 +2,9 @@
 .hint { font-size: 0.75rem; color: var(--text-faint); margin-bottom: 8px; }
 .list { display: flex; flex-direction: column; gap: 3px; }
 .item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -10,6 +13,10 @@
   color: var(--text-muted);
   text-align: left;
   font-size: 0.83rem;
+  cursor: grab;
 }
 .item:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
 .item:disabled { opacity: 0.4; cursor: default; }
+.item:active:not(:disabled) { cursor: grabbing; }
+.grip { color: var(--text-faint); font-size: 1rem; }
+.dragging { opacity: 0.35; }

@@ -31,6 +31,7 @@
 
 /* Component container */
 .comp {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
@@ -41,8 +42,34 @@
 }
 .comp:hover { border-color: var(--text-faint); }
 .selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--agent-change-border); }
+.dragging { opacity: 0.3; }
 
-.children { padding: 4px 0 0 8px; display: flex; flex-direction: column; gap: 4px; }
+.componentChrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+  margin: -4px -2px 4px;
+}
+
+.componentKind {
+  color: var(--text-faint);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.dragHandle {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+}
+.dragHandle:active { cursor: grabbing; }
+
+.children { padding: 4px 0 0 8px; display: flex; flex-direction: column; }
+.childSlot { display: flex; flex-direction: column; }
 
 /* Page */
 .wireframe > .comp {
@@ -76,6 +103,7 @@
 .fieldLabel { font-size: 0.8rem; color: var(--text-muted); }
 .required { color: var(--danger); margin-left: 2px; }
 .fieldInput { width: 100%; opacity: 0.6; }
+.previewControl { pointer-events: none; }
 
 /* Button */
 .btn { padding: 7px 16px; border: 0; border-radius: 6px; font-size: 0.85rem; opacity: 0.8; cursor: default; }

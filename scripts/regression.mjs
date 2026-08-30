@@ -65,10 +65,16 @@ const appStoreBundle = join(temp, 'appStore.mjs')
 const toolsBundle = join(temp, 'tools.mjs')
 const domainBundle = join(temp, 'applyCommand.mjs')
 const screenNamingBundle = join(temp, 'screenNaming.mjs')
+const componentFactoryBundle = join(temp, 'componentFactory.mjs')
+const editorDndBundle = join(temp, 'editorDnd.mjs')
+const editorShortcutsBundle = join(temp, 'editorShortcuts.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
 bundle('src/features/screens/screenNaming.ts', screenNamingBundle)
+bundle('src/features/palette/componentFactory.ts', componentFactoryBundle)
+bundle('src/dnd/editorDnd.ts', editorDndBundle)
+bundle('src/app/editorShortcuts.ts', editorShortcutsBundle)
 
 let passed = 0
 
@@ -1450,6 +1456,202 @@ await test('representative screen/component/state/event/API writes reach the cha
   execute('upsert_screen_state', { operation: 'remove', stateId: addedStateId })
 
   assert(pending().operations.length === version, 'operation count and version diverged')
+})
+
+await test('palette factory and component drops use validated commands', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('direct-edit-factory')
+  const { createAddComponentCommand } = await import(moduleUrl(componentFactoryBundle, 'factory'))
+  const { resolveComponentDrop } = await import(moduleUrl(editorDndBundle, 'drop-resolution'))
+  const command = createAddComponentCommand(
+    store.getState().document,
+    'screen-list',
+    'comp-list-section',
+    'textInput',
+    0,
+  )
+  assert(command.config.fieldKey === 'field_1', 'palette factory did not allocate a unique field key')
+  store.getState().dispatch(command, 'Palette drag add')
+  assert(
+    store.getState().document.components['comp-list-section'].childIds[0] === command.componentId,
+    'palette add command did not honor the drop position',
+  )
+
+  const resolution = resolveComponentDrop(
+    store.getState().document,
+    'comp-list-heading',
+    {
+      type: 'component-drop',
+      parentId: 'comp-list-section',
+      screenId: 'screen-list',
+      position: 0,
+      label: 'first',
+    },
+  )
+  assert(resolution.ok && resolution.position === 0, 'drop position was not resolved')
+})
+
+await test('component reorder and reparent reject invalid targets', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('direct-edit-moves')
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'direct-edit-domain'))
+  const { resolveComponentDrop } = await import(moduleUrl(editorDndBundle, 'invalid-drops'))
+  const baseline = store.getState().document
+
+  let document = applyCommandWithoutRevision(baseline, {
+    type: 'moveComponent',
+    componentId: 'comp-cancel-btn',
+    newParentId: 'comp-actions',
+    position: 1,
+  })
+  assert(
+    document.components['comp-actions'].childIds.join(',') === 'comp-save-btn,comp-cancel-btn',
+    'same-parent reorder failed',
+  )
+
+  document = applyCommandWithoutRevision(document, {
+    type: 'moveComponent',
+    componentId: 'comp-email-input',
+    newParentId: 'comp-actions',
+    position: 0,
+  })
+  assert(
+    document.components['comp-email-input'].parentId === 'comp-actions' &&
+      document.components['comp-actions'].childIds[0] === 'comp-email-input',
+    'cross-container reparent failed',
+  )
+
+  const invalidCommands = [
+    {
+      type: 'moveComponent',
+      componentId: 'comp-edit-page',
+      newParentId: 'comp-edit-section',
+      position: 0,
+    },
+    {
+      type: 'moveComponent',
+      componentId: 'comp-edit-section',
+      newParentId: 'comp-actions',
+      position: 0,
+    },
+    {
+      type: 'moveComponent',
+      componentId: 'comp-cancel-btn',
+      newParentId: 'comp-name-input',
+      position: 0,
+    },
+    {
+      type: 'moveComponent',
+      componentId: 'comp-list-heading',
+      newParentId: 'comp-edit-section',
+      position: 0,
+    },
+    {
+      type: 'moveComponent',
+      componentId: 'comp-name-input',
+      newParentId: 'comp-edit-section',
+      position: 0,
+    },
+  ]
+  for (const command of invalidCommands) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(baseline, command)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `invalid move was accepted: ${JSON.stringify(command)}`)
+  }
+
+  const invalidDrops = [
+    ['comp-edit-page', 'comp-edit-section'],
+    ['comp-edit-section', 'comp-actions'],
+    ['comp-cancel-btn', 'comp-name-input'],
+    ['comp-list-heading', 'comp-edit-section'],
+    ['comp-name-input', 'comp-edit-section'],
+  ]
+  for (const [componentId, parentId] of invalidDrops) {
+    const parent = baseline.components[parentId]
+    const resolution = resolveComponentDrop(baseline, componentId, {
+      type: 'component-drop',
+      parentId,
+      screenId: parent.screenId,
+      position: 0,
+      label: 'invalid target',
+    })
+    assert(!resolution.ok, `invalid UI drop was accepted: ${componentId} -> ${parentId}`)
+  }
+})
+
+await test('human moves join active change sets and screen management stays transactional', async () => {
+  memoryStorage.clear()
+  const proposalStore = await freshStore('direct-edit-change-set')
+  const beforeOrder = proposalStore.getState().document.components['comp-actions'].childIds.join(',')
+  proposalStore.getState().beginChangeSet('Human direct manipulation')
+  proposalStore.getState().dispatch({
+    type: 'moveComponent',
+    componentId: 'comp-cancel-btn',
+    newParentId: 'comp-actions',
+    position: 1,
+  }, 'Human drag')
+  const proposal = proposalStore.getState().activeChangeSet
+  assert(
+    proposal?.operations.at(-1)?.source === 'human' &&
+      proposal.operations.at(-1)?.command.type === 'moveComponent',
+    'human drag did not join the active change set',
+  )
+  assert(
+    proposalStore.getState().document.components['comp-actions'].childIds.join(',') === beforeOrder,
+    'human drag mutated the confirmed document during review',
+  )
+  assert(
+    proposalStore.getState().effectiveDocument.components['comp-actions'].childIds.join(',') !== beforeOrder,
+    'human drag did not update the proposal preview',
+  )
+
+  memoryStorage.clear()
+  const screenStore = await freshStore('direct-edit-screens')
+  screenStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-edit',
+    name: 'Account editor',
+    route: '/accounts/:id',
+  })
+  screenStore.getState().dispatch({ type: 'setEntryScreen', screenId: 'screen-edit' })
+  screenStore.getState().dispatch({
+    type: 'removeScreen',
+    screenId: 'screen-list',
+    nextEntryScreenId: 'screen-edit',
+  })
+  assert(
+    screenStore.getState().document.project.entryScreenId === 'screen-edit' &&
+      screenStore.getState().document.screens['screen-edit'].name === 'Account editor' &&
+      screenStore.getState().document.screens['screen-list'] === undefined,
+    'screen edit, entry, or delete command failed',
+  )
+})
+
+await test('editor shortcuts ignore form controls and resolve standard keys', async () => {
+  const { resolveEditorShortcut } = await import(moduleUrl(editorShortcutsBundle, 'shortcut-guards'))
+  for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) {
+    assert(
+      resolveEditorShortcut({ key: 'Backspace', target: { tagName } }) === null,
+      `${tagName} did not guard Backspace`,
+    )
+  }
+  assert(
+    resolveEditorShortcut({ key: 'Delete', target: { tagName: 'DIV' } }) === 'delete-selection',
+    'Delete shortcut was not resolved',
+  )
+  assert(
+    resolveEditorShortcut({ key: 'Escape', target: { tagName: 'DIV' } }) === 'clear-selection',
+    'Escape shortcut was not resolved',
+  )
+  assert(
+    resolveEditorShortcut({ key: 'z', metaKey: true, target: { tagName: 'DIV' } }) === 'undo' &&
+      resolveEditorShortcut({ key: 'z', ctrlKey: true, target: { tagName: 'DIV' } }) === 'undo',
+    'Cmd/Ctrl+Z shortcut was not resolved',
+  )
 })
 
 console.log(`\n${passed} regression groups passed`)

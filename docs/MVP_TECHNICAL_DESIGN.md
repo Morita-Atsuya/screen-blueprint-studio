@@ -584,8 +584,9 @@ interface Diagnostic {
 ### 10.2 左ペイン
 
 - `Screens`: 画面一覧、entry表示、作成、選択、名称変更、削除
-- `Components`: kind別パレット。選択中containerへクリック追加
-- `Structure`: component tree。選択、上下移動、削除
+- `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
+- `Structure`: component tree。選択、dragによる並び替え・親変更、矢印移動、削除
+- `Canvas`: preview上のhandleからtreeと同じcommandで並び替え・親変更
 - 追加不可の場合は無効理由を表示
 
 ### 10.3 中央ペイン
@@ -772,7 +773,8 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 ## 14. アクセシビリティとレスポンシブ
 
 - 主要操作をbutton、form control、tree semanticsで提供
-- キーボードで選択、追加、上下移動、削除が可能
+- dnd-kitのpointer、touch、keyboard sensorとdrag handleのaccessible nameを提供
+- キーボードで選択、クリック追加、上下移動、削除、選択解除、Undoが可能
 - 選択を色だけで示さない
 - change setのAI変更と人間修正を色とlabelの両方で示す
 - 画面幅1024px以上を主要対象とする

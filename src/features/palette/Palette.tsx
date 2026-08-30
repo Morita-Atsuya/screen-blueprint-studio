@@ -1,100 +1,86 @@
-import { nanoid } from 'nanoid'
+import { useDraggable } from '@dnd-kit/core'
 import { useAppStore } from '../../app/appStore'
-import type { ComponentKind, ComponentConfig, ProjectDocument } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
+import type { PaletteItem } from './componentFactory'
+import { createAddComponentCommand, PALETTE_ITEMS } from './componentFactory'
 import styles from './Palette.module.css'
 
-function generateUniqueFieldKey(doc: ProjectDocument): string {
-  const usedKeys = new Set<string>()
-  for (const comp of Object.values(doc.components)) {
-    if (comp.config.kind === 'textInput' || comp.config.kind === 'select') {
-      const cfg = comp.config as any
-      if (cfg.fieldKey && typeof cfg.fieldKey === 'string' && cfg.fieldKey.trim()) {
-        usedKeys.add(cfg.fieldKey.trim())
-      }
-    }
-  }
-
-  let counter = 1
-  while (usedKeys.has(`field_${counter}`)) {
-    counter++
-  }
-  return `field_${counter}`
-}
-
-const PALETTE_ITEMS: Array<{ kind: ComponentKind; label: string; defaultConfig: ComponentConfig }> = [
-  { kind: 'section', label: 'Section', defaultConfig: { kind: 'section', title: '新しいセクション' } },
-  { kind: 'stack', label: 'Stack', defaultConfig: { kind: 'stack', gap: 'md' } },
-  { kind: 'columns', label: 'Columns', defaultConfig: { kind: 'columns', columns: 2 } },
-  { kind: 'actionArea', label: 'Action Area', defaultConfig: { kind: 'actionArea', align: 'end' } },
-  { kind: 'heading', label: 'Heading', defaultConfig: { kind: 'heading', text: '見出し', level: 2 } },
-  { kind: 'text', label: 'Text', defaultConfig: { kind: 'text', text: 'テキスト' } },
-  { kind: 'textInput', label: 'Text Input', defaultConfig: { kind: 'textInput', fieldKey: '__factory__', label: '項目名', inputType: 'text', required: false, placeholder: '', defaultValue: '', validationRules: [], requestBinding: null } },
-  { kind: 'select', label: 'Select', defaultConfig: { kind: 'select', fieldKey: '__factory__', label: '選択肢', required: false, options: [], requestBinding: null } },
-  { kind: 'button', label: 'Button', defaultConfig: { kind: 'button', label: 'ボタン', variant: 'primary', eventId: null, confirmationMessage: null, preventDoubleSubmit: false } },
-  { kind: 'alert', label: 'Alert', defaultConfig: { kind: 'alert', tone: 'info', message: 'メッセージ' } },
-  { kind: 'modal', label: 'Modal', defaultConfig: { kind: 'modal', title: 'モーダル' } },
-]
-
 export function Palette() {
-  const { effectiveDocument, ui, dispatch } = useAppStore()
-
+  const { effectiveDocument, ui, dispatch, setSelectedComponent } = useAppStore()
   const activeScreenId = ui.activeScreenId
-  const selectedId = ui.selectedComponentId
 
-  function handleAdd(kind: ComponentKind, defaultConfig: ComponentConfig) {
+  function handleAdd(item: PaletteItem) {
     if (!activeScreenId) return
     const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
     if (!screen) return
 
-    // Find target parent: selected container, or root
     let parentId = screen.rootComponentId
-    if (selectedId) {
-      const sel = getOwnEntity(effectiveDocument.components, selectedId)
-      if (sel && CONTAINER_KINDS.includes(sel.kind)) {
-        parentId = selectedId
-      } else if (sel?.parentId) {
-        parentId = sel.parentId
-      }
+    const selected = ui.selectedComponentId
+      ? getOwnEntity(effectiveDocument.components, ui.selectedComponentId)
+      : undefined
+    if (selected && CONTAINER_KINDS.includes(selected.kind)) {
+      parentId = selected.id
+    } else if (selected?.parentId) {
+      parentId = selected.parentId
     }
 
-    const componentId = nanoid()
-    let config = defaultConfig
-    if (kind === 'textInput' || kind === 'select') {
-      config = { ...defaultConfig, fieldKey: generateUniqueFieldKey(effectiveDocument) } as ComponentConfig
-    }
-
-    dispatch(
-      {
-        type: 'addComponent',
-        componentId,
-        screenId: activeScreenId,
-        parentId,
-        kind,
-        name: kind,
-        config,
-      },
-      `コンポーネント追加: ${kind}`,
+    const command = createAddComponentCommand(
+      effectiveDocument,
+      activeScreenId,
+      parentId,
+      item.kind,
     )
+    dispatch(command, `コンポーネント追加: ${item.kind}`)
+    setSelectedComponent(command.componentId)
   }
 
   return (
     <div className={styles.root}>
-      <p className={styles.hint}>選択中のコンテナに追加されます</p>
+      <p className={styles.hint}>クリックで選択先へ追加、ドラッグで位置を指定</p>
       <ul className={styles.list}>
         {PALETTE_ITEMS.map(item => (
-          <li key={item.kind}>
-            <button
-              className={styles.item}
-              onClick={() => handleAdd(item.kind, item.defaultConfig)}
-              disabled={!activeScreenId}
-            >
-              {item.label}
-            </button>
-          </li>
+          <PaletteButton
+            key={item.kind}
+            item={item}
+            disabled={!activeScreenId}
+            onAdd={() => handleAdd(item)}
+          />
         ))}
       </ul>
     </div>
+  )
+}
+
+function PaletteButton({
+  item,
+  disabled,
+  onAdd,
+}: {
+  item: PaletteItem
+  disabled: boolean
+  onAdd(): void
+}) {
+  const { attributes, listeners, isDragging, setNodeRef } = useDraggable({
+    id: `palette:${item.kind}`,
+    data: { type: 'palette', kind: item.kind, label: item.label },
+    disabled,
+  })
+
+  return (
+    <li ref={setNodeRef} className={isDragging ? styles.dragging : ''}>
+      <button
+        className={styles.item}
+        onClick={onAdd}
+        disabled={disabled}
+        aria-label={`${item.label}を追加またはドラッグ`}
+        data-palette-kind={item.kind}
+        {...attributes}
+        {...listeners}
+      >
+        <span className={styles.grip} aria-hidden="true">⠿</span>
+        {item.label}
+      </button>
+    </li>
   )
 }

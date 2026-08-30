@@ -88,6 +88,32 @@ export function Inspector() {
           <textarea className={styles.textarea} value={cfg.text} rows={3} onChange={e => updateConfig({ text: e.target.value })} />
         </Field>
       )}
+      {cfg.kind === 'stack' && (
+        <Field label="間隔">
+          <select className={styles.input} value={cfg.gap} onChange={e => updateConfig({ gap: e.target.value })}>
+            <option value="sm">small</option>
+            <option value="md">medium</option>
+            <option value="lg">large</option>
+          </select>
+        </Field>
+      )}
+      {cfg.kind === 'columns' && (
+        <Field label="カラム数">
+          <select className={styles.input} value={cfg.columns} onChange={e => updateConfig({ columns: Number(e.target.value) })}>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+          </select>
+        </Field>
+      )}
+      {cfg.kind === 'actionArea' && (
+        <Field label="配置">
+          <select className={styles.input} value={cfg.align} onChange={e => updateConfig({ align: e.target.value })}>
+            <option value="start">start</option>
+            <option value="end">end</option>
+            <option value="between">space between</option>
+          </select>
+        </Field>
+      )}
       {cfg.kind === 'textInput' && (
         <>
           <Field label="フィールドキー">
@@ -99,10 +125,36 @@ export function Inspector() {
           <Field label="プレースホルダー">
             <input className={styles.input} value={cfg.placeholder} onChange={e => updateConfig({ placeholder: e.target.value })} />
           </Field>
+          <Field label="初期値">
+            <input className={styles.input} value={cfg.defaultValue} onChange={e => updateConfig({ defaultValue: e.target.value })} />
+          </Field>
           <Field label="型">
             <select className={styles.input} value={cfg.inputType} onChange={e => updateConfig({ inputType: e.target.value })}>
               <option value="text">text</option><option value="email">email</option><option value="password">password</option>
             </select>
+          </Field>
+          <label className={styles.checkLabel}>
+            <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
+            必須
+          </label>
+        </>
+      )}
+      {cfg.kind === 'select' && (
+        <>
+          <Field label="フィールドキー">
+            <input className={styles.input} value={cfg.fieldKey} onChange={e => updateConfig({ fieldKey: e.target.value })} />
+          </Field>
+          <Field label="ラベル">
+            <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
+          </Field>
+          <Field label="選択肢（value:label、1行1件）">
+            <textarea
+              className={styles.textarea}
+              rows={4}
+              value={formatSelectOptions(cfg.options)}
+              placeholder={'active:有効\ninactive:無効'}
+              onChange={e => updateConfig({ options: parseSelectOptions(e.target.value) })}
+            />
           </Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
@@ -119,6 +171,14 @@ export function Inspector() {
             <select className={styles.input} value={cfg.variant} onChange={e => updateConfig({ variant: e.target.value })}>
               <option value="primary">primary</option><option value="secondary">secondary</option><option value="danger">danger</option>
             </select>
+          </Field>
+          <Field label="確認メッセージ">
+            <input
+              className={styles.input}
+              value={cfg.confirmationMessage ?? ''}
+              placeholder="空欄なら確認なし"
+              onChange={e => updateConfig({ confirmationMessage: e.target.value || null })}
+            />
           </Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.preventDoubleSubmit} onChange={e => updateConfig({ preventDoubleSubmit: e.target.checked })} />
@@ -145,6 +205,25 @@ export function Inspector() {
       )}
     </div>
   )
+}
+
+function formatSelectOptions(options: Array<{ value: string; label: string }>): string {
+  return options.map(option => `${option.value}:${option.label}`).join('\n')
+}
+
+function parseSelectOptions(value: string): Array<{ value: string; label: string }> {
+  return value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const separator = line.indexOf(':')
+      if (separator < 0) return { value: line, label: line }
+      return {
+        value: line.slice(0, separator).trim(),
+        label: line.slice(separator + 1).trim(),
+      }
+    })
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

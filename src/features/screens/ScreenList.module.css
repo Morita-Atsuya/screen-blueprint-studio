@@ -45,3 +45,43 @@
   border: 1px solid var(--agent-change-border);
   margin-left: 6px;
 }
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.editorTitle {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.input { width: 100%; }
+.manageActions { display: flex; gap: 6px; }
+.entryBtn,
+.deleteBtn {
+  flex: 1;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.entryBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.deleteBtn:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.entryBtn:disabled,
+.deleteBtn:disabled { opacity: 0.5; cursor: default; }
+.note { color: var(--text-faint); font-size: 0.7rem; }

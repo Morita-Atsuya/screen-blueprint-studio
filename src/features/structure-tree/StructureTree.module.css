@@ -1,6 +1,8 @@
 .root { display: flex; flex-direction: column; gap: 1px; padding: 0; }
 .empty { color: var(--text-faint); font-size: 0.82rem; }
 .children { list-style: none; padding: 0; margin: 0; }
+.nodeWrapper { list-style: none; }
+.dropItem { list-style: none; }
 
 .node {
   display: flex;
@@ -36,6 +38,17 @@
 .nodeActions { display: none; gap: 2px; }
 .node:hover .nodeActions { display: flex; }
 
+.dragHandle {
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+}
+.dragHandle:active { cursor: grabbing; }
+.dragging { opacity: 0.35; }
+
 .iconBtn {
   padding: 2px 5px;
   font-size: 0.75rem;
@@ -45,4 +58,6 @@
   color: var(--text-faint);
 }
 .iconBtn:hover { background: var(--bg-surface); color: var(--text); }
+.iconBtn:disabled { opacity: 0.35; cursor: default; }
+.iconBtn:disabled:hover { background: transparent; color: var(--text-faint); }
 .danger:hover { color: var(--danger); border-color: var(--danger); }

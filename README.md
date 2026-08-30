@@ -10,6 +10,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 
 - 複数画面とentry screenの管理
 - Page、Section、Stack、Columns、入力、ボタン、Alert、Modalなどの構造化コンポーネント
+- パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
 - default、loading、success、error、custom状態と状態別override
 - click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
@@ -44,9 +45,20 @@ AIがchange setへ型付きoperationを追加
 - Vite 6
 - Zustand 5
 - nanoid
+- dnd-kit
 - CSS Modules
 - WebMCP `document.modelContext`
 - ブラウザ`localStorage`
+
+## 基本操作
+
+- パレット項目はクリックで選択中containerへ追加、ドラッグでtree/canvasの任意位置へ追加
+- treeとcanvasの`⠿` handleで、同一container内の並び替えまたは別containerへの移動
+- componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
+- 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
+- Screensタブで画面の追加、名前・route編集、Entry設定、削除
+
+root component、別screen、leaf、自分自身・子孫へのdropは拒否されます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
 
 ## ローカル実行
 
@@ -116,7 +128,8 @@ Readツールには`readOnlyHint`を付与しています。Writeツールはact
 ├── scripts/
 │   └── regression.mjs
 ├── src/
-│   ├── app/             # Zustand store、app shell、recovery/error UI
+│   ├── app/             # Zustand store、app shell、keyboard editing、recovery/error UI
+│   ├── dnd/             # dnd-kit context、drop validation、drop zones
 │   ├── domain/          # model、commands、invariants、runtime validation
 │   ├── features/        # canvas、palette、screen list、tree、inspector
 │   ├── persistence/     # localStorage保存・復旧

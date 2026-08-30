@@ -7,6 +7,9 @@ import styles from './ScreenList.module.css'
 export function ScreenList() {
   const { effectiveDocument, ui, dispatch, setActiveScreen } = useAppStore()
   const { project, screens } = effectiveDocument
+  const activeScreen = ui.activeScreenId
+    ? getOwnEntity(screens, ui.activeScreenId)
+    : undefined
 
   function addScreen() {
     const screenId = nanoid()
@@ -25,6 +28,19 @@ export function ScreenList() {
       `画面を追加: ${name}`,
     )
     setActiveScreen(screenId)
+  }
+
+  function removeActiveScreen() {
+    if (!activeScreen || project.screenIds.length <= 1) return
+    const nextEntryScreenId = project.screenIds.find(id => id !== activeScreen.id)
+    dispatch(
+      {
+        type: 'removeScreen',
+        screenId: activeScreen.id,
+        nextEntryScreenId,
+      },
+      `画面を削除: ${activeScreen.name}`,
+    )
   }
 
   return (
@@ -51,6 +67,57 @@ export function ScreenList() {
           )
         })}
       </ul>
+      {activeScreen && (
+        <div className={styles.editor}>
+          <h3 className={styles.editorTitle}>選択中の画面</h3>
+          <label className={styles.label}>
+            名前
+            <input
+              className={styles.input}
+              value={activeScreen.name}
+              onChange={event => dispatch({
+                type: 'updateScreen',
+                screenId: activeScreen.id,
+                name: event.target.value,
+              }, '画面名を変更')}
+            />
+          </label>
+          <label className={styles.label}>
+            Route
+            <input
+              className={styles.input}
+              value={activeScreen.route}
+              onChange={event => dispatch({
+                type: 'updateScreen',
+                screenId: activeScreen.id,
+                route: event.target.value,
+              }, '画面routeを変更')}
+            />
+          </label>
+          <div className={styles.manageActions}>
+            <button
+              className={styles.entryBtn}
+              disabled={project.entryScreenId === activeScreen.id}
+              onClick={() => dispatch({
+                type: 'setEntryScreen',
+                screenId: activeScreen.id,
+              }, 'Entry画面を変更')}
+            >
+              {project.entryScreenId === activeScreen.id ? 'Entry画面' : 'Entryに設定'}
+            </button>
+            <button
+              className={styles.deleteBtn}
+              disabled={project.screenIds.length <= 1}
+              onClick={removeActiveScreen}
+            >
+              画面を削除
+            </button>
+          </div>
+          {project.screenIds.length <= 1 && (
+            <p className={styles.note}>最後の1画面は削除できません。</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

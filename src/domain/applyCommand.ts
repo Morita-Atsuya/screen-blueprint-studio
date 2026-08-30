@@ -252,6 +252,12 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       if (!CONTAINER_KINDS.includes(parent.kind)) {
         throw new DomainError('INVALID_PARENT', `${parent.kind} cannot contain children`)
       }
+      if (
+        position !== undefined &&
+        (!Number.isInteger(position) || position < 0 || position > parent.childIds.length)
+      ) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component position is out of range')
+      }
       setOwnEntity(next.components, componentId, {
         id: componentId,
         screenId,
@@ -281,18 +287,45 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       if (!CONTAINER_KINDS.includes(newParent.kind)) {
         throw new DomainError('INVALID_PARENT', `${newParent.kind} cannot contain children`)
       }
+      if (newParent.screenId !== comp.screenId) {
+        throw new DomainError('INVALID_PARENT', 'Cannot move a component to another screen')
+      }
+
+      let ancestor = newParent
+      const visited = new Set<EntityId>()
+      while (!visited.has(ancestor.id)) {
+        if (ancestor.id === comp.id) {
+          throw new DomainError('INVALID_PARENT', 'Cannot move a component into itself or its descendant')
+        }
+        visited.add(ancestor.id)
+        if (ancestor.parentId === null) break
+        const parent = getOwnEntity(next.components, ancestor.parentId)
+        if (!parent) break
+        ancestor = parent
+      }
 
       const oldParent = getOwnEntity(next.components, comp.parentId)
-      if (oldParent) {
-        oldParent.childIds = oldParent.childIds.filter(id => id !== componentId)
+      if (!oldParent) {
+        throw new DomainError('INVARIANT_VIOLATION', `Parent ${comp.parentId} not found`)
+      }
+      const oldIndex = oldParent.childIds.indexOf(componentId)
+      if (oldIndex < 0) {
+        throw new DomainError('INVARIANT_VIOLATION', `Parent ${oldParent.id} does not contain ${componentId}`)
+      }
+      const sameParent = oldParent.id === newParent.id
+      const maxPosition = sameParent ? newParent.childIds.length - 1 : newParent.childIds.length
+      const nextPosition = position ?? maxPosition
+      if (!Number.isInteger(nextPosition) || nextPosition < 0 || nextPosition > maxPosition) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component position is out of range')
+      }
+      if (sameParent && nextPosition === oldIndex) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component is already at that position')
       }
 
+      oldParent.childIds = oldParent.childIds.filter(id => id !== componentId)
+
       comp.parentId = newParentId
-      if (position !== undefined) {
-        newParent.childIds.splice(position, 0, componentId)
-      } else {
-        newParent.childIds.push(componentId)
-      }
+      newParent.childIds.splice(nextPosition, 0, componentId)
       break
     }
 

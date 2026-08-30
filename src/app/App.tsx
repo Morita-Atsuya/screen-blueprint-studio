@@ -5,6 +5,8 @@ import { StructureTree } from '../features/structure-tree/StructureTree'
 import { Canvas } from '../features/canvas/Canvas'
 import { Inspector } from '../features/inspector/Inspector'
 import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
+import { EditorDndProvider } from '../dnd/EditorDndContext'
+import { EditorKeyboardShortcuts } from './EditorKeyboardShortcuts'
 import styles from './App.module.css'
 
 export function App() {
@@ -49,7 +51,9 @@ export function App() {
 
   // ── Main UI ─────────────────────────────────────────────────
   return (
-    <div className={styles.root}>
+    <EditorDndProvider>
+      <EditorKeyboardShortcuts />
+      <div className={styles.root}>
       <header className={styles.header}>
         <span className={styles.logo}>Screen Blueprint Studio</span>
         <button
@@ -126,6 +130,7 @@ export function App() {
           </div>
         </aside>
       </div>
-    </div>
+      </div>
+    </EditorDndProvider>
   )
 }

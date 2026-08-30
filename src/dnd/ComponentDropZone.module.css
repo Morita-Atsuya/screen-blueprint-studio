@@ -1,0 +1,50 @@
+.zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  line-height: 1.2;
+  transition: min-height 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.active {
+  min-height: 8px;
+  border-color: var(--border);
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.over {
+  min-height: 8px;
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px var(--bg-selected);
+  overflow: visible;
+  position: relative;
+  z-index: 2;
+}
+
+.invalid {
+  opacity: 0.35;
+}
+
+.empty {
+  min-height: 34px;
+  margin-top: 4px;
+  border-color: var(--border);
+  border-style: dashed;
+}
+
+.tree {
+  margin-left: 8px;
+}
+
+.canvas {
+  width: 100%;
+}
