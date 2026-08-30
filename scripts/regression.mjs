@@ -911,6 +911,418 @@ await test('screen defaults reuse only suffixes free in both names and routes', 
   )
 })
 
+await test('domain commands isolate every nested payload from returned documents and change sets', async () => {
+  const { sampleProject } = await import(moduleUrl(sampleProjectBundle, 'command-isolation-sample'))
+  const {
+    applyCommand,
+    applyCommandWithoutRevision,
+    applyTransaction,
+  } = await import(moduleUrl(domainBundle, 'command-isolation-domain'))
+  const {
+    createComponentSubtreeSnapshot,
+    createPasteComponentCommand,
+  } = await import(moduleUrl(componentDuplicationBundle, 'command-isolation-copy'))
+
+  function stableFragment(document, select, mutate, label) {
+    const before = JSON.stringify(select(document))
+    mutate()
+    assert(
+      JSON.stringify(select(document)) === before,
+      `${label} retained a mutable command payload reference`,
+    )
+  }
+
+  const addCommand = {
+    type: 'addComponent',
+    componentId: 'comp-isolated-input',
+    screenId: 'screen-edit',
+    parentId: 'comp-edit-section',
+    kind: 'textInput',
+    config: {
+      kind: 'textInput',
+      fieldKey: 'isolatedInput',
+      label: 'Isolated input',
+      inputType: 'text',
+      required: true,
+      placeholder: 'Enter a value',
+      defaultValue: '',
+      validationRules: [
+        { id: 'rule-isolated', type: 'required', message: 'Required' },
+      ],
+    },
+  }
+  const added = applyCommand(sampleProject, addCommand)
+  stableFragment(
+    added,
+    document => document.components['comp-isolated-input'],
+    () => {
+      addCommand.config.validationRules[0].message = 'Mutated'
+      addCommand.config.validationRules.push({
+        id: 'rule-late',
+        type: 'custom',
+        description: 'Late rule',
+        message: 'Late',
+      })
+    },
+    'addComponent config',
+  )
+
+  const updateSpecCommand = {
+    type: 'updateComponentSpec',
+    componentId: 'comp-role-select',
+    patch: {
+      common: { description: 'Updated select' },
+      config: {
+        options: [
+          { value: 'admin', label: 'Administrator' },
+          { value: 'editor', label: 'Editor' },
+          { value: 'member', label: 'Member' },
+          { value: 'viewer', label: 'Viewer' },
+        ],
+      },
+    },
+  }
+  const updatedSpec = applyCommandWithoutRevision(sampleProject, updateSpecCommand)
+  stableFragment(
+    updatedSpec,
+    document => document.components['comp-role-select'],
+    () => {
+      updateSpecCommand.patch.common.description = 'Mutated'
+      updateSpecCommand.patch.config.options[0].label = 'Mutated'
+      updateSpecCommand.patch.config.options.push({ value: 'late', label: 'Late' })
+    },
+    'updateComponentSpec patch',
+  )
+
+  const createStateCommand = {
+    type: 'createScreenState',
+    stateId: 'state-isolated',
+    screenId: 'screen-edit',
+    name: 'Isolated',
+    description: 'Command-owned state',
+    overrides: {
+      'comp-name-input': { enabled: false, value: 'Initial' },
+    },
+  }
+  const createdState = applyCommandWithoutRevision(sampleProject, createStateCommand)
+  stableFragment(
+    createdState,
+    document => document.screenStates['state-isolated'],
+    () => {
+      createStateCommand.overrides['comp-name-input'].value = 'Mutated'
+      createStateCommand.overrides['comp-email-input'] = { visible: false }
+    },
+    'createScreenState overrides',
+  )
+
+  const updateStateCommand = {
+    type: 'updateScreenState',
+    stateId: 'state-edit-saving',
+    overrides: {
+      'comp-save-btn': { enabled: false },
+      'comp-status-alert': { visible: true, message: 'Saving' },
+    },
+  }
+  const updatedState = applyCommandWithoutRevision(sampleProject, updateStateCommand)
+  stableFragment(
+    updatedState,
+    document => document.screenStates['state-edit-saving'].componentOverrides,
+    () => {
+      updateStateCommand.overrides['comp-status-alert'].message = 'Mutated'
+      delete updateStateCommand.overrides['comp-save-btn']
+    },
+    'updateScreenState overrides',
+  )
+
+  const connectEventCommand = {
+    type: 'connectEvent',
+    eventId: 'event-isolated',
+    screenId: 'screen-edit',
+    name: 'Isolated event',
+    trigger: { type: 'click', componentId: 'comp-cancel-btn' },
+    actions: [
+      { type: 'setState', stateId: 'state-edit-saving' },
+      { type: 'navigate', destinationScreenId: 'screen-list' },
+    ],
+  }
+  const connectedEvent = applyCommandWithoutRevision(sampleProject, connectEventCommand)
+  stableFragment(
+    connectedEvent,
+    document => document.events['event-isolated'],
+    () => {
+      connectEventCommand.trigger.componentId = 'comp-save-btn'
+      connectEventCommand.actions[0].stateId = 'state-edit-success'
+      connectEventCommand.actions.push({ type: 'callApi', apiOperationId: 'api-save-user' })
+    },
+    'connectEvent trigger/actions',
+  )
+
+  const updateEventCommand = {
+    type: 'updateEvent',
+    eventId: 'event-submit',
+    name: 'Updated event',
+    trigger: { type: 'submit', componentId: 'comp-edit-section' },
+    actions: [
+      { type: 'showAlert', componentId: 'comp-status-alert' },
+      { type: 'callApi', apiOperationId: 'api-save-user' },
+    ],
+  }
+  const updatedEvent = applyTransaction(sampleProject, [updateEventCommand])
+  stableFragment(
+    updatedEvent,
+    document => document.events['event-submit'],
+    () => {
+      updateEventCommand.trigger.componentId = 'comp-actions'
+      updateEventCommand.actions[0].componentId = 'comp-name-input'
+      updateEventCommand.actions.length = 0
+    },
+    'updateEvent transaction payload',
+  )
+
+  const bindApiCommand = {
+    type: 'bindApiOperation',
+    operationId: 'api-isolated',
+    screenId: 'screen-edit',
+    name: 'Isolated API',
+    method: 'POST',
+    path: '/isolated',
+    requestBindings: [
+      { componentId: 'comp-name-input', targetPath: 'body.name' },
+    ],
+    successStateId: 'state-edit-success',
+    errorStateId: 'state-edit-error',
+  }
+  const boundApi = applyCommandWithoutRevision(sampleProject, bindApiCommand)
+  stableFragment(
+    boundApi,
+    document => document.apiOperations['api-isolated'],
+    () => {
+      bindApiCommand.requestBindings[0].targetPath = 'body.mutated'
+      bindApiCommand.requestBindings.push({
+        componentId: 'comp-email-input',
+        targetPath: 'body.email',
+      })
+    },
+    'bindApiOperation requestBindings',
+  )
+
+  const updateApiCommand = {
+    type: 'updateApiOperation',
+    operationId: 'api-save-user',
+    name: 'Updated API',
+    method: 'PATCH',
+    path: '/api/users/{id}',
+    requestBindings: [
+      { componentId: 'comp-role-select', targetPath: 'body.role' },
+    ],
+    successStateId: 'state-edit-success',
+    errorStateId: 'state-edit-error',
+  }
+  const updatedApi = applyCommandWithoutRevision(sampleProject, updateApiCommand)
+  stableFragment(
+    updatedApi,
+    document => document.apiOperations['api-save-user'],
+    () => {
+      updateApiCommand.requestBindings[0].componentId = 'comp-name-input'
+      updateApiCommand.requestBindings.length = 0
+    },
+    'updateApiOperation requestBindings',
+  )
+
+  const snapshot = createComponentSubtreeSnapshot(sampleProject, 'comp-edit-section')
+  assert(snapshot, 'failed to create paste isolation snapshot')
+  let generatedId = 0
+  const pasteCommand = createPasteComponentCommand(
+    sampleProject,
+    snapshot,
+    'comp-edit-page',
+    () => `comp-isolated-copy-${generatedId++}`,
+  )
+  assert(pasteCommand, 'failed to create paste isolation command')
+  const pasted = applyCommandWithoutRevision(sampleProject, pasteCommand)
+  const pastedRootId = pasteCommand.componentIdMap[pasteCommand.snapshot.rootComponentId]
+  stableFragment(
+    pasted,
+    document => ({
+      root: document.components[pastedRootId],
+      components: Object.values(document.components)
+        .filter(component => component.id.startsWith('comp-isolated-copy-')),
+      states: document.screenStates,
+    }),
+    () => {
+      pasteCommand.componentIdMap[pasteCommand.snapshot.rootComponentId] = 'mutated-id'
+      pasteCommand.snapshot.components['comp-edit-section'].childIds.length = 0
+      pasteCommand.snapshot.components['comp-name-input'].config.validationRules[0].message =
+        'Mutated'
+      pasteCommand.snapshot.components['comp-role-select'].config.options[0].label = 'Mutated'
+      const stateOverrides = pasteCommand.snapshot.stateOverrides['state-edit-saving']
+      if (stateOverrides?.['comp-save-btn']) {
+        stateOverrides['comp-save-btn'].enabled = true
+      }
+    },
+    'pasteComponent snapshot and ID map',
+  )
+
+  const duplicateCommand = {
+    type: 'duplicateComponent',
+    componentId: 'comp-role-select',
+    componentIdMap: { 'comp-role-select': 'comp-isolated-duplicate' },
+  }
+  const duplicated = applyCommandWithoutRevision(sampleProject, duplicateCommand)
+  stableFragment(
+    duplicated,
+    document => document.components['comp-isolated-duplicate'],
+    () => {
+      duplicateCommand.componentIdMap['comp-role-select'] = 'mutated-id'
+    },
+    'duplicateComponent ID map',
+  )
+
+  memoryStorage.clear()
+  const reviewStore = await freshStore('command-isolation-change-set')
+  const review = reviewStore.getState().beginChangeSet('Isolate command payload')
+  const reviewCommand = {
+    type: 'updateEvent',
+    eventId: 'event-submit',
+    name: 'Review event',
+    trigger: { type: 'click', componentId: 'comp-save-btn' },
+    actions: [{ type: 'setState', stateId: 'state-edit-success' }],
+  }
+  reviewStore.getState().dispatchToChangeSet(review.id, reviewCommand)
+  const operationBeforeMutation = JSON.stringify(
+    reviewStore.getState().activeChangeSet.operations[0].command,
+  )
+  const effectiveBeforeMutation = JSON.stringify(
+    reviewStore.getState().effectiveDocument.events['event-submit'],
+  )
+  reviewCommand.trigger.componentId = 'comp-cancel-btn'
+  reviewCommand.actions[0].stateId = 'state-edit-error'
+  reviewCommand.actions.push({ type: 'navigate', destinationScreenId: 'screen-list' })
+  assert(
+    JSON.stringify(reviewStore.getState().activeChangeSet.operations[0].command) ===
+      operationBeforeMutation &&
+      JSON.stringify(reviewStore.getState().effectiveDocument.events['event-submit']) ===
+        effectiveBeforeMutation,
+    'change set retained the caller command or nested payload',
+  )
+  reviewStore.getState().acceptChangeSet()
+  assert(
+    reviewStore.getState().document.events['event-submit'].actions[0].stateId ===
+      'state-edit-success',
+    'Accept replayed a caller-mutated command payload',
+  )
+
+  const sparseOptions = []
+  sparseOptions.length = 1
+  let sparseRejected = false
+  try {
+    applyCommandWithoutRevision(sampleProject, {
+      type: 'updateComponentSpec',
+      componentId: 'comp-role-select',
+      patch: { config: { options: sparseOptions } },
+    })
+  } catch (error) {
+    sparseRejected = error?.code === 'INVARIANT_VIOLATION'
+  }
+  assert(sparseRejected, 'a sparse nested command array bypassed domain validation')
+
+  let unknownPatchRejected = false
+  try {
+    applyCommandWithoutRevision(sampleProject, {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-title',
+      patch: {
+        common: { description: 'Valid part' },
+        unexpected: { nested: true },
+      },
+    })
+  } catch (error) {
+    unknownPatchRejected = error?.code === 'INVARIANT_VIOLATION'
+  }
+  assert(
+    unknownPatchRejected,
+    'command cloning removed an unknown patch key before domain validation',
+  )
+
+  for (const invalidCommand of [
+    { type: 'unsupportedCommand' },
+    {
+      type: 'addComponent',
+      componentId: 'comp-invalid-kind',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      kind: 'text',
+      config: { kind: 'unsupportedConfig' },
+    },
+    {
+      type: 'updateEvent',
+      eventId: 'event-submit',
+      name: 'Invalid action',
+      trigger: { type: 'click', componentId: 'comp-save-btn' },
+      actions: [{ type: 'unsupportedAction' }],
+    },
+    Object.assign([], {
+      type: 'duplicateComponent',
+      componentId: 'comp-role-select',
+      componentIdMap: Object.assign([], {
+        'comp-role-select': 'comp-array-map-copy',
+      }),
+    }),
+    {
+      type: 'updateScreenState',
+      stateId: 'state-edit-saving',
+      overrides: { 'comp-save-btn': null },
+    },
+  ]) {
+    let domainError = false
+    try {
+      applyCommandWithoutRevision(sampleProject, invalidCommand)
+    } catch (error) {
+      domainError = error?.code === 'INVARIANT_VIOLATION'
+    }
+    assert(domainError, 'clone validation bypassed the DomainError contract')
+  }
+
+  memoryStorage.clear()
+  const webModule = await import(moduleUrl(toolsBundle, 'command-isolation-webmcp'))
+  const webTool = name => webModule.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const webBegin = webTool('begin_change_set').execute({
+    summary: 'WebMCP payload isolation',
+  })
+  assert(webBegin.ok, 'WebMCP isolation change set did not start')
+  const webInput = {
+    changeSetId: webBegin.data.changeSetId,
+    expectedRevision: webBegin.data.baseRevision,
+    expectedChangeSetVersion: 0,
+    componentId: 'comp-name-input',
+    patch: {
+      config: {
+        validationRules: [
+          { id: 'web-rule', type: 'required', message: 'Web required' },
+        ],
+      },
+    },
+  }
+  const webUpdate = webTool('update_component_spec').execute(webInput)
+  assert(webUpdate.ok, 'WebMCP nested component update failed')
+  const webCommandBeforeMutation = JSON.stringify(
+    webTool('get_pending_change_set').execute({}).data.activeChangeSet.operations[0].command,
+  )
+  webInput.patch.config.validationRules[0].message = 'Mutated after WebMCP execute'
+  webInput.patch.config.validationRules.push({
+    id: 'web-late-rule',
+    type: 'custom',
+    description: 'Late',
+    message: 'Late',
+  })
+  assert(
+    JSON.stringify(
+      webTool('get_pending_change_set').execute({}).data.activeChangeSet.operations[0].command,
+    ) === webCommandBeforeMutation,
+    'WebMCP retained a caller-owned nested argument in the change set',
+  )
+})
+
 await test('UI references reconcile after preview, accept, initialization, and undo', async () => {
   memoryStorage.clear()
   const previewStore = await freshStore('ui-reconcile-preview')

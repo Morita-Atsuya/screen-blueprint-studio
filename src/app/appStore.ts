@@ -31,6 +31,7 @@ import {
   type DeleteImpactAnalysis,
 } from '../domain/deleteImpact'
 import { classifyComponentMove } from '../domain/componentPlacement'
+import { cloneDomainCommand } from '../domain/modelClone'
 import { sampleProject } from '../sample/sampleProject'
 import {
   clearStorage,
@@ -618,25 +619,31 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (!state.activeChangeSet || state.activeChangeSet.id !== changeSetId) {
         throw new DomainError('CHANGE_SET_REQUIRED', 'No matching active change set')
       }
+      const isolatedCommand = cloneDomainCommand(command)
       // Try applying the op to the current preview to validate it
       const previewDoc = state.effectiveDocument
-      if (command.type === 'moveComponent') {
+      if (isolatedCommand.type === 'moveComponent') {
         const outcome = classifyComponentMove(
           previewDoc,
-          command.componentId,
-          command.newParentId,
-          command.position,
+          isolatedCommand.componentId,
+          isolatedCommand.newParentId,
+          isolatedCommand.position,
         )
         if (outcome.status === 'no-op') return
       }
       try {
-        applyCommandWithoutRevision(previewDoc, command)
+        applyCommandWithoutRevision(previewDoc, isolatedCommand)
       } catch (error) {
         const domainError = toDomainError(error)
         set({ toast: createErrorToast(domainErrorMessage(domainError.code)) })
         throw domainError
       }
-      const operation = { id: nanoid(), source, command, issuedAt: new Date().toISOString() }
+      const operation = {
+        id: nanoid(),
+        source,
+        command: isolatedCommand,
+        issuedAt: new Date().toISOString(),
+      }
       const newChangeSet: ChangeSet = {
         ...state.activeChangeSet,
         version: state.activeChangeSet.version + 1,

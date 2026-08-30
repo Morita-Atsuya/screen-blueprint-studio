@@ -1,8 +1,4 @@
-import type {
-  ComponentOverride,
-  EntityId,
-  ProjectDocument,
-} from './model'
+import type { EntityId, ProjectDocument } from './model'
 import { assertNever } from './assertNever'
 import { CONTAINER_KINDS, DEFAULT_COMPONENT_LAYOUT } from './model'
 import type { ComponentConfig } from './model'
@@ -25,11 +21,13 @@ import {
   classifyComponentMove,
   componentPlacementError,
 } from './componentPlacement'
-
-// Deep clone a document (JSON-safe)
-function clone<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v)) as T
-}
+import {
+  cloneComponentConfig,
+  cloneComponentOverride,
+  cloneDomainCommand,
+  cloneProjectDocument,
+  cloneScreenComponent,
+} from './modelClone'
 
 function requireExactKeys(
   value: object,
@@ -165,7 +163,7 @@ function duplicateComponentConfig(
   config: ComponentConfig,
   usedFieldKeys: Set<string>,
 ): ComponentConfig {
-  const copied = clone(config)
+  const copied = cloneComponentConfig(config)
   switch (copied.kind) {
     case 'textInput':
     case 'select':
@@ -332,7 +330,7 @@ function applyComponentSubtreeCopy(
       throw new DomainError('INVARIANT_VIOLATION', 'Copied component parent is missing')
     }
     setOwnEntity(document.components, newId, {
-      ...clone(sourceComponent),
+      ...cloneScreenComponent(sourceComponent),
       id: newId,
       screenId: destinationScreenId,
       parentId,
@@ -367,7 +365,7 @@ function applyComponentSubtreeCopy(
         setOwnEntity(
           state.componentOverrides,
           copiedId,
-          clone(override as ComponentOverride),
+          cloneComponentOverride(override),
         )
       }
     }
@@ -375,8 +373,12 @@ function applyComponentSubtreeCopy(
   return copiedRootId
 }
 
-export function applyCommandWithoutRevision(doc: ProjectDocument, command: DomainCommand): ProjectDocument {
-  const next = clone(doc)
+export function applyCommandWithoutRevision(
+  doc: ProjectDocument,
+  inputCommand: DomainCommand,
+): ProjectDocument {
+  const next = cloneProjectDocument(doc)
+  const command = cloneDomainCommand(inputCommand)
 
   switch (command.type) {
     // ──────────── Screen commands ────────────
@@ -890,7 +892,7 @@ export function applyCommand(doc: ProjectDocument, command: DomainCommand): Proj
 
 export function applyTransaction(doc: ProjectDocument, commands: DomainCommand[]): ProjectDocument {
   const revision = nextRevision(doc.revision)
-  let current = clone(doc)
+  let current = cloneProjectDocument(doc)
   for (const command of commands) {
     current = applyCommandWithoutRevision(current, command)
   }

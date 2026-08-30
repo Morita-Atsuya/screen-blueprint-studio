@@ -6,16 +6,17 @@ import type {
 import { getOwnEntity } from './entityMap'
 import { CONTAINER_KINDS } from './model'
 import type { EntityId, ProjectDocument } from './model'
+import {
+  cloneComponentOverride,
+  cloneComponentSubtreeSnapshot,
+  cloneScreenComponent,
+} from './modelClone'
 
 export interface ComponentPasteTarget {
   destinationComponentId: EntityId
   destinationScreenId: EntityId
   destinationParentId: EntityId
   position: number
-}
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
 }
 
 export function duplicableSubtreeIds(
@@ -61,7 +62,7 @@ export function createComponentSubtreeSnapshot(
   const components = Object.create(null) as ComponentSubtreeSnapshot['components']
   sourceIds.forEach(sourceId => {
     const component = getOwnEntity(document.components, sourceId)
-    if (component) components[sourceId] = clone(component)
+    if (component) components[sourceId] = cloneScreenComponent(component)
   })
   const stateOverrides = Object.create(null) as ComponentSubtreeSnapshot['stateOverrides']
   Object.values(document.screenStates)
@@ -70,7 +71,7 @@ export function createComponentSubtreeSnapshot(
       const overrides = Object.create(null) as Record<EntityId, typeof state.componentOverrides[string]>
       sourceIds.forEach(sourceId => {
         const override = getOwnEntity(state.componentOverrides, sourceId)
-        if (override) overrides[sourceId] = clone(override)
+        if (override) overrides[sourceId] = cloneComponentOverride(override)
       })
       if (Object.keys(overrides).length > 0) stateOverrides[state.id] = overrides
     })
@@ -151,7 +152,7 @@ export function createPasteComponentCommand(
   })
   return {
     type: 'pasteComponent',
-    snapshot: clone(snapshot),
+    snapshot: cloneComponentSubtreeSnapshot(snapshot),
     ...target,
     componentIdMap,
   }
