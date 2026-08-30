@@ -31,6 +31,14 @@
 }
 .selected { background: var(--bg-selected); }
 
+.node[data-component-change] {
+  box-shadow: inset 3px 0 0 var(--agent-accent);
+}
+
+.node[data-component-change='added'] {
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
 .disclosureSlot {
   flex: 0 0 18px;
   display: flex;

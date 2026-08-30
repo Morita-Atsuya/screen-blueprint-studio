@@ -1,0 +1,103 @@
+.root {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, var(--danger));
+}
+
+.canvas {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  left: 12px;
+  width: min(280px, calc(100% - 24px));
+  max-height: min(240px, calc(100% - 84px));
+  overflow: auto;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+
+.tree {
+  margin-top: 8px;
+}
+
+.heading {
+  margin: 0;
+  padding: 6px 8px 4px;
+  color: var(--danger);
+  font-size: 0.7rem;
+}
+
+.list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 4px 4px;
+  list-style: none;
+}
+
+.item {
+  min-width: 0;
+}
+
+.reviewButton {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.reviewButton:hover,
+.reviewButton:focus-visible {
+  background: var(--bg-hover);
+}
+
+.reviewButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.label,
+.context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.label {
+  font-size: 0.74rem;
+}
+
+.context {
+  color: var(--text-faint);
+  font-size: 0.64rem;
+}
+
+.review {
+  flex: 0 0 auto;
+  color: var(--agent-accent);
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .canvas {
+    max-height: 160px;
+  }
+}

@@ -254,6 +254,20 @@
   pointer-events: none;
 }
 
+.comp[data-component-change]::before {
+  position: absolute;
+  z-index: 3;
+  inset: 2px;
+  border: 2px dashed var(--agent-accent);
+  border-radius: 4px;
+  content: '';
+  pointer-events: none;
+}
+
+.comp[data-component-change='added']::before {
+  border-color: var(--success);
+}
+
 .hovered::after {
   box-shadow: 0 0 0 1px var(--accent);
 }
@@ -271,7 +285,16 @@
 }
 
 .dragging { cursor: grabbing; opacity: 0.3; }
-.componentDisabled { opacity: 0.55; }
+.componentDisabled > :not(.componentChangeBadge) { opacity: 0.55; }
+
+.componentChangeBadge {
+  position: absolute;
+  z-index: 5;
+  top: 3px;
+  right: 3px;
+  display: inline-flex;
+  pointer-events: auto;
+}
 
 .componentChrome {
   position: absolute;

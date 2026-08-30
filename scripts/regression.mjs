@@ -79,6 +79,7 @@ const canvasViewportMathBundle = join(temp, 'canvasViewportMath.mjs')
 const componentAddMenuModelBundle = join(temp, 'componentAddMenuModel.mjs')
 const stateOverridesBundle = join(temp, 'stateOverrides.mjs')
 const changeSetPresentationBundle = join(temp, 'changeSetPresentation.mjs')
+const changeSetComponentChangesBundle = join(temp, 'changeSetComponentChanges.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -97,6 +98,7 @@ bundle('src/features/canvas/canvasViewportMath.ts', canvasViewportMathBundle)
 bundle('src/features/component-add-menu/componentAddMenuModel.ts', componentAddMenuModelBundle)
 bundle('src/domain/stateOverrides.ts', stateOverridesBundle)
 bundle('src/domain/changeSetPresentation.ts', changeSetPresentationBundle)
+bundle('src/domain/changeSetComponentChanges.ts', changeSetComponentChangesBundle)
 
 let passed = 0
 
@@ -3381,6 +3383,236 @@ await test('change-set review presents sequential diffs for every command type',
       listSource.includes('setRightPanelTab') &&
       listSource.includes('operation.navigation ? ('),
     'Changes UI lost sequential presentation, safe navigation, or static deletion rows',
+  )
+})
+
+await test('active change-set component markers reflect final net effects', async () => {
+  memoryStorage.clear()
+  const {
+    compareComponentChanges,
+    getChangeSetComponentChanges,
+  } = await import(moduleUrl(changeSetComponentChangesBundle, 'change-set-component-changes'))
+  const { createAddComponentCommand } = await import(
+    moduleUrl(componentFactoryBundle, 'change-set-component-marker-factory')
+  )
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'change-set-component-marker-domain')
+  )
+  const store = await freshStore('change-set-component-markers')
+  const baseDocument = store.getState().document
+  let operationNumber = 0
+  const makeChangeSet = commands => ({
+    id: `marker-${operationNumber}`,
+    summary: 'Component marker operations',
+    baseRevision: baseDocument.revision,
+    version: commands.length,
+    baseDocument,
+    operations: commands.map(command => ({
+      id: `marker-op-${++operationNumber}`,
+      source: 'agent',
+      command,
+      issuedAt: '2026-01-01T00:00:00.000Z',
+    })),
+    createdAt: '2026-01-01T00:00:00.000Z',
+  })
+
+  const revisionOnly = compareComponentChanges(
+    baseDocument,
+    { ...baseDocument, revision: baseDocument.revision + 100 },
+  )
+  assert(
+    revisionOnly.statuses.size === 0 && revisionOnly.removedComponents.length === 0,
+    'revision-only changes must not create component markers',
+  )
+
+  const temporary = createAddComponentCommand(
+    baseDocument,
+    'screen-list',
+    'comp-list-section',
+    'button',
+    'en',
+  )
+  const reverted = getChangeSetComponentChanges(makeChangeSet([
+    temporary,
+    {
+      type: 'updateComponentSpec',
+      componentId: temporary.componentId,
+      patch: { config: { label: 'Temporary update' } },
+    },
+    { type: 'removeComponent', componentId: temporary.componentId },
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-title',
+      patch: { config: { text: 'Temporary title' } },
+    },
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-title',
+      patch: { config: { text: 'User List' } },
+    },
+  ]))
+  assert(
+    reverted.statuses.size === 0 && reverted.removedComponents.length === 0,
+    'add/delete or edit/revert sequences must have no final marker',
+  )
+
+  const added = createAddComponentCommand(
+    baseDocument,
+    'screen-list',
+    'comp-list-section',
+    'button',
+    'en',
+  )
+  const addedModal = createAddComponentCommand(
+    baseDocument,
+    'screen-list',
+    null,
+    'modal',
+    'en',
+  )
+  const structural = getChangeSetComponentChanges(makeChangeSet([
+    added,
+    addedModal,
+    {
+      type: 'moveComponent',
+      componentId: 'comp-list-grid',
+      newParentId: 'comp-list-section',
+      position: 0,
+    },
+  ]))
+  assert(
+    structural.statuses.get(added.componentId) === 'added' &&
+      structural.statuses.get(addedModal.componentId) === 'added' &&
+      structural.statuses.get('comp-list-grid') === 'modified' &&
+      structural.statuses.get('comp-list-title') === 'modified' &&
+      structural.statuses.get('comp-list-section') === 'modified',
+    'add, Modal root, parent children, and reordered sibling markers were not derived',
+  )
+
+  const state = baseDocument.screenStates['state-edit-saving']
+  const stateChanges = getChangeSetComponentChanges(makeChangeSet([{
+    type: 'updateScreenState',
+    stateId: state.id,
+    name: state.name,
+    description: state.description,
+    overrides: {
+      ...state.componentOverrides,
+      'comp-name-input': { value: 'Draft name' },
+    },
+  }]))
+  assert(
+    stateChanges.statuses.size === 1 &&
+      stateChanges.statuses.get('comp-name-input') === 'modified',
+    'state override changes must mark only their component',
+  )
+
+  const event = baseDocument.events['event-submit']
+  const eventChanges = getChangeSetComponentChanges(makeChangeSet([{
+    type: 'updateEvent',
+    eventId: event.id,
+    name: `${event.name} updated`,
+    trigger: event.trigger,
+    actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
+  }]))
+  assert(
+    eventChanges.statuses.size === 1 &&
+      eventChanges.statuses.get('comp-save-btn') === 'modified',
+    'event changes must mark the trigger component without unrelated targets',
+  )
+
+  const api = baseDocument.apiOperations['api-save-user']
+  const apiMetadataOnly = getChangeSetComponentChanges(makeChangeSet([{
+    type: 'updateApiOperation',
+    operationId: api.id,
+    name: `${api.name} updated`,
+    method: 'PATCH',
+    path: '/api/users/{id}/review',
+    requestBindings: api.requestBindings,
+    successStateId: api.successStateId,
+    errorStateId: api.errorStateId,
+  }]))
+  assert(
+    apiMetadataOnly.statuses.size === 0,
+    'API-only metadata changes must not be misattributed to bound components',
+  )
+
+  const apiBindingChanges = getChangeSetComponentChanges(makeChangeSet([{
+    type: 'updateApiOperation',
+    operationId: api.id,
+    name: api.name,
+    method: api.method,
+    path: api.path,
+    requestBindings: api.requestBindings.map(binding =>
+      binding.componentId === 'comp-name-input'
+        ? { ...binding, targetPath: 'body.displayName' }
+        : binding
+    ),
+    successStateId: api.successStateId,
+    errorStateId: api.errorStateId,
+  }]))
+  assert(
+    apiBindingChanges.statuses.size === 1 &&
+      apiBindingChanges.statuses.get('comp-name-input') === 'modified',
+    'API request binding changes must mark the bound component',
+  )
+
+  const validationChanges = getChangeSetComponentChanges(makeChangeSet([{
+    type: 'updateComponentSpec',
+    componentId: 'comp-name-input',
+    patch: {
+      config: {
+        validationRules: [
+          { id: 'marker-required', type: 'required', message: 'Required' },
+        ],
+      },
+    },
+  }]))
+  assert(
+    validationChanges.statuses.get('comp-name-input') === 'modified',
+    'validation rules must be included in component config markers',
+  )
+
+  const removedPreview = applyCommandWithoutRevision(baseDocument, {
+    type: 'removeComponent',
+    componentId: 'comp-list-grid',
+  })
+  const removed = compareComponentChanges(baseDocument, removedPreview)
+  assert(
+    removed.statuses.get('comp-list-section') === 'modified' &&
+      removed.removedComponents.map(change => change.componentId).join(',') ===
+        'comp-list-grid,comp-list-active,comp-list-invited',
+    'subtree removal must preserve base hierarchy order and mark the surviving parent',
+  )
+
+  const screenOnly = getChangeSetComponentChanges(makeChangeSet([{
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Renamed list',
+    route: '/renamed-list',
+  }]))
+  assert(
+    screenOnly.statuses.size === 0 && screenOnly.removedComponents.length === 0,
+    'Screen-only changes must not create component markers',
+  )
+
+  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+  const ghostSource = readFileSync(
+    join(root, 'src/features/change-review/RemovedComponentGhostList.tsx'),
+    'utf8',
+  )
+  assert(
+    canvasSource.includes('data-component-change={changeStatus}') &&
+      treeSource.includes('data-component-change={changeStatus}') &&
+      canvasSource.includes('RemovedComponentGhostList') &&
+      treeSource.includes('RemovedComponentGhostList') &&
+      ghostSource.includes('data-removed-component-ghosts={surface}') &&
+      !ghostSource.includes('useSortable') &&
+      !ghostSource.includes('ComponentDropZone'),
+    'Canvas/Tree marker chrome or non-DnD removed ghosts are not wired safely',
   )
 })
 

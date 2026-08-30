@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import type { ProjectDocument, EntityId } from '../domain/model'
 import type { DomainCommand } from '../domain/commands'
 import type { ChangeSet, RejectedChangeSetRecord } from '../domain/collaboration'
+import { replayChangeSetOperations } from '../domain/changeSetReplay'
 import {
   applyCommand,
   applyCommandWithoutRevision,
@@ -122,11 +123,7 @@ export function reconcileUiState(doc: ProjectDocument, current: UiState): UiStat
 
 function computeEffective(doc: ProjectDocument, changeSet: ChangeSet | null): ProjectDocument {
   if (!changeSet || changeSet.operations.length === 0) return doc
-  let current = changeSet.baseDocument
-  for (const op of changeSet.operations) {
-    current = applyCommandWithoutRevision(current, op.command)
-  }
-  return current
+  return replayChangeSetOperations(changeSet.baseDocument, changeSet.operations)
 }
 
 export type EffectiveDocumentRestore =

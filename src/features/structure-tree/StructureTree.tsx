@@ -12,6 +12,10 @@ import {
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
 import { resolveEffectiveComponentState } from '../../domain/selectors'
 import { createResetComponentOverrideCommand } from '../../domain/stateOverrides'
+import {
+  getChangeSetComponentChanges,
+  type ComponentChangeStatus,
+} from '../../domain/changeSetComponentChanges'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
@@ -22,6 +26,8 @@ import {
 } from './structureTreePreferences'
 import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
+import { ComponentChangeBadge } from '../change-review/ComponentChangeBadge'
+import { RemovedComponentGhostList } from '../change-review/RemovedComponentGhostList'
 import styles from './StructureTree.module.css'
 
 function browserStorage(): Storage | undefined {
@@ -123,7 +129,14 @@ function updateScreenCollapsedIds(
 
 export function StructureTree() {
   const { locale, t } = useI18n()
-  const { effectiveDocument, ui, setSelectedComponent, dispatch } = useAppStore()
+  const {
+    effectiveDocument,
+    activeChangeSet,
+    ui,
+    setSelectedComponent,
+    setRightPanelTab,
+    dispatch,
+  } = useAppStore()
   const { activeScreenId, selectedComponentId } = ui
   const [treePreferences, setTreePreferences] = useState<StructureTreePreferences>(() =>
     resolveInitialStructureTreePreferences(browserStorage()),
@@ -135,6 +148,10 @@ export function StructureTree() {
   const activeState = ui.activeStateId
     ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
     : undefined
+  const componentChanges = useMemo(
+    () => activeChangeSet ? getChangeSetComponentChanges(activeChangeSet) : null,
+    [activeChangeSet],
+  )
 
   function move(id: EntityId, direction: -1 | 1) {
     const component = getOwnEntity(effectiveDocument.components, id)
@@ -242,6 +259,7 @@ export function StructureTree() {
               nodeRefs.current.delete(componentId)
             }
           }}
+          componentStatuses={componentChanges?.statuses}
         />
         {screen.modalComponentIds.map(modalId => (
           <TreeNode
@@ -278,9 +296,20 @@ export function StructureTree() {
                 nodeRefs.current.delete(componentId)
               }
             }}
+            componentStatuses={componentChanges?.statuses}
           />
         ))}
       </ul>
+      {activeChangeSet && componentChanges ? (
+        <RemovedComponentGhostList
+          baseDocument={activeChangeSet.baseDocument}
+          previewDocument={effectiveDocument}
+          removedComponents={componentChanges.removedComponents}
+          activeScreenId={activeScreenId}
+          surface="tree"
+          onReview={() => setRightPanelTab('changes')}
+        />
+      ) : null}
       {componentAddMenu.menu}
     </>
   )
@@ -302,6 +331,7 @@ interface TreeNodeProps {
   onToggleCollapse(componentId: EntityId): void
   addMenu: ComponentAddMenuTrigger
   registerNodeRef(componentId: EntityId, element: HTMLDivElement | null): void
+  componentStatuses?: ReadonlyMap<EntityId, ComponentChangeStatus>
 }
 
 function TreeNode({
@@ -320,6 +350,7 @@ function TreeNode({
   onToggleCollapse,
   addMenu,
   registerNodeRef,
+  componentStatuses,
 }: TreeNodeProps) {
   const baseComponent = getOwnEntity(document.components, componentId)
   const effectiveState = baseComponent
@@ -374,6 +405,7 @@ function TreeNode({
   const isDisabled = !component.common.enabled
   const hasOverride = effectiveState?.hasOverride ?? false
   const hasStateStatus = isHidden || isDisabled || hasOverride
+  const changeStatus = componentStatuses?.get(component.id)
   const disclosureLabel = hasChildren
     ? t(isCollapsed ? 'tree.disclosureExpand' : 'tree.disclosureCollapse', { label: spokenLabel })
     : ''
@@ -406,6 +438,8 @@ function TreeNode({
         data-state-hidden={isHidden || undefined}
         data-state-disabled={isDisabled || undefined}
         data-state-overridden={hasOverride || undefined}
+        data-component-change={changeStatus}
+        data-tree-component-id={component.id}
         onClick={() => onSelect(component.id)}
         onContextMenu={event => {
           onSelect(component.id)
@@ -455,8 +489,15 @@ function TreeNode({
             <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
             {visibleLabel ? <span className={styles.name} title={visibleLabel}>{visibleLabel}</span> : null}
           </span>
-          {hasStateStatus ? (
+          {hasStateStatus || changeStatus ? (
             <span className={styles.stateStatus} data-editor-chrome>
+              {changeStatus ? (
+                <ComponentChangeBadge
+                  status={changeStatus}
+                  label={spokenLabel}
+                  onActivate={() => onSelect(component.id)}
+                />
+              ) : null}
               {isHidden ? (
                 <span
                   className={styles.stateBadge}
@@ -563,6 +604,7 @@ function TreeNode({
                   onToggleCollapse={onToggleCollapse}
                   addMenu={addMenu}
                   registerNodeRef={registerNodeRef}
+                  componentStatuses={componentStatuses}
                 />
               </Fragment>
             ))}

@@ -5,7 +5,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '../../app/appStore'
 import type {
@@ -20,6 +20,10 @@ import { CONTAINER_KINDS } from '../../domain/model'
 import { effectiveComponent } from '../../domain/selectors'
 import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
+import {
+  getChangeSetComponentChanges,
+  type ComponentChangeStatus,
+} from '../../domain/changeSetComponentChanges'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
@@ -28,16 +32,29 @@ import { useCanvasViewport } from './useCanvasViewport'
 import type { CanvasViewportControls } from './useCanvasViewport'
 import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
+import { ComponentChangeBadge } from '../change-review/ComponentChangeBadge'
+import { RemovedComponentGhostList } from '../change-review/RemovedComponentGhostList'
 import styles from './Canvas.module.css'
 
 export function Canvas() {
   const { locale, t } = useI18n()
-  const { effectiveDocument, ui, setSelectedComponent, setActiveState } = useAppStore()
+  const {
+    effectiveDocument,
+    activeChangeSet,
+    ui,
+    setSelectedComponent,
+    setActiveState,
+    setRightPanelTab,
+  } = useAppStore()
   const { activeScreenId, activeStateId, selectedComponentId } = ui
   const [stateDialog, setStateDialog] = useState<'create' | 'edit' | null>(null)
   const [hoveredComponentId, setHoveredComponentId] = useState<EntityId | null>(null)
   const viewport = useCanvasViewport({ activeScreenId, selectedComponentId })
   const componentAddMenu = useComponentAddMenu()
+  const componentChanges = useMemo(
+    () => activeChangeSet ? getChangeSetComponentChanges(activeChangeSet) : null,
+    [activeChangeSet],
+  )
 
   if (!activeScreenId) {
     return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
@@ -153,6 +170,7 @@ export function Canvas() {
               consumeSuppressedClick={viewport.consumeSuppressedClick}
               beginPan={viewport.handleViewportPointerDown}
               addMenu={componentAddMenu.trigger}
+              componentStatuses={componentChanges?.statuses}
             />
             {screen.modalComponentIds.map((modalId, modalIndex) => (
               <CanvasFrame
@@ -173,10 +191,21 @@ export function Canvas() {
                 consumeSuppressedClick={viewport.consumeSuppressedClick}
                 beginPan={viewport.handleViewportPointerDown}
                 addMenu={componentAddMenu.trigger}
+                componentStatuses={componentChanges?.statuses}
               />
             ))}
           </div>
         </div>
+        {activeChangeSet && componentChanges ? (
+          <RemovedComponentGhostList
+            baseDocument={activeChangeSet.baseDocument}
+            previewDocument={effectiveDocument}
+            removedComponents={componentChanges.removedComponents}
+            activeScreenId={activeScreenId}
+            surface="canvas"
+            onReview={() => setRightPanelTab('changes')}
+          />
+        ) : null}
         <CanvasZoomControls viewport={viewport} t={t} />
       </div>
       {stateDialog ? (
@@ -276,6 +305,7 @@ interface CanvasComponentProps {
   consumeSuppressedClick(): boolean
   beginPan(event: React.PointerEvent<HTMLDivElement>): void
   addMenu: ComponentAddMenuTrigger
+  componentStatuses?: ReadonlyMap<EntityId, ComponentChangeStatus>
   independentRoot?: boolean
 }
 
@@ -301,6 +331,7 @@ function CanvasFrame({
   consumeSuppressedClick,
   beginPan,
   addMenu,
+  componentStatuses,
 }: CanvasFrameProps) {
   const base = getOwnEntity(document.components, componentId)
   if (!base) return null
@@ -344,6 +375,7 @@ function CanvasFrame({
         consumeSuppressedClick={consumeSuppressedClick}
         beginPan={beginPan}
         addMenu={addMenu}
+        componentStatuses={componentStatuses}
         independentRoot
       />
     </section>
@@ -365,6 +397,7 @@ function CanvasComponent({
   consumeSuppressedClick,
   beginPan,
   addMenu,
+  componentStatuses,
   independentRoot = false,
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
@@ -372,6 +405,7 @@ function CanvasComponent({
   const displayName = component
     ? getComponentDisplayLabel(component, locale)
     : ''
+  const changeStatus = componentStatuses?.get(componentId)
   const isRoot = base?.parentId === null
   const {
     active,
@@ -487,7 +521,17 @@ function CanvasComponent({
       data-canvas-draggable={!isRoot || undefined}
       data-drag-surface={!isRoot ? 'canvas' : undefined}
       data-drag-component={!isRoot ? component.id : undefined}
+      data-component-change={changeStatus}
     >
+      {changeStatus ? (
+        <span className={styles.componentChangeBadge} data-editor-chrome>
+          <ComponentChangeBadge
+            status={changeStatus}
+            label={displayName}
+            onActivate={() => onSelect(component.id)}
+          />
+        </span>
+      ) : null}
       {!independentRoot ? (
         <div className={styles.componentChrome} data-editor-chrome>
           <span className={styles.componentLabel}>{displayName}</span>
@@ -536,6 +580,7 @@ function CanvasComponent({
                   consumeSuppressedClick={consumeSuppressedClick}
                   beginPan={beginPan}
                   addMenu={addMenu}
+                  componentStatuses={componentStatuses}
                 />
               </div>
             ))}

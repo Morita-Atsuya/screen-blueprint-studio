@@ -1,0 +1,42 @@
+.badge {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border: 1px solid;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.badge[data-change-status='added'] {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.badge[data-change-status='modified'] {
+  border-color: var(--agent-accent);
+  color: var(--agent-accent);
+}
+
+.badge[data-change-status='removed'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive:hover {
+  background: var(--agent-change);
+}
+
+.interactive:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

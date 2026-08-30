@@ -1,5 +1,5 @@
-import { applyCommandWithoutRevision } from './applyCommand'
 import type { ChangeSet, ChangeSetOperation } from './collaboration'
+import { getChangeSetOperationSnapshots } from './changeSetReplay'
 import type { DomainCommand } from './commands'
 import {
   COMPONENT_KIND_MESSAGE_KEYS,
@@ -892,12 +892,7 @@ export function presentChangeSetOperations(
   changeSet: ChangeSet,
   locale: Locale,
 ): ChangeOperationPresentation[] {
-  const presentations: ChangeOperationPresentation[] = []
-  let before = changeSet.baseDocument
-  for (const operation of changeSet.operations) {
-    const after = applyCommandWithoutRevision(before, operation.command)
-    presentations.push(presentOperation(operation, before, after, locale))
-    before = after
-  }
-  return presentations
+  return getChangeSetOperationSnapshots(changeSet).map(({ operation, before, after }) =>
+    presentOperation(operation, before, after, locale)
+  )
 }
