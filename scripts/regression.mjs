@@ -3944,5 +3944,49 @@ await test('Recovery actions use light-theme tokens with AA contrast', async () 
   )
 })
 
+await test('brand assets integrate without duplicate accessible names', async () => {
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  const indexSource = readFileSync(join(root, 'index.html'), 'utf8')
+  const readmeSource = readFileSync(join(root, 'README.md'), 'utf8')
+  const markSource = readFileSync(join(root, 'brand/logo-mark.svg'), 'utf8')
+  const faviconSource = readFileSync(join(root, 'brand/favicon.svg'), 'utf8')
+  const lockupSource = readFileSync(join(root, 'brand/logo-lockup.svg'), 'utf8')
+
+  assert(
+    appSource.includes("import logoMarkUrl from '../../brand/logo-mark.svg'") &&
+      appSource.includes('src={logoMarkUrl}') &&
+      appSource.includes('alt=""') &&
+      appSource.includes('aria-hidden="true"') &&
+      appSource.includes('<span className={styles.logoText}>Screen Blueprint Studio</span>'),
+    'Header does not pair one decorative mark with accessible HTML text',
+  )
+  assert(
+    appSource.includes('width="24"') &&
+      appSource.includes('height="24"') &&
+      appStyles.includes('.logoMark') &&
+      appStyles.includes('flex: 0 0 24px') &&
+      appStyles.includes('.logoText') &&
+      appStyles.includes('clip: rect(0, 0, 0, 0)'),
+    'Header logo does not reserve stable space or retain its narrow accessible name',
+  )
+  assert(
+    indexSource.includes('<link rel="icon" type="image/svg+xml" href="/brand/favicon.svg" />') &&
+      readmeSource.includes('<img src="./brand/logo-lockup.svg" alt="Screen Blueprint Studio"'),
+    'favicon or README lockup is not wired to the committed brand assets',
+  )
+  for (const [name, source] of [
+    ['mark', markSource],
+    ['favicon', faviconSource],
+    ['lockup', lockupSource],
+  ]) {
+    assert(
+      /<svg[^>]+viewBox="[^"]+"/.test(source) &&
+        !/<image\b|<script\b|https?:\/\//.test(source.replace('http://www.w3.org/2000/svg', '')),
+      `${name} SVG is missing its viewBox or contains an external dependency`,
+    )
+  }
+})
+
 console.log(`\n${passed} regression groups passed`)
 rmSync(temp, { recursive: true, force: true })

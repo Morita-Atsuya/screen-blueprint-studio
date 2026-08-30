@@ -17,6 +17,7 @@ import {
   resolveInitialRightPaneWidth,
   rightPaneWidthForKey,
 } from './rightPaneWidth'
+import logoMarkUrl from '../../brand/logo-mark.svg'
 import styles from './App.module.css'
 
 function browserStorage(): Storage | undefined {
@@ -134,7 +135,17 @@ export function App() {
       <EditorKeyboardShortcuts />
       <div className={`${styles.root} ${isResizingRightPane ? styles.resizing : ''}`}>
         <header className={styles.header}>
-          <span className={styles.logo}>Screen Blueprint Studio</span>
+          <span className={styles.logo}>
+            <img
+              className={styles.logoMark}
+              src={logoMarkUrl}
+              alt=""
+              aria-hidden="true"
+              width="24"
+              height="24"
+            />
+            <span className={styles.logoText}>Screen Blueprint Studio</span>
+          </span>
           <div className={styles.headerActions}>
             <LanguageSelector />
             <button

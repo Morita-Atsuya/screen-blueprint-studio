@@ -1,3 +1,5 @@
+<img src="./brand/logo-lockup.svg" alt="Screen Blueprint Studio" width="324">
+
 # Screen Blueprint Studio
 
 > **Turn semantic screen blueprints into a shared workspace where humans and AI refine product behavior through reviewable WebMCP change sets.**
