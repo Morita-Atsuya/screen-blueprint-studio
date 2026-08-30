@@ -4243,6 +4243,22 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   const lockStatus = [...document.querySelectorAll('[role="status"]')]
     .find(node => node.textContent.includes('Editing is locked'))
   assert(lockStatus, 'mounted App does not expose its review lock status')
+  const edgeFocusControls = [
+    ...document.querySelectorAll(
+      'aside[aria-label="Project navigation"] h2 > button[aria-expanded]',
+    ),
+    ...document.querySelectorAll(
+      'aside[aria-label="Details"] [role="group"][aria-label="Details view"] > button',
+    ),
+  ]
+  assert(
+    edgeFocusControls.length === 4,
+    `expected four edge-aligned focus controls, found ${edgeFocusControls.length}`,
+  )
+  for (const control of edgeFocusControls) {
+    control.focus()
+    assert(document.activeElement === control, 'edge-aligned control is not keyboard focusable')
+  }
 
   const screensRegion = document.querySelector('[role="region"][aria-label="Screens"]')
   const screenInputs = [...screensRegion.querySelectorAll('input')]
@@ -8495,6 +8511,8 @@ await test('Recovery actions use light-theme tokens with AA contrast', async () 
 
 await test('button focus and change count tokens meet light-theme contrast thresholds', async () => {
   const globalStyles = readFileSync(join(root, 'src/styles/global.css'), 'utf8')
+  const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  const leftPaneStyles = readFileSync(join(root, 'src/app/LeftPane.module.css'), 'utf8')
   const changeSetBarStyles = readFileSync(
     join(root, 'src/features/change-review/ChangeSetBar.module.css'),
     'utf8',
@@ -8550,6 +8568,37 @@ await test('button focus and change count tokens meet light-theme contrast thres
       `button focus ring contrast is below 3:1 on ${background}`,
     )
   }
+  for (const [name, styles, selector] of [
+    ['left pane section header', leftPaneStyles, 'sectionHeader'],
+    ['right pane tab', appStyles, 'tab'],
+  ]) {
+    const rule = styles.match(
+      new RegExp(`\\.${selector}:focus-visible\\s*\\{([^}]*)\\}`),
+    )?.[1] ?? ''
+    const insetWidth = Number(
+      rule.match(/box-shadow:\s*inset 0 0 0 (\d+)px var\(--focus-ring\)/)?.[1],
+    )
+    assert(
+      rule.includes('outline: none') && insetWidth >= 2 && insetWidth <= 3,
+      `${name} does not keep its focus perimeter inside overflow bounds`,
+    )
+    const forcedColorsRule = styles.match(
+      new RegExp(
+        `@media\\s*\\(forced-colors:\\s*active\\)[\\s\\S]*?` +
+          `\\.${selector}:focus-visible\\s*\\{([^}]*)\\}`,
+      ),
+    )?.[1] ?? ''
+    assert(
+      forcedColorsRule.includes('outline: 2px solid Highlight') &&
+        forcedColorsRule.includes('outline-offset: -2px') &&
+        forcedColorsRule.includes('box-shadow: none'),
+      `${name} has no internal system-color fallback in forced-colors mode`,
+    )
+  }
+  assert(
+    /[.]tabActive\s*\{[^}]*border-bottom:\s*2px solid var\(--accent\)/s.test(appStyles),
+    'right pane focus perimeter no longer differs in shape from the active underline',
+  )
 
   const agentChange = globalStyles.match(
     /--agent-change:\s*rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)/,

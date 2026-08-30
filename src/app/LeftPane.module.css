@@ -34,6 +34,19 @@
   color: var(--accent);
 }
 
+.sectionHeader:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--focus-ring);
+}
+
+@media (forced-colors: active) {
+  .sectionHeader:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    box-shadow: none;
+  }
+}
+
 .chevron {
   display: inline-block;
   transition: transform 0.12s;
