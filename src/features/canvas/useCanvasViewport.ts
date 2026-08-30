@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useDndMonitor } from '@dnd-kit/core'
+import type { DragStartEvent } from '@dnd-kit/core'
 import type { EntityId } from '../../domain/model'
 import {
   DEFAULT_SCALE,
@@ -8,18 +9,27 @@ import {
   MIN_SCALE,
   ZOOM_STEP,
   autoPanVelocity,
+  canAutoPanCanvasDrag,
   centerTransform,
+  classifyCanvasAutoPanStart,
   clampPanForVisibility,
   clampScale,
   computeFitTransform,
   isActivatableCanvasTarget,
   isEditableCanvasTarget,
+  isPointInsideViewport,
   persistScale,
   resolveInitialScale,
   scaleToPercent,
   zoomAtPoint,
 } from './canvasViewportMath'
-import type { Point, Rect, Size, ViewportTransform } from './canvasViewportMath'
+import type {
+  CanvasAutoPanStart,
+  Point,
+  Rect,
+  Size,
+  ViewportTransform,
+} from './canvasViewportMath'
 
 function browserStorage(): Storage | undefined {
   try {
@@ -106,7 +116,7 @@ export function useCanvasViewport({
   const panDragRef = useRef<PanDragState | null>(null)
   const suppressClickRef = useRef(false)
   const mountedScreenRef = useRef<EntityId | null>(null)
-  const dragActiveRef = useRef(false)
+  const autoPanDragRef = useRef<CanvasAutoPanStart | null>(null)
   const lastPointerRef = useRef<Point | null>(null)
   const autoPanFrameRef = useRef<number | null>(null)
 
@@ -326,48 +336,135 @@ export function useCanvasViewport({
   // Custom auto-pan while dragging components: dnd-kit's built-in autoScroll has nothing to
   // scroll now that the viewport clips instead of scrolling, so we translate the pan ourselves.
   const runAutoPanFrame = useCallback(() => {
-    if (!dragActiveRef.current) {
-      autoPanFrameRef.current = null
-      return
-    }
+    autoPanFrameRef.current = null
+    if (!autoPanDragRef.current) return
     const viewport = viewportRef.current
     const pointer = lastPointerRef.current
     if (viewport && pointer) {
       const rect = viewport.getBoundingClientRect()
+      if (!isPointInsideViewport(pointer, rect)) {
+        lastPointerRef.current = null
+        return
+      }
       const vx = autoPanVelocity(pointer.x - rect.left) - autoPanVelocity(rect.right - pointer.x)
       const vy = autoPanVelocity(pointer.y - rect.top) - autoPanVelocity(rect.bottom - pointer.y)
       if (vx !== 0 || vy !== 0) {
         setTransform(current => ({ ...current, pan: { x: current.pan.x + vx, y: current.pan.y + vy } }))
       }
+      autoPanFrameRef.current = requestAnimationFrame(runAutoPanFrame)
     }
-    autoPanFrameRef.current = requestAnimationFrame(runAutoPanFrame)
   }, [])
+
+  const stopAutoPanFrame = useCallback(() => {
+    if (autoPanFrameRef.current !== null) {
+      cancelAnimationFrame(autoPanFrameRef.current)
+      autoPanFrameRef.current = null
+    }
+  }, [])
+
+  const resetAutoPan = useCallback(() => {
+    autoPanDragRef.current = null
+    lastPointerRef.current = null
+    stopAutoPanFrame()
+  }, [stopAutoPanFrame])
+
+  const updateAutoPanPointer = useCallback((point: Point) => {
+    if (!autoPanDragRef.current) return
+    const viewport = viewportRef.current
+    if (!viewport || !isPointInsideViewport(point, viewport.getBoundingClientRect())) {
+      lastPointerRef.current = null
+      stopAutoPanFrame()
+      return
+    }
+    lastPointerRef.current = point
+    if (autoPanFrameRef.current === null) {
+      autoPanFrameRef.current = requestAnimationFrame(runAutoPanFrame)
+    }
+  }, [runAutoPanFrame, stopAutoPanFrame])
 
   useLayoutEffect(() => {
     function handlePointerMove(event: PointerEvent) {
-      lastPointerRef.current = { x: event.clientX, y: event.clientY }
+      const drag = autoPanDragRef.current
+      if (
+        drag?.sensor !== 'pointer' ||
+        (drag.pointerId !== null && drag.pointerId !== event.pointerId)
+      ) {
+        return
+      }
+      updateAutoPanPointer({ x: event.clientX, y: event.clientY })
+    }
+    function handlePointerLost(event: PointerEvent) {
+      const drag = autoPanDragRef.current
+      if (
+        drag?.sensor === 'pointer' &&
+        (drag.pointerId === null || drag.pointerId === event.pointerId)
+      ) {
+        resetAutoPan()
+      }
+    }
+    function matchingTouch(event: TouchEvent) {
+      const drag = autoPanDragRef.current
+      if (drag?.sensor !== 'touch') return null
+      for (const touch of event.touches) {
+        if (drag.touchIdentifier === null || touch.identifier === drag.touchIdentifier) {
+          return touch
+        }
+      }
+      return null
+    }
+    function handleTouchMove(event: TouchEvent) {
+      const touch = matchingTouch(event)
+      if (touch) updateAutoPanPointer({ x: touch.clientX, y: touch.clientY })
+    }
+    function handleTouchEnd(event: TouchEvent) {
+      const drag = autoPanDragRef.current
+      if (drag?.sensor !== 'touch') return
+      for (const touch of event.changedTouches) {
+        if (drag.touchIdentifier === null || touch.identifier === drag.touchIdentifier) {
+          resetAutoPan()
+          return
+        }
+      }
+    }
+    function handleWindowBlur() {
+      resetAutoPan()
     }
     window.addEventListener('pointermove', handlePointerMove, { capture: true })
+    window.addEventListener('pointerup', handlePointerLost, { capture: true })
+    window.addEventListener('pointercancel', handlePointerLost, { capture: true })
+    window.addEventListener('lostpointercapture', handlePointerLost, { capture: true })
+    window.addEventListener('touchmove', handleTouchMove, { capture: true })
+    window.addEventListener('touchend', handleTouchEnd, { capture: true })
+    window.addEventListener('touchcancel', handleTouchEnd, { capture: true })
+    window.addEventListener('blur', handleWindowBlur)
     return () => {
       window.removeEventListener('pointermove', handlePointerMove, { capture: true })
-      if (autoPanFrameRef.current !== null) cancelAnimationFrame(autoPanFrameRef.current)
+      window.removeEventListener('pointerup', handlePointerLost, { capture: true })
+      window.removeEventListener('pointercancel', handlePointerLost, { capture: true })
+      window.removeEventListener('lostpointercapture', handlePointerLost, { capture: true })
+      window.removeEventListener('touchmove', handleTouchMove, { capture: true })
+      window.removeEventListener('touchend', handleTouchEnd, { capture: true })
+      window.removeEventListener('touchcancel', handleTouchEnd, { capture: true })
+      window.removeEventListener('blur', handleWindowBlur)
+      resetAutoPan()
     }
-  }, [])
+  }, [resetAutoPan, updateAutoPanPointer])
 
   const dndMonitorListeners = useMemo(() => ({
-    onDragStart() {
-      dragActiveRef.current = true
-      if (autoPanFrameRef.current === null) {
-        autoPanFrameRef.current = requestAnimationFrame(runAutoPanFrame)
-      }
+    onDragStart({ active, activatorEvent }: DragStartEvent) {
+      resetAutoPan()
+      const drag = classifyCanvasAutoPanStart(active.id, activatorEvent)
+      if (!canAutoPanCanvasDrag(drag)) return
+      autoPanDragRef.current = drag
+      if (drag.point) updateAutoPanPointer(drag.point)
     },
     onDragEnd() {
-      dragActiveRef.current = false
+      resetAutoPan()
     },
     onDragCancel() {
-      dragActiveRef.current = false
+      resetAutoPan()
     },
-  }), [runAutoPanFrame])
+  }), [resetAutoPan, updateAutoPanPointer])
   useDndMonitor(dndMonitorListeners)
 
   // Keep panned content from getting lost entirely when the viewport shrinks (split resize etc.).

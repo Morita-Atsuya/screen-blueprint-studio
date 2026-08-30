@@ -75,6 +75,7 @@ const localeBundle = join(temp, 'locale.mjs')
 const rightPaneWidthBundle = join(temp, 'rightPaneWidth.mjs')
 const textDraftBundle = join(temp, 'textDraft.mjs')
 const componentBehaviorBundle = join(temp, 'componentBehavior.mjs')
+const canvasViewportMathBundle = join(temp, 'canvasViewportMath.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -89,6 +90,7 @@ bundle('src/i18n/locale.ts', localeBundle)
 bundle('src/app/rightPaneWidth.ts', rightPaneWidthBundle)
 bundle('src/components/textDraft.ts', textDraftBundle)
 bundle('src/domain/componentBehavior.ts', componentBehaviorBundle)
+bundle('src/features/canvas/canvasViewportMath.ts', canvasViewportMathBundle)
 
 let passed = 0
 
@@ -2486,6 +2488,70 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
       }) === 'redo' &&
       resolveEditorShortcut({ key: 'y', ctrlKey: true, target: { tagName: 'DIV' } }) === 'redo',
     'standard Mac/Windows redo shortcuts were not resolved',
+  )
+})
+
+await test('Canvas auto-pan requires a fresh pointer or touch inside the viewport', async () => {
+  const {
+    canAutoPanCanvasDrag,
+    classifyCanvasAutoPanStart,
+    isPointInsideViewport,
+  } = await import(moduleUrl(canvasViewportMathBundle, 'canvas-auto-pan'))
+  const pointer = (activeId, x, y) => classifyCanvasAutoPanStart(activeId, {
+    type: 'pointerdown',
+    clientX: x,
+    clientY: y,
+    pointerId: 7,
+  })
+  const touch = classifyCanvasAutoPanStart('palette:button', {
+    type: 'touchstart',
+    touches: [{ clientX: 40, clientY: 50, identifier: 11 }],
+  })
+  const bounds = { left: 100, top: 100, right: 500, bottom: 400 }
+
+  const sources = [
+    ['canvas:component:button', 'canvas'],
+    ['tree:component:button', 'tree'],
+    ['palette:button', 'palette'],
+  ]
+  for (const [activeId, source] of sources) {
+    const keyboard = classifyCanvasAutoPanStart(activeId, { type: 'keydown' })
+    assert(
+      keyboard.source === source && keyboard.sensor === 'keyboard',
+      `${activeId} keyboard sensor or source was misclassified`,
+    )
+    assert(!canAutoPanCanvasDrag(keyboard), `${activeId} keyboard drag enabled auto-pan`)
+    assert(
+      canAutoPanCanvasDrag(pointer(activeId, 120, 130)),
+      `${activeId} pointer drag did not enable auto-pan`,
+    )
+  }
+
+  const canvasPointer = pointer('canvas:component:button', 120, 130)
+  assert(
+    canvasPointer.source === 'canvas' &&
+      canvasPointer.pointerId === 7 &&
+      canAutoPanCanvasDrag(canvasPointer),
+    'Canvas pointer drag did not enable auto-pan',
+  )
+  assert(
+    !isPointInsideViewport(pointer('tree:component:button', 10, 150).point, bounds),
+    'Tree pointer start outside the Canvas was treated as fresh',
+  )
+  assert(
+    isPointInsideViewport(pointer('tree:component:button', 101, 150).point, bounds),
+    'Tree pointer entry into the Canvas was not recognized',
+  )
+  assert(
+    touch.source === 'palette' &&
+      touch.sensor === 'touch' &&
+      touch.touchIdentifier === 11 &&
+      canAutoPanCanvasDrag(touch),
+    'Palette touch drag did not enable auto-pan',
+  )
+  assert(
+    !canAutoPanCanvasDrag(pointer('unknown:button', 120, 130)),
+    'Unknown drag source enabled Canvas auto-pan',
   )
 })
 

@@ -31,6 +31,24 @@ export interface ViewportTransform {
   pan: Point
 }
 
+export type CanvasDragSource = 'canvas' | 'tree' | 'palette' | 'unknown'
+export type CanvasDragSensor = 'pointer' | 'touch' | 'keyboard' | 'unknown'
+
+export interface CanvasAutoPanStart {
+  source: CanvasDragSource
+  sensor: CanvasDragSensor
+  point: Point | null
+  pointerId: number | null
+  touchIdentifier: number | null
+}
+
+export interface ViewportBounds {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
 interface PreferenceStorage {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
@@ -164,6 +182,98 @@ export function isActivatableCanvasTarget(target: unknown): boolean {
   const tagName = typeof element.tagName === 'string' ? element.tagName.toLowerCase() : ''
   if (tagName === 'button' || tagName === 'a') return true
   return element.getAttribute?.('role') === 'button'
+}
+
+function finitePoint(value: { clientX?: unknown; clientY?: unknown } | undefined): Point | null {
+  if (
+    !value ||
+    typeof value.clientX !== 'number' ||
+    !Number.isFinite(value.clientX) ||
+    typeof value.clientY !== 'number' ||
+    !Number.isFinite(value.clientY)
+  ) {
+    return null
+  }
+  return { x: value.clientX, y: value.clientY }
+}
+
+function dragSource(activeId: unknown): CanvasDragSource {
+  if (typeof activeId !== 'string') return 'unknown'
+  if (activeId.startsWith('canvas:')) return 'canvas'
+  if (activeId.startsWith('tree:')) return 'tree'
+  if (activeId.startsWith('palette:')) return 'palette'
+  return 'unknown'
+}
+
+/** Classifies the dnd-kit activator without relying on mutable global pointer history. */
+export function classifyCanvasAutoPanStart(
+  activeId: unknown,
+  activatorEvent: unknown,
+): CanvasAutoPanStart {
+  const source = dragSource(activeId)
+  if (!activatorEvent || typeof activatorEvent !== 'object') {
+    return {
+      source,
+      sensor: 'unknown',
+      point: null,
+      pointerId: null,
+      touchIdentifier: null,
+    }
+  }
+
+  const event = activatorEvent as {
+    type?: unknown
+    clientX?: unknown
+    clientY?: unknown
+    pointerId?: unknown
+    touches?: ArrayLike<{
+      clientX?: unknown
+      clientY?: unknown
+      identifier?: unknown
+    }>
+  }
+  if (event.type === 'pointerdown') {
+    return {
+      source,
+      sensor: 'pointer',
+      point: finitePoint(event),
+      pointerId: typeof event.pointerId === 'number' ? event.pointerId : null,
+      touchIdentifier: null,
+    }
+  }
+  if (event.type === 'touchstart') {
+    const touch = event.touches?.[0]
+    return {
+      source,
+      sensor: 'touch',
+      point: finitePoint(touch),
+      pointerId: null,
+      touchIdentifier: typeof touch?.identifier === 'number' ? touch.identifier : null,
+    }
+  }
+  return {
+    source,
+    sensor: event.type === 'keydown' ? 'keyboard' : 'unknown',
+    point: null,
+    pointerId: null,
+    touchIdentifier: null,
+  }
+}
+
+export function canAutoPanCanvasDrag(start: CanvasAutoPanStart): boolean {
+  return (
+    start.source !== 'unknown' &&
+    (start.sensor === 'pointer' || start.sensor === 'touch')
+  )
+}
+
+export function isPointInsideViewport(point: Point, bounds: ViewportBounds): boolean {
+  return (
+    point.x >= bounds.left &&
+    point.x <= bounds.right &&
+    point.y >= bounds.top &&
+    point.y <= bounds.bottom
+  )
 }
 
 export function autoPanVelocity(distanceFromEdge: number, edge = AUTO_PAN_EDGE, maxSpeed = AUTO_PAN_MAX_SPEED): number {
