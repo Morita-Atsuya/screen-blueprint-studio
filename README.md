@@ -16,7 +16,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - 自由に命名できる画面状態と状態別override
 - click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
 - API operationと画面項目、成功／失敗状態の関連付け
-- 人間による通常編集、確定操作のUndo
+- 人間による通常編集、確定操作のUndo／Redo
 - `localStorage`への保存、破損データのrecovery UI、保存不能時のJSON退避
 - runtime invariant validationとprototype-chain ID対策
 - 10個の型付きWebMCPツール
@@ -58,7 +58,7 @@ AIがchange setへ型付きoperationを追加
 - treeの`⠿` handle、またはcanvas上のPage／Modal root以外のcomponent面全体を掴み、同一container内の並び替えまたは別containerへ移動
 - Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
-- 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
+- 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すとUndo、`Cmd/Ctrl+Shift+Z`または`Ctrl+Y`でRedo
 - Screen／Inspectorのテキスト入力は編集中の内容をlocal draftとして保持し、単一行は`Enter`またはフォーカス移動、複数行はフォーカス移動で1操作として確定。`Escape`で未確定入力を取り消す
 - Screensタブで画面の追加、選択、名前・route編集、削除
 - canvas上部の`+`から任意名の状態を追加し、選択中の非default状態は`⋯`から名前・説明を編集または削除

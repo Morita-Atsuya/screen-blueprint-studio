@@ -61,7 +61,7 @@
   border: 0;
 }
 
-.undoBtn {
+.historyBtn {
   padding: 4px 10px;
   font-size: 0.82rem;
   border: 1px solid var(--border);
@@ -70,14 +70,24 @@
   color: var(--text-muted);
 }
 
-.undoBtn:disabled {
+.historyBtn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.undoBtn:not(:disabled):hover {
+.historyBtn:not(:disabled):hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+@media (max-width: 560px) {
+  .historyBtn {
+    padding: 4px 7px;
+  }
+
+  .historyActionText {
+    display: none;
+  }
 }
 
 .main {

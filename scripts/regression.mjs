@@ -468,6 +468,7 @@ await test('recovery blocks mutations and exposes only recovery context', async 
     () => store.getState().acceptChangeSet(),
     () => store.getState().rejectChangeSet(),
     () => store.getState().undo(),
+    () => store.getState().redo(),
   ]
   for (const action of blockedActions) {
     let error
@@ -875,6 +876,10 @@ await test('UI references reconcile after preview, accept, initialization, and u
   assert(state.ui.activeScreenId === 'screen-list', 'undo retained the removed added screen')
   assert(state.ui.activeStateId === 'state-list-default', 'undo retained the added screen state')
   assert(state.effectiveDocument.screens[state.ui.activeScreenId], 'undo left the canvas without a screen')
+  undoStore.getState().redo()
+  state = undoStore.getState()
+  assert(state.document.screens['screen-added'], 'redo did not restore the added screen')
+  assert(state.effectiveDocument.screens[state.ui.activeScreenId], 'redo left the canvas without a screen')
 
   const stored = JSON.parse(memoryStorage.getItem(storageKey))
   stored.activeScreenId = 'ghost-screen'
@@ -898,7 +903,7 @@ await test('normal edit storage failures remain visible and exportable', async (
   assert(typeof store.getState().exportCurrentData === 'function', 'current JSON export is unavailable')
 })
 
-await test('undo allocates a monotonically increasing revision', async () => {
+await test('undo and redo allocate monotonically increasing revisions and clear branches', async () => {
   localStorage.clear()
   const store = await freshStore('undo-revision')
   const revisions = [store.getState().document.revision]
@@ -909,12 +914,213 @@ await test('undo allocates a monotonically increasing revision', async () => {
   revisions.push(store.getState().document.revision)
   store.getState().undo()
   revisions.push(store.getState().document.revision)
+  store.getState().redo()
+  revisions.push(store.getState().document.revision)
+  assert(store.getState().document.screens['screen-list'].name === 'Second edit', 'redo did not restore content')
+  store.getState().undo()
+  revisions.push(store.getState().document.revision)
   store.getState().dispatch({ type: 'updateScreen', screenId: 'screen-list', name: 'After undo' })
   revisions.push(store.getState().document.revision)
+  assert(store.getState().redoStack.length === 0, 'new confirmed edit did not clear redo')
+  const revisionAfterBranch = store.getState().document.revision
+  store.getState().redo()
+  assert(
+    store.getState().document.revision === revisionAfterBranch &&
+      store.getState().document.screens['screen-list'].name === 'After undo',
+    'redo restored an abandoned branch',
+  )
 
   assert(
     revisions.every((revision, index) => index === 0 || revision > revisions[index - 1]),
     `revisions were not monotonic: ${revisions.join(', ')}`,
+  )
+})
+
+await test('redo restores human operations and respects review and persistence boundaries', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('redo-operation-coverage')
+
+  const textBefore = store.getState().document.components['comp-list-title'].config.text
+  const historyBeforeText = store.getState().history.length
+  const coalescedText = '12345678901234567890123456789012345678901234567890'
+  store.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: 'comp-list-title',
+    patch: { config: { text: coalescedText } },
+  }, 'Update text text: comp-list-title')
+  assert(
+    store.getState().history.length === historyBeforeText + 1,
+    'coalesced text edit created more than one history entry',
+  )
+  const textRevision = store.getState().document.revision
+  store.getState().undo()
+  assert(
+    store.getState().document.components['comp-list-title'].config.text === textBefore,
+    'text Undo failed',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.components['comp-list-title'].config.text === coalescedText &&
+      store.getState().document.revision > textRevision,
+    'text Redo failed or rewound revision',
+  )
+
+  store.getState().dispatch({
+    type: 'moveComponent',
+    componentId: 'comp-list-grid',
+    newParentId: 'comp-list-section',
+    position: 0,
+  }, 'Move component')
+  store.getState().undo()
+  assert(
+    store.getState().document.components['comp-list-section'].childIds[1] === 'comp-list-grid',
+    'move Undo failed',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.components['comp-list-section'].childIds[0] === 'comp-list-grid',
+    'move Redo failed',
+  )
+
+  store.getState().setSelectedComponent('comp-list-active')
+  store.getState().dispatch({
+    type: 'removeComponent',
+    componentId: 'comp-list-active',
+  }, 'Delete component')
+  assert(store.getState().ui.selectedComponentId === null, 'delete did not reconcile selection')
+  store.getState().undo()
+  assert(store.getState().document.components['comp-list-active'], 'delete Undo did not restore component')
+  store.getState().redo()
+  assert(
+    store.getState().document.components['comp-list-active'] === undefined &&
+      store.getState().ui.selectedComponentId === null,
+    'delete Redo did not remove component or reconcile selection',
+  )
+
+  store.getState().dispatch({
+    type: 'addScreen',
+    screenId: 'screen-redo',
+    rootComponentId: 'component-redo-page',
+    defaultStateId: 'state-redo-default',
+    name: 'Redo screen',
+    route: '/redo',
+  }, 'Add screen')
+  store.getState().setActiveScreen('screen-redo')
+  store.getState().undo()
+  assert(
+    store.getState().document.screens['screen-redo'] === undefined &&
+      store.getState().ui.activeScreenId === 'screen-list',
+    'screen Undo did not reconcile active screen',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.screens['screen-redo'] &&
+      store.getState().effectiveDocument.screens[store.getState().ui.activeScreenId],
+    'screen Redo failed or left an invalid active screen',
+  )
+
+  store.getState().dispatch({
+    type: 'createScreenState',
+    stateId: 'state-redo-extra',
+    screenId: 'screen-list',
+    name: 'Redo state',
+    description: '',
+  }, 'Add state')
+  store.getState().setActiveScreen('screen-list')
+  store.getState().setActiveState('state-redo-extra')
+  store.getState().undo()
+  assert(
+    store.getState().document.screenStates['state-redo-extra'] === undefined &&
+      store.getState().ui.activeStateId === 'state-list-default',
+    'state Undo did not reconcile active state',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.screenStates['state-redo-extra'] &&
+      store.getState().ui.activeStateId === 'state-list-default',
+    'state Redo failed or left an invalid active state',
+  )
+
+  const persistedRevision = store.getState().document.revision
+  const reloaded = await freshStore('redo-operation-reload')
+  assert(
+    reloaded.getState().document.revision === persistedRevision &&
+      reloaded.getState().document.screenStates['state-redo-extra'] &&
+      reloaded.getState().history.length === 0 &&
+      reloaded.getState().redoStack.length === 0,
+    'reload did not preserve redone content or reset session history',
+  )
+
+  memoryStorage.clear()
+  const reviewStore = await freshStore('redo-review-boundaries')
+  reviewStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Redo candidate',
+  })
+  reviewStore.getState().undo()
+  const redoCandidate = reviewStore.getState().redoStack[0]
+  reviewStore.getState().beginChangeSet('Reject without branching confirmed history')
+  const reviewRevision = reviewStore.getState().document.revision
+  reviewStore.getState().undo()
+  reviewStore.getState().redo()
+  assert(
+    reviewStore.getState().document.revision === reviewRevision &&
+      reviewStore.getState().redoStack[0]?.id === redoCandidate.id,
+    'Undo or Redo changed content during an active change set',
+  )
+  reviewStore.getState().rejectChangeSet()
+  assert(reviewStore.getState().redoStack.length === 1, 'reject cleared valid redo history')
+  reviewStore.getState().redo()
+  assert(
+    reviewStore.getState().document.screens['screen-list'].name === 'Redo candidate',
+    'redo failed after rejecting a change set',
+  )
+
+  reviewStore.getState().undo()
+  reviewStore.getState().beginChangeSet('Accept branches history')
+  reviewStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Accepted branch',
+  })
+  reviewStore.getState().acceptChangeSet()
+  assert(
+    reviewStore.getState().document.screens['screen-list'].name === 'Accepted branch' &&
+      reviewStore.getState().redoStack.length === 0,
+    'accept did not clear abandoned redo history',
+  )
+  reviewStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Reset candidate',
+  })
+  reviewStore.getState().undo()
+  assert(reviewStore.getState().redoStack.length === 1, 'reset redo seed failed')
+  reviewStore.getState().resetToSample()
+  assert(
+    reviewStore.getState().history.length === 0 &&
+      reviewStore.getState().redoStack.length === 0,
+    'reset did not clear Undo and Redo history',
+  )
+
+  memoryStorage.clear()
+  const boundedStore = await freshStore('redo-history-bound')
+  for (let index = 0; index < 55; index += 1) {
+    boundedStore.getState().dispatch({
+      type: 'updateScreen',
+      screenId: 'screen-list',
+      name: `Bounded edit ${index}`,
+    })
+  }
+  assert(boundedStore.getState().history.length === 50, 'Undo history exceeded its limit')
+  for (let index = 0; index < 55; index += 1) boundedStore.getState().undo()
+  assert(boundedStore.getState().redoStack.length === 50, 'Redo history exceeded its limit')
+  for (let index = 0; index < 50; index += 1) boundedStore.getState().redo()
+  assert(
+    boundedStore.getState().redoStack.length === 0 &&
+      boundedStore.getState().document.screens['screen-list'].name === 'Bounded edit 54',
+    'bounded Redo did not restore the newest content',
   )
 })
 
@@ -2244,8 +2450,15 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
   const { resolveEditorShortcut } = await import(moduleUrl(editorShortcutsBundle, 'shortcut-guards'))
   for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) {
     assert(
-      resolveEditorShortcut({ key: 'Backspace', target: { tagName } }) === null,
-      `${tagName} did not guard Backspace`,
+      resolveEditorShortcut({ key: 'Backspace', target: { tagName } }) === null &&
+        resolveEditorShortcut({
+          key: 'z',
+          metaKey: true,
+          shiftKey: true,
+          target: { tagName },
+        }) === null &&
+        resolveEditorShortcut({ key: 'y', ctrlKey: true, target: { tagName } }) === null,
+      `${tagName} did not guard editing shortcuts`,
     )
   }
   assert(
@@ -2260,6 +2473,22 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
     resolveEditorShortcut({ key: 'z', metaKey: true, target: { tagName: 'DIV' } }) === 'undo' &&
       resolveEditorShortcut({ key: 'z', ctrlKey: true, target: { tagName: 'DIV' } }) === 'undo',
     'Cmd/Ctrl+Z shortcut was not resolved',
+  )
+  assert(
+    resolveEditorShortcut({
+      key: 'z',
+      metaKey: true,
+      shiftKey: true,
+      target: { tagName: 'DIV' },
+    }) === 'redo' &&
+      resolveEditorShortcut({
+        key: 'z',
+        ctrlKey: true,
+        shiftKey: true,
+        target: { tagName: 'DIV' },
+      }) === 'redo' &&
+      resolveEditorShortcut({ key: 'y', ctrlKey: true, target: { tagName: 'DIV' } }) === 'redo',
+    'standard Mac/Windows redo shortcuts were not resolved',
   )
 })
 

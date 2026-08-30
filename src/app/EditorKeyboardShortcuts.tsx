@@ -18,14 +18,15 @@ export function EditorKeyboardShortcuts() {
         return
       }
       if (shortcut === 'undo') {
-        if (state.activeChangeSet) {
-          event.preventDefault()
-          state.setErrorMessage({ key: 'errors.undoDuringReview' })
-          return
-        }
-        if (state.history.length === 0) return
+        if (state.activeChangeSet || state.history.length === 0) return
         event.preventDefault()
         state.undo()
+        return
+      }
+      if (shortcut === 'redo') {
+        if (state.activeChangeSet || state.redoStack.length === 0) return
+        event.preventDefault()
+        state.redo()
         return
       }
 

@@ -53,6 +53,7 @@ export interface AppStore {
   activeChangeSet: ChangeSet | null
   rejectedRecords: RejectedChangeSetRecord[]
   history: HistoryEntry[]
+  redoStack: HistoryEntry[]
   ui: UiState
   recoveryState: RecoveryState | null
   startupNotice: UiMessage | null
@@ -67,6 +68,7 @@ export interface AppStore {
   acceptChangeSet(): void
   rejectChangeSet(): void
   undo(): void
+  redo(): void
 
   setActiveScreen(screenId: EntityId): void
   setActiveState(stateId: EntityId | null): void
@@ -264,6 +266,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     activeChangeSet,
     rejectedRecords,
     history: [],
+    redoStack: [],
     ui,
     recoveryState,
     startupNotice,
@@ -291,7 +294,14 @@ export const useAppStore = create<AppStore>((set, get) => {
           buildHistory(state.document, next, label, 'human'),
         ]
         const newUi = reconcileUiState(next, state.ui)
-        set({ document: next, history: newHistory, effectiveDocument: next, ui: newUi, errorMessage: null })
+        set({
+          document: next,
+          history: newHistory,
+          redoStack: [],
+          effectiveDocument: next,
+          ui: newUi,
+          errorMessage: null,
+        })
         markPersistence(persistIfAvailable(next, null, newUi.activeScreenId))
         return true
       } catch (e) {
@@ -369,7 +379,15 @@ export const useAppStore = create<AppStore>((set, get) => {
           ...reconcileUiState(next, state.ui),
           rightPanelTab: 'inspector' as const,
         }
-        set({ document: next, activeChangeSet: null, history: newHistory, effectiveDocument: next, ui: nextUi, errorMessage: null })
+        set({
+          document: next,
+          activeChangeSet: null,
+          history: newHistory,
+          redoStack: [],
+          effectiveDocument: next,
+          ui: nextUi,
+          errorMessage: null,
+        })
         markPersistence(persistIfAvailable(next, null, nextUi.activeScreenId))
       } catch (e) {
         if (e instanceof DomainError) {
@@ -432,7 +450,41 @@ export const useAppStore = create<AppStore>((set, get) => {
         revision: nextRevision(state.document.revision),
       }
       const nextUi = reconcileUiState(restored, state.ui)
-      set({ document: restored, history: state.history.slice(0, -1), effectiveDocument: restored, ui: nextUi })
+      const redoStack = [
+        ...state.redoStack.slice(-(MAX_HISTORY - 1)),
+        last,
+      ]
+      set({
+        document: restored,
+        history: state.history.slice(0, -1),
+        redoStack,
+        effectiveDocument: restored,
+        ui: nextUi,
+      })
+      markPersistence(persistIfAvailable(restored, null, nextUi.activeScreenId))
+    },
+
+    redo() {
+      requireWritable()
+      const state = get()
+      if (state.activeChangeSet || state.redoStack.length === 0) return
+      const entry = state.redoStack[state.redoStack.length - 1]!
+      const restored = {
+        ...entry.after,
+        revision: nextRevision(state.document.revision),
+      }
+      const nextUi = reconcileUiState(restored, state.ui)
+      const newHistory = [
+        ...state.history.slice(-(MAX_HISTORY - 1)),
+        buildHistory(state.document, restored, entry.label, entry.source),
+      ]
+      set({
+        document: restored,
+        history: newHistory,
+        redoStack: state.redoStack.slice(0, -1),
+        effectiveDocument: restored,
+        ui: nextUi,
+      })
       markPersistence(persistIfAvailable(restored, null, nextUi.activeScreenId))
     },
 
@@ -508,6 +560,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         document: sampleProject,
         activeChangeSet: null,
         history: [],
+        redoStack: [],
         ui: nextUi,
         recoveryState: null,
         effectiveDocument: sampleProject,

@@ -1,9 +1,10 @@
-export type EditorShortcut = 'delete-selection' | 'clear-selection' | 'undo' | null
+export type EditorShortcut = 'delete-selection' | 'clear-selection' | 'undo' | 'redo' | null
 
 interface KeyboardInput {
   key: string
   metaKey?: boolean
   ctrlKey?: boolean
+  shiftKey?: boolean
   target?: unknown
 }
 
@@ -29,6 +30,9 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
   const key = input.key.toLowerCase()
   if (key === 'escape') return 'clear-selection'
   if (key === 'delete' || key === 'backspace') return 'delete-selection'
-  if (key === 'z' && (input.metaKey || input.ctrlKey)) return 'undo'
+  if (key === 'z' && (input.metaKey || input.ctrlKey)) {
+    return input.shiftKey ? 'redo' : 'undo'
+  }
+  if (key === 'y' && input.ctrlKey && !input.metaKey) return 'redo'
   return null
 }

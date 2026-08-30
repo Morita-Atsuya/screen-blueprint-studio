@@ -37,7 +37,9 @@ export function App() {
     ui,
     setLeftPanelTab,
     history,
+    redoStack,
     undo,
+    redo,
     activeChangeSet,
     recoveryState,
     initializeWithRecovery,
@@ -49,6 +51,15 @@ export function App() {
     setErrorMessage,
   } = useAppStore()
   const canUndo = history.length > 0 && !activeChangeSet
+  const canRedo = redoStack.length > 0 && !activeChangeSet
+  const nextUndo = history[history.length - 1]
+  const nextRedo = redoStack[redoStack.length - 1]
+  const undoTitle = nextUndo
+    ? t('app.undoAction', { label: nextUndo.label })
+    : t('app.undo')
+  const redoTitle = nextRedo
+    ? t('app.redoAction', { label: nextRedo.label })
+    : t('app.redo')
   const [viewportWidth, setViewportWidth] = useState(browserWidth)
   const [preferredRightPaneWidth, setPreferredRightPaneWidth] = useState(() =>
     resolveInitialRightPaneWidth(browserStorage(), browserWidth()),
@@ -127,12 +138,24 @@ export function App() {
           <div className={styles.headerActions}>
             <LanguageSelector />
             <button
-              className={styles.undoBtn}
+              className={styles.historyBtn}
               onClick={undo}
               disabled={!canUndo}
-              title={t('app.undo')}
+              title={undoTitle}
+              aria-label={undoTitle}
+              type="button"
             >
-              ↩ {t('app.undo')}
+              ↩ <span className={styles.historyActionText}>{t('app.undo')}</span>
+            </button>
+            <button
+              className={styles.historyBtn}
+              onClick={redo}
+              disabled={!canRedo}
+              title={redoTitle}
+              aria-label={redoTitle}
+              type="button"
+            >
+              ↪ <span className={styles.historyActionText}>{t('app.redo')}</span>
             </button>
           </div>
         </header>

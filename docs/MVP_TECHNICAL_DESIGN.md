@@ -41,7 +41,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - API操作と成功・失敗状態の関連付け
 - 同時に1件のAI change set
 - change setの確認、手動修正、承認、却下
-- 確定操作のUndo
+- 確定操作のUndo／Redo
 - `localStorage`への保存
 - 10個のWebMCPツール
 
@@ -105,7 +105,7 @@ WebMCPには承認、却下ツールを公開しない。承認・却下は人�
 | --- | --- | --- |
 | Document | 画面仕様の確定モデル | `localStorage` |
 | Collaboration | active change set | 現在レビュー中のchange setのみ |
-| History | Undo用の確定transaction | 現在のセッションのみ |
+| History | Undo／Redo用の確定transaction | 現在のセッションのみ |
 | UI | 選択、開いているタブ、表示中の画面状態 | 一部のみ |
 
 ```ts
@@ -436,7 +436,7 @@ interface UpdateComponentSpecCommand {
 
 これにより、ID、親子参照、kindなどの構造情報を仕様更新ツールから破壊できない。
 
-## 8. Change set、承認、却下、Undo
+## 8. Change set、承認、却下、Undo／Redo
 
 ### 8.1 Change set
 
@@ -496,7 +496,7 @@ change setの`version`はAI・人間を問わずoperation追加ごとに1増加�
 
 却下時は確定モデルを変更せず、active change setを破棄する。修正要望はエージェント側のチャットで伝える。
 
-### 8.5 Undo
+### 8.5 Undo／Redo
 
 ```ts
 interface HistoryEntry {
@@ -514,10 +514,11 @@ interface HistoryEntry {
 - 外部document更新と競合した未確定draftは上書きせず保持し、再確定またはEscape取消をユーザーが選べる。reload時はまず同期的なcommand確定を試し、validationで確定できないdraftだけをsessionStorageへ退避して同じfieldへ復元する
 - change set承認は全operationsで1entry
 - Undoは`before`を復元し、revisionを新しく採番する
-- active change set中はUndoを無効化する
-- RedoはMVP対象外
+- RedoはUndoしたentryの`after`を復元し、同様にrevisionを新しく採番する
+- 通常commandまたはchange set承認で確定モデルが分岐した場合はredo stackを破棄する。change set却下は確定モデルを変えないためredo stackを維持する
+- active change set中はUndo／Redoを無効化する
 
-モデル規模が小さいMVPではsnapshot方式を採用し、逆command生成の複雑さを避ける。historyは最大50件とする。
+モデル規模が小さいMVPではsnapshot方式を採用し、逆command生成の複雑さを避ける。undo historyとredo stackはそれぞれ最大50件とし、どちらもreload後には復元しない。
 
 ## 9. 後続機能: 診断
 
@@ -563,7 +564,7 @@ interface Diagnostic {
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Project / Screen       State selector       WebMCP status / Undo   │
+│ Project / Screen     State selector     WebMCP status / Undo/Redo │
 ├──────────────────┬──────────────────────────────┬───────────────────┤
 │ Screens          │ Wireframe canvas             │ Inspector         │
 │                  │                              │ Change set        │
@@ -670,7 +671,7 @@ AIによる更新toolは次を共通要件とする。
 
 - change setの承認
 - change setの却下
-- Undo
+- Undo／Redo
 - local dataの全消去
 - 任意JSON Patch
 - 任意コード実行
@@ -754,7 +755,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - key: `screen-blueprint-studio:v1`
 - 確定`ProjectDocument`と最後のUI選択を保存
 - active change setも保存し、refresh後にレビューを継続可能にする
-- historyはセッション内だけに保持
+- undo historyとredo stackはセッション内だけに保持
 - 読み込み時にschema versionと不変条件を検証
 - 不正データの場合は自動初期化せず、復旧またはsample再読み込みを選べるエラー画面を表示
 - 確定documentが正常でactive change setだけが不正または再生不能な場合は、確定documentを通常起動し、pending change setだけを破棄して永続noticeで通知する
@@ -769,7 +770,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - 主要操作をbutton、form control、tree semanticsで提供
 - dnd-kitのpointer、touch、keyboard sensorを提供し、Tree drag handleとCanvasのfocus可能なcomponent面にaccessible nameを設定
 - DnD状態は視覚的なline・outlineに加え、選択localeのscreen reader announcementで通知
-- キーボードで選択、クリック追加、上下移動、削除、選択解除、Undoが可能
+- キーボードで選択、クリック追加、上下移動、削除、選択解除、Undo／Redoが可能
 - 選択を色だけで示さない
 - change setのAI変更と人間修正を色とlabelの両方で示す
 - 画面幅1024px以上を主要対象とする
@@ -788,7 +789,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - state override適用
 - custom validation ruleの保存と非実行
 - change set承認、却下、revision conflict
-- Undo
+- Undo／Redo、revision単調増加、確定分岐時のredo破棄
 
 ### 15.2 Store integration tests
 
@@ -842,7 +843,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 1. active change setとeffective document
 2. operation差分表示
 3. change set内の人間修正
-4. 承認、却下、Undo
+4. 承認、却下、Undo／Redo
 5. refresh後のactive change set復元
 
 完了条件: AI相当のcommand列をpreviewし、人間が修正後に一括承認または却下できる。
@@ -876,7 +877,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 5. AI変更とchange set内の人間修正を視覚的に区別できる
 6. 人間だけがchange setを承認・却下できる
 7. active change setに対する人間修正をエージェントがread toolで取得できる
-8. 承認したchange set全体を1回のUndoで戻せる
+8. 承認したchange set全体を1回のUndoで戻し、Redoで再適用できる
 9. WebMCP非対応でも人間向けアプリが動作する
 10. 10個のtoolがDevToolsで確認でき、型付き入力で実行できる
 11. refresh後も確定モデルとactive change setを復元できる
