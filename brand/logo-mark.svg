@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="logo-mark-title logo-mark-desc">
+  <title id="logo-mark-title">Screen Blueprint Studio logo</title>
+  <desc id="logo-mark-desc">A screen frame containing connected structure nodes.</desc>
+  <defs>
+    <mask id="logo-mark-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect width="64" height="64" fill="#fff"/>
+      <rect x="13.5" y="13.5" width="37" height="37" rx="6" fill="none" stroke="#000" stroke-width="4.5"/>
+      <circle cx="23" cy="24" r="3.25" fill="#000"/>
+      <circle cx="41" cy="32.5" r="3.25" fill="#000"/>
+      <circle cx="41" cy="42" r="3.25" fill="#000"/>
+      <path d="M23 27.25V42M23 32.5H37.75M23 42H37.75" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#4f46e5" mask="url(#logo-mark-cutout)"/>
+</svg>

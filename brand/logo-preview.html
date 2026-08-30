@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen Blueprint Studio — Logo Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --indigo: #4f46e5;
+      --slate: #1e293b;
+      --muted: #64748b;
+      --line: #d8dee9;
+      --canvas: #f3f4f6;
+      --surface: #ffffff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--slate);
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 24px auto;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    header p,
+    .caption {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 16px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+    }
+
+    .lockup {
+      display: grid;
+      min-height: 194px;
+      place-items: center;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+
+    .lockup img {
+      width: min(100%, 648px);
+      height: auto;
+    }
+
+    .sizes {
+      display: flex;
+      min-height: 194px;
+      align-items: end;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .size {
+      display: grid;
+      justify-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .size img {
+      display: block;
+      width: var(--size);
+      height: var(--size);
+    }
+
+    .backgrounds,
+    .mono {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .sample {
+      display: grid;
+      min-height: 136px;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .sample img {
+      width: 72px;
+      height: 72px;
+    }
+
+    .sample.white {
+      background: #fff;
+    }
+
+    .sample.gray {
+      background: #f1f5f9;
+    }
+
+    .sample.dark {
+      border-color: #334155;
+      background: #0f172a;
+    }
+
+    .mono .sample {
+      min-height: 108px;
+    }
+
+    .compact {
+      padding: 16px 20px;
+    }
+
+    .compact h2 {
+      margin-bottom: 10px;
+    }
+
+    .compact .sample {
+      min-height: 64px;
+    }
+
+    .compact .sample img {
+      width: 40px;
+      height: 40px;
+    }
+
+    .mono-black img {
+      filter: brightness(0);
+    }
+
+    .mono-indigo img {
+      filter: brightness(0) saturate(100%) invert(31%) sepia(83%) saturate(2404%) hue-rotate(235deg) brightness(88%) contrast(103%);
+    }
+
+    .mono-white {
+      border-color: #334155;
+      background: #0f172a;
+    }
+
+    .mono-white img {
+      filter: brightness(0) invert(1);
+    }
+
+    .favicon-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      min-height: 108px;
+    }
+
+    .compact .favicon-row {
+      min-height: 64px;
+    }
+
+    .tab {
+      display: flex;
+      width: 260px;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+      font-size: 13px;
+    }
+
+    .tab img {
+      width: 16px;
+      height: 16px;
+    }
+
+    .favicon-large {
+      width: 64px;
+      height: 64px;
+    }
+
+    .compact .favicon-large {
+      width: 48px;
+      height: 48px;
+    }
+
+    @media (max-width: 820px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sizes {
+        flex-wrap: wrap;
+        justify-content: start;
+      }
+
+      .backgrounds,
+      .mono {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Screen Blueprint Studio</h1>
+        <p>Original logo asset review board</p>
+      </div>
+      <p>#4f46e5 · #1e293b · transparent</p>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Primary lockup</h2>
+        <div class="lockup">
+          <img src="./logo-lockup.svg" alt="Screen Blueprint Studio logo lockup">
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Mark scale — 16 to 128 px</h2>
+        <div class="sizes">
+          <div class="size" style="--size: 16px"><img src="./logo-mark.svg" alt=""><span>16</span></div>
+          <div class="size" style="--size: 24px"><img src="./logo-mark.svg" alt=""><span>24</span></div>
+          <div class="size" style="--size: 32px"><img src="./logo-mark.svg" alt=""><span>32</span></div>
+          <div class="size" style="--size: 48px"><img src="./logo-mark.svg" alt=""><span>48</span></div>
+          <div class="size" style="--size: 64px"><img src="./logo-mark.svg" alt=""><span>64</span></div>
+          <div class="size" style="--size: 128px"><img src="./logo-mark.svg" alt=""><span>128</span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Background contrast</h2>
+        <div class="backgrounds">
+          <div class="sample white"><img src="./logo-mark.svg" alt="Logo on white"></div>
+          <div class="sample gray"><img src="./logo-mark.svg" alt="Logo on light gray"></div>
+          <div class="sample dark"><img src="./logo-mark.svg" alt="Logo on dark slate"></div>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="card compact">
+          <h2>Favicon context</h2>
+          <div class="favicon-row">
+            <img class="favicon-large" src="./favicon.svg" alt="Favicon enlarged to 48 pixels">
+            <div>
+              <div class="tab"><img src="./favicon.svg" alt=""><span>Screen Blueprint Studio</span></div>
+              <p class="caption" style="margin-top: 8px">Native 16 px tab size</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card compact">
+          <h2>Single-color reproduction</h2>
+          <div class="mono">
+            <div class="sample mono-black"><img src="./logo-mark.svg" alt="Black single-color logo"></div>
+            <div class="sample mono-indigo"><img src="./logo-mark.svg" alt="Indigo single-color logo"></div>
+            <div class="sample mono-white"><img src="./logo-mark.svg" alt="White single-color logo"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
