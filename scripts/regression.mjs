@@ -101,6 +101,7 @@ const componentPreviewBundle = join(temp, 'componentPreview.mjs')
 const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
 const screenFlowBundle = join(temp, 'screenFlow.mjs')
 const renderInspectorBundle = join(temp, 'renderInspector.mjs')
+const renderAppBundle = join(temp, 'renderApp.mjs')
 const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
 const mountDeleteDialogBundle = join(temp, 'mountDeleteDialog.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
@@ -139,6 +140,15 @@ bundle(
   renderInspectorBundle,
   [
     '--jsx=automatic',
+    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  ],
+)
+bundle(
+  'scripts/fixtures/renderApp.tsx',
+  renderAppBundle,
+  [
+    '--jsx=automatic',
+    '--loader:.svg=dataurl',
     "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   ],
 )
@@ -190,6 +200,7 @@ function installInteractiveDom() {
     },
   })
   window.HTMLElement.prototype.focus = function focus() {
+    if (this.matches(':disabled')) return
     const previous = activeElement
     if (previous && previous !== this) {
       const focusOut = new window.Event('focusout', { bubbles: true })
@@ -6762,7 +6773,7 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
   assert(
     canvasSource.includes('{...(!isRoot && !reviewLocked ? attributes : {})}') &&
       canvasSource.includes('{...(!isRoot && !reviewLocked ? listeners : {})}') &&
-      canvasSource.includes('tabIndex={0}') &&
+      canvasSource.includes('tabIndex={isRoot ? -1 : 0}') &&
       canvasSource.includes("data-canvas-draggable={!isRoot && !reviewLocked || undefined}") &&
       canvasSource.includes("data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}") &&
       canvasSource.includes(
@@ -9159,6 +9170,71 @@ await test('Inspector select controls use unique IDs and visible accessible labe
   )
 })
 
+await test('editor landmarks, active states, and canvas roots expose correct semantics', async () => {
+  const { renderApp } = await import(moduleUrl(renderAppBundle, 'editor-semantics'))
+  for (const [locale, expected] of [
+    ['en', {
+      leftPane: 'Project navigation',
+      rightPane: 'Details',
+      rightTabs: 'Details view',
+    }],
+    ['ja', {
+      leftPane: 'プロジェクトナビゲーション',
+      rightPane: '詳細',
+      rightTabs: '詳細表示',
+    }],
+  ]) {
+    const rendered = renderApp(locale)
+    const { document } = parseHTML(`<html><body>${rendered}</body></html>`)
+    const leftPane = document.querySelector(`aside[aria-label="${expected.leftPane}"]`)
+    const rightPane = document.querySelector(`aside[aria-label="${expected.rightPane}"]`)
+    const rightTabs = rightPane?.querySelector(
+      `[role="group"][aria-label="${expected.rightTabs}"]`,
+    )
+    const tabStates = [...(rightTabs?.querySelectorAll('button') ?? [])]
+      .map(button => button.getAttribute('aria-pressed'))
+    assert(leftPane && rightPane, `${locale} editor panes have no accessible names`)
+    assert(
+      JSON.stringify(tabStates) === JSON.stringify(['true', 'false']),
+      `${locale} right pane does not expose its active view (${JSON.stringify(tabStates)})`,
+    )
+    assert(
+      leftPane.querySelectorAll('button[aria-current="page"]').length === 1,
+      `${locale} Screen list does not expose exactly one active page`,
+    )
+    for (const rootId of ['comp-edit-page', 'comp-delete-modal']) {
+      assert(
+        document.querySelector(`[data-component-id="${rootId}"]`)?.getAttribute('tabindex') === '-1',
+        `${locale} ${rootId} remains a dead stop in the sequential tab order`,
+      )
+    }
+    assert(
+      document.querySelector('[data-component-id="comp-name-input"]')?.getAttribute('tabindex') === '0',
+      `${locale} editable canvas components were removed from the tab order`,
+    )
+  }
+})
+
+await test('Japanese state override guidance uses localized product terms', async () => {
+  const { translate } = await import(moduleUrl(messagesBundle, 'localized-override-terms'))
+  for (const key of [
+    'inspector.baseSettingsDescription',
+    'overrides.noState',
+    'overrides.defaultStateExplanation',
+    'overrides.noStateExplanation',
+    'overrides.inheritExplanation',
+    'overrides.activeExplanation',
+    'overrides.overridden',
+    'overrides.resetAll',
+  ]) {
+    const message = translate('ja', key)
+    assert(
+      !/\b(state|field|override|default)\b/i.test(message),
+      `${key} still mixes English state override terminology into Japanese: ${message}`,
+    )
+  }
+})
+
 await test('delete confirmation enforces dialog focus and stale-impact behavior', async () => {
   memoryStorage.clear()
   memoryStorage.setItem('screen-blueprint-studio:locale:v1', 'en')
@@ -9304,6 +9380,36 @@ await test('review lock disables every dialog draft control without discarding i
       draftControls.every(control => fieldset.contains(control)),
       `${kind} dialog left a draft control outside its lock fieldset`,
     )
+    if (kind === 'validation') {
+      const invalidControls = [...dialog.querySelectorAll('[aria-invalid="true"]')]
+      assert(invalidControls.length >= 4, 'validation fixture did not expose every error field')
+      assert(
+        invalidControls.every(control => {
+          const errorId = control.getAttribute('aria-errormessage')
+          return control.id && errorId && document.getElementById(errorId)?.getAttribute('role') === 'alert'
+        }),
+        'validation errors are not programmatically associated with their invalid controls',
+      )
+      assert(
+        new Set(invalidControls.map(control => control.id)).size === invalidControls.length,
+        'validation error controls have duplicate IDs',
+      )
+    }
+    if (kind === 'state') {
+      assert(
+        document.activeElement === draftControls[0],
+        'State dialog did not move focus to its first draft field',
+      )
+      const focusable = [...dialog.querySelectorAll('button, input, select, textarea')]
+        .filter(control => !control.disabled && control.getAttribute('tabindex') !== '-1')
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      last.focus()
+      harness.keyDown(last, 'Tab')
+      assert(document.activeElement === first, 'Tab escaped past the last State dialog control')
+      harness.keyDown(first, 'Tab', true)
+      assert(document.activeElement === last, 'Shift+Tab escaped before the first State dialog control')
+    }
     const draftSnapshot = draftControls.map(controlValue)
     const rowCount = dialog.querySelectorAll(
       '[data-event-action], [data-api-binding], [data-validation-rule]',
@@ -9356,6 +9462,13 @@ await test('review lock disables every dialog draft control without discarding i
     assert(!fieldset.hasAttribute('disabled'), `${kind} draft did not unlock after Reject`)
     harness.click(cancel)
     assert(harness.getCloseCount() === 1, `${kind} Cancel stopped working after Reject`)
+    if (kind === 'state') {
+      await Promise.resolve()
+      assert(
+        document.activeElement === harness.getOpener(),
+        'State dialog did not restore focus to its opener',
+      )
+    }
     harness.unmount()
   }
 
@@ -9390,6 +9503,20 @@ await test('review lock disables every dialog draft control without discarding i
     'review lock stole focus that had already left the dialog draft',
   )
   externalFocusHarness.unmount()
+
+  document = installDialogDom()
+  const lockedCloseHarness = mountLockedDialog('state')
+  const lockedCloseDialog = document.querySelector('[role="dialog"]')
+  lockedCloseHarness.startReview()
+  const lockedCancel = [...lockedCloseDialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'Cancel')
+  lockedCloseHarness.click(lockedCancel)
+  await Promise.resolve()
+  assert(
+    document.activeElement?.hasAttribute('data-delete-focus-fallback'),
+    'State dialog did not use its focus fallback when review lock disabled the opener',
+  )
+  lockedCloseHarness.unmount()
 })
 
 console.log(`\n${passed} regression groups passed`)

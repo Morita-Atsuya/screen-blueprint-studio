@@ -494,7 +494,7 @@ function CanvasComponent({
       style={style}
       {...(!isRoot && !reviewLocked ? attributes : {})}
       {...(!isRoot && !reviewLocked ? listeners : {})}
-      tabIndex={0}
+      tabIndex={isRoot ? -1 : 0}
       aria-label={isRoot || reviewLocked ? displayName : t('canvas.dragAria', { label: displayName })}
       title={reviewLocked && !isRoot ? t('changes.editLocked') : undefined}
       onClick={event => {

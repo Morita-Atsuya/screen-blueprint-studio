@@ -1,5 +1,6 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
+import { useState } from 'react'
 import { useAppStore } from '../../src/app/appStore'
 import {
   getApiEditorContext,
@@ -64,7 +65,57 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
 
   const context = getValidationRulesEditorContext(sampleProject, 'comp-name-input')
   if (!context) throw new Error('Missing validation editor context')
-  return <ValidationRulesDialog context={context} onClose={onClose} />
+  return (
+    <ValidationRulesDialog
+      context={{
+        ...context,
+        rules: [
+          ...context.rules,
+          { id: 'regression-required', type: 'required', message: 'Duplicate required rule' },
+          { id: 'regression-min', type: 'minLength', value: -1, message: 'Invalid minimum' },
+          {
+            id: 'regression-custom',
+            type: 'custom',
+            description: '',
+            message: '',
+          },
+        ],
+      }}
+      onClose={onClose}
+    />
+  )
+}
+
+function DialogHarness({
+  kind,
+  onClose,
+}: {
+  kind: LockedDialogKind
+  onClose(): void
+}) {
+  const [open, setOpen] = useState(false)
+  const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
+  return (
+    <I18nProvider>
+      <button
+        type="button"
+        data-dialog-opener
+        disabled={reviewLocked}
+        onClick={() => setOpen(true)}
+      >
+        Open dialog
+      </button>
+      <button type="button" tabIndex={-1} data-delete-focus-fallback>
+        Dialog fallback
+      </button>
+      {open
+        ? dialogFor(kind, () => {
+            onClose()
+            setOpen(false)
+          })
+        : null}
+    </I18nProvider>
+  )
 }
 
 export function mountLockedDialog(kind: LockedDialogKind) {
@@ -93,13 +144,18 @@ export function mountLockedDialog(kind: LockedDialogKind) {
   const root = createRoot(container)
   flushSync(() => {
     root.render(
-      <I18nProvider>
-        {dialogFor(kind, () => {
+      <DialogHarness
+        kind={kind}
+        onClose={() => {
           closeCount += 1
-        })}
-      </I18nProvider>,
+        }}
+      />,
     )
   })
+  const opener = container.querySelector<HTMLElement>('[data-dialog-opener]')
+  if (!opener) throw new Error('Missing dialog opener')
+  opener.focus()
+  flushSync(() => opener.click())
   flushSync(() => {
     useAppStore.setState(state => ({ ...state }))
   })
@@ -107,6 +163,14 @@ export function mountLockedDialog(kind: LockedDialogKind) {
   return {
     click(element: HTMLElement) {
       flushSync(() => element.click())
+    },
+    keyDown(element: HTMLElement, key: string, shiftKey = false) {
+      const event = new Event('keydown', { bubbles: true, cancelable: true })
+      Object.defineProperties(event, {
+        key: { value: key },
+        shiftKey: { value: shiftKey },
+      })
+      flushSync(() => element.dispatchEvent(event))
     },
     startReview(withAcceptedChange = false) {
       const focusedDraft = document.activeElement?.closest('fieldset')
@@ -127,6 +191,9 @@ export function mountLockedDialog(kind: LockedDialogKind) {
     },
     getCloseCount() {
       return closeCount
+    },
+    getOpener() {
+      return opener
     },
     unmount() {
       flushSync(() => root.unmount())

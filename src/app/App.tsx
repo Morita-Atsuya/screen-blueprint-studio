@@ -244,7 +244,7 @@ export function App() {
 
         <div className={styles.main} data-delete-focus-fallback tabIndex={-1}>
           {/* Left panel */}
-          <aside className={styles.left}>
+          <aside className={styles.left} aria-label={t('app.leftPane')}>
             <LeftPane />
           </aside>
 
@@ -373,13 +373,22 @@ export function App() {
           />
 
           {/* Right panel */}
-          <aside className={styles.right} style={{ width: rightPaneWidth }}>
+          <aside
+            className={styles.right}
+            style={{ width: rightPaneWidth }}
+            aria-label={t('app.rightPane')}
+          >
             {activeChangeSet ? (
-              <div className={styles.tabs}>
+              <div
+                className={styles.tabs}
+                role="group"
+                aria-label={t('app.rightPaneTabs')}
+              >
                 {(['inspector', 'changes'] as const).map(tab => (
                   <button
                     key={tab}
                     className={`${styles.tab} ${ui.rightPanelTab === tab ? styles.tabActive : ''}`}
+                    aria-pressed={ui.rightPanelTab === tab}
                     onClick={() => useAppStore.getState().setRightPanelTab(tab)}
                   >
                     {tab === 'inspector'

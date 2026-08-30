@@ -331,6 +331,10 @@ export function ValidationRulesDialog({
             <ol className={styles.actionList}>
               {rules.map((rule, index) => {
                 const ruleErrors = errors.get(rule.key) ?? {}
+                const controlId = (field: 'type' | 'value' | 'description' | 'message') =>
+                  `${titleId}-${rule.key}-${field}`
+                const errorId = (field: 'type' | 'value' | 'description' | 'message') =>
+                  `${controlId(field)}-error`
                 return (
                   <li
                     className={styles.actionCard}
@@ -364,7 +368,10 @@ export function ValidationRulesDialog({
                       <label className={styles.compactField}>
                         <span>{t('behavior.ruleType')}</span>
                         <select
+                          id={controlId('type')}
                           value={rule.type}
+                          aria-invalid={ruleErrors.type ? true : undefined}
+                          aria-errormessage={ruleErrors.type ? errorId('type') : undefined}
                           onChange={event => changeType(index, event.target.value as RuleType)}
                         >
                           {RULE_TYPES.map(type => (
@@ -373,17 +380,25 @@ export function ValidationRulesDialog({
                         </select>
                       </label>
                       {ruleErrors.type ? (
-                        <p className={styles.fieldError} role="alert">{ruleErrors.type}</p>
+                        <p
+                          id={errorId('type')}
+                          className={styles.fieldError}
+                          role="alert"
+                        >
+                          {ruleErrors.type}
+                        </p>
                       ) : null}
 
                       {rule.type === 'minLength' || rule.type === 'maxLength' ? (
                         <label className={styles.compactField}>
                           <span>{t(validationTypeKey(rule.type))}</span>
                           <input
+                            id={controlId('value')}
                             type="text"
                             inputMode="numeric"
                             value={rule.value}
                             aria-invalid={ruleErrors.value ? true : undefined}
+                            aria-errormessage={ruleErrors.value ? errorId('value') : undefined}
                             onChange={event => updateRule(index, { value: event.target.value })}
                           />
                         </label>
@@ -392,43 +407,71 @@ export function ValidationRulesDialog({
                         <label className={styles.compactField}>
                           <span>{t('behavior.rulePatternValue')}</span>
                           <textarea
+                            id={controlId('value')}
                             rows={2}
                             value={rule.value}
                             aria-invalid={ruleErrors.value ? true : undefined}
+                            aria-errormessage={ruleErrors.value ? errorId('value') : undefined}
                             onChange={event => updateRule(index, { value: event.target.value })}
                           />
                         </label>
                       ) : null}
                       {ruleErrors.value ? (
-                        <p className={styles.fieldError} role="alert">{ruleErrors.value}</p>
+                        <p
+                          id={errorId('value')}
+                          className={styles.fieldError}
+                          role="alert"
+                        >
+                          {ruleErrors.value}
+                        </p>
                       ) : null}
 
                       {rule.type === 'custom' ? (
                         <label className={styles.compactField}>
                           <span>{t('behavior.ruleCustomDescription')}</span>
                           <textarea
+                            id={controlId('description')}
                             rows={2}
                             value={rule.description}
                             aria-invalid={ruleErrors.description ? true : undefined}
+                            aria-errormessage={
+                              ruleErrors.description ? errorId('description') : undefined
+                            }
                             onChange={event => updateRule(index, { description: event.target.value })}
                           />
                         </label>
                       ) : null}
                       {ruleErrors.description ? (
-                        <p className={styles.fieldError} role="alert">{ruleErrors.description}</p>
+                        <p
+                          id={errorId('description')}
+                          className={styles.fieldError}
+                          role="alert"
+                        >
+                          {ruleErrors.description}
+                        </p>
                       ) : null}
 
                       <label className={styles.compactField}>
                         <span>{t('behavior.ruleMessage')}</span>
                         <textarea
+                          id={controlId('message')}
                           rows={2}
                           value={rule.message}
                           aria-invalid={ruleErrors.message ? true : undefined}
+                          aria-errormessage={
+                            ruleErrors.message ? errorId('message') : undefined
+                          }
                           onChange={event => updateRule(index, { message: event.target.value })}
                         />
                       </label>
                       {ruleErrors.message ? (
-                        <p className={styles.fieldError} role="alert">{ruleErrors.message}</p>
+                        <p
+                          id={errorId('message')}
+                          className={styles.fieldError}
+                          role="alert"
+                        >
+                          {ruleErrors.message}
+                        </p>
                       ) : null}
                     </div>
                     <button

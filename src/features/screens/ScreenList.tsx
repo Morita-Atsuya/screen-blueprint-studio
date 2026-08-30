@@ -81,6 +81,7 @@ export function ScreenList() {
               <button
                 className={`${styles.item} ${isActive ? styles.active : ''}`}
                 onClick={() => setActiveScreen(id)}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <span className={styles.name}>{screen.name}</span>
               </button>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type { ScreenState } from '../../domain/model'
@@ -10,6 +10,7 @@ import {
   useDialogReviewLock,
 } from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
+import { trapDialogFocus } from '../inspector/dialogFocus'
 
 interface StateDialogProps {
   mode: 'create' | 'edit'
@@ -26,11 +27,42 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
   const isDefault = state?.id === screen?.defaultStateId
   const [name, setName] = useState(state?.name ?? t('states.newName'))
   const [description, setDescription] = useState(state?.description ?? '')
+  const dialogRef = useRef<HTMLElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' &&
+      typeof HTMLElement !== 'undefined' &&
+      document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
   const titleId = `state-dialog-title-${state?.id ?? 'new'}`
   const reviewNoticeId = `state-dialog-review-${state?.id ?? 'new'}`
   const draftLocked = reviewLocked || staleAfterReview
   const draftFieldsetFocus = useDialogDraftFieldsetFocus(draftLocked)
   const canSubmit = name.trim().length > 0
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current
+    const initialFocus = reviewLocked
+      ? dialog?.querySelector<HTMLElement>('[data-dialog-review-actions] button')
+      : nameInputRef.current
+    initialFocus?.focus()
+
+    return () => {
+      queueMicrotask(() => {
+        requestAnimationFrame(() => {
+          if (dialogRef.current === dialog) return
+          const opener = returnFocusRef.current
+          if (opener?.isConnected) {
+            opener.focus()
+            if (document.activeElement === opener) return
+          }
+          document.querySelector<HTMLElement>('[data-delete-focus-fallback]')?.focus()
+        })
+      })
+    }
+  }, [])
 
   function save() {
     if (reviewLocked || staleAfterReview || !canSubmit) return
@@ -76,10 +108,13 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
           event.preventDefault()
           event.stopPropagation()
           onClose()
+        } else if (event.key === 'Tab') {
+          trapDialogFocus(event, dialogRef.current)
         }
       }}
     >
       <section
+        ref={dialogRef}
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
@@ -123,7 +158,7 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
             <label className={styles.field}>
               <span>{t('states.name')}</span>
               <input
-                autoFocus
+                ref={nameInputRef}
                 required
                 value={name}
                 onChange={event => setName(event.target.value)}
