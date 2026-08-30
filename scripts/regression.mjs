@@ -1883,6 +1883,48 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
   )
 })
 
+await test('column previews and palette drops use layout-specific feedback', async () => {
+  const canvasSource = readFileSync(
+    join(root, 'src/features/canvas/Canvas.tsx'),
+    'utf8',
+  )
+  const canvasStyles = readFileSync(
+    join(root, 'src/features/canvas/Canvas.module.css'),
+    'utf8',
+  )
+  const dropZoneStyles = readFileSync(
+    join(root, 'src/dnd/ComponentDropZone.module.css'),
+    'utf8',
+  )
+  const dndSource = readFileSync(
+    join(root, 'src/dnd/EditorDndContext.tsx'),
+    'utf8',
+  )
+  assert(
+    canvasSource.includes("component.config.kind === 'columns'") &&
+      canvasSource.includes("'--column-width'") &&
+      canvasSource.includes("orientation={isColumns ? 'horizontal' : 'vertical'}"),
+    'column children do not select a count-aware horizontal layout and drop orientation',
+  )
+  assert(
+    canvasStyles.includes('.columnChildren') &&
+      canvasStyles.includes('flex-direction: row') &&
+      canvasStyles.includes('flex: 0 0 var(--column-width)') &&
+      canvasStyles.includes('overflow-x: auto'),
+    'column children are not equal-width horizontal regions with narrow-width overflow',
+  )
+  assert(
+    dropZoneStyles.includes('.horizontal') &&
+      dropZoneStyles.includes('border-left: 2px solid transparent'),
+    'horizontal column insertion targets do not use vertical indicators',
+  )
+  assert(
+    dndSource.includes("drag.type === 'palette'") &&
+      dndSource.includes('dropAnimation={isPaletteDrag ? null : undefined}'),
+    'palette add still uses the move-style overlay drop animation',
+  )
+})
+
 await test('component name metadata is rejected across document, command, and WebMCP inputs', async () => {
   memoryStorage.clear()
   const store = await freshStore('component-name-removed')

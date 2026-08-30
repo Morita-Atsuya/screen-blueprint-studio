@@ -25,6 +25,7 @@ import { useI18n } from '../i18n/I18nProvider'
 export function EditorDndProvider({ children }: { children: React.ReactNode }) {
   const { locale, t } = useI18n()
   const [dragLabel, setDragLabel] = useState<string | null>(null)
+  const [isPaletteDrag, setIsPaletteDrag] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
@@ -34,6 +35,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
   function handleDragStart(event: DragStartEvent) {
     const drag = event.active.data.current
     setDragLabel(isEditorDragData(drag) ? drag.label : null)
+    setIsPaletteDrag(isEditorDragData(drag) && drag.type === 'palette')
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -145,8 +147,12 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       onDragCancel={() => setDragLabel(null)}
     >
       {children}
-      <DragOverlay>
-        {dragLabel ? <div className={styles.overlay}>{dragLabel}</div> : null}
+      <DragOverlay dropAnimation={isPaletteDrag ? null : undefined}>
+        {dragLabel ? (
+          <div className={styles.overlay} data-drag-overlay>
+            {dragLabel}
+          </div>
+        ) : null}
       </DragOverlay>
     </DndContext>
   )

@@ -7,6 +7,8 @@ import { useI18n } from '../i18n/I18nProvider'
 
 interface ComponentDropZoneProps extends Omit<ComponentDropData, 'type'> {
   surface: 'tree' | 'canvas'
+  orientation?: 'vertical' | 'horizontal'
+  edge?: 'before' | 'end'
 }
 
 export function ComponentDropZone({
@@ -15,6 +17,8 @@ export function ComponentDropZone({
   screenId,
   position,
   label,
+  orientation = 'vertical',
+  edge = 'before',
 }: ComponentDropZoneProps) {
   const { t } = useI18n()
   const document = useAppStore(state => state.effectiveDocument)
@@ -42,6 +46,8 @@ export function ComponentDropZone({
       className={[
         styles.zone,
         styles[surface],
+        styles[orientation],
+        edge === 'end' ? styles.end : '',
         showAffordance ? styles.active : '',
         validDrag && !accepts ? styles.invalid : '',
         isOver && showAffordance ? styles.over : '',
@@ -50,6 +56,7 @@ export function ComponentDropZone({
       data-drop-surface={surface}
       data-drop-parent={parentId}
       data-drop-position={position}
+      data-drop-orientation={orientation}
       data-editor-drop-id={dropId}
       data-drop-visible={showAffordance}
     />

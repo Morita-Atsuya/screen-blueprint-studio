@@ -37,3 +37,24 @@
 .canvas {
   width: 100%;
 }
+
+.horizontal {
+  position: absolute;
+  inset: 0 auto 0 -5px;
+  z-index: 2;
+  width: 10px;
+  min-height: 0;
+  border-top: 0;
+  border-left: 2px solid transparent;
+}
+
+.horizontal.active { border-left-color: #c7d2fe; }
+.horizontal.over { border-left-color: var(--accent); }
+
+.horizontal.end {
+  position: relative;
+  inset: auto;
+  flex: 0 0 10px;
+  align-self: stretch;
+  margin-left: -8px;
+}

@@ -104,6 +104,27 @@
 .children { padding: 4px 0 0 8px; display: flex; flex-direction: column; }
 .childSlot { display: flex; flex-direction: column; }
 
+.columnChildren {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 5px 2px;
+  overflow-x: auto;
+}
+
+.columnChildren > .childSlot {
+  position: relative;
+  flex: 0 0 var(--column-width);
+  min-width: min(180px, 70vw);
+}
+
+.columnChildren > .childSlot > .comp {
+  min-width: 0;
+  height: 100%;
+  overflow-wrap: anywhere;
+}
+
 /* Page */
 .wireframe > .comp {
   width: min(100%, 920px);

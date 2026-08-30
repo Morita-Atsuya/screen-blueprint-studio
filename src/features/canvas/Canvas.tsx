@@ -165,6 +165,15 @@ function CanvasComponent({
     : undefined
   const isSelected = selectedComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
+  const columnCount = component.config.kind === 'columns'
+    ? component.config.columns
+    : null
+  const isColumns = columnCount !== null
+  const childrenStyle = columnCount
+    ? {
+        '--column-width': `calc((100% - ${(columnCount - 1) * 8}px) / ${columnCount})`,
+      } as CSSProperties
+    : undefined
   const style: CSSProperties = {
     transform: transform
       ? `translate3d(${transform.x}px, ${transform.y}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`
@@ -202,7 +211,10 @@ function CanvasComponent({
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
           strategy={verticalListSortingStrategy}
         >
-          <div className={styles.children}>
+          <div
+            className={`${styles.children} ${isColumns ? styles.columnChildren : ''}`}
+            style={childrenStyle}
+          >
             {component.childIds.map((childId, index) => (
               <div key={childId} className={styles.childSlot}>
                 <ComponentDropZone
@@ -210,6 +222,7 @@ function CanvasComponent({
                   parentId={component.id}
                   screenId={component.screenId}
                   position={index}
+                  orientation={isColumns ? 'horizontal' : 'vertical'}
                   label={index === 0
                     ? t('dnd.first', { label: displayName })
                     : t('dnd.position', { position: index + 1 })}
@@ -230,6 +243,8 @@ function CanvasComponent({
               parentId={component.id}
               screenId={component.screenId}
               position={component.childIds.length}
+              orientation={isColumns ? 'horizontal' : 'vertical'}
+              edge="end"
               label={t('dnd.end', { label: displayName })}
             />
           </div>
