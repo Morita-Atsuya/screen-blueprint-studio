@@ -5,7 +5,9 @@ import { useAppStore } from '../../app/appStore'
 import type { EntityId, ProjectDocument, Screen, ScreenState } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
-import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
+import {
+  getComponentHierarchyLabel,
+} from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
 import { effectiveComponent } from '../../domain/selectors'
 import { useI18n } from '../../i18n/I18nProvider'
@@ -320,13 +322,7 @@ function TreeNode({
   const spokenLabel = component
     ? isPageRoot
       ? ownerScreen?.name ?? kindLabel
-      : isModalRoot
-        ? t('canvas.modalFrameLabel', {
-            number: (ownerScreen?.modalComponentIds.indexOf(component.id) ?? -1) + 1,
-          })
-        : CONTAINER_KINDS.includes(component.kind)
-          ? kindLabel
-          : getComponentDisplayLabel(component, locale)
+      : getComponentHierarchyLabel(document, component, locale)
     : ''
   const visibleLabel = component
     ? CONTAINER_KINDS.includes(component.kind) && !isPageRoot && !isModalRoot

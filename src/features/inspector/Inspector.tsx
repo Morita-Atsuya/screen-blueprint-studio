@@ -19,10 +19,17 @@ import {
   getValidationRulesEditorContext,
 } from '../../domain/componentBehavior'
 import { BehaviorDetails } from './BehaviorDetails'
+import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
 
 export function Inspector() {
   const { locale, t } = useI18n()
-  const { effectiveDocument, ui, dispatch, activeChangeSet } = useAppStore()
+  const {
+    effectiveDocument,
+    ui,
+    dispatch,
+    activeChangeSet,
+    setSelectedComponent,
+  } = useAppStore()
   const { selectedComponentId, rightPanelTab } = ui
 
   if (rightPanelTab === 'changes' && activeChangeSet) {
@@ -39,6 +46,13 @@ export function Inspector() {
     ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
     : undefined
   const screen = getOwnEntity(effectiveDocument.screens, comp.screenId)
+  const selectionContext = getComponentSelectionContext(
+    effectiveDocument,
+    selectedComponentId,
+    locale,
+    activeState,
+  )
+  if (!selectionContext) return null
 
   const cfg = comp.config
   const behavior = getComponentBehavior(effectiveDocument, comp.id, locale)
@@ -65,6 +79,43 @@ export function Inspector() {
 
   return (
     <div className={styles.root}>
+      <header className={styles.selectionContext}>
+        <span className={styles.selectionEyebrow}>{t('inspector.selectedComponent')}</span>
+        <h2 className={styles.selectionTitle} title={selectionContext.targetLabel}>
+          {selectionContext.targetLabel}
+        </h2>
+        <nav className={styles.breadcrumb} aria-label={t('inspector.breadcrumbLabel')}>
+          <ol className={styles.breadcrumbList}>
+            <li className={`${styles.breadcrumbItem} ${styles.screenBreadcrumb}`}>
+              <span title={selectionContext.screenName}>
+                {t('inspector.screenContext', { name: selectionContext.screenName })}
+              </span>
+            </li>
+            {selectionContext.hierarchy.map((item, index) => {
+              const isCurrent = index === selectionContext.hierarchy.length - 1
+              return (
+                <li className={styles.breadcrumbItem} key={item.componentId}>
+                  <button
+                    type="button"
+                    className={`${styles.breadcrumbButton} ${isCurrent ? styles.currentBreadcrumb : ''}`}
+                    aria-current={isCurrent ? 'page' : undefined}
+                    aria-label={t(
+                      isCurrent
+                        ? 'inspector.currentHierarchyComponent'
+                        : 'inspector.selectHierarchyComponent',
+                      { label: item.label },
+                    )}
+                    title={item.label}
+                    onClick={() => setSelectedComponent(item.componentId)}
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
+      </header>
       <div className={styles.section}>
         <label className={styles.label}>{t('inspector.description')}</label>
         <DraftTextField

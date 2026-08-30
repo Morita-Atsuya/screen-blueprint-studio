@@ -1,4 +1,6 @@
-import type { ScreenComponent } from './model'
+import { getOwnEntity } from './entityMap'
+import type { EntityId, ProjectDocument, ScreenComponent, ScreenState } from './model'
+import { effectiveComponent } from './selectors'
 import type { Locale, MessageKey } from '../i18n/messages'
 import { translate } from '../i18n/messages'
 
@@ -44,5 +46,79 @@ export function getComponentDisplayLabel(
       return readableText(config.label, fallback)
     case 'alert':
       return readableText(config.message, fallback)
+  }
+}
+
+export function getComponentHierarchyLabel(
+  document: ProjectDocument,
+  component: ScreenComponent,
+  locale: Locale = 'en',
+): string {
+  const screen = getOwnEntity(document.screens, component.screenId)
+  const modalIndex = component.parentId === null && component.kind === 'modal'
+    ? screen?.modalComponentIds.indexOf(component.id) ?? -1
+    : -1
+
+  return modalIndex >= 0
+    ? translate(locale, 'canvas.modalFrameLabel', { number: modalIndex + 1 })
+    : getComponentDisplayLabel(component, locale)
+}
+
+export interface ComponentHierarchyItem {
+  componentId: EntityId
+  label: string
+}
+
+export interface ComponentSelectionContext {
+  screenId: EntityId
+  screenName: string
+  targetLabel: string
+  hierarchy: ComponentHierarchyItem[]
+}
+
+export function getComponentSelectionContext(
+  document: ProjectDocument,
+  componentId: EntityId,
+  locale: Locale = 'en',
+  activeState?: ScreenState,
+): ComponentSelectionContext | null {
+  const target = getOwnEntity(document.components, componentId)
+  if (!target) return null
+  const screen = getOwnEntity(document.screens, target.screenId)
+  if (!screen) return null
+
+  const reverseHierarchy: ScreenComponent[] = []
+  const visited = new Set<EntityId>()
+  let current: ScreenComponent | undefined = target
+  while (current && !visited.has(current.id)) {
+    reverseHierarchy.push(current)
+    visited.add(current.id)
+    current = current.parentId
+      ? getOwnEntity(document.components, current.parentId)
+      : undefined
+  }
+
+  const root = reverseHierarchy[reverseHierarchy.length - 1]
+  if (
+    !root ||
+    (root.id !== screen.rootComponentId && !screen.modalComponentIds.includes(root.id))
+  ) {
+    return null
+  }
+
+  const hierarchy = reverseHierarchy.reverse().map(component => ({
+    componentId: component.id,
+    label: getComponentHierarchyLabel(
+      document,
+      effectiveComponent(component, activeState),
+      locale,
+    ),
+  }))
+
+  return {
+    screenId: screen.id,
+    screenName: readableText(screen.name, translate(locale, 'component.page'), 48),
+    targetLabel: hierarchy[hierarchy.length - 1].label,
+    hierarchy,
   }
 }

@@ -2701,7 +2701,10 @@ await test('component add menu resolves valid positions and preserves atomic edi
 
 await test('component display labels separate structure from visible content', async () => {
   memoryStorage.clear()
-  const { getComponentDisplayLabel } = await import(
+  const {
+    getComponentDisplayLabel,
+    getComponentSelectionContext,
+  } = await import(
     moduleUrl(componentDisplayLabelBundle, 'visible-component-labels')
   )
   const store = await freshStore('visible-component-labels')
@@ -2740,6 +2743,149 @@ await test('component display labels separate structure from visible content', a
   assert(
     getComponentDisplayLabel(longText).endsWith('…'),
     'long visible text was not truncated',
+  )
+
+  const deepContext = getComponentSelectionContext(document, 'comp-save-btn', 'en')
+  assert(
+    deepContext?.screenName === 'Edit User' &&
+      deepContext.targetLabel === 'Save' &&
+      deepContext.hierarchy.map(item => item.label).join(' > ') ===
+        'Page > Section > Container > Save',
+    'deep component context did not preserve its screen and real parent hierarchy',
+  )
+  assert(
+    getComponentSelectionContext(
+      document,
+      'comp-list-title',
+      'en',
+      document.screenStates['state-list-loading'],
+    )?.targetLabel === 'Loading users...',
+    'selection context did not use the active state semantic label',
+  )
+  assert(
+    getComponentSelectionContext(document, 'comp-save-btn', 'ja')
+      ?.hierarchy.slice(0, -1).map(item => item.label).join(' > ') ===
+      'ページ > セクション > コンテナ',
+    'component hierarchy labels did not use the selected locale',
+  )
+  assert(
+    getComponentSelectionContext(document, 'missing-component') === null,
+    'missing component produced a selection context',
+  )
+})
+
+await test('Inspector hierarchy handles modal roots and reconciled selection without document edits', async () => {
+  memoryStorage.clear()
+  const { getComponentSelectionContext } = await import(
+    moduleUrl(componentDisplayLabelBundle, 'inspector-component-hierarchy')
+  )
+  const { createAddComponentCommand } = await import(
+    moduleUrl(componentFactoryBundle, 'inspector-component-hierarchy-factory')
+  )
+  const store = await freshStore('inspector-component-hierarchy')
+  const modalCommand = createAddComponentCommand(
+    store.getState().effectiveDocument,
+    'screen-edit',
+    null,
+    'modal',
+    'en',
+  )
+  store.getState().dispatch(modalCommand, 'Add Modal')
+  const alertCommand = createAddComponentCommand(
+    store.getState().effectiveDocument,
+    'screen-edit',
+    modalCommand.componentId,
+    'alert',
+    'en',
+  )
+  store.getState().dispatch(alertCommand, 'Add Alert')
+  const modalContext = getComponentSelectionContext(
+    store.getState().effectiveDocument,
+    alertCommand.componentId,
+    'en',
+  )
+  assert(
+    modalContext?.screenName === 'Edit User' &&
+      modalContext.hierarchy.map(item => item.label).join(' > ') === 'Modal 1 > Message',
+    'modal breadcrumb mixed the page tree into its independent hierarchy',
+  )
+
+  store.getState().setActiveScreen('screen-edit')
+  const historyBeforeSelection = store.getState().history.length
+  store.getState().setSelectedComponent(alertCommand.componentId)
+  assert(
+    store.getState().history.length === historyBeforeSelection,
+    'breadcrumb-style selection created a document history operation',
+  )
+  store.getState().dispatch(
+    { type: 'removeComponent', componentId: modalCommand.componentId },
+    'Remove Modal',
+  )
+  assert(
+    store.getState().ui.selectedComponentId === null,
+    'removing a selected hierarchy left a dangling selection',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().ui.selectedComponentId === null &&
+      store.getState().document.components[alertCommand.componentId],
+    'Undo restored a dangling selection instead of only restoring the hierarchy',
+  )
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('inspector-selection-change-set')
+  proposalStore.getState().setActiveScreen('screen-edit')
+  proposalStore.getState().beginChangeSet('Inspector selection reconcile')
+  const proposed = createAddComponentCommand(
+    proposalStore.getState().effectiveDocument,
+    'screen-edit',
+    'comp-edit-section',
+    'button',
+    'en',
+  )
+  proposalStore.getState().dispatch(proposed, 'Add Button')
+  proposalStore.getState().setSelectedComponent(proposed.componentId)
+  assert(
+    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
+      proposalStore.getState().activeChangeSet?.operations[0].source === 'human',
+    'selection changed active change-set operations',
+  )
+  proposalStore.getState().rejectChangeSet()
+  assert(
+    proposalStore.getState().ui.selectedComponentId === null,
+    'Reject left a selection pointing at a rejected component',
+  )
+  proposalStore.getState().beginChangeSet('Inspector selection accept')
+  proposalStore.getState().dispatch(proposed, 'Add Button')
+  proposalStore.getState().setSelectedComponent(proposed.componentId)
+  proposalStore.getState().acceptChangeSet()
+  assert(
+    proposalStore.getState().ui.selectedComponentId === proposed.componentId,
+    'Accept discarded the valid selected component',
+  )
+  proposalStore.getState().undo()
+  assert(
+    proposalStore.getState().ui.selectedComponentId === null,
+    'Undo left a selection pointing at the removed accepted component',
+  )
+  proposalStore.getState().redo()
+  proposalStore.getState().setSelectedComponent(proposed.componentId)
+  proposalStore.getState().setActiveScreen('screen-list')
+  assert(
+    proposalStore.getState().ui.selectedComponentId === null,
+    'screen switching retained a selection from another screen',
+  )
+
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  assert(
+    inspectorSource.includes('getComponentSelectionContext') &&
+      inspectorSource.includes("aria-current={isCurrent ? 'page' : undefined}") &&
+      inspectorSource.includes('onClick={() => setSelectedComponent(item.componentId)}') &&
+      inspectorSource.includes("t('inspector.breadcrumbLabel')"),
+    'Inspector breadcrumb lost its derived, accessible selection path',
   )
 })
 
@@ -3443,6 +3589,7 @@ await test('structural components reject content titles across every write path'
   const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
   const canvasStyles = readFileSync(join(root, 'src/features/canvas/Canvas.module.css'), 'utf8')
   const treeSource = readFileSync(join(root, 'src/features/structure-tree/StructureTree.tsx'), 'utf8')
+  const labelSource = readFileSync(join(root, 'src/domain/componentDisplayLabel.ts'), 'utf8')
   assert(
     !canvasSource.includes('cfg.title') &&
       !canvasStyles.includes('.pageTitle') &&
@@ -3453,7 +3600,8 @@ await test('structural components reject content titles across every write path'
   assert(
     canvasSource.includes("frameKind === 'page'") &&
       canvasSource.includes("t('canvas.modalFrameLabel'") &&
-      treeSource.includes("t('canvas.modalFrameLabel'"),
+      treeSource.includes('getComponentHierarchyLabel') &&
+      labelSource.includes("translate(locale, 'canvas.modalFrameLabel'"),
     'Page and modal editor frames do not use contextual editor-only labels',
   )
   assert(
