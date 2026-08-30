@@ -348,6 +348,9 @@ function TreeNode({
   const isContainer = CONTAINER_KINDS.includes(component.kind)
   const hasChildren = isContainer && component.childIds.length > 0
   const isCollapsed = hasChildren && collapsedIds.has(component.id)
+  const disclosureLabel = hasChildren
+    ? t(isCollapsed ? 'tree.disclosureExpand' : 'tree.disclosureCollapse', { label: spokenLabel })
+    : ''
   const parent = component.parentId
     ? getOwnEntity(document.components, component.parentId)
     : undefined
@@ -380,9 +383,9 @@ function TreeNode({
             <button
               type="button"
               className={`${styles.disclosure} ${isCollapsed ? styles.disclosureCollapsed : ''}`}
-              aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${spokenLabel}`}
+              aria-label={disclosureLabel}
               aria-expanded={!isCollapsed}
-              title={isCollapsed ? 'Expand children' : 'Collapse children'}
+              title={disclosureLabel}
               onClick={event => {
                 event.stopPropagation()
                 onToggleCollapse(component.id)
