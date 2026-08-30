@@ -758,11 +758,11 @@ function StateOverrides({
         data-override-mode="base"
       >
         <div className={styles.overrideHeading}>
-          <span>{state
+          <span data-override-heading>{state
             ? t('overrides.forState', { name: state.name })
             : t('overrides.noState')}</span>
         </div>
-        <p className={styles.overrideExplanation}>
+        <p className={styles.overrideExplanation} data-override-explanation>
           {t(state ? 'overrides.defaultStateExplanation' : 'overrides.noStateExplanation')}
         </p>
       </div>
@@ -806,7 +806,9 @@ function StateOverrides({
     >
       <div className={styles.overrideHeading}>
         <div>
-          <span>{t('overrides.forState', { name: selectedState.name })}</span>
+          <span data-override-heading>
+            {t('overrides.forState', { name: selectedState.name })}
+          </span>
         </div>
         {hasOverride ? (
           <button
@@ -819,7 +821,7 @@ function StateOverrides({
           </button>
         ) : null}
       </div>
-      <p className={styles.overrideExplanation}>
+      <p className={styles.overrideExplanation} data-override-explanation>
         {t(hasOverride
           ? 'overrides.activeExplanation'
           : 'overrides.inheritExplanation')}

@@ -56,6 +56,87 @@ function assertFlowMetadata(labels, expectedTexts, width, locale) {
   }
 }
 
+const smallTextMeasurementExpression = `(() => {
+  function renderedBackground(element) {
+    const layers = []
+    for (let current = element; current; current = current.parentElement) {
+      const color = getComputedStyle(current).backgroundColor
+      const channels = color?.match(/[\\d.]+/g)?.map(Number)
+      if (channels && (channels[3] ?? 1) > 0) {
+        layers.push({
+          red: channels[0],
+          green: channels[1],
+          blue: channels[2],
+          alpha: channels[3] ?? 1,
+        })
+      }
+    }
+    let result = { red: 255, green: 255, blue: 255 }
+    for (const layer of layers.reverse()) {
+      result = {
+        red: layer.red * layer.alpha + result.red * (1 - layer.alpha),
+        green: layer.green * layer.alpha + result.green * (1 - layer.alpha),
+        blue: layer.blue * layer.alpha + result.blue * (1 - layer.alpha),
+      }
+    }
+    return 'rgb(' + [result.red, result.green, result.blue].map(Math.round).join(', ') + ')'
+  }
+
+  function measurement(element, kind) {
+    const style = getComputedStyle(element)
+    return {
+      kind,
+      text: element.textContent.trim(),
+      foreground: style.color,
+      background: renderedBackground(element),
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+    }
+  }
+
+  const overrideCard = document.querySelector(
+    '[data-state-overrides][data-override-mode="override"]'
+  )
+  return {
+    locale: document.documentElement.lang,
+    measurements: [
+      measurement(document.querySelector('[data-frame-state-badge]'), 'frame-state-badge'),
+      ...[...document.querySelectorAll('[data-event-action-position]')].map(
+        element => measurement(element, 'event-action-position')
+      ),
+      measurement(overrideCard.querySelector('[data-override-heading]'), 'override-heading'),
+      measurement(
+        overrideCard.querySelector('[data-override-explanation]'),
+        'override-explanation'
+      ),
+    ],
+  }
+})()`
+
+function assertSmallTextMeasurements(result, width, locale) {
+  assert(result.locale === locale, `${width}px small-text measurement used ${result.locale}`)
+  const counts = Object.groupBy(result.measurements, item => item.kind)
+  assert(
+    counts['frame-state-badge']?.length === 1 &&
+      counts['event-action-position']?.length === 2 &&
+      counts['override-heading']?.length === 1 &&
+      counts['override-explanation']?.length === 1,
+    `${width}px ${locale} did not reach every small-text contrast surface`,
+  )
+  for (const item of result.measurements) {
+    assert(
+      contrastRatio(item.foreground, item.background) >= 4.5,
+      `${width}px ${locale} ${item.kind} contrast is below 4.5:1`,
+    )
+  }
+  assert(
+    counts['frame-state-badge'][0].fontWeight === '600' &&
+      counts['event-action-position'].every(item => item.fontWeight === '700') &&
+      counts['override-heading'][0].fontWeight === '600',
+    `${width}px ${locale} small-text hierarchy no longer uses weight`,
+  )
+}
+
 function injectFailure(stage) {
   if (process.env.FOCUS_RING_FAILURE_STAGE === stage) {
     throw new Error(`Injected focus-ring regression failure: ${stage}`)
@@ -138,6 +219,11 @@ function connectCdp(webSocketUrl) {
     pending.delete(message.id)
     clearTimeout(timeout)
     if (message.error) rejectCall(new Error(`${method}: ${JSON.stringify(message.error)}`))
+    else if (message.result?.exceptionDetails) {
+      rejectCall(new Error(
+        `${method}: ${message.result.exceptionDetails.exception?.description ?? 'evaluation failed'}`,
+      ))
+    }
     else resolveCall(message.result)
   })
   const rejectPending = reason => {
@@ -363,10 +449,17 @@ async function run() {
     ], { stdio: 'pipe' })
     const { sampleProject } = await import(pathToFileURL(sampleBundle))
     const browserDocument = structuredClone(sampleProject)
-    browserDocument.events['event-submit'].actions.push({
-      type: 'navigate',
-      destinationScreenId: 'screen-list',
-    })
+    browserDocument.screenStates['state-edit-saving']
+      .componentOverrides['comp-edit-page'] = { visible: false }
+    browserDocument.components['comp-cancel-btn'].config.eventId = 'event-flow-regression'
+    browserDocument.screens['screen-edit'].eventIds.push('event-flow-regression')
+    browserDocument.events['event-flow-regression'] = {
+      id: 'event-flow-regression',
+      screenId: 'screen-edit',
+      name: 'Return to user list',
+      trigger: { type: 'click', componentId: 'comp-cancel-btn' },
+      actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
+    }
     const persisted = JSON.stringify({
       document: browserDocument,
       activeScreenId: 'screen-edit',
@@ -766,7 +859,7 @@ async function run() {
       const japaneseMetadata = japaneseResult.result.value
       assertFlowMetadata(
         japaneseMetadata,
-        ['起点コンポーネント', 'イベント位置', 'action位置'],
+        ['起点コンポーネント', 'イベント位置', 'アクション位置'],
         width,
         'Japanese',
       )
@@ -811,14 +904,145 @@ async function run() {
       returnByValue: true,
     })
     assert(
-      forcedColors.result.value.every(control => (
-        control.outlineStyle === 'solid' &&
-        control.outlineWidth === '2px' &&
-        control.outlineOffset === '-2px' &&
-        control.boxShadow === 'none'
-      )),
-      'forced-colors mode does not retain an internal system-color focus perimeter',
+      forcedColors.result.value.length === 5 &&
+        forcedColors.result.value.every(control => (
+          control.outlineStyle === 'solid' &&
+          control.outlineWidth === '2px' &&
+          control.outlineOffset === '-2px' &&
+          control.boxShadow === 'none'
+        )),
+      'forced-colors mode does not retain all five internal focus perimeters',
     )
+    await cdp.call('Emulation.setEmulatedMedia', { features: [] })
+
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const reject = [...document.querySelectorAll('button')]
+          .find(button => button.textContent.trim() === 'Reject')
+        reject.click()
+      })()`,
+    })
+    await waitForExpression(
+      `!document.querySelector(
+        'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
+      )`,
+      'review lock did not clear before small-text contrast checks',
+    )
+    for (const width of [1280, 899, 640]) {
+      await cdp.call('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          document.querySelectorAll('[data-editor-view-switch] > button')[0].click()
+          const saving = [...document.querySelectorAll(
+            '[data-editor-view="screen"] button[aria-pressed]'
+          )].find(button => button.textContent.trim() === 'Saving')
+          saving.click()
+          document.querySelector('[data-component-id="comp-save-btn"]').click()
+        })()`,
+      })
+      await waitForExpression(
+        `Boolean(
+          document.querySelector('[data-frame-state-badge]') &&
+          document.querySelector(
+            '[data-state-overrides][data-override-mode="override"]'
+          ) &&
+          document.querySelector('[data-inspector-section-toggle="behavior"]')
+        )`,
+        `${width}px small-text contrast surfaces did not render`,
+      )
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const toggle = document.querySelector(
+            '[data-inspector-section-toggle="behavior"]'
+          )
+          if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click()
+        })()`,
+      })
+      await waitForExpression(
+        `document.querySelector(
+          '[data-inspector-section-toggle="behavior"]'
+        ).getAttribute('aria-expanded') === 'true' &&
+          Boolean(document.querySelector('[data-event-edit="event-submit"]'))`,
+        `${width}px Event section did not expand`,
+      )
+      const eventButtonState = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const button = document.querySelector('[data-event-edit="event-submit"]')
+          const fieldset = button.closest('fieldset')
+          const state = {
+            disabled: button.disabled,
+            fieldsetDisabled: fieldset?.disabled ?? false,
+            hidden: button.closest('[hidden]') !== null,
+          }
+          button.click()
+          return state
+        })()`,
+        returnByValue: true,
+      })
+      assert(
+        !eventButtonState.result.value.disabled &&
+          !eventButtonState.result.value.fieldsetDisabled &&
+          !eventButtonState.result.value.hidden,
+        `${width}px Event edit button is not operable: ` +
+          JSON.stringify(eventButtonState.result.value),
+      )
+      await waitForExpression(
+        `Boolean(document.querySelector('[data-event-dialog="edit"]'))`,
+        `${width}px Event dialog did not open`,
+      )
+      const eventActionCount = await cdp.call('Runtime.evaluate', {
+        expression: `document.querySelectorAll(
+          '[data-event-dialog="edit"] [data-event-action-position]'
+        ).length`,
+        returnByValue: true,
+      })
+      assert(
+        eventActionCount.result.value === 2,
+        `${width}px Event dialog has ${eventActionCount.result.value} actions instead of two`,
+      )
+      const englishSmallText = await cdp.call('Runtime.evaluate', {
+        expression: smallTextMeasurementExpression,
+        returnByValue: true,
+      })
+      assertSmallTextMeasurements(englishSmallText.result.value, width, 'en')
+
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const selector = document.querySelector('[data-locale-selector]')
+          selector.value = 'ja'
+          selector.dispatchEvent(new Event('change', { bubbles: true }))
+        })()`,
+      })
+      await waitForExpression(
+        `document.documentElement.lang === 'ja'`,
+        `${width}px small-text locale did not switch to Japanese`,
+      )
+      const japaneseSmallText = await cdp.call('Runtime.evaluate', {
+        expression: smallTextMeasurementExpression,
+        returnByValue: true,
+      })
+      assertSmallTextMeasurements(japaneseSmallText.result.value, width, 'ja')
+
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          document.querySelector('[data-event-dialog="edit"] button').click()
+          const selector = document.querySelector('[data-locale-selector]')
+          selector.value = 'en'
+          selector.dispatchEvent(new Event('change', { bubbles: true }))
+        })()`,
+      })
+      await waitForExpression(
+        `document.documentElement.lang === 'en' &&
+          !document.querySelector('[data-event-dialog]')`,
+        `${width}px Event dialog or locale did not reset`,
+      )
+    }
+
   } catch (error) {
     primaryError = interruptedError ?? error
     throw primaryError

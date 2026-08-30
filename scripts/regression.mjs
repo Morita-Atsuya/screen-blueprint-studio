@@ -8509,10 +8509,22 @@ await test('Recovery actions use light-theme tokens with AA contrast', async () 
   )
 })
 
-await test('button focus and change count tokens meet light-theme contrast thresholds', async () => {
+await test('focus indicators and compact metadata meet light-theme contrast thresholds', async () => {
   const globalStyles = readFileSync(join(root, 'src/styles/global.css'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
   const leftPaneStyles = readFileSync(join(root, 'src/app/LeftPane.module.css'), 'utf8')
+  const canvasStyles = readFileSync(
+    join(root, 'src/features/canvas/Canvas.module.css'),
+    'utf8',
+  )
+  const eventDialogStyles = readFileSync(
+    join(root, 'src/features/inspector/EventDialog.module.css'),
+    'utf8',
+  )
+  const inspectorStyles = readFileSync(
+    join(root, 'src/features/inspector/Inspector.module.css'),
+    'utf8',
+  )
   const flowStyles = readFileSync(
     join(root, 'src/features/screen-flow/ScreenFlow.module.css'),
     'utf8',
@@ -8645,6 +8657,32 @@ await test('button focus and change count tokens meet light-theme contrast thres
     assert(
       contrast(token('text-muted'), renderedBackground) >= 4.5,
       `change set count contrast is below 4.5:1 on ${renderedBackground}`,
+    )
+  }
+  for (const [name, styles, selector, background] of [
+    ['Canvas state badge', canvasStyles, 'frameStateBadge', token('bg-hover')],
+    ['Event action position', eventDialogStyles, 'actionPosition', token('bg')],
+    [
+      'state override heading',
+      inspectorStyles,
+      'overrideHeading span',
+      composite(agentForeground, token('bg-surface'), agentAlpha),
+    ],
+    [
+      'state override explanation',
+      inspectorStyles,
+      'overrideExplanation',
+      composite(agentForeground, token('bg-surface'), agentAlpha),
+    ],
+  ]) {
+    const rules = [...styles.matchAll(
+      new RegExp(`[.]${selector.replace(' ', '\\s+')}\\s*\\{([^}]*)\\}`, 'g'),
+    )]
+    const rule = rules.at(-1)?.[1] ?? ''
+    assert(
+      rule.includes('color: var(--text-muted)') &&
+        contrast(token('text-muted'), background) >= 4.5,
+      `${name} does not retain readable compact-text contrast`,
     )
   }
 })

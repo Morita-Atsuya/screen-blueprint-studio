@@ -373,7 +373,9 @@ function CanvasFrame({
           {label}
         </button>
         {hiddenInState ? (
-          <span className={styles.frameStateBadge}>{t('canvas.hiddenInState')}</span>
+          <span className={styles.frameStateBadge} data-frame-state-badge>
+            {t('canvas.hiddenInState')}
+          </span>
         ) : null}
       </div>
       <CanvasComponent

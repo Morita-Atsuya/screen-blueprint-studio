@@ -588,7 +588,7 @@ const ja: Record<MessageKey, string> = {
   'flow.transitionCountMany': '遷移{count}件',
   'flow.trigger': '起点コンポーネント',
   'flow.eventOrder': 'イベント位置',
-  'flow.actionOrder': 'action位置',
+  'flow.actionOrder': 'アクション位置',
   'flow.previousTarget': '変更前の遷移先',
   'flow.selfLoop': '自己遷移',
   'flow.unresolved': '未解決の遷移先',

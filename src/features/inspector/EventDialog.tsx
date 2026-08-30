@@ -230,7 +230,7 @@ export function EventDialog({
               <ol className={styles.actionList}>
                 {actions.map((action, index) => (
                   <li className={styles.actionCard} key={action.key} data-event-action={index}>
-                    <div className={styles.actionPosition}>
+                    <div className={styles.actionPosition} data-event-action-position>
                       <span>{index + 1}</span>
                       <div className={styles.reorderActions}>
                         <button

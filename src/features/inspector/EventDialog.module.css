@@ -141,7 +141,7 @@
   flex: 0 0 28px;
   flex-direction: column;
   gap: 4px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 700;
 }
