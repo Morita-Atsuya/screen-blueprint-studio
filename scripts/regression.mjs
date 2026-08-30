@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parseHTML } from 'linkedom'
 
 const root = resolve(import.meta.dirname, '..')
 const temp = mkdtempSync(join(tmpdir(), 'screen-spec-regression-'))
@@ -53,10 +54,17 @@ function installStorage(value) {
   })
 }
 
-function bundle(entry, output) {
+function bundle(entry, output, extraArguments = []) {
   execFileSync(
     join(root, 'node_modules', '.bin', 'esbuild'),
-    [join(root, entry), '--bundle', '--platform=node', '--format=esm', `--outfile=${output}`],
+    [
+      join(root, entry),
+      '--bundle',
+      '--platform=node',
+      '--format=esm',
+      `--outfile=${output}`,
+      ...extraArguments,
+    ],
     { stdio: 'pipe' },
   )
 }
@@ -92,6 +100,7 @@ const componentPlacementBundle = join(temp, 'componentPlacement.mjs')
 const componentPreviewBundle = join(temp, 'componentPreview.mjs')
 const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
 const screenFlowBundle = join(temp, 'screenFlow.mjs')
+const renderInspectorBundle = join(temp, 'renderInspector.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -123,6 +132,14 @@ bundle('src/domain/componentPlacement.ts', componentPlacementBundle)
 bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
 bundle('src/features/inspector/inspectorSections.ts', inspectorSectionsBundle)
 bundle('src/domain/screenFlow.ts', screenFlowBundle)
+bundle(
+  'scripts/fixtures/renderInspector.tsx',
+  renderInspectorBundle,
+  [
+    '--jsx=automatic',
+    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  ],
+)
 
 let passed = 0
 
@@ -8861,6 +8878,109 @@ await test('Validation rules editor enforces invariants and commits as one human
     behaviorDetailsSource.includes('ValidationRulesDialog') &&
       behaviorDetailsSource.includes('supportsValidationEditing'),
     'Behavior details did not wire the validation rules editor',
+  )
+})
+
+await test('Inspector select controls use unique IDs and visible accessible labels', async () => {
+  memoryStorage.clear()
+  const { renderInspector } = await import(
+    moduleUrl(renderInspectorBundle, 'inspector-select-labels')
+  )
+  const { translate } = await import(moduleUrl(messagesBundle, 'inspector-select-labels'))
+  const cases = [
+    { componentId: 'comp-list-title', labels: ['inspector.textStyle'] },
+    { componentId: 'comp-name-input', labels: ['inspector.inputType'] },
+    { componentId: 'comp-role-select', labels: ['inspector.defaultValue'] },
+    { componentId: 'comp-save-btn', labels: ['inspector.variant'] },
+    { componentId: 'comp-status-alert', labels: ['inspector.tone'] },
+    {
+      componentId: 'comp-list-page',
+      labels: ['inspector.layout', 'inspector.gap', 'inspector.justify', 'inspector.alignment'],
+    },
+    {
+      componentId: 'comp-list-section',
+      labels: ['inspector.layout', 'inspector.gap', 'inspector.justify', 'inspector.alignment'],
+    },
+    {
+      componentId: 'comp-list-grid',
+      labels: [
+        'inspector.layout',
+        'inspector.gap',
+        'inspector.columns',
+        'inspector.justify',
+        'inspector.alignment',
+      ],
+    },
+    {
+      componentId: 'comp-delete-modal',
+      labels: ['inspector.layout', 'inspector.gap', 'inspector.justify', 'inspector.alignment'],
+    },
+  ]
+
+  for (const locale of ['en', 'ja']) {
+    for (const testCase of cases) {
+      const html = renderInspector(testCase.componentId, locale)
+      const { document } = parseHTML(html)
+      const selects = [...document.querySelectorAll('select')]
+      const selectIds = selects.map(select => select.getAttribute('id'))
+      assert(selectIds.every(Boolean), `${locale} ${testCase.componentId} select is missing an ID`)
+      assert(
+        new Set(selectIds).size === selectIds.length,
+        `${locale} ${testCase.componentId} select IDs are not unique`,
+      )
+
+      const visibleLabels = selects.map(select => {
+        const id = select.getAttribute('id')
+        const label = [...document.querySelectorAll('label')]
+          .find(candidate => candidate.getAttribute('for') === id)
+        assert(label, `${locale} ${testCase.componentId} select is not connected to a label`)
+        const text = label.textContent.trim()
+        assert(text.length > 0, `${locale} ${testCase.componentId} select label is empty`)
+        return text
+      })
+
+      for (const labelKey of testCase.labels) {
+        const expected = translate(locale, labelKey)
+        assert(
+          visibleLabels.includes(expected),
+          `${locale} ${testCase.componentId} select has no accessible label "${expected}" ` +
+            `(found: ${visibleLabels.join(', ')})`,
+        )
+      }
+
+      const overrideHtml = renderInspector(
+        'comp-role-select',
+        locale,
+        1,
+        'state-edit-success',
+      )
+      const { document: overrideDocument } = parseHTML(overrideHtml)
+      const overrideSelects = [...overrideDocument.querySelectorAll('select')]
+      const overrideLabels = overrideSelects.map(select => {
+        const id = select.getAttribute('id')
+        const label = [...overrideDocument.querySelectorAll('label')]
+          .find(candidate => candidate.getAttribute('for') === id)
+        assert(label, `${locale} state override select is not connected to a label`)
+        return label.textContent.trim()
+      })
+      for (const labelKey of ['inspector.visible', 'inspector.enabled', 'overrides.value']) {
+        const expected = translate(locale, labelKey)
+        assert(
+          overrideLabels.includes(expected),
+          `${locale} state override select has no accessible label "${expected}"`,
+        )
+      }
+    }
+  }
+
+  const multipleHtml = renderInspector('comp-list-grid', 'en', 2)
+  const { document: multipleDocument } = parseHTML(multipleHtml)
+  const allControlIds = [...multipleDocument.querySelectorAll('select, input, textarea')]
+    .map(control => control.getAttribute('id'))
+    .filter(Boolean)
+  assert(
+    new Set(allControlIds).size === allControlIds.length,
+    'multiple Inspector instances produced duplicate control IDs',
   )
 })
 

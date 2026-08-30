@@ -76,6 +76,7 @@ function clearDraft(draftId: string): void {
 }
 
 interface DraftTextFieldProps {
+  id?: string
   draftId: string
   value: string
   onCommit(value: string): boolean
@@ -89,6 +90,7 @@ interface DraftTextFieldProps {
 }
 
 export function DraftTextField({
+  id,
   draftId,
   value,
   onCommit,
@@ -260,6 +262,7 @@ export function DraftTextField({
   }
 
   const controlProps = {
+    id,
     className,
     value: draft,
     placeholder,

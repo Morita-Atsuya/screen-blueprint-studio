@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
 import { getOwnEntity } from '../../domain/entityMap'
@@ -394,8 +395,9 @@ export function Inspector() {
         >
       {cfg.kind === 'text' && (
         <>
-          <Field label={t('inspector.text')}>
+          <Field label={t('inspector.text')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:text`}
               draftId={`component:${comp.id}:config.text`}
               ariaLabel={t('inspector.text')}
@@ -405,22 +407,23 @@ export function Inspector() {
               multiline
               rows={3}
             />
-          </Field>
-          <Field label={t('inspector.textStyle')}>
-            <select className={styles.input} value={cfg.style} onChange={e => updateConfig({ style: e.target.value })}>
+          )}</Field>
+          <Field label={t('inspector.textStyle')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.style} onChange={e => updateConfig({ style: e.target.value })}>
               <option value="heading1">{t('inspector.textStyleHeading1')}</option>
               <option value="heading2">{t('inspector.textStyleHeading2')}</option>
               <option value="heading3">{t('inspector.textStyleHeading3')}</option>
               <option value="body">{t('inspector.textStyleBody')}</option>
               <option value="caption">{t('inspector.textStyleCaption')}</option>
             </select>
-          </Field>
+          )}</Field>
         </>
       )}
       {cfg.kind === 'textInput' && (
         <>
-          <Field label={t('inspector.fieldKey')}>
+          <Field label={t('inspector.fieldKey')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:fieldKey`}
               draftId={`component:${comp.id}:config.fieldKey`}
               ariaLabel={t('inspector.fieldKey')}
@@ -428,9 +431,10 @@ export function Inspector() {
               value={cfg.fieldKey}
               onCommit={fieldKey => updateConfig({ fieldKey }, 'field key')}
             />
-          </Field>
-          <Field label={t('inspector.label')}>
+          )}</Field>
+          <Field label={t('inspector.label')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:label`}
               draftId={`component:${comp.id}:config.label`}
               ariaLabel={t('inspector.label')}
@@ -438,9 +442,10 @@ export function Inspector() {
               value={cfg.label}
               onCommit={label => updateConfig({ label }, 'label')}
             />
-          </Field>
-          <Field label={t('inspector.placeholder')}>
+          )}</Field>
+          <Field label={t('inspector.placeholder')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:placeholder`}
               draftId={`component:${comp.id}:config.placeholder`}
               ariaLabel={t('inspector.placeholder')}
@@ -448,9 +453,10 @@ export function Inspector() {
               value={cfg.placeholder}
               onCommit={placeholder => updateConfig({ placeholder }, 'placeholder')}
             />
-          </Field>
-          <Field label={t('inspector.defaultValue')}>
+          )}</Field>
+          <Field label={t('inspector.defaultValue')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:defaultValue`}
               draftId={`component:${comp.id}:config.defaultValue`}
               ariaLabel={t('inspector.defaultValue')}
@@ -458,14 +464,14 @@ export function Inspector() {
               value={cfg.defaultValue}
               onCommit={defaultValue => updateConfig({ defaultValue }, 'default value')}
             />
-          </Field>
-          <Field label={t('inspector.inputType')}>
-            <select className={styles.input} value={cfg.inputType} onChange={e => updateConfig({ inputType: e.target.value })}>
+          )}</Field>
+          <Field label={t('inspector.inputType')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.inputType} onChange={e => updateConfig({ inputType: e.target.value })}>
               <option value="text">{t('inspector.inputText')}</option>
               <option value="email">{t('inspector.inputEmail')}</option>
               <option value="password">{t('inspector.inputPassword')}</option>
             </select>
-          </Field>
+          )}</Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
             {t('inspector.required')}
@@ -474,8 +480,9 @@ export function Inspector() {
       )}
       {cfg.kind === 'select' && (
         <>
-          <Field label={t('inspector.fieldKey')}>
+          <Field label={t('inspector.fieldKey')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:fieldKey`}
               draftId={`component:${comp.id}:config.fieldKey`}
               ariaLabel={t('inspector.fieldKey')}
@@ -483,9 +490,10 @@ export function Inspector() {
               value={cfg.fieldKey}
               onCommit={fieldKey => updateConfig({ fieldKey }, 'field key')}
             />
-          </Field>
-          <Field label={t('inspector.label')}>
+          )}</Field>
+          <Field label={t('inspector.label')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:label`}
               draftId={`component:${comp.id}:config.label`}
               ariaLabel={t('inspector.label')}
@@ -493,9 +501,10 @@ export function Inspector() {
               value={cfg.label}
               onCommit={label => updateConfig({ label }, 'label')}
             />
-          </Field>
-          <Field label={t('inspector.options')}>
+          )}</Field>
+          <Field label={t('inspector.options')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:options`}
               draftId={`component:${comp.id}:config.options`}
               ariaLabel={t('inspector.options')}
@@ -506,9 +515,10 @@ export function Inspector() {
               rows={4}
               placeholder={t('inspector.optionsPlaceholder')}
             />
-          </Field>
-          <Field label={t('inspector.defaultValue')}>
+          )}</Field>
+          <Field label={t('inspector.defaultValue')}>{controlId => (
             <select
+              id={controlId}
               className={styles.input}
               value={cfg.defaultValue}
               onChange={e => updateConfig({ defaultValue: e.target.value })}
@@ -518,7 +528,7 @@ export function Inspector() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-          </Field>
+          )}</Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
             {t('inspector.required')}
@@ -527,8 +537,9 @@ export function Inspector() {
       )}
       {cfg.kind === 'button' && (
         <>
-          <Field label={t('inspector.label')}>
+          <Field label={t('inspector.label')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:label`}
               draftId={`component:${comp.id}:config.label`}
               ariaLabel={t('inspector.label')}
@@ -536,16 +547,17 @@ export function Inspector() {
               value={cfg.label}
               onCommit={label => updateConfig({ label }, 'label')}
             />
-          </Field>
-          <Field label={t('inspector.variant')}>
-            <select className={styles.input} value={cfg.variant} onChange={e => updateConfig({ variant: e.target.value })}>
+          )}</Field>
+          <Field label={t('inspector.variant')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.variant} onChange={e => updateConfig({ variant: e.target.value })}>
               <option value="primary">{t('inspector.variantPrimary')}</option>
               <option value="secondary">{t('inspector.variantSecondary')}</option>
               <option value="danger">{t('inspector.variantDanger')}</option>
             </select>
-          </Field>
-          <Field label={t('inspector.confirmationMessage')}>
+          )}</Field>
+          <Field label={t('inspector.confirmationMessage')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:confirmationMessage`}
               draftId={`component:${comp.id}:config.confirmationMessage`}
               ariaLabel={t('inspector.confirmationMessage')}
@@ -557,7 +569,7 @@ export function Inspector() {
                 'confirmation message',
               )}
             />
-          </Field>
+          )}</Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.preventDoubleSubmit} onChange={e => updateConfig({ preventDoubleSubmit: e.target.checked })} />
             {t('inspector.preventDoubleSubmit')}
@@ -566,16 +578,17 @@ export function Inspector() {
       )}
       {cfg.kind === 'alert' && (
         <>
-          <Field label={t('inspector.tone')}>
-            <select className={styles.input} value={cfg.tone} onChange={e => updateConfig({ tone: e.target.value })}>
+          <Field label={t('inspector.tone')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.tone} onChange={e => updateConfig({ tone: e.target.value })}>
               <option value="info">{t('inspector.toneInfo')}</option>
               <option value="success">{t('inspector.toneSuccess')}</option>
               <option value="warning">{t('inspector.toneWarning')}</option>
               <option value="error">{t('inspector.toneError')}</option>
             </select>
-          </Field>
-          <Field label={t('inspector.message')}>
+          )}</Field>
+          <Field label={t('inspector.message')}>{controlId => (
             <DraftTextField
+              id={controlId}
               key={`${comp.id}:message`}
               draftId={`component:${comp.id}:config.message`}
               ariaLabel={t('inspector.message')}
@@ -583,7 +596,7 @@ export function Inspector() {
               value={cfg.message}
               onCommit={message => updateConfig({ message }, 'message')}
             />
-          </Field>
+          )}</Field>
         </>
       )}
         </InspectorSection>
@@ -665,47 +678,47 @@ function LayoutFields({
 
   return (
     <div className={styles.layoutSection} data-layout-settings>
-      <Field label={t('inspector.layout')}>
-        <select className={styles.input} value={layout.layout} onChange={event => onUpdate({ layout: event.target.value })}>
+      <Field label={t('inspector.layout')}>{controlId => (
+        <select id={controlId} className={styles.input} value={layout.layout} onChange={event => onUpdate({ layout: event.target.value })}>
           <option value="vertical">{t('inspector.layoutVertical')}</option>
           <option value="horizontal">{t('inspector.layoutHorizontal')}</option>
           <option value="grid">{t('inspector.layoutGrid')}</option>
         </select>
-      </Field>
-      <Field label={t('inspector.gap')}>
-        <select className={styles.input} value={layout.gap} onChange={event => onUpdate({ gap: event.target.value })}>
+      )}</Field>
+      <Field label={t('inspector.gap')}>{controlId => (
+        <select id={controlId} className={styles.input} value={layout.gap} onChange={event => onUpdate({ gap: event.target.value })}>
           <option value="none">{t('inspector.gapNone')}</option>
           <option value="sm">{t('inspector.gapSmall')}</option>
           <option value="md">{t('inspector.gapMedium')}</option>
           <option value="lg">{t('inspector.gapLarge')}</option>
         </select>
-      </Field>
+      )}</Field>
       {layout.layout === 'grid' ? (
-        <Field label={t('inspector.columns')}>
-          <select className={styles.input} value={layout.columns} onChange={event => onUpdate({ columns: Number(event.target.value) })}>
+        <Field label={t('inspector.columns')}>{controlId => (
+          <select id={controlId} className={styles.input} value={layout.columns} onChange={event => onUpdate({ columns: Number(event.target.value) })}>
             <option value={1}>1</option>
             <option value={2}>2</option>
             <option value={3}>3</option>
             <option value={4}>4</option>
           </select>
-        </Field>
+        )}</Field>
       ) : null}
-      <Field label={t('inspector.justify')}>
-        <select className={styles.input} value={layout.justify} onChange={event => onUpdate({ justify: event.target.value })}>
+      <Field label={t('inspector.justify')}>{controlId => (
+        <select id={controlId} className={styles.input} value={layout.justify} onChange={event => onUpdate({ justify: event.target.value })}>
           <option value="start">{t('inspector.alignStart')}</option>
           <option value="center">{t('inspector.alignCenter')}</option>
           <option value="end">{t('inspector.alignEnd')}</option>
           <option value="between">{t('inspector.alignBetween')}</option>
         </select>
-      </Field>
-      <Field label={t('inspector.alignment')}>
-        <select className={styles.input} value={layout.align} onChange={event => onUpdate({ align: event.target.value })}>
+      )}</Field>
+      <Field label={t('inspector.alignment')}>{controlId => (
+        <select id={controlId} className={styles.input} value={layout.align} onChange={event => onUpdate({ align: event.target.value })}>
           <option value="start">{t('inspector.alignStart')}</option>
           <option value="center">{t('inspector.alignCenter')}</option>
           <option value="end">{t('inspector.alignEnd')}</option>
           <option value="stretch">{t('inspector.alignStretch')}</option>
         </select>
-      </Field>
+      )}</Field>
       {layout.layout === 'horizontal' ? (
         <label className={styles.checkLabel}>
           <input type="checkbox" checked={layout.wrap} onChange={event => onUpdate({ wrap: event.target.checked })} />
@@ -802,10 +815,11 @@ function StateOverrides({
           ? 'overrides.activeExplanation'
           : 'overrides.inheritExplanation')}
       </p>
-      <Field label={t('inspector.visible')}>
+      <Field label={t('inspector.visible')}>{controlId => (
+        <>
         <select
+          id={controlId}
           className={styles.input}
-          aria-label={t('overrides.fieldAria', { field: t('inspector.visible') })}
           value={override.visible === undefined ? 'inherit' : String(override.visible)}
           onChange={event => updateOverride(
             'visible',
@@ -825,11 +839,13 @@ function StateOverrides({
           overridden={override.visible !== undefined}
           onReset={() => updateOverride('visible', undefined)}
         />
-      </Field>
-      <Field label={t('inspector.enabled')}>
+        </>
+      )}</Field>
+      <Field label={t('inspector.enabled')}>{controlId => (
+        <>
         <select
+          id={controlId}
           className={styles.input}
-          aria-label={t('overrides.fieldAria', { field: t('inspector.enabled') })}
           value={override.enabled === undefined ? 'inherit' : String(override.enabled)}
           onChange={event => updateOverride(
             'enabled',
@@ -849,7 +865,8 @@ function StateOverrides({
           overridden={override.enabled !== undefined}
           onReset={() => updateOverride('enabled', undefined)}
         />
-      </Field>
+        </>
+      )}</Field>
       {content ? (
         <div className={styles.overrideValue}>
           <label className={styles.checkLabel}>
@@ -869,11 +886,12 @@ function StateOverrides({
             />
             {t('overrides.useValue')}
           </label>
-          <Field label={t(content.labelKey)}>
+          <Field label={t(content.labelKey)}>{controlId => (
+            <>
             {content.options ? (
               <select
+                id={controlId}
                 className={styles.input}
-                aria-label={t('overrides.fieldAria', { field: t(content.labelKey) })}
                 disabled={override[content.key] === undefined}
                 value={override[content.key] ?? content.baseValue}
                 onChange={event => updateOverride(content.key, event.target.value)}
@@ -887,6 +905,7 @@ function StateOverrides({
               </select>
             ) : (
               <DraftTextField
+                id={controlId}
                 key={`${selectedState.id}:${component.id}:${content.key}`}
                 draftId={`state:${selectedState.id}:component:${component.id}:${content.key}`}
                 ariaLabel={t('overrides.fieldAria', { field: t(content.labelKey) })}
@@ -903,7 +922,8 @@ function StateOverrides({
               overridden={override[content.key] !== undefined}
               onReset={() => updateOverride(content.key, undefined)}
             />
-          </Field>
+            </>
+          )}</Field>
         </div>
       ) : null}
     </div>
@@ -1028,11 +1048,23 @@ function parseSelectOptions(value: string): Array<{ value: string; label: string
     })
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children(controlId: string): ReactNode
+}) {
+  const controlId = useId()
   return (
     <div style={{ marginBottom: 10 }}>
-      <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</label>
-      {children}
+      <label
+        htmlFor={controlId}
+        style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 4 }}
+      >
+        {label}
+      </label>
+      {children(controlId)}
     </div>
   )
 }
