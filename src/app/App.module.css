@@ -30,7 +30,7 @@
 .logo {
   font-weight: 700;
   font-size: 0.9rem;
-  color: #3730a3;
+  color: var(--accent-hover);
   letter-spacing: 0.02em;
 }
 
@@ -44,7 +44,7 @@
   padding: 3px 6px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: white;
+  background: var(--bg-surface);
   color: var(--text-muted);
   font-size: 0.78rem;
 }
@@ -218,8 +218,8 @@
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: #991b1b;
-  color: white;
+  background: var(--danger);
+  color: var(--bg-surface);
   padding: 10px 20px;
   border-radius: 8px;
   font-size: 0.85rem;
@@ -227,7 +227,7 @@
   cursor: pointer;
   max-width: 500px;
   text-align: center;
-  border: 1px solid #7f1d1d;
+  border: 1px solid var(--danger);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22);
 }
 
@@ -277,8 +277,16 @@
   text-align: center;
 }
 
-.recovery h1 {
-  color: #991b1b;
+.recoveryTitle {
+  margin-bottom: 12px;
+  color: var(--danger);
+}
+
+.recoveryError {
+  max-width: min(680px, 100%);
+  margin-bottom: 20px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 .recoveryLanguage {
@@ -292,6 +300,53 @@
   gap: 12px;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+.recoveryAction {
+  min-height: 38px;
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.recoveryAction:hover:not(:disabled) {
+  border-color: var(--border-focus);
+}
+
+.recoveryAction:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.recoveryAction:disabled {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.recoverySecondary {
+  color: var(--text-muted);
+}
+
+.recoverySecondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.recoveryPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-surface);
+  font-weight: 700;
+}
+
+.recoveryPrimary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 
 @media (max-width: 899px) {

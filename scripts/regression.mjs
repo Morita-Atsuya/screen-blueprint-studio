@@ -3214,5 +3214,76 @@ await test('Changes review UI is contextual to active change sets', async () => 
   )
 })
 
+await test('Recovery actions use light-theme tokens with AA contrast', async () => {
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  const globalStyles = readFileSync(join(root, 'src/styles/global.css'), 'utf8')
+  const recoveryMarkup = appSource.slice(
+    appSource.indexOf('// ── Recovery screen'),
+    appSource.indexOf('// ── Main UI'),
+  )
+  const token = name => {
+    const match = globalStyles.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`))
+    assert(match, `missing color token --${name}`)
+    return match[1]
+  }
+  const luminance = hex => {
+    const channels = hex.slice(1).match(/../g).map(value => {
+      const channel = Number.parseInt(value, 16) / 255
+      return channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+  }
+  const contrast = (foreground, background) => {
+    const values = [luminance(foreground), luminance(background)].sort((left, right) => right - left)
+    return (values[0] + 0.05) / (values[1] + 0.05)
+  }
+
+  assert(!recoveryMarkup.includes('style={{'), 'Recovery still uses inline visual styles')
+  assert(
+    recoveryMarkup.includes('styles.recoveryTitle') &&
+      recoveryMarkup.includes('styles.recoveryError') &&
+      recoveryMarkup.includes('styles.recoveryPrimary') &&
+      recoveryMarkup.includes('styles.recoverySecondary'),
+    'Recovery visual roles are not represented by CSS module classes',
+  )
+  assert(
+    appStyles.includes('.recoveryAction:hover:not(:disabled)') &&
+      appStyles.includes('.recoveryAction:focus-visible') &&
+      appStyles.includes('.recoveryAction:disabled') &&
+      appStyles.includes('flex-wrap: wrap'),
+    'Recovery action hover, focus, disabled, or narrow-width behavior is missing',
+  )
+  assert(
+    appStyles.includes('background: var(--accent)') &&
+      appStyles.includes('color: var(--bg-surface)') &&
+      !recoveryMarkup.includes('#07131a'),
+    'Recovery primary action does not use the accessible light-theme token pair',
+  )
+  assert(
+    contrast(token('bg-surface'), token('accent')) >= 4.5,
+    'Recovery primary action contrast is below WCAG AA',
+  )
+  assert(
+    contrast(token('bg-surface'), token('accent-hover')) >= 4.5,
+    'Recovery primary hover contrast is below WCAG AA',
+  )
+  assert(
+    contrast(token('text-muted'), token('bg-surface')) >= 4.5,
+    'Recovery secondary action contrast is below WCAG AA',
+  )
+  assert(
+    appStyles.includes('.logo') &&
+      appStyles.includes('color: var(--accent-hover)') &&
+      appStyles.includes('background: var(--danger)') &&
+      !appStyles.includes('#3730a3') &&
+      !appStyles.includes('#991b1b') &&
+      !appStyles.includes('#7f1d1d'),
+    'App shell retains hard-coded colors that duplicate existing light-theme tokens',
+  )
+})
+
 console.log(`\n${passed} regression groups passed`)
 rmSync(temp, { recursive: true, force: true })

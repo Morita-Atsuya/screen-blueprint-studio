@@ -95,18 +95,20 @@ export function App() {
     return (
       <div className={styles.recovery}>
         <div className={styles.recoveryLanguage}><LanguageSelector /></div>
-        <h1 style={{ marginBottom: 12 }}>{t('app.recoveryTitle')}</h1>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>{recoveryState.error}</p>
+        <h1 className={styles.recoveryTitle}>{t('app.recoveryTitle')}</h1>
+        <p className={styles.recoveryError}>{recoveryState.error}</p>
         <div className={styles.recoveryActions}>
           <button
-            style={{ padding: '8px 20px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', marginRight: 10 }}
+            className={`${styles.recoveryAction} ${styles.recoverySecondary}`}
             onClick={() => initializeWithRecovery('download')}
+            type="button"
           >
             {t('app.downloadCorrupted')}
           </button>
           <button
-            style={{ padding: '8px 20px', background: 'var(--accent)', color: '#07131a', border: 0, borderRadius: 6, fontWeight: 700, cursor: 'pointer' }}
+            className={`${styles.recoveryAction} ${styles.recoveryPrimary}`}
             onClick={() => initializeWithRecovery('sample')}
+            type="button"
           >
             {t('app.resetSample')}
           </button>
