@@ -1,16 +1,30 @@
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer as createHttpServer } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '..')
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+function injectFailure(stage) {
+  if (process.env.FOCUS_RING_FAILURE_STAGE === stage) {
+    throw new Error(`Injected focus-ring regression failure: ${stage}`)
+  }
 }
 
 function chromeExecutable() {
@@ -150,22 +164,52 @@ async function startStaticServer(port) {
       response.writeHead(404).end()
     }
   })
-  await new Promise((resolveListen, reject) => {
-    server.once('error', reject)
-    server.listen(port, '127.0.0.1', resolveListen)
-  })
+  try {
+    await new Promise((resolveListen, reject) => {
+      server.once('error', reject)
+      server.listen(port, '127.0.0.1', resolveListen)
+    })
+  } catch (error) {
+    try {
+      server.close()
+    } catch {
+      // A bind failure can leave the server unstarted; the original error is authoritative.
+    }
+    throw error
+  }
   return server
 }
 
+async function stopChrome(chrome) {
+  const exited = () => chrome.exitCode !== null || chrome.signalCode !== null
+  for (const signal of ['SIGTERM', 'SIGKILL']) {
+    if (exited()) return
+    chrome.kill(signal)
+    const deadline = Date.now() + 1_000
+    while (!exited() && Date.now() < deadline) {
+      await new Promise(resolveWait => setTimeout(resolveWait, 25))
+    }
+  }
+  if (!exited()) {
+    throw new Error('Chrome did not exit after SIGTERM and SIGKILL')
+  }
+}
+
 async function run() {
-  const profile = mkdtempSync(join(tmpdir(), 'screen-blueprint-focus-'))
-  const debuggingPort = await freePort()
-  const appPort = await freePort()
-  const server = await startStaticServer(appPort)
+  let profile
+  let server
   let chrome
   let cdp
+  let primaryError
 
   try {
+    const tempRoot = process.env.FOCUS_RING_TEMP_ROOT ?? tmpdir()
+    profile = mkdtempSync(join(tempRoot, 'screen-blueprint-focus-'))
+    injectFailure('after-profile')
+    const debuggingPort = await freePort()
+    const appPort = await freePort()
+    server = await startStaticServer(appPort)
+    injectFailure('after-server')
     const sampleBundle = join(profile, 'sampleProject.mjs')
     execFileSync(join(root, 'node_modules', '.bin', 'esbuild'), [
       join(root, 'src/sample/sampleProject.ts'),
@@ -175,21 +219,29 @@ async function run() {
       `--outfile=${sampleBundle}`,
     ], { stdio: 'pipe' })
     const { sampleProject } = await import(pathToFileURL(sampleBundle))
+    const browserDocument = structuredClone(sampleProject)
+    browserDocument.events['event-submit'].actions.push({
+      type: 'navigate',
+      destinationScreenId: 'screen-list',
+    })
     const persisted = JSON.stringify({
-      document: sampleProject,
+      document: browserDocument,
       activeScreenId: 'screen-edit',
       activeChangeSet: {
         id: 'focus-ring-browser-regression',
         summary: 'Edge focus regression',
-        baseRevision: sampleProject.revision,
-        baseDocument: sampleProject,
+        baseRevision: browserDocument.revision,
+        baseDocument: browserDocument,
         operations: [],
         version: 0,
         createdAt: '2025-01-01T00:00:00.000Z',
       },
     })
     const appUrl = `http://127.0.0.1:${appPort}/`
-    chrome = spawn(chromeExecutable(), [
+    const executable = process.env.FOCUS_RING_FAILURE_STAGE === 'chrome-spawn'
+      ? profile
+      : chromeExecutable()
+    chrome = spawn(executable, [
       '--headless=new',
       '--disable-gpu',
       '--no-first-run',
@@ -199,8 +251,20 @@ async function run() {
       `--remote-debugging-port=${debuggingPort}`,
       appUrl,
     ], { stdio: 'ignore' })
+    if (process.env.FOCUS_RING_PID_FILE && chrome.pid) {
+      writeFileSync(process.env.FOCUS_RING_PID_FILE, String(chrome.pid))
+    }
+    const spawnFailure = new Promise(resolveFailure => {
+      chrome.once('error', resolveFailure)
+    })
+    injectFailure('after-chrome')
 
-    const targets = await waitForJson(`http://127.0.0.1:${debuggingPort}/json`)
+    const targets = await Promise.race([
+      waitForJson(`http://127.0.0.1:${debuggingPort}/json`),
+      spawnFailure.then(error => {
+        throw new Error(`Chrome failed to launch: ${error.message}`)
+      }),
+    ])
     const page = targets.find(target => target.type === 'page' && target.url === appUrl)
     assert(page, 'Chrome did not open the focus-ring regression page')
     cdp = connectCdp(page.webSocketDebuggerUrl)
@@ -260,6 +324,15 @@ async function run() {
       ))`,
       'review UI did not render in Chrome',
     )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelectorAll(
+        '[data-editor-view-switch] > button'
+      )[1].click()`,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-editor-view="flow"]').hidden === false`,
+      'initial Flow view did not become active',
+    )
 
     for (const width of [1280, 899, 640]) {
       await cdp.call('Emulation.setDeviceMetricsOverride', {
@@ -281,6 +354,33 @@ async function run() {
         windowsVirtualKeyCode: 9,
       })
       await new Promise(resolveWait => setTimeout(resolveWait, 100))
+      await waitForExpression(
+        `document.querySelector('[data-editor-view="flow"]').hidden === false`,
+        `${width}px did not begin with Flow view active`,
+      )
+      await cdp.call('Runtime.evaluate', {
+        expression: `document.querySelectorAll(
+          '[data-editor-view-switch] > button'
+        )[0].click()`,
+      })
+      await waitForExpression(
+        `document.querySelector('[data-editor-view="screen"]').hidden === false &&
+          document.querySelector('[data-editor-view="flow"]').hidden === true`,
+        `${width}px Screen view did not become active before Flow switching`,
+      )
+      await cdp.call('Runtime.evaluate', {
+        expression: `document.querySelectorAll(
+          '[data-editor-view-switch] > button'
+        )[1].click()`,
+      })
+      await waitForExpression(
+        `document.querySelector('[data-editor-view="screen"]').hidden === true &&
+          document.querySelector('[data-editor-view="flow"]').hidden === false &&
+          Boolean(document.querySelector(
+            '[data-screen-flow] [data-flow-edge] details > summary'
+          ))`,
+        `${width}px Screen Flow transition summary did not render`,
+      )
 
       const result = await cdp.call('Runtime.evaluate', {
         expression: `(() => {
@@ -362,11 +462,26 @@ async function run() {
             snapshot(tab, 'tab-' + index)
             snapshots.at(-1).activeBorderWidth = getComputedStyle(tab).borderBottomWidth
           })
+          const flowViewport = document.querySelector('[data-screen-flow]')
+          const flowSummary = flowViewport?.querySelector('[data-flow-edge] details > summary')
+          flowViewport?.scrollIntoView({ block: 'nearest' })
+          flowSummary?.scrollIntoView({ block: 'nearest' })
+          const flowDetails = flowSummary?.closest('details')
+          const flowInitiallyOpen = flowDetails?.open
+          flowSummary?.click()
+          const flowOpened = flowDetails?.open
+          flowSummary?.click()
+          const flowClosed = !flowDetails?.open
+          if (flowSummary) snapshot(flowSummary, 'flow-summary')
 
           return {
             controls: snapshots,
             headerCount: headers.length,
             tabCount: tabs.length,
+            flowSummaryCount: flowSummary ? 1 : 0,
+            flowInitiallyOpen,
+            flowOpened,
+            flowClosed,
             maxLeftScroll,
             middleLeftScroll,
             actualMiddleLeftScroll,
@@ -381,8 +496,16 @@ async function run() {
       })
       const measurement = result.result.value
       assert(
-        measurement.headerCount === 2 && measurement.tabCount === 2,
-        `${width}px did not render all four edge focus controls`,
+        measurement.headerCount === 2 &&
+          measurement.tabCount === 2 &&
+          measurement.flowSummaryCount === 1,
+        `${width}px did not render all five edge focus controls`,
+      )
+      assert(
+        measurement.flowInitiallyOpen === false &&
+          measurement.flowOpened === true &&
+          measurement.flowClosed === true,
+        `${width}px Screen Flow transition details did not open and close`,
       )
       assert(
         measurement.maxLeftScroll > 0 &&
@@ -442,7 +565,8 @@ async function run() {
           ...document.querySelectorAll(
             'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
           ),
-        ]
+          document.querySelector('[data-screen-flow] [data-flow-edge] details > summary'),
+        ].filter(Boolean)
         return controls.map(control => {
           control.focus({ preventScroll: true })
           const style = getComputedStyle(control)
@@ -465,23 +589,98 @@ async function run() {
       )),
       'forced-colors mode does not retain an internal system-color focus perimeter',
     )
+  } catch (error) {
+    primaryError = error
+    throw error
   } finally {
-    cdp?.close()
-    if (chrome && chrome.exitCode === null) {
-      chrome.kill('SIGTERM')
-      await new Promise(resolveExit => {
-        chrome.once('exit', resolveExit)
-        setTimeout(resolveExit, 1_000)
-      })
-      if (chrome.exitCode === null) {
-        chrome.kill('SIGKILL')
-        await new Promise(resolveExit => chrome.once('exit', resolveExit))
+    const cleanupErrors = []
+    try {
+      cdp?.close()
+    } catch (error) {
+      cleanupErrors.push(error)
+    }
+    if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
+      try {
+        await stopChrome(chrome)
+      } catch (error) {
+        cleanupErrors.push(error)
       }
     }
-    await new Promise(resolveClose => server.close(resolveClose))
-    rmSync(profile, { recursive: true, force: true })
+    if (server) {
+      try {
+        await new Promise((resolveClose, rejectClose) => {
+          server.close(error => error ? rejectClose(error) : resolveClose())
+        })
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
+    }
+    if (profile) {
+      try {
+        rmSync(profile, { recursive: true, force: true })
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      if (primaryError) {
+        console.error(
+          `Cleanup after "${primaryError.message}" also failed:`,
+          new AggregateError(cleanupErrors),
+        )
+      } else {
+        throw new AggregateError(cleanupErrors, 'focus-ring browser regression cleanup failed')
+      }
+    }
   }
 }
 
-await run()
-console.log('PASS edge focus rings stay visible in real browser clipping layouts')
+function verifyEarlyFailureCleanup() {
+  const testRoot = mkdtempSync(join(tmpdir(), 'screen-blueprint-focus-cleanup-'))
+  try {
+    for (const stage of ['after-profile', 'after-server', 'after-chrome', 'chrome-spawn']) {
+      const pidFile = join(testRoot, `${stage}.pid`)
+      const result = spawnSync(
+        process.execPath,
+        [fileURLToPath(import.meta.url)],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            FOCUS_RING_FAILURE_STAGE: stage,
+            FOCUS_RING_TEMP_ROOT: testRoot,
+            FOCUS_RING_PID_FILE: stage === 'after-chrome' ? pidFile : '',
+          },
+        },
+      )
+      assert(result.status !== 0, `${stage} cleanup injection did not fail`)
+      if (stage === 'after-chrome') {
+        const chromePid = Number(readFileSync(pidFile, 'utf8'))
+        let chromeAlive = true
+        try {
+          process.kill(chromePid, 0)
+        } catch (error) {
+          if (error.code === 'ESRCH') chromeAlive = false
+          else throw error
+        }
+        unlinkSync(pidFile)
+        assert(!chromeAlive, 'after-chrome cleanup left the browser process alive')
+      }
+      assert(
+        readdirSync(testRoot).length === 0,
+        `${stage} cleanup left a temporary browser profile`,
+      )
+    }
+  } finally {
+    rmSync(testRoot, { recursive: true, force: true })
+  }
+}
+
+if (process.env.FOCUS_RING_FAILURE_STAGE) {
+  await run()
+} else {
+  verifyEarlyFailureCleanup()
+  await run()
+  console.log('PASS edge focus rings stay visible in real browser clipping layouts')
+}

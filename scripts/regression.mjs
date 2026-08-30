@@ -8513,6 +8513,10 @@ await test('button focus and change count tokens meet light-theme contrast thres
   const globalStyles = readFileSync(join(root, 'src/styles/global.css'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
   const leftPaneStyles = readFileSync(join(root, 'src/app/LeftPane.module.css'), 'utf8')
+  const flowStyles = readFileSync(
+    join(root, 'src/features/screen-flow/ScreenFlow.module.css'),
+    'utf8',
+  )
   const changeSetBarStyles = readFileSync(
     join(root, 'src/features/change-review/ChangeSetBar.module.css'),
     'utf8',
@@ -8598,6 +8602,23 @@ await test('button focus and change count tokens meet light-theme contrast thres
   assert(
     /[.]tabActive\s*\{[^}]*border-bottom:\s*2px solid var\(--accent\)/s.test(appStyles),
     'right pane focus perimeter no longer differs in shape from the active underline',
+  )
+  const flowSummaryRule = flowStyles.match(
+    /[.]edge summary:focus-visible\s*\{([^}]*)\}/,
+  )?.[1] ?? ''
+  const flowForcedColorsRule = flowStyles.match(
+    /@media\s*\(forced-colors:\s*active\)[\s\S]*?[.]edge summary:focus-visible\s*\{([^}]*)\}/,
+  )?.[1] ?? ''
+  assert(
+    flowSummaryRule.includes('outline: none') &&
+      flowSummaryRule.includes('box-shadow: inset 0 0 0 3px var(--focus-ring)'),
+    'Screen Flow transition summary does not use the inset focus perimeter',
+  )
+  assert(
+    flowForcedColorsRule.includes('outline: 2px solid Highlight') &&
+      flowForcedColorsRule.includes('outline-offset: -2px') &&
+      flowForcedColorsRule.includes('box-shadow: none'),
+    'Screen Flow transition summary has no internal forced-colors focus perimeter',
   )
 
   const agentChange = globalStyles.match(

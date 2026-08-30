@@ -96,14 +96,17 @@ Viteが表示したURL（通常は <http://localhost:5173>）をChromeで開き�
 # TypeScript buildとproduction bundle
 npm run build
 
-# domain、persistence、store、WebMCPの回帰テスト
+# domain、persistence、store、WebMCP、実browser表示の回帰テスト
 npm run test:regression
 
 # build済みproduction bundleのローカルpreview
 npm run preview
 ```
 
-`npm run preview`を使う場合は、先に`npm run build`を実行してください。
+`npm run preview`と`npm run test:regression`はbuild済みの`dist`を使うため、先に
+`npm run build`を実行してください。回帰テストにはChromeまたはChromiumが必要です。
+標準の場所にない場合は、実行ファイルの絶対pathを`CHROME_PATH`へ設定します。CIも
+同じ順序でbuild後に、固定した`CHROME_PATH`のbrowser versionを確認してから実行します。
 
 ## WebMCPをChromeで確認する
 

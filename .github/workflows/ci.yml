@@ -11,6 +11,8 @@ jobs:
   build-and-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      CHROME_PATH: /usr/bin/google-chrome
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -23,5 +25,9 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Verify Chrome
+        run: |
+          test -x "$CHROME_PATH"
+          "$CHROME_PATH" --version
       - name: Run regression suite
         run: npm run test:regression

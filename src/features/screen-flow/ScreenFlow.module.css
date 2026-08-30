@@ -112,10 +112,22 @@ button.node:hover {
 
 .node:focus-visible,
 .transitionButton:focus-visible,
-.transitionUnavailable:focus-visible,
-.edge summary:focus-visible {
+.transitionUnavailable:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.edge summary:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--focus-ring);
+}
+
+@media (forced-colors: active) {
+  .edge summary:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    box-shadow: none;
+  }
 }
 
 .activeNode {
