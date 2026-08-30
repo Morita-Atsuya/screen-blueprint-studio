@@ -1,7 +1,11 @@
 import { useEffect } from 'react'
 import { getOwnEntity } from '../domain/entityMap'
 import { useAppStore } from './appStore'
-import { resolveEditorShortcut } from './editorShortcuts'
+import {
+  resolveEditorShortcut,
+  resolveHierarchySelectionShortcut,
+  resolveHierarchySelectionTarget,
+} from './editorShortcuts'
 
 export function EditorKeyboardShortcuts() {
   useEffect(() => {
@@ -49,8 +53,57 @@ export function EditorKeyboardShortcuts() {
       )
     }
 
+    function handleHierarchySelection(event: KeyboardEvent) {
+      const shortcut = resolveHierarchySelectionShortcut({
+        key: event.key,
+        code: event.code,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        repeat: event.repeat,
+        isComposing: event.isComposing,
+        keyCode: event.keyCode,
+        target: event.target,
+        dragActive: Boolean(document.querySelector('[data-drag-overlay]')),
+      })
+      if (!shortcut) return
+
+      const state = useAppStore.getState()
+      if (state.recoveryState) return
+      const selectedId = state.ui.selectedComponentId
+      if (!selectedId) return
+      const selected = getOwnEntity(state.effectiveDocument.components, selectedId)
+      if (!selected || selected.screenId !== state.ui.activeScreenId) return
+
+      event.preventDefault()
+      const shortcutScope = (event.target as Element | null)?.closest<HTMLElement>(
+        '[data-hierarchy-shortcut-scope]',
+      )
+      const targetId = resolveHierarchySelectionTarget(
+        state.effectiveDocument,
+        selectedId,
+        shortcut,
+      )
+      if (!targetId) return
+      state.setSelectedComponent(targetId)
+      if (shortcutScope?.dataset.hierarchyShortcutScope === 'inspector') {
+        setTimeout(() => {
+          document
+            .querySelector<HTMLElement>(
+              '[data-hierarchy-shortcut-scope="inspector"] [aria-current="page"]',
+            )
+            ?.focus()
+        })
+      }
+    }
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleHierarchySelection, true)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keydown', handleHierarchySelection, true)
+    }
   }, [])
 
   return null

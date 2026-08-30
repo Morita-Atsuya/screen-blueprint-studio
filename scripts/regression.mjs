@@ -2461,7 +2461,11 @@ await test('human moves join active change sets and screen management reconciles
 })
 
 await test('editor shortcuts ignore form controls and resolve standard keys', async () => {
-  const { resolveEditorShortcut } = await import(moduleUrl(editorShortcutsBundle, 'shortcut-guards'))
+  const {
+    resolveEditorShortcut,
+    resolveHierarchySelectionShortcut,
+    resolveHierarchySelectionTarget,
+  } = await import(moduleUrl(editorShortcutsBundle, 'shortcut-guards'))
   for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) {
     assert(
       resolveEditorShortcut({ key: 'Backspace', target: { tagName } }) === null &&
@@ -2503,6 +2507,139 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
       }) === 'redo' &&
       resolveEditorShortcut({ key: 'y', ctrlKey: true, target: { tagName: 'DIV' } }) === 'redo',
     'standard Mac/Windows redo shortcuts were not resolved',
+  )
+
+  const scopedTarget = {
+    tagName: 'DIV',
+    closest(selector) {
+      return selector === '[data-hierarchy-shortcut-scope]' ? this : null
+    },
+  }
+  const hierarchyShortcut = (overrides = {}) =>
+    resolveHierarchySelectionShortcut({
+      key: '[',
+      code: 'BracketLeft',
+      target: scopedTarget,
+      ...overrides,
+    })
+  assert(
+    hierarchyShortcut() === 'select-parent' &&
+      hierarchyShortcut({ key: ']', code: 'BracketRight' }) === 'select-first-child' &&
+      hierarchyShortcut({ shiftKey: true }) === 'select-previous-sibling' &&
+      hierarchyShortcut({ key: '}', code: 'BracketRight', shiftKey: true }) ===
+        'select-next-sibling' &&
+      hierarchyShortcut({ key: 'x', code: 'KeyX' }) === null,
+    'hierarchy selection bracket shortcuts were not resolved',
+  )
+  for (const guard of [
+    { metaKey: true },
+    { ctrlKey: true },
+    { altKey: true },
+    { repeat: true },
+    { isComposing: true },
+    { keyCode: 229 },
+    { dragActive: true },
+    { target: { tagName: 'INPUT', closest: scopedTarget.closest } },
+    {
+      target: {
+        tagName: 'DIV',
+        isContentEditable: true,
+        closest: scopedTarget.closest,
+      },
+    },
+    { target: { tagName: 'DIV', closest: () => null } },
+  ]) {
+    assert(hierarchyShortcut(guard) === null, 'hierarchy shortcut guard was bypassed')
+  }
+  for (const blockedRole of ['tree', 'dialog', 'menu']) {
+    const target = {
+      tagName: 'BUTTON',
+      closest(selector) {
+        return selector.includes(`[role="${blockedRole}"]`) ||
+          selector === '[data-hierarchy-shortcut-scope]'
+          ? this
+          : null
+      },
+    }
+    assert(
+      hierarchyShortcut({ target }) === null,
+      `${blockedRole} did not block hierarchy shortcuts`,
+    )
+  }
+
+  memoryStorage.clear()
+  const hierarchyStore = await freshStore('hierarchy-selection-shortcuts')
+  const document = hierarchyStore.getState().effectiveDocument
+  assert(
+    resolveHierarchySelectionTarget(document, 'comp-list-active', 'select-parent') ===
+      'comp-list-grid' &&
+      resolveHierarchySelectionTarget(document, 'comp-list-grid', 'select-first-child') ===
+        'comp-list-active' &&
+      resolveHierarchySelectionTarget(document, 'comp-list-active', 'select-next-sibling') ===
+        'comp-list-invited' &&
+      resolveHierarchySelectionTarget(document, 'comp-list-invited', 'select-previous-sibling') ===
+        'comp-list-active',
+    'hierarchy selection did not follow parent childIds order',
+  )
+  assert(
+    resolveHierarchySelectionTarget(document, 'comp-list-page', 'select-parent') === null &&
+      resolveHierarchySelectionTarget(document, 'comp-list-page', 'select-next-sibling') === null &&
+      resolveHierarchySelectionTarget(document, 'comp-list-active', 'select-previous-sibling') ===
+        null,
+    'hierarchy selection crossed a root or sibling boundary',
+  )
+  const documentWithModal = structuredClone(document)
+  documentWithModal.components['comp-shortcut-modal'] = {
+    id: 'comp-shortcut-modal',
+    screenId: 'screen-list',
+    parentId: null,
+    childIds: [],
+    kind: 'modal',
+    common: { description: '', visible: true, enabled: true },
+    config: {
+      kind: 'modal',
+      layout: 'vertical',
+      gap: 'md',
+      columns: 2,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    },
+  }
+  documentWithModal.screens['screen-list'].modalComponentIds.push('comp-shortcut-modal')
+  assert(
+    resolveHierarchySelectionTarget(
+      documentWithModal,
+      'comp-list-page',
+      'select-next-sibling',
+    ) === null &&
+      resolveHierarchySelectionTarget(
+        documentWithModal,
+        'comp-shortcut-modal',
+        'select-previous-sibling',
+      ) === null,
+    'Page and Modal roots were incorrectly treated as siblings',
+  )
+
+  const editorShortcutSource = readFileSync(
+    join(root, 'src/app/EditorKeyboardShortcuts.tsx'),
+    'utf8',
+  )
+  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  assert(
+    editorShortcutSource.includes("document.querySelector('[data-drag-overlay]')") &&
+      editorShortcutSource.includes("addEventListener('keydown', handleHierarchySelection, true)") &&
+    editorShortcutSource.includes(
+      '[data-hierarchy-shortcut-scope="inspector"] [aria-current="page"]',
+    ) &&
+      canvasSource.includes('data-hierarchy-shortcut-scope="canvas"') &&
+      inspectorSource.includes('data-hierarchy-shortcut-scope="inspector"') &&
+      inspectorSource.includes("t('inspector.hierarchyShortcutHint')"),
+    'hierarchy shortcut scope, DnD guard, or discovery UI was not wired',
   )
 })
 

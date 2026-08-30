@@ -78,7 +78,7 @@ export function Inspector() {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-hierarchy-shortcut-scope="inspector">
       <header className={styles.selectionContext}>
         <span className={styles.selectionEyebrow}>{t('inspector.selectedComponent')}</span>
         <h2 className={styles.selectionTitle} title={selectionContext.targetLabel}>
@@ -115,6 +115,13 @@ export function Inspector() {
             })}
           </ol>
         </nav>
+        <p
+          className={styles.hierarchyShortcutHint}
+          aria-label={t('inspector.hierarchyShortcutHint')}
+          title={t('inspector.hierarchyShortcutHint')}
+        >
+          {t('inspector.hierarchyShortcutHint')}
+        </p>
       </header>
       <div className={styles.section}>
         <label className={styles.label}>{t('inspector.description')}</label>

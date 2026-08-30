@@ -73,8 +73,13 @@ export function Canvas() {
   return (
     <div
       className={styles.root}
-      onClick={() => {
+      data-hierarchy-shortcut-scope="canvas"
+      tabIndex={-1}
+      role="region"
+      aria-label={t('canvas.hierarchyShortcutScope')}
+      onClick={event => {
         if (viewport.consumeSuppressedClick()) return
+        event.currentTarget.focus({ preventScroll: true })
         setSelectedComponent(null)
       }}
       onPointerLeave={() => setHoveredComponentId(null)}
@@ -482,6 +487,9 @@ function CanvasComponent({
       onClick={event => {
         event.stopPropagation()
         if (consumeSuppressedClick()) return
+        event.currentTarget
+          .closest<HTMLElement>('[data-hierarchy-shortcut-scope="canvas"]')
+          ?.focus({ preventScroll: true })
         onSelect(component.id)
       }}
       onContextMenu={event => {
