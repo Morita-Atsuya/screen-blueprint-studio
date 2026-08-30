@@ -141,9 +141,10 @@ const configVariants = [
           ...closed,
         },
       },
+      defaultValue: string,
       requestBinding: nullableFieldBindingSchema,
     },
-    required: ['kind', 'fieldKey', 'label', 'required', 'options', 'requestBinding'],
+    required: ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue', 'requestBinding'],
   },
   {
     kind: 'button',

@@ -3214,6 +3214,219 @@ await test('Changes review UI is contextual to active change sets', async () => 
   )
 })
 
+await test('Select state values share one validated effective path', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('select-state-effective')
+  const { effectiveComponent } = await import(moduleUrl(selectorsBundle, 'select-state-effective'))
+  const baseSelect = store.getState().document.components['comp-role-select']
+  const successState = store.getState().document.screenStates['state-edit-success']
+
+  assert(
+    baseSelect.config.kind === 'select' &&
+      baseSelect.config.defaultValue === 'member' &&
+      baseSelect.config.options.some(option => option.value === 'admin'),
+    'sample Select does not define options and a valid default value',
+  )
+  const effectiveSuccessSelect = effectiveComponent(baseSelect, successState)
+  assert(
+    effectiveSuccessSelect.config.kind === 'select' &&
+      effectiveSuccessSelect.config.defaultValue === 'admin' &&
+      baseSelect.config.defaultValue === 'member',
+    'Select override did not produce an immutable effective selected value',
+  )
+
+  const invalidCommands = [
+    {
+      type: 'updateScreenState',
+      stateId: 'state-edit-success',
+      overrides: {
+        ...successState.componentOverrides,
+        'comp-role-select': { value: 'owner' },
+      },
+    },
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-role-select',
+      patch: {
+        config: {
+          options: [{ value: 'member', label: 'Member' }],
+        },
+      },
+    },
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-role-select',
+      patch: { config: { defaultValue: 'owner' } },
+    },
+  ]
+  const initialRevision = store.getState().document.revision
+  for (const command of invalidCommands) {
+    store.getState().dispatch(command, 'Reject invalid Select value')
+    assert(
+      store.getState().document.revision === initialRevision,
+      `invalid Select command changed revision: ${command.type}`,
+    )
+  }
+
+  const savingState = store.getState().document.screenStates['state-edit-saving']
+  store.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: savingState.id,
+    overrides: {
+      ...savingState.componentOverrides,
+      'comp-role-select': { value: 'admin' },
+    },
+  }, 'Set Select state value')
+  store.getState().setActiveState(savingState.id)
+  const effectiveSavingSelect = effectiveComponent(
+    store.getState().document.components['comp-role-select'],
+    store.getState().document.screenStates[savingState.id],
+  )
+  assert(
+    effectiveSavingSelect.config.kind === 'select' &&
+      effectiveSavingSelect.config.defaultValue === 'admin',
+    'valid Select state override was not applied',
+  )
+
+  const reloaded = await freshStore('select-state-effective-reload')
+  const reloadedSelect = effectiveComponent(
+    reloaded.getState().document.components['comp-role-select'],
+    reloaded.getState().document.screenStates[savingState.id],
+  )
+  assert(
+    reloadedSelect.config.kind === 'select' &&
+      reloadedSelect.config.defaultValue === 'admin',
+    'Select state override did not survive reload',
+  )
+
+  reloaded.getState().beginChangeSet('Human Select override')
+  const confirmedSavingValue =
+    reloaded.getState().document.screenStates[savingState.id]
+      .componentOverrides['comp-role-select'].value
+  reloaded.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: savingState.id,
+    overrides: {
+      ...reloaded.getState().effectiveDocument.screenStates[savingState.id].componentOverrides,
+      'comp-role-select': { value: 'member' },
+    },
+  }, 'Edit Select override during review')
+  assert(
+    reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'human' &&
+      reloaded.getState().document.screenStates[savingState.id]
+        .componentOverrides['comp-role-select'].value === confirmedSavingValue &&
+      reloaded.getState().effectiveDocument.screenStates[savingState.id]
+        .componentOverrides['comp-role-select'].value === 'member',
+    'human Select override did not remain inside the active change set',
+  )
+
+  memoryStorage.clear()
+  const persistedStore = await freshStore('select-invalid-persistence-seed')
+  const invalidDocument = clone(persistedStore.getState().document)
+  invalidDocument.screenStates['state-edit-success']
+    .componentOverrides['comp-role-select'].value = 'owner'
+  memoryStorage.setItem(storageKey, JSON.stringify({ document: invalidDocument }))
+  const invalidPersisted = await freshStore('select-invalid-persistence')
+  assert(
+    invalidPersisted.getState().recoveryState !== null,
+    'persisted out-of-options Select override bypassed document validation',
+  )
+
+  memoryStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'select-state-webmcp'))
+  const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const begin = byName('begin_change_set').execute({ summary: 'Select state values' })
+  assert(begin.ok, 'Select WebMCP change set did not begin')
+  const common = {
+    changeSetId: begin.data.changeSetId,
+    expectedRevision: begin.data.baseRevision,
+  }
+  const validResult = byName('upsert_screen_state').execute({
+    ...common,
+    expectedChangeSetVersion: 0,
+    operation: 'update',
+    stateId: 'state-edit-saving',
+    overrides: {
+      'comp-save-btn': { enabled: false },
+      'comp-cancel-btn': { enabled: false },
+      'comp-role-select': { value: 'admin' },
+    },
+  })
+  assert(validResult.ok, `valid Select WebMCP override failed: ${JSON.stringify(validResult)}`)
+  const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
+  const operationCount = pending().operations.length
+
+  const invalidWebMcpInputs = [
+    ['upsert_screen_state', {
+      ...common,
+      expectedChangeSetVersion: 1,
+      operation: 'update',
+      stateId: 'state-edit-saving',
+      overrides: {
+        'comp-role-select': { value: 'owner' },
+      },
+    }],
+    ['update_component_spec', {
+      ...common,
+      expectedChangeSetVersion: 1,
+      componentId: 'comp-role-select',
+      patch: {
+        config: {
+          options: [{ value: 'member', label: 'Member' }],
+        },
+      },
+    }],
+    ['update_component_spec', {
+      ...common,
+      expectedChangeSetVersion: 1,
+      componentId: 'comp-role-select',
+      patch: { config: { defaultValue: 'owner' } },
+    }],
+  ]
+  for (const [toolName, input] of invalidWebMcpInputs) {
+    const result = byName(toolName).execute(input)
+    assert(!result.ok, `${toolName} accepted an invalid Select value`)
+    assert(
+      pending().operations.length === operationCount,
+      `${toolName} added an invalid Select operation`,
+    )
+  }
+  assert(
+    JSON.stringify(byName('change_component_structure').inputSchema).includes('"defaultValue"') &&
+      JSON.stringify(byName('update_component_spec').inputSchema).includes('"defaultValue"'),
+    'WebMCP Select schemas do not expose the required default value',
+  )
+
+  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  const toolsSource = readFileSync(join(root, 'src/webmcp/tools.ts'), 'utf8')
+  assert(
+    canvasSource.includes('value={cfg.defaultValue}') &&
+      !canvasSource.includes('override?.value') &&
+      !canvasSource.includes('stateOverride'),
+    'Canvas still bypasses the effective Select config',
+  )
+  assert(
+    treeSource.includes('effectiveComponent(baseComponent, activeState)') &&
+      toolsSource.includes('effectiveComponent(baseComponent, activeState)'),
+    'Tree or get_component does not use the domain effective-component selector',
+  )
+  assert(
+    inspectorSource.includes('content.options ? (') &&
+      inspectorSource.includes('content.options.map(option =>') &&
+      inspectorSource.includes("override[content.key] === undefined && content.baseValue === ''") &&
+      inspectorSource.includes('disabled={content.options?.length === 0}'),
+    'Inspector Select overrides are not constrained to configured options',
+  )
+})
+
 await test('Recovery actions use light-theme tokens with AA contrast', async () => {
   const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')

@@ -64,6 +64,7 @@ export function createDefaultComponentConfig(
         label: translate(locale, 'defaults.selectLabel'),
         required: false,
         options: [],
+        defaultValue: '',
         requestBinding: null,
       }
     case 'button':

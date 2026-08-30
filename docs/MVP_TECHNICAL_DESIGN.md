@@ -248,6 +248,7 @@ interface SelectConfig {
   label: string;
   required: boolean;
   options: Array<{ value: string; label: string }>;
+  defaultValue: string;
   requestBinding: FieldBinding | null;
 }
 
@@ -311,7 +312,7 @@ interface ComponentOverride {
 }
 ```
 
-`Screen.defaultStateId`が指す状態にはoverrideを持たせず、コンポーネント本体の値を使用する。それ以外の状態では指定された値のみ上書きする。Defaultの識別と保護は名前ではなくID参照で行う。人間はcanvas上部のstate barから任意名の状態を追加・選択・編集・削除でき、選択componentのInspectorでcomponent kindに許可されたoverrideを設定または基本設定へ戻せる。
+`Screen.defaultStateId`が指す状態にはoverrideを持たせず、コンポーネント本体の値を使用する。それ以外の状態では指定された値のみ上書きし、Canvas、Tree、WebMCP readはdomain selectorが返すeffective componentだけを表示へ使用する。Selectの`defaultValue`は空文字またはoptions内の値、状態別`value`はoptions内の値に限定する。options変更で既存のbase値またはoverrideが無効になるcommandは暗黙補正せず拒否する。Defaultの識別と保護は名前ではなくID参照で行う。人間はcanvas上部のstate barから任意名の状態を追加・選択・編集・削除でき、選択componentのInspectorでcomponent kindに許可されたoverrideを設定または基本設定へ戻せる。
 
 ### 5.5 イベント
 
@@ -380,7 +381,7 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 14. container削除は配下のsubtree全体を削除し、依存参照も同一transactionで除去する
 15. projectには常に1画面以上存在する
 16. component configはkindごとの必須field、型、enumだけを持ち、未知fieldを許可しない
-17. state overrideは対象component kindで有効なfieldだけを持ち、値型を検証する
+17. state overrideは対象component kindで有効なfieldだけを持ち、Selectの値を含めて有効範囲を検証する
 18. default stateのcomponent overridesは常に空とする
 19. textInput/selectのrequest bindingは存在する同一screen内componentだけを参照する
 20. component common spec、event trigger/action、API operationは種類ごとの正確なruntime shapeを持ち、未知fieldを持たない

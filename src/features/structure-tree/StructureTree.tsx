@@ -2,11 +2,12 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { Fragment } from 'react'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '../../app/appStore'
-import type { EntityId, ProjectDocument } from '../../domain/model'
+import type { EntityId, ProjectDocument, ScreenState } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
+import { effectiveComponent } from '../../domain/selectors'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
@@ -21,6 +22,9 @@ export function StructureTree() {
 
   const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
   if (!screen) return null
+  const activeState = ui.activeStateId
+    ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
+    : undefined
 
   function move(id: EntityId, direction: -1 | 1) {
     const component = getOwnEntity(effectiveDocument.components, id)
@@ -46,6 +50,7 @@ export function StructureTree() {
         componentId={screen.rootComponentId}
         depth={0}
         document={effectiveDocument}
+        activeState={activeState}
         selectedComponentId={selectedComponentId}
         onSelect={setSelectedComponent}
         onMove={move}
@@ -59,6 +64,7 @@ export function StructureTree() {
           componentId={modalId}
           depth={0}
           document={effectiveDocument}
+          activeState={activeState}
           selectedComponentId={selectedComponentId}
           onSelect={setSelectedComponent}
           onMove={move}
@@ -75,6 +81,7 @@ interface TreeNodeProps {
   componentId: EntityId
   depth: number
   document: ProjectDocument
+  activeState?: ScreenState
   selectedComponentId: EntityId | null
   onSelect(id: EntityId): void
   onMove(id: EntityId, direction: -1 | 1): void
@@ -87,6 +94,7 @@ function TreeNode({
   componentId,
   depth,
   document,
+  activeState,
   selectedComponentId,
   onSelect,
   onMove,
@@ -94,7 +102,10 @@ function TreeNode({
   locale,
   t,
 }: TreeNodeProps) {
-  const component = getOwnEntity(document.components, componentId)
+  const baseComponent = getOwnEntity(document.components, componentId)
+  const component = baseComponent
+    ? effectiveComponent(baseComponent, activeState)
+    : undefined
   const ownerScreen = component
     ? getOwnEntity(document.screens, component.screenId)
     : undefined
@@ -224,6 +235,7 @@ function TreeNode({
                   componentId={childId}
                   depth={depth + 1}
                   document={document}
+                  activeState={activeState}
                   selectedComponentId={selectedComponentId}
                   onSelect={onSelect}
                   onMove={onMove}

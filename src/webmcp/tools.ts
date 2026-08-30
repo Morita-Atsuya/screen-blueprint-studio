@@ -14,6 +14,7 @@ import type {
 import { DomainError } from '../domain/errors'
 import { getOwnEntity } from '../domain/entityMap'
 import { getComponentDisplayLabel } from '../domain/componentDisplayLabel'
+import { effectiveComponent } from '../domain/selectors'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
@@ -311,11 +312,12 @@ const getComponent: ToolDefinition = {
       }
       const componentId = optionalString(input, 'componentId') ?? state.ui.selectedComponentId
       if (!componentId) throw new DomainError('NOT_FOUND', 'No component ID or current selection')
-      const component = getOwnEntity(state.effectiveDocument.components, componentId)
-      if (!component) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
+      const baseComponent = getOwnEntity(state.effectiveDocument.components, componentId)
+      if (!baseComponent) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
       const activeState = state.ui.activeStateId
         ? getOwnEntity(state.effectiveDocument.screenStates, state.ui.activeStateId)
         : undefined
+      const component = effectiveComponent(baseComponent, activeState)
       return {
         component,
         stateOverride: activeState

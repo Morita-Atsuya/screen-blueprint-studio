@@ -405,7 +405,7 @@ export function validateComponentConfig(
     case 'select':
       exactKeys(
         config,
-        ['kind', 'fieldKey', 'label', 'required', 'options', 'requestBinding'],
+        ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue', 'requestBinding'],
         [],
         path,
       )
@@ -413,12 +413,24 @@ export function validateComponentConfig(
       string(config.label, `${path}.label`)
       boolean(config.required, `${path}.required`)
       if (!Array.isArray(config.options)) fail(`${path}.options`, 'must be an array')
+      const optionValues = new Set<string>()
       config.options.forEach((option, index) => {
         const optionRecord = record(option, `${path}.options[${index}]`)
         exactKeys(optionRecord, ['value', 'label'], [], `${path}.options[${index}]`)
         string(optionRecord.value, `${path}.options[${index}].value`)
         string(optionRecord.label, `${path}.options[${index}].label`)
+        if (optionRecord.value.trim().length === 0) {
+          fail(`${path}.options[${index}].value`, 'must not be empty')
+        }
+        if (optionValues.has(optionRecord.value)) {
+          fail(`${path}.options[${index}].value`, 'must be unique')
+        }
+        optionValues.add(optionRecord.value)
       })
+      string(config.defaultValue, `${path}.defaultValue`)
+      if (config.defaultValue !== '' && !optionValues.has(config.defaultValue)) {
+        fail(`${path}.defaultValue`, 'must match a select option or be empty')
+      }
       if (config.requestBinding !== null) {
         validateFieldBinding(config.requestBinding, `${path}.requestBinding`)
       }
@@ -471,5 +483,13 @@ export function validateComponentOverride(
   if (override.enabled !== undefined) boolean(override.enabled, `${path}.enabled`)
   if (override.text !== undefined) string(override.text, `${path}.text`)
   if (override.message !== undefined) string(override.message, `${path}.message`)
-  if (override.value !== undefined) string(override.value, `${path}.value`)
+  if (override.value !== undefined) {
+    string(override.value, `${path}.value`)
+    if (
+      component.config.kind === 'select' &&
+      !component.config.options.some(option => option.value === override.value)
+    ) {
+      fail(`${path}.value`, 'must match a select option')
+    }
+  }
 }

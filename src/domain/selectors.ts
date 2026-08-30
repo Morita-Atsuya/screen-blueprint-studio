@@ -20,7 +20,10 @@ export function applyStateOverride(
   if (override.message !== undefined && newConfig.kind === 'alert') {
     newConfig.message = override.message
   }
-  if (override.value !== undefined && newConfig.kind === 'textInput') {
+  if (override.value !== undefined && (
+    newConfig.kind === 'textInput' ||
+    newConfig.kind === 'select'
+  )) {
     newConfig.defaultValue = override.value
   }
   return { ...comp, common: newCommon, config: newConfig }

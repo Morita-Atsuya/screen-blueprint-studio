@@ -9,7 +9,6 @@ import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '../../app/appStore'
 import type {
-  ComponentOverride,
   ComponentConfig,
   ComponentLayout,
   EntityId,
@@ -279,9 +278,6 @@ function CanvasComponent({
 
   if (!component) return null
   if (!component.common.visible && !independentRoot) return null
-  const stateOverride = base && activeState
-    ? getOwnEntity(activeState.componentOverrides, base.id)
-    : undefined
   const isSelected = selectedComponentId === component.id
   const isHovered = hoveredComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
@@ -359,7 +355,7 @@ function CanvasComponent({
           <span className={styles.componentLabel}>{displayName}</span>
         </div>
       ) : null}
-      <ComponentView comp={component} override={stateOverride} t={t} />
+      <ComponentView comp={component} t={t} />
       {isContainer && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
@@ -436,11 +432,9 @@ function layoutGap(gap: ComponentLayout['gap']): string {
 
 function ComponentView({
   comp,
-  override,
   t,
 }: {
   comp: ScreenComponent
-  override?: ComponentOverride
   t: ReturnType<typeof useI18n>['t']
 }) {
   const cfg = comp.config
@@ -485,7 +479,7 @@ function ComponentView({
           <label className={styles.fieldLabel}>{cfg.label}{cfg.required && <span className={styles.required}>*</span>}</label>
           <select
             disabled
-            value={override?.value ?? ''}
+            value={cfg.defaultValue}
             className={`${styles.fieldInput} ${styles.previewControl}`}
           >
             <option value="">{t('canvas.selectPlaceholder')}</option>

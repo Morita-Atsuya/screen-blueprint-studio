@@ -131,6 +131,18 @@ export function Inspector() {
               onChange={e => updateConfig({ options: parseSelectOptions(e.target.value) })}
             />
           </Field>
+          <Field label={t('inspector.defaultValue')}>
+            <select
+              className={styles.input}
+              value={cfg.defaultValue}
+              onChange={e => updateConfig({ defaultValue: e.target.value })}
+            >
+              <option value="">{t('canvas.selectPlaceholder')}</option>
+              {cfg.options.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
             {t('inspector.required')}
@@ -343,20 +355,41 @@ function StateOverrides({
             <input
               type="checkbox"
               checked={override[content.key] !== undefined}
+              disabled={content.options?.length === 0}
               onChange={event => updateOverride(
                 content.key,
-                event.target.checked ? content.baseValue : undefined,
+                event.target.checked
+                  ? content.options
+                    ? content.baseValue || content.options[0]?.value
+                    : content.baseValue
+                  : undefined,
               )}
             />
             {t('overrides.useValue')}
           </label>
           <Field label={t(content.labelKey)}>
-            <input
-              className={styles.input}
-              disabled={override[content.key] === undefined}
-              value={override[content.key] ?? content.baseValue}
-              onChange={event => updateOverride(content.key, event.target.value)}
-            />
+            {content.options ? (
+              <select
+                className={styles.input}
+                disabled={override[content.key] === undefined}
+                value={override[content.key] ?? content.baseValue}
+                onChange={event => updateOverride(content.key, event.target.value)}
+              >
+                {override[content.key] === undefined && content.baseValue === '' ? (
+                  <option value="">{t('canvas.selectPlaceholder')}</option>
+                ) : null}
+                {content.options.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className={styles.input}
+                disabled={override[content.key] === undefined}
+                value={override[content.key] ?? content.baseValue}
+                onChange={event => updateOverride(content.key, event.target.value)}
+              />
+            )}
           </Field>
         </div>
       ) : null}
@@ -368,6 +401,7 @@ function overrideContent(component: ScreenComponent): {
   key: 'text' | 'message' | 'value'
   labelKey: MessageKey
   baseValue: string
+  options?: Array<{ value: string; label: string }>
 } | null {
   const config = component.config
   if (config.kind === 'text') {
@@ -380,7 +414,12 @@ function overrideContent(component: ScreenComponent): {
     return { key: 'value', labelKey: 'overrides.value', baseValue: config.defaultValue }
   }
   if (config.kind === 'select') {
-    return { key: 'value', labelKey: 'overrides.value', baseValue: '' }
+    return {
+      key: 'value',
+      labelKey: 'overrides.value',
+      baseValue: config.defaultValue,
+      options: config.options,
+    }
   }
   return null
 }

@@ -89,6 +89,7 @@ export type ComponentConfig =
       label: string
       required: boolean
       options: Array<{ value: string; label: string }>
+      defaultValue: string
       requestBinding: FieldBinding | null
     }
   | {
