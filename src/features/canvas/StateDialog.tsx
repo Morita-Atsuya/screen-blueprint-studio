@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
-import type { ScreenState, ScreenStateKind } from '../../domain/model'
+import type { ScreenState } from '../../domain/model'
+import { getOwnEntity } from '../../domain/entityMap'
 import { useI18n } from '../../i18n/I18nProvider'
 import styles from './StateDialog.module.css'
-
-type EditableStateKind = Exclude<ScreenStateKind, 'default'>
 
 interface StateDialogProps {
   mode: 'create' | 'edit'
@@ -16,11 +15,10 @@ interface StateDialogProps {
 
 export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps) {
   const { t } = useI18n()
-  const { dispatch, setActiveState } = useAppStore()
-  const [name, setName] = useState(state?.name ?? '')
-  const [kind, setKind] = useState<EditableStateKind>(
-    state && state.kind !== 'default' ? state.kind : 'loading',
-  )
+  const { dispatch, effectiveDocument, setActiveState } = useAppStore()
+  const screen = getOwnEntity(effectiveDocument.screens, screenId)
+  const isDefault = state?.id === screen?.defaultStateId
+  const [name, setName] = useState(state?.name ?? t('states.newName'))
   const [description, setDescription] = useState(state?.description ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const titleId = `state-dialog-title-${state?.id ?? 'new'}`
@@ -35,16 +33,14 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
         stateId,
         screenId,
         name: name.trim(),
-        kind,
         description,
       }, 'Create screen state')
       setActiveState(stateId)
-    } else if (state && state.kind !== 'default') {
+    } else if (state && !isDefault) {
       dispatch({
         type: 'updateScreenState',
         stateId: state.id,
         name: name.trim(),
-        kind,
         description,
       }, 'Update screen state')
     }
@@ -52,7 +48,7 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
   }
 
   function remove() {
-    if (!state || state.kind === 'default') return
+    if (!state || isDefault) return
     dispatch({ type: 'removeScreenState', stateId: state.id }, 'Delete screen state')
     onClose()
   }
@@ -104,18 +100,6 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
               value={name}
               onChange={event => setName(event.target.value)}
             />
-          </label>
-          <label className={styles.field}>
-            <span>{t('states.kind')}</span>
-            <select
-              value={kind}
-              onChange={event => setKind(event.target.value as EditableStateKind)}
-            >
-              <option value="loading">{t('states.kindLoading')}</option>
-              <option value="success">{t('states.kindSuccess')}</option>
-              <option value="error">{t('states.kindError')}</option>
-              <option value="custom">{t('states.kindCustom')}</option>
-            </select>
           </label>
           <label className={styles.field}>
             <span>{t('states.description')}</span>

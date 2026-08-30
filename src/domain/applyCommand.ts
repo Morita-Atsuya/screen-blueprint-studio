@@ -180,7 +180,6 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         id: defaultStateId,
         screenId,
         name: 'Default',
-        kind: 'default',
         description: '',
         componentOverrides: {},
       })
@@ -368,10 +367,10 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
     case 'createScreenState': {
       requireExactKeys(
         command,
-        ['type', 'stateId', 'screenId', 'name', 'kind', 'description', 'overrides'],
+        ['type', 'stateId', 'screenId', 'name', 'description', 'overrides'],
         'createScreenState command',
       )
-      const { stateId, screenId, name, kind, description, overrides } = command
+      const { stateId, screenId, name, description, overrides } = command
       const screen = getOwnEntity(next.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
       if (hasOwnEntity(next.screenStates, stateId)) {
@@ -381,7 +380,6 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         id: stateId,
         screenId,
         name,
-        kind,
         description: description ?? '',
         componentOverrides: overrides ?? {},
       })
@@ -392,22 +390,22 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
     case 'updateScreenState': {
       requireExactKeys(
         command,
-        ['type', 'stateId', 'name', 'kind', 'description', 'overrides'],
+        ['type', 'stateId', 'name', 'description', 'overrides'],
         'updateScreenState command',
       )
       const state = getOwnEntity(next.screenStates, command.stateId)
       if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
-      if (
-        state.kind === 'default' &&
-        (command.kind !== undefined || command.overrides !== undefined)
-      ) {
+      const owner = getOwnEntity(next.screens, state.screenId)
+      if (!owner) {
+        throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} owner screen not found`)
+      }
+      if (state.id === owner.defaultStateId && command.overrides !== undefined) {
         throw new DomainError(
           'INVARIANT_VIOLATION',
-          'Default state kind and overrides cannot be changed',
+          'Default state overrides cannot be changed',
         )
       }
       if (command.name !== undefined) state.name = command.name
-      if (command.kind !== undefined) state.kind = command.kind
       if (command.description !== undefined) state.description = command.description
       if (command.overrides !== undefined) state.componentOverrides = command.overrides
       break
@@ -417,11 +415,14 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       requireExactKeys(command, ['type', 'stateId'], 'removeScreenState command')
       const state = getOwnEntity(next.screenStates, command.stateId)
       if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
-      if (state.kind === 'default') throw new DomainError('INVARIANT_VIOLATION', 'Cannot remove the default state')
       const screen = getOwnEntity(next.screens, state.screenId)
-      if (screen) {
-        screen.stateIds = screen.stateIds.filter(id => id !== command.stateId)
+      if (!screen) {
+        throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} owner screen not found`)
       }
+      if (state.id === screen.defaultStateId) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Cannot remove the default state')
+      }
+      screen.stateIds = screen.stateIds.filter(id => id !== command.stateId)
       // Cleanup API op success/error state refs
       cleanupStateRefsInApiOps(command.stateId, next)
       // Cleanup setState event actions

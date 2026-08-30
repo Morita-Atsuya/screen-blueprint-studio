@@ -262,8 +262,7 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     }
   }
 
-  // 13. exactly one default state, defaultStateId references it
-  let defaultCount = 0
+  // 13. defaultStateId identifies one listed state
   for (const stateId of screen.stateIds) {
     const state = getOwnEntity(screenStates, stateId)
     if (!state || state.screenId !== screen.id) {
@@ -276,8 +275,7 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     ) {
       throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} componentOverrides must be an object`)
     }
-    if (state.kind === 'default') defaultCount++
-    if (state.kind === 'default' && Object.keys(state.componentOverrides).length > 0) {
+    if (state.id === screen.defaultStateId && Object.keys(state.componentOverrides).length > 0) {
       throw new DomainError('INVARIANT_VIOLATION', `Default state ${state.id} must not contain component overrides`)
     }
     for (const componentId of Object.keys(state.componentOverrides)) {
@@ -292,12 +290,9 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
       )
     }
   }
-  if (defaultCount !== 1) {
-    throw new DomainError('INVARIANT_VIOLATION', `Screen ${screen.id} must have exactly one default state, found ${defaultCount}`)
-  }
   const defaultState = getOwnEntity(screenStates, screen.defaultStateId)
-  if (!defaultState || defaultState.kind !== 'default') {
-    throw new DomainError('INVARIANT_VIOLATION', `defaultStateId ${screen.defaultStateId} must reference a state with kind 'default'`)
+  if (!defaultState || defaultState.screenId !== screen.id) {
+    throw new DomainError('INVARIANT_VIOLATION', `defaultStateId ${screen.defaultStateId} must reference a state on screen ${screen.id}`)
   }
   if (!screen.stateIds.includes(screen.defaultStateId)) {
     throw new DomainError('INVARIANT_VIOLATION', `defaultStateId not in screen.stateIds`)

@@ -13,7 +13,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
-- default、loading、success、error、custom状態と状態別override
+- 自由に命名できる画面状態と状態別override
 - click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
 - API operationと画面項目、成功／失敗状態の関連付け
 - 人間による通常編集、確定操作のUndo
@@ -60,7 +60,7 @@ AIがchange setへ型付きoperationを追加
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
 - Screensタブで画面の追加、選択、名前・route編集、削除
-- canvas上部の`+`から状態を追加し、選択中の非default状態は`⋯`から編集・削除
+- canvas上部の`+`から任意名の状態を追加し、選択中の非default状態は`⋯`から名前・説明を編集または削除
 - 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 

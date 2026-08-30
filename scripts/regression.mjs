@@ -582,9 +582,9 @@ await test('invalid schema, revision, and entity metadata enter recovery state',
   const stateDescription = clone(baseline)
   stateDescription.screenStates['state-list-loading'].description = { invalid: true }
   poisonedDocuments.push(stateDescription)
-  const stateKind = clone(baseline)
-  stateKind.screenStates['state-list-loading'].kind = 'pending'
-  poisonedDocuments.push(stateKind)
+  const legacyStateKind = clone(baseline)
+  legacyStateKind.screenStates['state-list-loading'].kind = 'loading'
+  poisonedDocuments.push(legacyStateKind)
   const dangerousMapKey = clone(baseline)
   Object.defineProperty(dangerousMapKey.components, '__proto__', {
     configurable: true,
@@ -913,6 +913,13 @@ await test('event actions and API bindings reject cross-screen references', asyn
         type: 'updateComponentSpec',
         componentId: 'comp-list-heading',
         patch: { name: { invalid: true } },
+      },
+      {
+        type: 'createScreenState',
+        stateId: 'invalid-state',
+        screenId: 'screen-list',
+        name: 'Invalid',
+        kind: 'loading',
       },
     ]
     for (const command of invalidCommands) {
@@ -1259,7 +1266,6 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'create',
       screenId: 'screen-list',
       name: 'Bad override',
-      kind: 'success',
       overrides: {
         'comp-list-heading': { value: 'not valid for a heading' },
       },
@@ -1269,10 +1275,16 @@ await test('ten tools register and invalid writes fail without adding operations
       operation: 'create',
       screenId: 'screen-list',
       name: 'Object override',
-      kind: 'success',
       overrides: {
         'comp-list-heading': { text: { evil: 1 } },
       },
+    }],
+    ['upsert_screen_state', {
+      ...common,
+      operation: 'create',
+      screenId: 'screen-list',
+      name: 'Obsolete payload',
+      kind: 'obsolete',
     }],
     ['upsert_screen_state', {
       ...common,
@@ -1400,6 +1412,13 @@ await test('representative screen/component/state/event/API writes reach the cha
       Object.keys(context.data.project).sort().join(',') === 'id,name,screenIds',
     'screen context project metadata has an unexpected shape',
   )
+  const stateSchema = byName('upsert_screen_state').inputSchema
+  assert(
+    stateSchema.oneOf[0].properties.kind === undefined &&
+      stateSchema.oneOf[1].properties.kind === undefined &&
+      !stateSchema.oneOf[0].required.includes('kind'),
+    'WebMCP state schema still exposes a state kind',
+  )
 
   execute('change_screen_structure', { operation: 'add', name: 'Agent screen', route: '/agent' })
   const addedScreenId = latestCommand().screenId
@@ -1456,13 +1475,12 @@ await test('representative screen/component/state/event/API writes reach the cha
     operation: 'create',
     screenId: 'screen-list',
     name: 'Agent state',
-    kind: 'success',
   })
   const addedStateId = latestCommand().stateId
   execute('upsert_screen_state', {
     operation: 'update',
     stateId: addedStateId,
-    kind: 'error',
+    name: 'Agent error state',
     description: 'Updated',
     overrides: {
       'comp-list-heading': { text: 'Could not load users.' },
@@ -1674,7 +1692,6 @@ await test('human moves join active change sets and screen management reconciles
       stateId: 'state-human-error',
       screenId: 'screen-list',
       name: 'Request failed',
-      kind: 'error',
       description: 'Created in the human UI',
     }, 'Create state')
     store.getState().setActiveState('state-human-error')
@@ -1688,7 +1705,6 @@ await test('human moves join active change sets and screen management reconciles
       type: 'updateScreenState',
       stateId: 'state-human-error',
       name: 'Request complete',
-      kind: 'success',
       description: 'Updated in the human UI',
       overrides: {
         'comp-list-heading': {
@@ -1700,7 +1716,8 @@ await test('human moves join active change sets and screen management reconciles
     }, 'Update state')
     const updated = store.getState().document.screenStates['state-human-error']
     assert(
-      updated.kind === 'success' &&
+      updated.name === 'Request complete' &&
+        updated.description === 'Updated in the human UI' &&
         updated.componentOverrides['comp-list-heading'].text === 'Users loaded.',
       'state metadata or overrides were not updated',
     )
@@ -1758,12 +1775,17 @@ await test('human moves join active change sets and screen management reconciles
     store.getState().dispatch({
       type: 'updateScreenState',
       stateId: 'state-list-default',
-      kind: 'custom',
+      overrides: { 'comp-list-heading': { text: 'Not allowed' } },
     }, 'Invalid default state edit')
+    store.getState().dispatch({
+      type: 'removeScreenState',
+      stateId: 'state-list-default',
+    }, 'Invalid default state delete')
     assert(
       store.getState().document.revision === beforeDefaultEdit &&
-        store.getState().document.screenStates['state-list-default'].kind === 'default',
-      'default state kind was changed',
+        store.getState().document.screenStates['state-list-default'] !== undefined &&
+        store.getState().document.screens['screen-list'].defaultStateId === 'state-list-default',
+      'default state was modified or deleted',
     )
 
     const reloaded = await freshStore('human-state-editing-reload')

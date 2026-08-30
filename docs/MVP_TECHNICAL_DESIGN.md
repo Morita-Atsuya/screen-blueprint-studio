@@ -289,16 +289,13 @@ type ValidationRule =
 
 ### 5.4 画面状態
 
-状態は画面全体の名前と、必要なコンポーネント差分だけを持つ。
+状態は自由な名前と説明、必要なコンポーネント差分だけを持つ。状態名は予約語やenumではなく、用途を人間とエージェントが共有する表示値である。
 
 ```ts
-type ScreenStateKind = "default" | "loading" | "success" | "error" | "custom";
-
 interface ScreenState {
   id: EntityId;
   screenId: EntityId;
   name: string;
-  kind: ScreenStateKind;
   description: string;
   componentOverrides: Record<EntityId, ComponentOverride>;
 }
@@ -312,7 +309,7 @@ interface ComponentOverride {
 }
 ```
 
-default状態にはoverrideを持たせず、コンポーネント本体の値を使用する。default以外では指定された値のみ上書きする。人間はcanvas上部のstate barから非default状態を追加・選択・編集・削除でき、選択componentのInspectorでkindに許可されたoverrideを設定または基本設定へ戻せる。
+`Screen.defaultStateId`が指す状態にはoverrideを持たせず、コンポーネント本体の値を使用する。それ以外の状態では指定された値のみ上書きする。Defaultの識別と保護は名前ではなくID参照で行う。人間はcanvas上部のstate barから任意名の状態を追加・選択・編集・削除でき、選択componentのInspectorでcomponent kindに許可されたoverrideを設定または基本設定へ戻せる。
 
 ### 5.5 イベント
 
@@ -376,7 +373,7 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 9. containerが受け入れ可能なkindだけを子に持つ
 10. `fieldKey`はscreen内で一意
 11. component、state、event、APIの参照先が存在する。`navigate`だけは別screenを参照できる
-12. default stateは1つだけで、`defaultStateId`がそのstateを参照し、`stateIds`にも含まれる
+12. `defaultStateId`が同じscreenのstateを参照し、`stateIds`にも含まれる
 13. 削除対象を参照するstate override、event、bindingも同一transactionで除去する
 14. container削除は配下のsubtree全体を削除し、依存参照も同一transactionで除去する
 15. projectには常に1画面以上存在する

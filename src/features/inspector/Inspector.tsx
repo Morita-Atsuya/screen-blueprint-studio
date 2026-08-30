@@ -29,6 +29,7 @@ export function Inspector() {
   const activeState = ui.activeStateId
     ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
     : undefined
+  const screen = getOwnEntity(effectiveDocument.screens, comp.screenId)
 
   const cfg = comp.config
 
@@ -198,7 +199,7 @@ export function Inspector() {
         cfg.kind === 'modal') && (
         <LayoutFields layout={cfg} onUpdate={updateConfig} />
       )}
-      {activeState && activeState.kind !== 'default' ? (
+      {activeState && activeState.id !== screen?.defaultStateId ? (
         <>
           <hr className={styles.divider} />
           <StateOverrides component={comp} state={activeState} />

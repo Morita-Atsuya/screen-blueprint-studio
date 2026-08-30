@@ -121,11 +121,6 @@ export interface ScreenComponent {
   config: ComponentConfig
 }
 
-// ============================================================
-// Screen state
-// ============================================================
-export type ScreenStateKind = 'default' | 'loading' | 'success' | 'error' | 'custom'
-
 export interface ComponentOverride {
   visible?: boolean
   enabled?: boolean
@@ -138,7 +133,6 @@ export interface ScreenState {
   id: EntityId
   screenId: EntityId
   name: string
-  kind: ScreenStateKind
   description: string
   componentOverrides: Record<EntityId, ComponentOverride>
 }

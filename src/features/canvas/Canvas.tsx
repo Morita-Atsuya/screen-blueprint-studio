@@ -59,7 +59,7 @@ export function Canvas() {
                 className={`${styles.stateBtn} ${activeStateId === stateId ? styles.stateBtnActive : ''}`}
                 onClick={event => { event.stopPropagation(); setActiveState(stateId) }}
                 aria-pressed={activeStateId === stateId}
-                title={state.kind === 'default' ? t('states.defaultLocked') : undefined}
+                title={state.id === screen.defaultStateId ? t('states.defaultLocked') : undefined}
               >
                 {state.name}
               </button>
@@ -67,7 +67,7 @@ export function Canvas() {
           })}
         </div>
         <div className={styles.stateActions}>
-          {activeState && activeState.kind !== 'default' ? (
+          {activeState && activeState.id !== screen.defaultStateId ? (
             <button
               type="button"
               className={styles.stateIconBtn}

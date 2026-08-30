@@ -154,14 +154,13 @@ export function validateScreenState(
   const state = record(value, path)
   exactKeys(
     state,
-    ['id', 'screenId', 'name', 'kind', 'description', 'componentOverrides'],
+    ['id', 'screenId', 'name', 'description', 'componentOverrides'],
     [],
     path,
   )
   entityId(state.id, `${path}.id`)
   entityId(state.screenId, `${path}.screenId`)
   string(state.name, `${path}.name`)
-  enumValue(state.kind, ['default', 'loading', 'success', 'error', 'custom'], `${path}.kind`)
   string(state.description, `${path}.description`)
   record(state.componentOverrides, `${path}.componentOverrides`)
 }

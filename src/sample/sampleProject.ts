@@ -227,7 +227,6 @@ export const sampleProject: ProjectDocument = {
       id: 'state-list-default',
       screenId: 'screen-list',
       name: 'Default',
-      kind: 'default',
       description: '',
       componentOverrides: {},
     },
@@ -235,7 +234,6 @@ export const sampleProject: ProjectDocument = {
       id: 'state-list-loading',
       screenId: 'screen-list',
       name: 'Loading',
-      kind: 'loading',
       description: 'Loading the user list',
       componentOverrides: {
         'comp-list-heading': { text: 'Loading users...', enabled: false },
@@ -245,7 +243,6 @@ export const sampleProject: ProjectDocument = {
       id: 'state-edit-default',
       screenId: 'screen-edit',
       name: 'Default',
-      kind: 'default',
       description: '',
       componentOverrides: {},
     },
@@ -253,7 +250,6 @@ export const sampleProject: ProjectDocument = {
       id: 'state-edit-saving',
       screenId: 'screen-edit',
       name: 'Saving',
-      kind: 'loading',
       description: 'Sending data to the API',
       componentOverrides: {
         'comp-save-btn': { enabled: false },
@@ -264,7 +260,6 @@ export const sampleProject: ProjectDocument = {
       id: 'state-edit-success',
       screenId: 'screen-edit',
       name: 'Success',
-      kind: 'success',
       description: 'The user was saved',
       componentOverrides: {
         'comp-status-alert': { visible: true, message: 'User saved successfully.' },
@@ -275,7 +270,6 @@ export const sampleProject: ProjectDocument = {
       id: 'state-edit-error',
       screenId: 'screen-edit',
       name: 'Error',
-      kind: 'error',
       description: 'The save request failed',
       componentOverrides: {
         'comp-status-alert': { visible: true, message: 'Could not save the user.' },

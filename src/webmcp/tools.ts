@@ -670,7 +670,7 @@ const updateComponentSpec: ToolDefinition = {
 
 const upsertScreenState: ToolDefinition = {
   name: 'upsert_screen_state',
-  description: 'Create, update, or remove a non-default screen state.',
+  description: 'Create, update, or remove a named screen state.',
   inputSchema: {
     oneOf: [
       {
@@ -680,11 +680,10 @@ const upsertScreenState: ToolDefinition = {
           operation: { const: 'create' },
           screenId: { type: 'string', minLength: 1 },
           name: { type: 'string', minLength: 1 },
-          kind: { type: 'string', enum: ['loading', 'success', 'error', 'custom'] },
           description: { type: 'string' },
           overrides: componentOverridesSchema,
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'name', 'kind'],
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'name'],
         ...CLOSED_OBJECT,
       },
       {
@@ -694,7 +693,6 @@ const upsertScreenState: ToolDefinition = {
           operation: { const: 'update' },
           stateId: { type: 'string', minLength: 1 },
           name: { type: 'string' },
-          kind: { type: 'string', enum: ['loading', 'success', 'error', 'custom'] },
           description: { type: 'string' },
           overrides: componentOverridesSchema,
         },
@@ -725,7 +723,6 @@ const upsertScreenState: ToolDefinition = {
             'operation',
             'screenId',
             'name',
-            'kind',
             'description',
             'overrides',
           ],
@@ -736,7 +733,6 @@ const upsertScreenState: ToolDefinition = {
           stateId: nanoid(),
           screenId: requiredString(input, 'screenId'),
           name: requiredString(input, 'name'),
-          kind: requiredString(input, 'kind') as 'loading' | 'success' | 'error' | 'custom',
           description: optionalString(input, 'description'),
           overrides: isRecord(input.overrides)
             ? input.overrides as Record<string, ComponentOverride>
@@ -750,7 +746,6 @@ const upsertScreenState: ToolDefinition = {
             'operation',
             'stateId',
             'name',
-            'kind',
             'description',
             'overrides',
           ],
@@ -760,12 +755,6 @@ const upsertScreenState: ToolDefinition = {
           type: 'updateScreenState',
           stateId: requiredString(input, 'stateId'),
           name: optionalString(input, 'name'),
-          kind: optionalString(input, 'kind') as
-            | 'loading'
-            | 'success'
-            | 'error'
-            | 'custom'
-            | undefined,
           description: optionalString(input, 'description'),
           overrides: isRecord(input.overrides)
             ? input.overrides as Record<string, ComponentOverride>
