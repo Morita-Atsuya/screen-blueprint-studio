@@ -45,6 +45,10 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.componentDeleteButton {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
+}
 .breadcrumb {
   min-width: 0;
   margin-top: 7px;
@@ -113,12 +117,91 @@
   white-space: nowrap;
 }
 .section { margin-bottom: 8px; }
-.baseSettings {
+.inspectorSection {
   min-width: 0;
-  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-surface);
+  overflow: clip;
+}
+.inspectorSectionHeading {
+  margin: 0;
+}
+.inspectorSectionToggle {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.inspectorSectionToggle:hover {
+  background: var(--bg-hover);
+}
+.inspectorSectionToggle:focus-visible {
+  position: relative;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.inspectorSectionChevron {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  transform: rotate(0);
+  transition: transform 120ms ease;
+}
+.inspectorSectionChevronCollapsed {
+  transform: rotate(-90deg);
+}
+.inspectorSectionTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspectorSectionBadges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px;
+}
+.inspectorSectionBadge {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-weight: 750;
+  line-height: 1.35;
+  text-align: center;
+}
+.inspectorSectionBadgeAttention {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-surface));
+  color: var(--danger);
+}
+.inspectorSectionBadgeAgent {
+  border-color: var(--agent-change-border);
+  background: var(--agent-change);
+  color: var(--agent-accent);
+}
+.inspectorSectionBody {
+  min-width: 0;
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+.inspectorSectionBody[hidden] {
+  display: none;
 }
 .settingsHeading {
   margin-bottom: 10px;
@@ -142,19 +225,11 @@
 .checkLabel { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
 .divider { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
 .layoutSection {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.layoutSection h3 {
-  margin-bottom: 10px;
-  color: var(--text);
-  font-size: 0.82rem;
+  min-width: 0;
 }
 .overrideSection {
   min-width: 0;
-  margin-top: 10px;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid var(--agent-change-border);
   border-radius: 8px;
   background: var(--agent-change);
@@ -171,14 +246,12 @@
   margin-bottom: 6px;
 }
 .overrideHeading > div { min-width: 0; }
-.overrideHeading h3 { color: var(--agent-accent); font-size: 0.82rem; }
 .overrideHeading span {
   display: block;
   color: var(--text-faint);
   font-size: 0.72rem;
   overflow-wrap: anywhere;
 }
-.inactiveOverrideSection .overrideHeading h3 { color: var(--text); }
 .overrideValue { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
 .resetAllOverrides,
 .resetFieldOverride {
@@ -249,20 +322,22 @@
 .resetFieldOverride {
   margin-top: 6px;
 }
-.behaviorSection {
+.behaviorDetails,
+.validationDetails {
   min-width: 0;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.behaviorSection > h3 {
-  margin-bottom: 12px;
-  color: var(--text);
-  font-size: 0.82rem;
+  outline: none;
 }
 .behaviorGroup {
   min-width: 0;
-  margin-top: 12px;
+  margin-top: 10px;
+}
+.behaviorGroup:first-child {
+  margin-top: 0;
+}
+.validationActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 7px;
 }
 .behaviorGroup h4 {
   color: var(--text-muted);
@@ -295,6 +370,11 @@
 .behaviorEdit:hover {
   border-color: var(--accent);
   color: var(--accent-hover);
+}
+.behaviorAdd:focus-visible,
+.behaviorEdit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .behaviorCards {
   display: flex;

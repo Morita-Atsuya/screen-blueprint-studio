@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
 import { getOwnEntity } from '../../domain/entityMap'
@@ -17,7 +18,7 @@ import {
   getEventEditorContext,
   getValidationRulesEditorContext,
 } from '../../domain/componentBehavior'
-import { BehaviorDetails } from './BehaviorDetails'
+import { BehaviorDetails, ValidationDetails } from './BehaviorDetails'
 import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
 import { ChangeOperationList } from '../change-review/ChangeOperationList'
 import {
@@ -29,6 +30,17 @@ import {
   createResetComponentOverrideCommand,
   createSetComponentOverrideFieldCommand,
 } from '../../domain/stateOverrides'
+import { InspectorSection } from './InspectorSection'
+import type { InspectorSectionBadge } from './InspectorSection'
+import {
+  componentHasContentSection,
+  componentHasLayoutSection,
+  countOverrideFields,
+  defaultInspectorSectionOpen,
+  inspectorSectionChangeCounts,
+  inspectorSectionPreferenceKey,
+} from './inspectorSections'
+import type { InspectorSectionId } from './inspectorSections'
 
 export function Inspector() {
   const { locale, t } = useI18n()
@@ -42,7 +54,15 @@ export function Inspector() {
     componentClipboard,
     activeChangeSet,
     setSelectedComponent,
+    requestHumanDelete,
   } = useAppStore()
+  const [sectionPreferences, setSectionPreferences] = useState<Record<string, boolean>>({})
+  const [validationErrorCounts, setValidationErrorCounts] = useState<Record<string, number>>({})
+  const handleValidationErrorCount = useCallback((componentId: string, count: number) => {
+    setValidationErrorCounts(current =>
+      current[componentId] === count ? current : { ...current, [componentId]: count },
+    )
+  }, [])
   const { selectedComponentId, rightPanelTab } = ui
 
   if (rightPanelTab === 'changes' && activeChangeSet) {
@@ -74,6 +94,105 @@ export function Inspector() {
   const validationEditor = getValidationRulesEditorContext(effectiveDocument, comp.id, locale)
   const canCopy = canDuplicateComponent(effectiveDocument, comp.id)
   const canPaste = canPasteComponent(effectiveDocument, componentClipboard, comp.id)
+  const canDelete = screen?.rootComponentId !== comp.id
+  const hasContent = componentHasContentSection(cfg.kind)
+  const hasBehaviorSection = Boolean(
+    behavior &&
+    eventEditor &&
+    apiEditor &&
+    (behavior.events.length > 0 ||
+      eventEditor.supportsEventCreation ||
+      apiEditor.supportsApiEditing),
+  )
+  const hasBehaviorData = Boolean(
+    behavior && apiEditor &&
+    (behavior.events.length > 0 ||
+      behavior.apiBindings.length > 0 ||
+      apiEditor.operations.length > 0),
+  )
+  const validationRuleCount = behavior?.validationRules.length ?? 0
+  const selectedOverride = activeState?.componentOverrides[comp.id]
+  const overrideFieldCount = countOverrideFields(selectedOverride)
+  const sectionSignals = {
+    hasBehavior: hasBehaviorData,
+    validationRuleCount,
+    overrideFieldCount,
+  }
+  const sectionChanges = inspectorSectionChangeCounts(
+    activeChangeSet?.baseDocument ?? null,
+    effectiveDocument,
+    comp.id,
+    activeState?.id ?? null,
+  )
+  const validationErrorCount = validationErrorCounts[comp.id] ?? 0
+
+  function sectionExpanded(sectionId: InspectorSectionId): boolean {
+    return sectionPreferences[
+      inspectorSectionPreferenceKey(cfg.kind, sectionId)
+    ] ?? defaultInspectorSectionOpen(sectionId, sectionSignals)
+  }
+
+  function toggleSection(sectionId: InspectorSectionId) {
+    const preferenceKey = inspectorSectionPreferenceKey(cfg.kind, sectionId)
+    setSectionPreferences(current => ({
+      ...current,
+      [preferenceKey]: !(current[preferenceKey] ??
+        defaultInspectorSectionOpen(sectionId, sectionSignals)),
+    }))
+  }
+
+  function sectionBadges(
+    sectionId: InspectorSectionId,
+    count = 0,
+  ): InspectorSectionBadge[] {
+    const badges: InspectorSectionBadge[] = []
+    if (count > 0) {
+      const countKey = sectionId === 'behavior'
+        ? count === 1
+          ? 'inspector.sectionBehaviorCountOne'
+          : 'inspector.sectionBehaviorCountMany'
+        : sectionId === 'validation'
+          ? count === 1
+            ? 'inspector.sectionValidationCountOne'
+            : 'inspector.sectionValidationCountMany'
+          : sectionId === 'stateOverrides'
+            ? count === 1
+              ? 'inspector.sectionOverrideCountOne'
+              : 'inspector.sectionOverrideCountMany'
+            : count === 1
+              ? 'inspector.sectionItemCountOne'
+              : 'inspector.sectionItemCountMany'
+      badges.push({
+        text: String(count),
+        label: t(countKey, { count }),
+      })
+    }
+    if (sectionId === 'validation' && validationErrorCount > 0) {
+      badges.push({
+        text: `! ${validationErrorCount}`,
+        label: t(
+          validationErrorCount === 1
+            ? 'inspector.sectionValidationErrorOne'
+            : 'inspector.sectionValidationErrorMany',
+          { count: validationErrorCount },
+        ),
+        tone: 'attention',
+      })
+    }
+    if (sectionChanges[sectionId] > 0) {
+      badges.push({
+        text: 'AI',
+        label: t(
+          sectionChanges[sectionId] === 1
+            ? 'inspector.sectionAiChangeOne'
+            : 'inspector.sectionAiChangeMany',
+          { count: sectionChanges[sectionId] },
+        ),
+        tone: 'agent',
+      })
+    }
+    return badges
+  }
 
   function updateConfig(partial: Record<string, unknown>, field = 'settings'): boolean {
     return dispatch(
@@ -99,7 +218,56 @@ export function Inspector() {
         <h2 className={styles.selectionTitle} title={selectionContext.targetLabel}>
           {selectionContext.targetLabel}
         </h2>
-        {canCopy || canPaste ? (
+        <nav className={styles.breadcrumb} aria-label={t('inspector.breadcrumbLabel')}>
+          <ol className={styles.breadcrumbList}>
+            <li className={`${styles.breadcrumbItem} ${styles.screenBreadcrumb}`}>
+              <span title={selectionContext.screenName}>
+                {t('inspector.screenContext', { name: selectionContext.screenName })}
+              </span>
+            </li>
+            {selectionContext.hierarchy.map((item, index) => {
+              const isCurrent = index === selectionContext.hierarchy.length - 1
+              return (
+                <li className={styles.breadcrumbItem} key={item.componentId}>
+                  <button
+                    type="button"
+                    className={`${styles.breadcrumbButton} ${isCurrent ? styles.currentBreadcrumb : ''}`}
+                    aria-current={isCurrent ? 'page' : undefined}
+                    aria-label={t(
+                      isCurrent
+                        ? 'inspector.currentHierarchyComponent'
+                        : 'inspector.selectHierarchyComponent',
+                      { label: item.label },
+                    )}
+                    title={item.label}
+                    onClick={() => setSelectedComponent(item.componentId)}
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
+        <p
+          className={styles.hierarchyShortcutHint}
+          aria-label={t('inspector.hierarchyShortcutHint')}
+          title={t('inspector.hierarchyShortcutHint')}
+        >
+          {t('inspector.hierarchyShortcutHint')}
+        </p>
+      </header>
+      <InspectorSection
+        sectionId="basic"
+        title={t('inspector.sectionBasic')}
+        expanded={sectionExpanded('basic')}
+        badges={sectionBadges('basic')}
+        onToggle={() => toggleSection('basic')}
+      >
+        <div className={styles.settingsHeading} data-base-settings>
+          <p>{t('inspector.baseSettingsDescription')}</p>
+        </div>
+        {canCopy || canPaste || canDelete ? (
           <div className={styles.componentActions}>
             {canCopy ? (
               <>
@@ -143,81 +311,55 @@ export function Inspector() {
                 {t('inspector.paste')}
               </button>
             ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                className={`${styles.componentActionButton} ${styles.componentDeleteButton}`}
+                title={t('inspector.deleteTitle')}
+                aria-label={t('inspector.deleteTitle')}
+                data-component-delete-inspector
+                onClick={() => requestHumanDelete(
+                  { type: 'removeComponent', componentId: comp.id },
+                  'Delete component',
+                )}
+              >
+                {t('inspector.delete')}
+              </button>
+            ) : null}
           </div>
         ) : null}
-        <nav className={styles.breadcrumb} aria-label={t('inspector.breadcrumbLabel')}>
-          <ol className={styles.breadcrumbList}>
-            <li className={`${styles.breadcrumbItem} ${styles.screenBreadcrumb}`}>
-              <span title={selectionContext.screenName}>
-                {t('inspector.screenContext', { name: selectionContext.screenName })}
-              </span>
-            </li>
-            {selectionContext.hierarchy.map((item, index) => {
-              const isCurrent = index === selectionContext.hierarchy.length - 1
-              return (
-                <li className={styles.breadcrumbItem} key={item.componentId}>
-                  <button
-                    type="button"
-                    className={`${styles.breadcrumbButton} ${isCurrent ? styles.currentBreadcrumb : ''}`}
-                    aria-current={isCurrent ? 'page' : undefined}
-                    aria-label={t(
-                      isCurrent
-                        ? 'inspector.currentHierarchyComponent'
-                        : 'inspector.selectHierarchyComponent',
-                      { label: item.label },
-                    )}
-                    title={item.label}
-                    onClick={() => setSelectedComponent(item.componentId)}
-                  >
-                    {item.label}
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-        </nav>
-        <p
-          className={styles.hierarchyShortcutHint}
-          aria-label={t('inspector.hierarchyShortcutHint')}
-          title={t('inspector.hierarchyShortcutHint')}
-        >
-          {t('inspector.hierarchyShortcutHint')}
-        </p>
-      </header>
-      <section
-        className={styles.baseSettings}
-        aria-labelledby={`base-settings-${comp.id}`}
-        data-base-settings
-      >
-        <div className={styles.settingsHeading}>
-          <h3 id={`base-settings-${comp.id}`}>{t('inspector.baseSettings')}</h3>
-          <p>{t('inspector.baseSettingsDescription')}</p>
+        <div className={styles.section}>
+          <label className={styles.label}>{t('inspector.description')}</label>
+          <DraftTextField
+            key={`${comp.id}:description`}
+            draftId={`component:${comp.id}:common.description`}
+            ariaLabel={t('inspector.description')}
+            className={styles.textarea}
+            value={comp.common.description}
+            onCommit={description => updateCommon({ description }, 'description')}
+            multiline
+            rows={2}
+          />
         </div>
-      <div className={styles.section}>
-        <label className={styles.label}>{t('inspector.description')}</label>
-        <DraftTextField
-          key={`${comp.id}:description`}
-          draftId={`component:${comp.id}:common.description`}
-          ariaLabel={t('inspector.description')}
-          className={styles.textarea}
-          value={comp.common.description}
-          onCommit={description => updateCommon({ description }, 'description')}
-          multiline
-          rows={2}
-        />
-      </div>
-      <div className={styles.row}>
-        <label className={styles.checkLabel}>
-          <input type="checkbox" checked={comp.common.visible} onChange={e => updateCommon({ visible: e.target.checked })} />
-          {t('inspector.visible')}
-        </label>
-        <label className={styles.checkLabel}>
-          <input type="checkbox" checked={comp.common.enabled} onChange={e => updateCommon({ enabled: e.target.checked })} />
-          {t('inspector.enabled')}
-        </label>
-      </div>
-      <hr className={styles.divider} />
-      {/* Kind-specific fields */}
+        <div className={styles.row}>
+          <label className={styles.checkLabel}>
+            <input type="checkbox" checked={comp.common.visible} onChange={e => updateCommon({ visible: e.target.checked })} />
+            {t('inspector.visible')}
+          </label>
+          <label className={styles.checkLabel}>
+            <input type="checkbox" checked={comp.common.enabled} onChange={e => updateCommon({ enabled: e.target.checked })} />
+            {t('inspector.enabled')}
+          </label>
+        </div>
+      </InspectorSection>
+      {hasContent ? (
+        <InspectorSection
+          sectionId="content"
+          title={t('inspector.sectionContent')}
+          expanded={sectionExpanded('content')}
+          badges={sectionBadges('content')}
+          onToggle={() => toggleSection('content')}
+        >
       {cfg.kind === 'text' && (
         <>
           <Field label={t('inspector.text')}>
@@ -412,27 +554,70 @@ export function Inspector() {
           </Field>
         </>
       )}
-      {(cfg.kind === 'page' ||
+        </InspectorSection>
+      ) : null}
+      {componentHasLayoutSection(cfg.kind) && (cfg.kind === 'page' ||
         cfg.kind === 'section' ||
         cfg.kind === 'container' ||
-        cfg.kind === 'modal') && (
-        <LayoutFields layout={cfg} onUpdate={updateConfig} />
-      )}
-      </section>
-      <StateOverrides
-        component={comp}
-        state={activeState}
-        defaultStateId={screen?.defaultStateId ?? null}
-      />
-      {behavior && eventEditor && apiEditor && validationEditor ? (
-        <BehaviorDetails
-          key={comp.id}
-          behavior={behavior}
-          eventEditor={eventEditor}
-          apiEditor={apiEditor}
-          validationEditor={validationEditor}
-        />
+        cfg.kind === 'modal') ? (
+        <InspectorSection
+          sectionId="layout"
+          title={t('inspector.sectionLayout')}
+          expanded={sectionExpanded('layout')}
+          badges={sectionBadges('layout')}
+          onToggle={() => toggleSection('layout')}
+        >
+          <LayoutFields layout={cfg} onUpdate={updateConfig} />
+        </InspectorSection>
       ) : null}
+      {hasBehaviorSection && behavior && eventEditor && apiEditor ? (
+        <InspectorSection
+          sectionId="behavior"
+          title={t('inspector.sectionBehavior')}
+          expanded={sectionExpanded('behavior')}
+          badges={sectionBadges(
+            'behavior',
+            behavior.events.length + apiEditor.operations.length,
+          )}
+          onToggle={() => toggleSection('behavior')}
+        >
+          <BehaviorDetails
+            key={comp.id}
+            behavior={behavior}
+            eventEditor={eventEditor}
+            apiEditor={apiEditor}
+          />
+        </InspectorSection>
+      ) : null}
+      {behavior && validationEditor?.supportsValidationEditing ? (
+        <InspectorSection
+          sectionId="validation"
+          title={t('inspector.sectionValidation')}
+          expanded={sectionExpanded('validation')}
+          badges={sectionBadges('validation', validationRuleCount)}
+          onToggle={() => toggleSection('validation')}
+        >
+          <ValidationDetails
+            key={comp.id}
+            behavior={behavior}
+            validationEditor={validationEditor}
+            onErrorCountChange={count => handleValidationErrorCount(comp.id, count)}
+          />
+        </InspectorSection>
+      ) : null}
+      <InspectorSection
+        sectionId="stateOverrides"
+        title={t('inspector.sectionStateOverrides')}
+        expanded={sectionExpanded('stateOverrides')}
+        badges={sectionBadges('stateOverrides', overrideFieldCount)}
+        onToggle={() => toggleSection('stateOverrides')}
+      >
+        <StateOverrides
+          component={comp}
+          state={activeState}
+          defaultStateId={screen?.defaultStateId ?? null}
+        />
+      </InspectorSection>
     </div>
   )
 }
@@ -447,8 +632,7 @@ function LayoutFields({
   const { t } = useI18n()
 
   return (
-    <section className={styles.layoutSection} data-layout-settings>
-      <h3>{t('inspector.layoutTitle')}</h3>
+    <div className={styles.layoutSection} data-layout-settings>
       <Field label={t('inspector.layout')}>
         <select className={styles.input} value={layout.layout} onChange={event => onUpdate({ layout: event.target.value })}>
           <option value="vertical">{t('inspector.layoutVertical')}</option>
@@ -496,7 +680,7 @@ function LayoutFields({
           {t('inspector.wrap')}
         </label>
       ) : null}
-    </section>
+    </div>
   )
 }
 
@@ -514,13 +698,12 @@ function StateOverrides({
   const isDefaultState = !state || state.id === defaultStateId
   if (isDefaultState) {
     return (
-      <section
+      <div
         className={`${styles.overrideSection} ${styles.inactiveOverrideSection}`}
         data-state-overrides
         data-override-mode="base"
       >
         <div className={styles.overrideHeading}>
-          <h3>{t('overrides.title')}</h3>
           <span>{state
             ? t('overrides.forState', { name: state.name })
             : t('overrides.noState')}</span>
@@ -528,7 +711,7 @@ function StateOverrides({
         <p className={styles.overrideExplanation}>
           {t(state ? 'overrides.defaultStateExplanation' : 'overrides.noStateExplanation')}
         </p>
-      </section>
+      </div>
     )
   }
 
@@ -562,14 +745,13 @@ function StateOverrides({
   const content = overrideContent(component, effective)
 
   return (
-    <section
+    <div
       className={styles.overrideSection}
       data-state-overrides
       data-override-mode={hasOverride ? 'override' : 'base'}
     >
       <div className={styles.overrideHeading}>
         <div>
-          <h3>{t('overrides.title')}</h3>
           <span>{t('overrides.forState', { name: selectedState.name })}</span>
         </div>
         {hasOverride ? (
@@ -692,7 +874,7 @@ function StateOverrides({
           </Field>
         </div>
       ) : null}
-    </section>
+    </div>
   )
 }
 

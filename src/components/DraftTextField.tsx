@@ -7,10 +7,14 @@ import {
 import type {
   ChangeEvent,
   CompositionEvent,
+  FocusEvent,
   KeyboardEvent,
 } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
-import { shouldCommitTextKey } from './textDraft'
+import {
+  shouldCommitTextKey,
+  shouldPreserveTextDraftBlur,
+} from './textDraft'
 import styles from './DraftTextField.module.css'
 
 interface CachedDraft {
@@ -88,9 +92,11 @@ export function DraftTextField({
   const [draft, setDraft] = useState(() => cached.current?.draft ?? value)
   const [baseline, setBaseline] = useState(() => cached.current?.baseline ?? value)
   const [dirty, setDirty] = useState(() => cached.current !== undefined && draft !== value)
+  const dirtyRef = useRef(dirty)
   const composing = useRef(false)
   const draftSnapshot = useRef<CachedDraft>({ draft, baseline })
   draftSnapshot.current = { draft, baseline }
+  dirtyRef.current = dirty
 
   const validationError = validate?.(draft) ?? null
   const externalChanged = dirty && value !== baseline
@@ -104,10 +110,17 @@ export function DraftTextField({
       setDraft(value)
       setBaseline(value)
       setDirty(false)
+      dirtyRef.current = false
     } else {
       draftCache.set(draftId, { draft, baseline })
     }
   }, [draft, draftId, dirty, value])
+
+  useEffect(() => () => {
+    if (dirtyRef.current) {
+      persistStoredDraft(draftId, draftSnapshot.current)
+    }
+  }, [draftId])
 
   function commitDraft(): boolean {
     if (!dirty) return true
@@ -116,6 +129,7 @@ export function DraftTextField({
       clearDraft(draftId)
       setBaseline(value)
       setDirty(false)
+      dirtyRef.current = false
       return true
     }
     const committed = onCommit(draft)
@@ -123,6 +137,7 @@ export function DraftTextField({
       clearDraft(draftId)
       setBaseline(draft)
       setDirty(false)
+      dirtyRef.current = false
     }
     return committed
   }
@@ -155,12 +170,14 @@ export function DraftTextField({
       clearDraft(draftId)
       setBaseline(value)
       setDirty(false)
+      dirtyRef.current = false
       return
     }
     const nextBaseline = dirty ? baseline : value
     draftCache.set(draftId, { draft: nextDraft, baseline: nextBaseline })
     setBaseline(nextBaseline)
     setDirty(true)
+    dirtyRef.current = true
   }
 
   function cancelDraft() {
@@ -168,6 +185,7 @@ export function DraftTextField({
     setDraft(value)
     setBaseline(value)
     setDirty(false)
+    dirtyRef.current = false
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -196,6 +214,11 @@ export function DraftTextField({
     composing.current = false
   }
 
+  function handleBlur(event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if (shouldPreserveTextDraftBlur(event.currentTarget, event.relatedTarget)) return
+    commitDraft()
+  }
+
   const controlProps = {
     className,
     value: draft,
@@ -205,7 +228,7 @@ export function DraftTextField({
     'aria-invalid': error ? true : undefined,
     'aria-describedby': error ? errorId : undefined,
     onChange: updateDraft,
-    onBlur: commitDraft,
+    onBlur: handleBlur,
     onKeyDown: handleKeyDown,
     onCompositionStart: handleCompositionStart,
     onCompositionEnd: handleCompositionEnd,

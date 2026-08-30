@@ -90,6 +90,7 @@ const runtimeValidationBundle = join(temp, 'runtimeValidation.mjs')
 const invariantsBundle = join(temp, 'invariants.mjs')
 const componentPlacementBundle = join(temp, 'componentPlacement.mjs')
 const componentPreviewBundle = join(temp, 'componentPreview.mjs')
+const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -119,6 +120,7 @@ bundle('src/domain/runtimeValidation.ts', runtimeValidationBundle)
 bundle('src/domain/invariants.ts', invariantsBundle)
 bundle('src/domain/componentPlacement.ts', componentPlacementBundle)
 bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
+bundle('src/features/inspector/inspectorSections.ts', inspectorSectionsBundle)
 
 let passed = 0
 
@@ -4721,11 +4723,145 @@ await test('Inspector keeps base values separate from field-level state override
     'Inspector lost its explicit base/override/effective or shared reset path',
   )
   assert(
-    inspectorStyles.includes('.baseSettings') &&
+    inspectorStyles.includes('.inspectorSection') &&
       inspectorStyles.includes('.overrideValues') &&
       inspectorStyles.includes('text-overflow: ellipsis') &&
       inspectorStyles.includes('min-width: 0'),
     'Inspector override presentation no longer protects the 300px layout',
+  )
+})
+
+await test('Inspector sections classify kinds, defaults, and review markers', async () => {
+  memoryStorage.clear()
+  const {
+    componentHasContentSection,
+    componentHasLayoutSection,
+    countOverrideFields,
+    defaultInspectorSectionOpen,
+    inspectorSectionChangeCounts,
+    inspectorSectionPreferenceKey,
+  } = await import(moduleUrl(inspectorSectionsBundle, 'inspector-sections'))
+  const { COMPONENT_KINDS } = await import(moduleUrl(modelBundle, 'inspector-section-kinds'))
+  const contentKinds = new Set(['text', 'textInput', 'select', 'button', 'alert'])
+  const layoutKinds = new Set(['page', 'section', 'container', 'modal'])
+
+  for (const kind of COMPONENT_KINDS) {
+    assert(
+      componentHasContentSection(kind) === contentKinds.has(kind) &&
+        componentHasLayoutSection(kind) === layoutKinds.has(kind),
+      `Inspector section classification is incomplete for ${kind}`,
+    )
+  }
+
+  const emptySignals = {
+    hasBehavior: false,
+    validationRuleCount: 0,
+    overrideFieldCount: 0,
+  }
+  assert(
+    defaultInspectorSectionOpen('basic', emptySignals) &&
+      defaultInspectorSectionOpen('content', emptySignals) &&
+      !defaultInspectorSectionOpen('layout', emptySignals) &&
+      !defaultInspectorSectionOpen('behavior', emptySignals) &&
+      !defaultInspectorSectionOpen('validation', emptySignals) &&
+      !defaultInspectorSectionOpen('stateOverrides', emptySignals),
+    'Inspector progressive-disclosure defaults changed unexpectedly',
+  )
+  assert(
+    defaultInspectorSectionOpen('behavior', { ...emptySignals, hasBehavior: true }) &&
+      defaultInspectorSectionOpen('validation', {
+        ...emptySignals,
+        validationRuleCount: 1,
+      }) &&
+      defaultInspectorSectionOpen('stateOverrides', {
+        ...emptySignals,
+        overrideFieldCount: 1,
+      }) &&
+      inspectorSectionPreferenceKey('textInput', 'validation') ===
+        'textInput:validation' &&
+      countOverrideFields({ visible: false, value: '' }) === 2,
+    'Inspector data-aware defaults, preference scope, or override count changed',
+  )
+
+  const store = await freshStore('inspector-section-markers')
+  const base = store.getState().document
+  const preview = structuredClone(base)
+  preview.components['comp-name-input'].common.description = 'Changed by AI'
+  preview.components['comp-name-input'].config.placeholder = 'Updated placeholder'
+  preview.components['comp-name-input'].config.validationRules = [{
+    id: 'rule-ai',
+    type: 'required',
+    message: 'Required',
+  }]
+  preview.screenStates['state-edit-success'].componentOverrides['comp-name-input'] = {
+    value: 'Preview name',
+  }
+  preview.components['comp-actions'].config.gap = 'lg'
+  preview.components['comp-save-btn'].config.eventId = null
+
+  const inputMarkers = inspectorSectionChangeCounts(
+    base,
+    preview,
+    'comp-name-input',
+    'state-edit-success',
+  )
+  const layoutMarkers = inspectorSectionChangeCounts(
+    base,
+    preview,
+    'comp-actions',
+    'state-edit-success',
+  )
+  const behaviorMarkers = inspectorSectionChangeCounts(
+    base,
+    preview,
+    'comp-save-btn',
+    'state-edit-success',
+  )
+  assert(
+    inputMarkers.basic > 0 &&
+      inputMarkers.content > 0 &&
+      inputMarkers.validation > 0 &&
+      inputMarkers.stateOverrides > 0 &&
+      layoutMarkers.layout > 0 &&
+      behaviorMarkers.behavior > 0,
+    'Inspector review markers do not identify the changed specification section',
+  )
+
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  const disclosureSource = readFileSync(
+    join(root, 'src/features/inspector/InspectorSection.tsx'),
+    'utf8',
+  )
+  const behaviorSource = readFileSync(
+    join(root, 'src/features/inspector/BehaviorDetails.tsx'),
+    'utf8',
+  )
+  const draftSource = readFileSync(
+    join(root, 'src/components/DraftTextField.tsx'),
+    'utf8',
+  )
+  assert(
+    disclosureSource.includes('aria-expanded={expanded}') &&
+      disclosureSource.includes('aria-controls={contentId}') &&
+      disclosureSource.includes('role="region"') &&
+      disclosureSource.includes('hidden={!expanded}') &&
+      inspectorSource.includes('sectionId="basic"') &&
+      inspectorSource.includes('sectionId="content"') &&
+      inspectorSource.includes('sectionId="layout"') &&
+      inspectorSource.includes('sectionId="behavior"') &&
+      inspectorSource.includes('sectionId="validation"') &&
+      inspectorSource.includes('sectionId="stateOverrides"'),
+    'Inspector disclosures lost accessible semantics or a specification section',
+  )
+  assert(
+    behaviorSource.includes('data-behavior-specification') &&
+      behaviorSource.includes('data-validation-specification') &&
+    draftSource.includes('shouldPreserveTextDraftBlur') &&
+    disclosureSource.includes('data-preserve-text-draft="true"'),
+    'Inspector section split or collapse-safe draft handling is missing',
   )
 })
 
@@ -5725,7 +5861,7 @@ await test('container layouts drive preview, DnD, and palette feedback', async (
     inspectorSource.includes("cfg.kind === 'container'") &&
       inspectorSource.includes("layout.layout === 'grid'") &&
       inspectorSource.includes("layout.layout === 'horizontal'") &&
-      inspectorSource.includes("t('inspector.layoutTitle')"),
+    inspectorSource.includes("t('inspector.sectionLayout')"),
     'shared layout controls are missing or not mode-sensitive',
   )
   assert(
@@ -6735,7 +6871,8 @@ await test('text drafts commit as one human operation', async () => {
   )
   assert(
     draftSource.includes('onChange: updateDraft') &&
-      draftSource.includes('onBlur: commitDraft') &&
+      draftSource.includes('onBlur: handleBlur') &&
+      draftSource.includes('commitDraft()') &&
       draftSource.includes("window.addEventListener('beforeunload', flush)") &&
       draftSource.includes("window.addEventListener('pagehide', flush)") &&
       draftSource.includes('window.sessionStorage.setItem(storageKey(draftId)') &&

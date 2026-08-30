@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type { ValidationRulesEditorContext } from '../../domain/componentBehavior'
@@ -32,6 +32,7 @@ interface RuleFieldErrors {
 
 interface ValidationRulesDialogProps {
   context: ValidationRulesEditorContext
+  onErrorCountChange?(count: number): void
   onClose(result: DialogResult): void
 }
 
@@ -166,7 +167,11 @@ function computeErrors(
   return errors
 }
 
-export function ValidationRulesDialog({ context, onClose }: ValidationRulesDialogProps) {
+export function ValidationRulesDialog({
+  context,
+  onErrorCountChange,
+  onClose,
+}: ValidationRulesDialogProps) {
   const { t } = useI18n()
   const dispatch = useAppStore(state => state.dispatch)
   const dialogRef = useRef<HTMLElement>(null)
@@ -175,6 +180,9 @@ export function ValidationRulesDialog({ context, onClose }: ValidationRulesDialo
   const [rules, setRules] = useState<DraftRule[]>(() => context.rules.map(draftFromRule))
   const errors = computeErrors(rules, t)
   const canSubmit = errors.size === 0
+  useEffect(() => {
+    onErrorCountChange?.(errors.size)
+  }, [errors.size, onErrorCountChange])
 
   function close() {
     onClose('cancelled')

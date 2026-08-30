@@ -20,12 +20,10 @@ export function BehaviorDetails({
   behavior,
   eventEditor,
   apiEditor,
-  validationEditor,
 }: {
   behavior: ComponentBehaviorProjection
   eventEditor: EventEditorContext
   apiEditor: ApiEditorContext
-  validationEditor: ValidationRulesEditorContext
 }) {
   const { t } = useI18n()
   const [dialog, setDialog] = useState<
@@ -33,34 +31,36 @@ export function BehaviorDetails({
     | { type: 'event'; mode: 'edit'; eventId: string }
     | { type: 'api'; mode: 'create' }
     | { type: 'api'; mode: 'edit'; operationId: string }
-    | { type: 'validation' }
     | null
   >(null)
   const openerRef = useRef<HTMLButtonElement | null>(null)
   const addButtonRef = useRef<HTMLButtonElement | null>(null)
   const apiAddButtonRef = useRef<HTMLButtonElement | null>(null)
-  const validationButtonRef = useRef<HTMLButtonElement | null>(null)
-  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const showEvents = behavior.events.length > 0 || eventEditor.supportsEventCreation
   const showApis = apiEditor.supportsApiEditing
-  const showValidation = validationEditor.supportsValidationEditing
-  if (!behavior.hasBehavior && !showEvents && !showApis && !showValidation) return null
+  if (!showEvents && !showApis) return null
 
   function closeDialog(result: 'cancelled' | 'saved' | 'deleted') {
-    const fallback = dialog?.type === 'api'
-      ? apiAddButtonRef.current ?? headingRef.current
-      : dialog?.type === 'validation'
-        ? validationButtonRef.current ?? headingRef.current
-        : addButtonRef.current ?? headingRef.current
-    const opener = openerRef.current?.isConnected ? openerRef.current : null
-    const focusTarget = result === 'deleted' ? fallback : opener ?? fallback
+    const dialogType = dialog?.type
     setDialog(null)
-    requestAnimationFrame(() => focusTarget?.focus())
+    requestAnimationFrame(() => {
+      const fallback = dialogType === 'api'
+        ? apiAddButtonRef.current ?? containerRef.current
+        : addButtonRef.current ?? containerRef.current
+      const opener = openerRef.current?.isConnected ? openerRef.current : null
+      const preferred = result === 'deleted' ? fallback : opener ?? fallback
+      focusVisibleSectionTarget(preferred, containerRef.current)?.focus()
+    })
   }
 
   return (
-    <section className={styles.behaviorSection} data-behavior-specification>
-      <h3 ref={headingRef} tabIndex={-1}>{t('behavior.title')}</h3>
+    <div
+      ref={containerRef}
+      className={styles.behaviorDetails}
+      tabIndex={-1}
+      data-behavior-specification
+    >
       {showEvents ? (
         <BehaviorGroup
           title={t('behavior.events')}
@@ -128,39 +128,6 @@ export function BehaviorDetails({
             </div>
           ) : (
             <p className={styles.behaviorMuted}>{t('behavior.noEvents')}</p>
-          )}
-        </BehaviorGroup>
-      ) : null}
-      {showValidation ? (
-        <BehaviorGroup
-          title={t('behavior.validation')}
-          action={(
-            <button
-              ref={validationButtonRef}
-              type="button"
-              className={styles.behaviorAdd}
-              onClick={event => {
-                openerRef.current = event.currentTarget
-                setDialog({ type: 'validation' })
-              }}
-              data-validation-manage
-            >
-              {behavior.validationRules.length > 0
-                ? t('behavior.editValidationRules')
-                : `+ ${t('behavior.addValidationRule')}`}
-            </button>
-          )}
-        >
-          {behavior.validationRules.length > 0 ? (
-            <ul className={styles.behaviorCards}>
-              {behavior.validationRules.map(rule => (
-                <li className={styles.behaviorCard} key={rule.id}>
-                  <ValidationDetails rule={rule} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.behaviorMuted}>{t('behavior.noValidationRules')}</p>
           )}
         </BehaviorGroup>
       ) : null}
@@ -260,13 +227,75 @@ export function BehaviorDetails({
           onClose={closeDialog}
         />
       ) : null}
-      {dialog?.type === 'validation' ? (
+    </div>
+  )
+}
+
+export function ValidationDetails({
+  behavior,
+  validationEditor,
+  onErrorCountChange,
+}: {
+  behavior: ComponentBehaviorProjection
+  validationEditor: ValidationRulesEditorContext
+  onErrorCountChange?(count: number): void
+}) {
+  const { t } = useI18n()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const openerRef = useRef<HTMLButtonElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  if (!validationEditor.supportsValidationEditing) return null
+
+  function closeDialog() {
+    setDialogOpen(false)
+    onErrorCountChange?.(0)
+    requestAnimationFrame(() => {
+      const preferred = openerRef.current?.isConnected
+        ? openerRef.current
+        : containerRef.current
+      focusVisibleSectionTarget(preferred, containerRef.current)?.focus()
+    })
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={styles.validationDetails}
+      tabIndex={-1}
+      data-validation-specification
+    >
+      <div className={styles.validationActions}>
+        <button
+          ref={openerRef}
+          type="button"
+          className={styles.behaviorAdd}
+          onClick={() => setDialogOpen(true)}
+          data-validation-manage
+        >
+          {behavior.validationRules.length > 0
+            ? t('behavior.editValidationRules')
+            : `+ ${t('behavior.addValidationRule')}`}
+        </button>
+      </div>
+      {behavior.validationRules.length > 0 ? (
+        <ul className={styles.behaviorCards}>
+          {behavior.validationRules.map(rule => (
+            <li className={styles.behaviorCard} key={rule.id}>
+              <ValidationRuleDetails rule={rule} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.behaviorMuted}>{t('behavior.noValidationRules')}</p>
+      )}
+      {dialogOpen ? (
         <ValidationRulesDialog
           context={validationEditor}
+          onErrorCountChange={onErrorCountChange}
           onClose={closeDialog}
         />
       ) : null}
-    </section>
+    </div>
   )
 }
 
@@ -288,6 +317,16 @@ function BehaviorGroup({
       {children}
     </div>
   )
+}
+
+function focusVisibleSectionTarget(
+  preferred: HTMLElement | null,
+  sectionContent: HTMLElement | null,
+): HTMLElement | null {
+  if (preferred?.isConnected && !preferred.closest('[hidden]')) return preferred
+  return sectionContent
+    ?.closest('[data-inspector-section]')
+    ?.querySelector<HTMLElement>('[data-inspector-section-toggle]') ?? null
 }
 
 function ActionDetails({ action }: { action: ResolvedEventAction }) {
@@ -363,7 +402,7 @@ function ResultStates({ operation }: { operation: ResolvedApiReference }) {
   )
 }
 
-function ValidationDetails({ rule }: { rule: ValidationRule }) {
+function ValidationRuleDetails({ rule }: { rule: ValidationRule }) {
   const { t } = useI18n()
   const value = 'value' in rule ? rule.value : null
   const description = 'description' in rule ? rule.description : null
