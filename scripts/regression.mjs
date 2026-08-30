@@ -8890,6 +8890,113 @@ await test('Validation rules editor enforces invariants and commits as one human
   )
 })
 
+await test('WebMCP separates invalid version arguments from retryable conflicts', async () => {
+  memoryStorage.clear()
+  const { WEBMCP_TOOLS } = await import(moduleUrl(toolsBundle, 'version-error-semantics'))
+  const byName = name => WEBMCP_TOOLS.find(tool => tool.name === name)
+  const writeToolNames = [
+    'change_screen_structure',
+    'change_component_structure',
+    'update_component_spec',
+    'upsert_screen_state',
+    'connect_behavior',
+  ]
+  for (const toolName of writeToolNames) {
+    const schema = byName(toolName).inputSchema
+    const branches = schema.oneOf ?? [schema]
+    for (const branch of branches) {
+      for (const argument of ['expectedRevision', 'expectedChangeSetVersion']) {
+        const property = branch.properties?.[argument]
+        assert(
+          property?.type === 'integer' &&
+            property.minimum === 0 &&
+            property.description.includes('REVISION_CONFLICT') &&
+            branch.required.includes(argument),
+          `${toolName} schema does not require a documented non-negative ${argument}`,
+        )
+      }
+    }
+  }
+
+  const begin = byName('begin_change_set').execute({ summary: 'Version error semantics' })
+  assert(begin.ok, 'version semantics change set did not begin')
+  const baseInput = {
+    changeSetId: begin.data.changeSetId,
+    expectedRevision: begin.data.baseRevision,
+    expectedChangeSetVersion: 0,
+    componentId: 'comp-list-title',
+    patch: { common: { description: 'Version semantics' } },
+  }
+  const invalidArguments = [
+    ['expectedRevision', undefined],
+    ['expectedRevision', null],
+    ['expectedRevision', '1'],
+    ['expectedRevision', 0.5],
+    ['expectedRevision', -1],
+    ['expectedChangeSetVersion', undefined],
+    ['expectedChangeSetVersion', null],
+    ['expectedChangeSetVersion', '0'],
+    ['expectedChangeSetVersion', 0.5],
+    ['expectedChangeSetVersion', -1],
+  ]
+
+  for (const [argument, value] of invalidArguments) {
+    const input = { ...baseInput, [argument]: value }
+    if (value === undefined) delete input[argument]
+    const result = byName('update_component_spec').execute(input)
+    assert(
+      !result.ok &&
+        result.error.code === 'INVALID_ARGUMENT' &&
+        result.error.details?.argument === argument,
+      `${argument}=${String(value)} did not return INVALID_ARGUMENT`,
+    )
+    const active = byName('get_pending_change_set').execute({}).data.activeChangeSet
+    assert(
+      active.version === 0 && active.operations.length === 0,
+      `${argument}=${String(value)} consumed a change set version`,
+    )
+  }
+
+  for (const staleInput of [
+    { ...baseInput, expectedRevision: begin.data.baseRevision + 1 },
+    { ...baseInput, expectedChangeSetVersion: 1 },
+  ]) {
+    const result = byName('update_component_spec').execute(staleInput)
+    assert(
+      !result.ok &&
+        result.error.code === 'REVISION_CONFLICT' &&
+        result.error.details.actualRevision === begin.data.baseRevision &&
+        result.error.details.actualChangeSetVersion === 0,
+      'a valid but stale revision/version did not return a retryable conflict',
+    )
+  }
+
+  const corrected = byName('update_component_spec').execute(baseInput)
+  assert(
+    corrected.ok && corrected.data.changeSetVersion === 1,
+    'corrected arguments could not retry without restarting the change set',
+  )
+  const staleRetry = byName('update_component_spec').execute({
+    ...baseInput,
+    patch: { common: { description: 'Stale retry' } },
+  })
+  assert(
+    !staleRetry.ok &&
+      staleRetry.error.code === 'REVISION_CONFLICT' &&
+      staleRetry.error.details.actualChangeSetVersion === 1,
+    'stale retry did not return the current change set version',
+  )
+  const refreshedRetry = byName('update_component_spec').execute({
+    ...baseInput,
+    expectedChangeSetVersion: staleRetry.error.details.actualChangeSetVersion,
+    patch: { common: { description: 'Refreshed retry' } },
+  })
+  assert(
+    refreshedRetry.ok && refreshedRetry.data.changeSetVersion === 2,
+    'refreshing after REVISION_CONFLICT did not allow retry',
+  )
+})
+
 await test('Inspector select controls use unique IDs and visible accessible labels', async () => {
   memoryStorage.clear()
   const { renderInspector } = await import(

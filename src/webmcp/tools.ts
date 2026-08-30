@@ -91,12 +91,14 @@ function requiredNullableString(input: JsonObject, key: string): string | null {
   return value
 }
 
-function requiredNumber(input: JsonObject, key: string): number {
+function requiredNonNegativeInteger(input: JsonObject, key: string): number {
   const value = input[key]
-  if (!Number.isInteger(value) || (value as number) < 0) {
-    throw new DomainError('REVISION_CONFLICT', `${key} must be a non-negative integer`)
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new DomainError('INVALID_ARGUMENT', `${key} must be a non-negative integer`, {
+      argument: key,
+    })
   }
-  return value as number
+  return value
 }
 
 function requiredRecord(input: JsonObject, key: string): JsonObject {
@@ -166,8 +168,11 @@ function appendCommand(input: JsonObject, command: DomainCommand): JsonObject {
     })
   }
   const changeSetId = requiredString(input, 'changeSetId')
-  const expectedRevision = requiredNumber(input, 'expectedRevision')
-  const expectedChangeSetVersion = requiredNumber(input, 'expectedChangeSetVersion')
+  const expectedRevision = requiredNonNegativeInteger(input, 'expectedRevision')
+  const expectedChangeSetVersion = requiredNonNegativeInteger(
+    input,
+    'expectedChangeSetVersion',
+  )
   const active = state.activeChangeSet
 
   if (!active || active.id !== changeSetId) {
@@ -205,8 +210,16 @@ function appendCommand(input: JsonObject, command: DomainCommand): JsonObject {
 
 const writeBaseProperties = {
   changeSetId: { type: 'string', minLength: 1 },
-  expectedRevision: { type: 'integer', minimum: 0 },
-  expectedChangeSetVersion: { type: 'integer', minimum: 0 },
+  expectedRevision: {
+    type: 'integer',
+    minimum: 0,
+    description: 'Confirmed document revision. Refresh and retry only after REVISION_CONFLICT.',
+  },
+  expectedChangeSetVersion: {
+    type: 'integer',
+    minimum: 0,
+    description: 'Active change set version. Refresh and retry only after REVISION_CONFLICT.',
+  },
 }
 
 const fieldBindingSchema = {

@@ -754,6 +754,7 @@ type DomainErrorCode =
   | "NOT_FOUND"
   | "INVALID_PARENT"
   | "INVALID_REFERENCE"
+  | "INVALID_ARGUMENT"
   | "INVARIANT_VIOLATION"
   | "REVISION_CONFLICT"
   | "LOCKED_FIELD"
@@ -761,7 +762,7 @@ type DomainErrorCode =
   | "CHANGE_SET_ALREADY_ACTIVE";
 ```
 
-UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`、`message`、`details`を含む失敗結果を返す。成功形へのfallbackや部分成功は行わない。
+UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`、`message`、`details`を含む失敗結果を返す。成功形へのfallbackや部分成功は行わない。`expectedRevision`／`expectedChangeSetVersion`の欠落・型・範囲エラーは`INVALID_ARGUMENT`、有効な整数と現在値の不一致だけは`REVISION_CONFLICT`とし、後者の場合だけ最新contextを取得して再試行する。
 
 ## 13. 永続化
 
