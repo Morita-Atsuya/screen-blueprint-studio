@@ -136,6 +136,8 @@ Page
 
 WFと仕様書を別々に同期するのではなく、**同じデータモデルの異なる投影**として扱う。
 
+画面遷移フローは、Eventに定義された`navigate` actionをScreen間のedgeとして読む、構造化仕様の読み取り専用投影とする。nodeの自由移動、座標保存、edgeの直接編集を持つ汎用diagram editorにはせず、変更は元のScreen／component／Event仕様で行う。
+
 ## 6. 想定UI
 
 基本は3領域のワークスペースとする。

@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useAppStore } from './appStore'
 import { LeftPane } from './LeftPane'
 import { Canvas } from '../features/canvas/Canvas'
+import { ScreenFlow } from '../features/screen-flow/ScreenFlow'
 import { Inspector } from '../features/inspector/Inspector'
 import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
 import { EditorDndProvider } from '../dnd/EditorDndContext'
@@ -71,6 +72,7 @@ export function App() {
     resolveInitialRightPaneWidth(browserStorage(), browserWidth()),
   )
   const [isResizingRightPane, setIsResizingRightPane] = useState(false)
+  const [editorView, setEditorView] = useState<'screen' | 'flow'>('screen')
   const rightPaneWidth = clampRightPaneWidth(preferredRightPaneWidth, viewportWidth)
   const rightPaneBounds = getRightPaneWidthBounds(viewportWidth)
   const rightPaneWidthRef = useRef(rightPaneWidth)
@@ -79,6 +81,7 @@ export function App() {
     clientX: number
     width: number
   } | null>(null)
+  const screenContextRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(browserWidth())
@@ -118,6 +121,23 @@ export function App() {
     persistRightPaneWidth(browserStorage(), rightPaneWidthRef.current)
   }
 
+  function openScreenView(focusComponentId?: string) {
+    setEditorView('screen')
+    requestAnimationFrame(() => {
+      const component = focusComponentId
+        ? document.querySelector<HTMLElement>(
+            `[data-component-id="${CSS.escape(focusComponentId)}"]`,
+          )
+        : null
+      const inspectorSelection = focusComponentId
+        ? document.querySelector<HTMLElement>(
+            '[data-hierarchy-shortcut-scope="inspector"] [aria-current="page"]',
+          )
+        : null
+      ;(component ?? inspectorSelection ?? screenContextRef.current)?.focus()
+    })
+  }
+
   // ── Recovery screen ─────────────────────────────────────────
   if (recoveryState) {
     return (
@@ -148,7 +168,7 @@ export function App() {
   // ── Main UI ─────────────────────────────────────────────────
   return (
     <EditorDndProvider>
-      <EditorKeyboardShortcuts />
+      <EditorKeyboardShortcuts readOnlyEditorView={editorView === 'flow'} />
       <div className={`${styles.root} ${isResizingRightPane ? styles.resizing : ''}`}>
         <header className={styles.header}>
           <span className={styles.logo}>
@@ -220,13 +240,42 @@ export function App() {
             <LeftPane />
           </aside>
 
-          <main className={styles.editor}>
+          <main
+            className={styles.editor}
+            data-read-only-editor-view={editorView === 'flow' || undefined}
+          >
+            <div
+              className={styles.editorViewSwitch}
+              role="group"
+              aria-label={t('editor.viewSwitch')}
+              data-editor-view-switch
+              data-editor-chrome
+            >
+              <button
+                type="button"
+                className={editorView === 'screen' ? styles.editorViewActive : ''}
+                aria-pressed={editorView === 'screen'}
+                onClick={() => setEditorView('screen')}
+              >
+                {t('editor.screenView')}
+              </button>
+              <button
+                type="button"
+                className={editorView === 'flow' ? styles.editorViewActive : ''}
+                aria-pressed={editorView === 'flow'}
+                onClick={() => setEditorView('flow')}
+              >
+                {t('editor.flowView')}
+              </button>
+            </div>
             {activeScreen ? (
               <section
+                ref={screenContextRef}
                 className={styles.screenContext}
                 aria-label={t('editor.screenContext')}
                 data-active-screen-context={activeScreen.id}
                 data-editor-chrome
+                tabIndex={-1}
               >
                 <dl className={styles.screenContextList}>
                   <div className={styles.screenContextItem}>
@@ -250,8 +299,19 @@ export function App() {
                 </dl>
               </section>
             ) : null}
-            <div className={styles.canvas}>
+            <div
+              className={`${styles.canvas} ${styles.editorViewPanel}`}
+              hidden={editorView !== 'screen'}
+              data-editor-view="screen"
+            >
               <Canvas />
+            </div>
+            <div
+              className={styles.editorViewPanel}
+              hidden={editorView !== 'flow'}
+              data-editor-view="flow"
+            >
+              <ScreenFlow openScreenView={openScreenView} />
             </div>
           </main>
 

@@ -27,6 +27,7 @@ interface KeyboardInput {
   isComposing?: boolean
   keyCode?: number
   dragActive?: boolean
+  readOnlyEditorView?: boolean
   target?: unknown
 }
 
@@ -78,6 +79,7 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
       input.isComposing ||
       input.keyCode === 229 ||
       input.dragActive ||
+      (input.readOnlyEditorView && !isComponentEditingScope(input.target)) ||
       isBlockedDeleteTarget(input.target)
     ) {
       return null
@@ -89,7 +91,9 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
   }
 
   function isBlockedDeleteTarget(target: unknown): boolean {
-    return Boolean(asClosestTarget(target)?.closest?.('[role="dialog"], [role="menu"]'))
+    return Boolean(asClosestTarget(target)?.closest?.(
+      '[role="dialog"], [role="menu"], [data-read-only-editor-view="true"]',
+    ))
   }
   if (key === 'y' && input.ctrlKey && !input.metaKey) return 'redo'
   return null
@@ -162,6 +166,12 @@ function isHierarchyShortcutScope(target: unknown): boolean {
 
 function isBlockedHierarchyShortcutTarget(target: unknown): boolean {
   return Boolean(asClosestTarget(target)?.closest?.('[role="tree"], [role="dialog"], [role="menu"]'))
+}
+
+function isComponentEditingScope(target: unknown): boolean {
+  return Boolean(asClosestTarget(target)?.closest?.(
+    '[role="tree"], [data-hierarchy-shortcut-scope="inspector"]',
+  ))
 }
 
 function asClosestTarget(target: unknown): { closest?: (selector: string) => unknown } | null {

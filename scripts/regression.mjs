@@ -91,6 +91,7 @@ const invariantsBundle = join(temp, 'invariants.mjs')
 const componentPlacementBundle = join(temp, 'componentPlacement.mjs')
 const componentPreviewBundle = join(temp, 'componentPreview.mjs')
 const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
+const screenFlowBundle = join(temp, 'screenFlow.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -121,6 +122,7 @@ bundle('src/domain/invariants.ts', invariantsBundle)
 bundle('src/domain/componentPlacement.ts', componentPlacementBundle)
 bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
 bundle('src/features/inspector/inspectorSections.ts', inspectorSectionsBundle)
+bundle('src/domain/screenFlow.ts', screenFlowBundle)
 
 let passed = 0
 
@@ -3420,7 +3422,13 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
   const blockedDeleteTarget = {
     tagName: 'BUTTON',
     closest(selector) {
-      return selector === '[role="dialog"], [role="menu"]' ? this : null
+      return selector.includes('[role="dialog"]') ? this : null
+    },
+  }
+  const flowDeleteTarget = {
+    tagName: 'BUTTON',
+    closest(selector) {
+      return selector.includes('[data-read-only-editor-view="true"]') ? this : null
     },
   }
   assert(
@@ -3428,8 +3436,28 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
       resolveEditorShortcut({ key: 'Delete', isComposing: true, target: { tagName: 'DIV' } }) === null &&
       resolveEditorShortcut({ key: 'Delete', dragActive: true, target: { tagName: 'DIV' } }) === null &&
       resolveEditorShortcut({ key: 'Delete', ctrlKey: true, target: { tagName: 'DIV' } }) === null &&
-      resolveEditorShortcut({ key: 'Delete', target: blockedDeleteTarget }) === null,
-    'Delete shortcut was not guarded during repeat, IME, DnD, modifiers, or dialogs',
+      resolveEditorShortcut({ key: 'Delete', target: blockedDeleteTarget }) === null &&
+      resolveEditorShortcut({ key: 'Delete', target: flowDeleteTarget }) === null,
+    'Delete shortcut was not guarded during repeat, IME, DnD, modifiers, dialogs, or Flow',
+  )
+  const flowEditingTarget = {
+    tagName: 'BUTTON',
+    closest(selector) {
+      return selector.includes('[data-hierarchy-shortcut-scope="inspector"]') ? this : null
+    },
+  }
+  assert(
+    resolveEditorShortcut({
+      key: 'Delete',
+      readOnlyEditorView: true,
+      target: { tagName: 'BODY' },
+    }) === null &&
+      resolveEditorShortcut({
+        key: 'Delete',
+        readOnlyEditorView: true,
+        target: flowEditingTarget,
+      }) === 'delete-selection',
+    'Flow delete guard did not distinguish read-only chrome from Inspector editing scope',
   )
   assert(
     resolveEditorShortcut({ key: 'Escape', target: { tagName: 'DIV' } }) === 'clear-selection',
@@ -4865,6 +4893,282 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
   )
 })
 
+await test('screen flow projects navigate actions and net review changes', async () => {
+  memoryStorage.clear()
+  const { selectScreenFlow } = await import(moduleUrl(screenFlowBundle, 'screen-flow'))
+  const store = await freshStore('screen-flow')
+  const base = structuredClone(store.getState().document)
+  base.events['event-open-active-user'] = {
+    id: 'event-open-active-user',
+    screenId: 'screen-list',
+    name: 'Open active user',
+    trigger: { type: 'click', componentId: 'comp-list-active' },
+    actions: [{ type: 'navigate', destinationScreenId: 'screen-edit' }],
+  }
+  base.events['event-open-invited-user'] = {
+    id: 'event-open-invited-user',
+    screenId: 'screen-list',
+    name: 'Open invited user',
+    trigger: { type: 'click', componentId: 'comp-list-invited' },
+    actions: [{ type: 'navigate', destinationScreenId: 'screen-edit' }],
+  }
+  base.events['event-cancel-edit'] = {
+    id: 'event-cancel-edit',
+    screenId: 'screen-edit',
+    name: 'Cancel editing',
+    trigger: { type: 'click', componentId: 'comp-cancel-btn' },
+    actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
+  }
+  base.screens['screen-list'].eventIds = [
+    'event-open-active-user',
+    'event-open-invited-user',
+  ]
+  base.screens['screen-edit'].eventIds.push('event-cancel-edit')
+  const flow = selectScreenFlow(base, 'en')
+  const listToEdit = flow.edges.find(edge =>
+    edge.source.screenId === 'screen-list' &&
+    edge.target.screenId === 'screen-edit',
+  )
+  const editToList = flow.edges.find(edge =>
+    edge.source.screenId === 'screen-edit' &&
+    edge.target.screenId === 'screen-list',
+  )
+  assert(
+    flow.nodes.map(node => node.screenId).join(',') === 'screen-list,screen-edit' &&
+      flow.nodes.every((node, index) => node.order === index && node.exists) &&
+      listToEdit?.transitions.length === 2 &&
+      listToEdit.transitions[0].eventId === 'event-open-active-user' &&
+      listToEdit.transitions[1].eventId === 'event-open-invited-user' &&
+      listToEdit.transitions.every(transition =>
+        transition.actionIndex === 0 &&
+        transition.triggerResolved &&
+        transition.target.route === '/users/:id/edit') &&
+      editToList?.transitions.length === 1 &&
+      editToList.transitions[0].triggerComponentId === 'comp-cancel-btn',
+    'screen flow lost screen order, duplicate edges, routes, triggers, or action order',
+  )
+
+  const withSelfLoop = structuredClone(base)
+  withSelfLoop.events['event-refresh-list'] = {
+    id: 'event-refresh-list',
+    screenId: 'screen-list',
+    name: 'Refresh list route',
+    trigger: { type: 'click', componentId: 'comp-list-title' },
+    actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
+  }
+  withSelfLoop.screens['screen-list'].eventIds.push('event-refresh-list')
+  const selfLoop = selectScreenFlow(withSelfLoop, 'en').edges.find(edge =>
+    edge.source.screenId === 'screen-list' &&
+    edge.target.screenId === 'screen-list',
+  )
+  assert(
+    selfLoop?.selfLoop &&
+      selfLoop.transitions[0].eventName === 'Refresh list route',
+    'screen flow did not retain a self transition',
+  )
+
+  const unresolved = structuredClone(base)
+  delete unresolved.screens['screen-edit']
+  unresolved.project.screenIds = ['screen-list']
+  const unresolvedFlow = selectScreenFlow(unresolved, 'en')
+  const unresolvedEdge = unresolvedFlow.edges.find(edge =>
+    edge.source.screenId === 'screen-list' &&
+    edge.target.screenId === 'screen-edit',
+  )
+  assert(
+    unresolvedEdge &&
+      !unresolvedEdge.target.resolved &&
+      unresolvedEdge.target.name === null &&
+      unresolvedEdge.target.route === null &&
+      unresolvedEdge.transitions.length === 2,
+    'screen flow discarded unresolved navigate targets',
+  )
+
+  const preview = structuredClone(base)
+  preview.screens['screen-edit'].name = 'Edit account'
+  preview.screens['screen-edit'].route = '/accounts/:id/edit'
+  preview.screens['screen-new'] = {
+    id: 'screen-new',
+    name: 'Audit log',
+    route: '/audit',
+    rootComponentId: 'unused-root',
+    modalComponentIds: [],
+    defaultStateId: 'unused-state',
+    stateIds: [],
+    eventIds: [],
+  }
+  preview.project.screenIds.push('screen-new')
+  preview.events['event-open-active-user'].actions[0] = {
+    type: 'navigate',
+    destinationScreenId: 'screen-list',
+  }
+  preview.events['event-open-invited-user'].actions = []
+  const review = selectScreenFlow(preview, 'en', base)
+  const changedTransition = review.edges
+    .flatMap(edge => edge.transitions)
+    .find(transition => transition.id === 'event-open-active-user:0')
+  const removedTransition = review.edges
+    .flatMap(edge => edge.transitions)
+    .find(transition =>
+      transition.eventId === 'event-open-invited-user' && !transition.exists)
+  assert(
+    review.nodes.find(node => node.screenId === 'screen-edit')?.changeStatus === 'modified' &&
+      review.nodes.find(node => node.screenId === 'screen-new')?.changeStatus === 'added' &&
+      changedTransition?.changeStatus === 'modified' &&
+      changedTransition.previous?.target.screenId === 'screen-edit' &&
+      changedTransition.target.screenId === 'screen-list' &&
+      removedTransition?.changeStatus === 'removed' &&
+      !removedTransition.exists,
+    'screen flow review did not preserve added, modified, removed, or previous targets',
+  )
+
+  const removedPreview = structuredClone(base)
+  delete removedPreview.screens['screen-edit']
+  removedPreview.project.screenIds = ['screen-list']
+  delete removedPreview.events['event-submit']
+  delete removedPreview.events['event-cancel-edit']
+  const removedReview = selectScreenFlow(removedPreview, 'ja', base)
+  assert(
+    removedReview.nodes.find(node => node.screenId === 'screen-edit')?.changeStatus ===
+      'removed' &&
+      removedReview.nodes.find(node => node.screenId === 'screen-edit')?.exists === false,
+    'screen flow review did not retain a removed screen ghost',
+  )
+
+  const shiftedBase = structuredClone(base)
+  shiftedBase.events['event-sequence'] = {
+    id: 'event-sequence',
+    screenId: 'screen-list',
+    name: 'Sequential navigation',
+    trigger: { type: 'click', componentId: 'comp-list-title' },
+    actions: [
+      { type: 'navigate', destinationScreenId: 'screen-edit' },
+      { type: 'setState', stateId: 'state-list-loading' },
+      { type: 'navigate', destinationScreenId: 'screen-list' },
+    ],
+  }
+  shiftedBase.screens['screen-list'].eventIds.push('event-sequence')
+  const shiftedPreview = structuredClone(shiftedBase)
+  shiftedPreview.events['event-sequence'].actions.shift()
+  const shiftedReview = selectScreenFlow(shiftedPreview, 'en', shiftedBase)
+  const sequenceTransitions = shiftedReview.edges
+    .flatMap(edge => edge.transitions)
+    .filter(transition => transition.eventId === 'event-sequence')
+  const retainedSequence = sequenceTransitions.find(transition =>
+    transition.target.screenId === 'screen-list' && transition.exists)
+  const removedSequence = sequenceTransitions.find(transition =>
+    transition.target.screenId === 'screen-edit' && !transition.exists)
+  assert(
+    sequenceTransitions.length === 2 &&
+      retainedSequence?.changeStatus === 'modified' &&
+      retainedSequence.previous === null &&
+      retainedSequence.actionIndex === 1 &&
+      removedSequence?.changeStatus === 'removed',
+    'screen flow sequence matching mispaired navigate actions after an earlier removal',
+  )
+
+  const duplicateTargetBase = structuredClone(base)
+  duplicateTargetBase.events['event-duplicate-target'] = {
+    id: 'event-duplicate-target',
+    screenId: 'screen-list',
+    name: 'Repeated destination',
+    trigger: { type: 'click', componentId: 'comp-list-title' },
+    actions: [
+      { type: 'navigate', destinationScreenId: 'screen-edit' },
+      { type: 'navigate', destinationScreenId: 'screen-edit' },
+    ],
+  }
+  duplicateTargetBase.screens['screen-list'].eventIds.push('event-duplicate-target')
+  const duplicateTargetPreview = structuredClone(duplicateTargetBase)
+  duplicateTargetPreview.events['event-duplicate-target'].actions[0] = {
+    type: 'navigate',
+    destinationScreenId: 'screen-list',
+  }
+  const duplicateTargetTransitions = selectScreenFlow(
+    duplicateTargetPreview,
+    'en',
+    duplicateTargetBase,
+  ).edges
+    .flatMap(edge => edge.transitions)
+    .filter(transition => transition.eventId === 'event-duplicate-target')
+  const changedDuplicateTarget = duplicateTargetTransitions.find(
+    transition => transition.actionIndex === 0,
+  )
+  const retainedDuplicateTarget = duplicateTargetTransitions.find(
+    transition => transition.actionIndex === 1,
+  )
+  assert(
+    duplicateTargetTransitions.length === 2 &&
+      changedDuplicateTarget?.changeStatus === 'modified' &&
+      changedDuplicateTarget.previous?.target.screenId === 'screen-edit' &&
+      changedDuplicateTarget.target.screenId === 'screen-list' &&
+      retainedDuplicateTarget?.changeStatus === null &&
+      retainedDuplicateTarget.previous === null,
+    'screen flow sequence matching mispaired repeated navigate destinations',
+  )
+
+  const mixedEdgePreview = structuredClone(base)
+  mixedEdgePreview.screens['screen-edit'].name = 'Edit account'
+  mixedEdgePreview.screens['screen-edit'].route = '/accounts/:id/edit'
+  delete mixedEdgePreview.events['event-open-active-user']
+  mixedEdgePreview.screens['screen-list'].eventIds =
+    mixedEdgePreview.screens['screen-list'].eventIds.filter(
+      eventId => eventId !== 'event-open-active-user',
+    )
+  const mixedEdge = selectScreenFlow(mixedEdgePreview, 'en', base).edges.find(edge =>
+    edge.source.screenId === 'screen-list' &&
+    edge.target.screenId === 'screen-edit',
+  )
+  assert(
+    mixedEdge?.transitions.some(transition => !transition.exists) &&
+      mixedEdge.transitions.some(transition => transition.exists) &&
+      mixedEdge.target.name === 'Edit account' &&
+      mixedEdge.target.route === '/accounts/:id/edit',
+    'screen flow edge used stale endpoint metadata from a removed transition',
+  )
+
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const flowSource = readFileSync(
+    join(root, 'src/features/screen-flow/ScreenFlow.tsx'),
+    'utf8',
+  )
+  const flowStyles = readFileSync(
+    join(root, 'src/features/screen-flow/ScreenFlow.module.css'),
+    'utf8',
+  )
+  const technicalDesign = readFileSync(
+    join(root, 'docs/MVP_TECHNICAL_DESIGN.md'),
+    'utf8',
+  )
+  assert(
+    appSource.includes('role="group"') &&
+      appSource.includes("aria-pressed={editorView === 'screen'}") &&
+      appSource.includes("aria-pressed={editorView === 'flow'}") &&
+      appSource.includes('data-editor-view="screen"') &&
+      appSource.includes('data-editor-view="flow"') &&
+      appSource.includes("openScreenView(focusComponentId?: string)") &&
+      appSource.includes('data-read-only-editor-view=') &&
+      appSource.includes('<EditorKeyboardShortcuts readOnlyEditorView='),
+    'Screen and Flow switch lost segmented-control or panel semantics',
+  )
+  assert(
+    flowSource.includes('selectScreenFlow(') &&
+      flowSource.includes('setActiveScreen(transition.source.screenId)') &&
+      flowSource.includes('setSelectedComponent(transition.triggerComponentId)') &&
+      flowSource.includes('<details>') &&
+      flowSource.includes('<summary>') &&
+      !flowSource.includes('dispatch('),
+    'Flow view is no longer a read-only keyboard-navigable projection',
+  )
+  assert(
+    flowStyles.includes('overflow: auto') &&
+      flowStyles.includes('width: max-content') &&
+      flowStyles.includes('text-overflow: ellipsis') &&
+      technicalDesign.includes('node座標、edge形状、独立したdiagram metadataは保存しない'),
+    'Flow layout no longer contains scrolling or its read-only model boundary',
+  )
+})
+
 await test('change set review presents sequential diffs for every command type', async () => {
   memoryStorage.clear()
   const { presentChangeSetOperations } = await import(
@@ -5458,7 +5762,7 @@ await test('central editor screen context follows the effective active screen', 
   const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
   const contextIndex = appSource.indexOf('className={styles.screenContext}')
-  const canvasIndex = appSource.indexOf('className={styles.canvas}', contextIndex)
+  const canvasIndex = appSource.indexOf('<Canvas />', contextIndex)
   assert(
     appSource.includes('getOwnEntity(effectiveDocument.screens, ui.activeScreenId)') &&
       appSource.includes('data-active-screen-context={activeScreen.id}') &&

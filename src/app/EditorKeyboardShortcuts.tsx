@@ -12,7 +12,11 @@ import {
 } from '../domain/componentDuplication'
 import { useI18n } from '../i18n/I18nProvider'
 
-export function EditorKeyboardShortcuts() {
+export function EditorKeyboardShortcuts({
+  readOnlyEditorView,
+}: {
+  readOnlyEditorView: boolean
+}) {
   const { t } = useI18n()
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -27,6 +31,7 @@ export function EditorKeyboardShortcuts() {
         keyCode: event.keyCode,
         target: event.target,
         dragActive: Boolean(document.querySelector('[data-drag-overlay]')),
+        readOnlyEditorView,
       })
       if (!shortcut) return
 
@@ -151,7 +156,7 @@ export function EditorKeyboardShortcuts() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keydown', handleHierarchySelection, true)
     }
-  }, [t])
+  }, [readOnlyEditorView, t])
 
   return null
 }
