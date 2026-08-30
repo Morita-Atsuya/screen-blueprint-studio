@@ -26,7 +26,6 @@ function readableText(value: string, fallback: string, maxLength = 32): string {
 
 export function getComponentDisplayLabel(
   component: ScreenComponent,
-  screenName?: string,
   locale: Locale = 'en',
 ): string {
   const fallback = translate(locale, COMPONENT_KIND_MESSAGE_KEYS[component.kind])
@@ -34,10 +33,10 @@ export function getComponentDisplayLabel(
 
   switch (config.kind) {
     case 'page':
-      return readableText(config.title, readableText(screenName ?? '', fallback))
     case 'section':
     case 'modal':
-      return readableText(config.title, fallback)
+    case 'container':
+      return fallback
     case 'heading':
     case 'text':
       return readableText(config.text, fallback)
@@ -47,7 +46,5 @@ export function getComponentDisplayLabel(
       return readableText(config.label, fallback)
     case 'alert':
       return readableText(config.message, fallback)
-    case 'container':
-      return fallback
   }
 }

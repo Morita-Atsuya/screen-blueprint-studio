@@ -208,8 +208,8 @@ interface CommonComponentSpec {
 
 ```ts
 type ComponentConfig =
-  | ({ kind: "page"; title: string } & ComponentLayout)
-  | ({ kind: "section"; title: string } & ComponentLayout)
+  | ({ kind: "page" } & ComponentLayout)
+  | ({ kind: "section" } & ComponentLayout)
   | ({ kind: "container" } & ComponentLayout)
   | { kind: "heading"; text: string; level: 1 | 2 | 3 }
   | { kind: "text"; text: string }
@@ -264,13 +264,12 @@ interface AlertConfig {
   message: string;
 }
 
-interface ModalConfig extends ComponentLayout {
-  kind: "modal";
-  title: string;
-}
+type ModalConfig = { kind: "modal" } & ComponentLayout;
 ```
 
-`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。`vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`page`は`rootComponentId`、各`modal`は`modalComponentIds`で参照され、いずれも`parentId: null`の独立rootとなる。Modalのchildrenは通常componentと同じtree操作に対応するが、Modal root自体はPageや他のcontainerへreparentしない。CanvasではPage artboard外の独立frameとして常時編集でき、状態別のvisible overrideはframeのeditor chromeで示す。
+`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。見出しと本文はchildの`heading`／`text`、操作固有文言は`button`、`textInput`、`select`、`alert`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。`CommonComponentSpec.description`は仕様metadataであり、Canvas contentへ自動描画しない。
+
+`vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`page`は`rootComponentId`、各`modal`は`modalComponentIds`で参照され、いずれも`parentId: null`の独立rootとなる。Modalのchildrenは通常componentと同じtree操作に対応するが、Modal root自体はPageや他のcontainerへreparentしない。CanvasではPage artboard外の独立frameとして常時編集でき、状態別のvisible overrideはframeのeditor chromeで示す。
 
 ### 5.3 バリデーション
 
@@ -582,7 +581,7 @@ interface Diagnostic {
 
 - `Screens`: 画面一覧、entry表示、作成、選択、名称変更、削除
 - `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
-- `Structure`: component tree。title、label、text等から表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
+- `Structure`: component tree。leafはlabel／text等から、構造componentはlocalized kindまたはScreen内のframe順からeditor-only表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
 - `Canvas`: idle時はartboardと仕様上の表示内容だけを描画し、componentのsemantic label、outline、drag handleはhover／選択／focus時だけflow外のeditor overlayとして表示する。overlay上のhandleからtreeと同じcommandで並び替え・親変更し、drop中だけ挿入lineまたはoutlineを表示する
 - 追加不可の場合は無効理由を表示
 
@@ -597,10 +596,10 @@ interface Diagnostic {
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの共通仕様とpage titleなどkind固有の内容を編集。非default状態では基本仕様と分離した状態別設定を表示
+- `Inspector`: 選択componentの共通仕様、構造componentのlayout、leaf固有の内容を編集。非default状態では基本仕様と分離した状態別設定を表示
 - `Changes`: operation一覧とbefore/after
 
-component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameとpreview内容であるpage titleは別fieldとして扱う。
+component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameはPage frameのeditor-only labelとして使い、previewへ表示する文字列はHeading／Text等のchildとして編集する。
 
 UI static copyは型付きJA/EN辞書へ集約し、headerで即時切替する。localeは専用localStorage keyへbest-effortで保存し、利用不能でもnavigator languageによる初期化と画面操作を継続する。sample documentのユーザーcontentは英語へ統一し、UI localeによる自動翻訳対象にはしない。
 

@@ -175,7 +175,7 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         childIds: [],
         kind: 'page',
         common: { description: '', visible: true, enabled: true },
-        config: { kind: 'page', title: name, ...DEFAULT_COMPONENT_LAYOUT },
+        config: { kind: 'page', ...DEFAULT_COMPONENT_LAYOUT },
       })
       setOwnEntity(next.screenStates, defaultStateId, {
         id: defaultStateId,

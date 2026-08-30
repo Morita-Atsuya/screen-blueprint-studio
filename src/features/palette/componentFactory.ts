@@ -42,7 +42,6 @@ export function createDefaultComponentConfig(
 ): ComponentConfig {
   switch (kind) {
     case 'section':
-      return { kind, title: translate(locale, 'defaults.sectionTitle'), ...DEFAULT_COMPONENT_LAYOUT }
     case 'container':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
     case 'heading':
@@ -82,7 +81,7 @@ export function createDefaultComponentConfig(
     case 'alert':
       return { kind, tone: 'info', message: translate(locale, 'defaults.alertMessage') }
     case 'modal':
-      return { kind, title: translate(locale, 'defaults.modalTitle'), ...DEFAULT_COMPONENT_LAYOUT }
+      return { kind, ...DEFAULT_COMPONENT_LAYOUT }
   }
 }
 

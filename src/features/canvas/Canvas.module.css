@@ -301,11 +301,6 @@
   border-radius: 8px;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
-.pageTitle { padding-bottom: 12px; color: var(--text); font-size: 1.1rem; font-weight: 700; }
-
-/* Section */
-.sectionTitle { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); padding-bottom: 4px; }
-
 /* Heading */
 .heading { font-weight: 700; color: var(--text); }
 .h1 { font-size: 1.5rem; }
@@ -346,7 +341,6 @@
   background: white;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
-.modalTitle { padding-bottom: 12px; color: var(--text); font-size: 1rem; font-weight: 700; }
 .rootStateHidden > :not(.componentChrome) { opacity: 0.45; }
 .buttonComponent { width: fit-content; max-width: 100%; }
 

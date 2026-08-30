@@ -354,15 +354,6 @@ export function validateComponentConfig(
     case 'page':
     case 'section':
     case 'modal':
-      exactKeys(
-        config,
-        ['kind', 'title', 'layout', 'gap', 'columns', 'justify', 'align', 'wrap'],
-        [],
-        path,
-      )
-      string(config.title, `${path}.title`)
-      validateComponentLayout(config, path)
-      return
     case 'container':
       exactKeys(
         config,

@@ -67,8 +67,8 @@ export const DEFAULT_COMPONENT_LAYOUT: ComponentLayout = {
 }
 
 export type ComponentConfig =
-  | ({ kind: 'page'; title: string } & ComponentLayout)
-  | ({ kind: 'section'; title: string } & ComponentLayout)
+  | ({ kind: 'page' } & ComponentLayout)
+  | ({ kind: 'section' } & ComponentLayout)
   | ({ kind: 'container' } & ComponentLayout)
   | { kind: 'heading'; text: string; level: 1 | 2 | 3 }
   | { kind: 'text'; text: string }
@@ -100,7 +100,7 @@ export type ComponentConfig =
       preventDoubleSubmit: boolean
     }
   | { kind: 'alert'; tone: 'info' | 'success' | 'warning' | 'error'; message: string }
-  | ({ kind: 'modal'; title: string } & ComponentLayout)
+  | ({ kind: 'modal' } & ComponentLayout)
 
 // ============================================================
 // Component

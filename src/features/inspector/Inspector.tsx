@@ -179,21 +179,6 @@ export function Inspector() {
           </Field>
         </>
       )}
-      {cfg.kind === 'page' && (
-        <Field label={t('inspector.pageTitle')}>
-          <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
-        </Field>
-      )}
-      {cfg.kind === 'section' && (
-        <Field label={t('inspector.sectionTitle')}>
-          <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
-        </Field>
-      )}
-      {cfg.kind === 'modal' && (
-        <Field label={t('inspector.modalTitle')}>
-          <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
-        </Field>
-      )}
       {(cfg.kind === 'page' ||
         cfg.kind === 'section' ||
         cfg.kind === 'container' ||

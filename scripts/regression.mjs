@@ -587,6 +587,9 @@ await test('invalid schema, revision, and entity metadata enter recovery state',
   const legacyStateKind = clone(baseline)
   legacyStateKind.screenStates['state-list-loading'].kind = 'loading'
   poisonedDocuments.push(legacyStateKind)
+  const legacyStructuralTitle = clone(baseline)
+  legacyStructuralTitle.components['comp-list-section'].config.title = 'Legacy section title'
+  poisonedDocuments.push(legacyStructuralTitle)
   const dangerousMapKey = clone(baseline)
   Object.defineProperty(dangerousMapKey.components, '__proto__', {
     configurable: true,
@@ -1492,7 +1495,6 @@ await test('representative screen/component/state/event/API writes reach the cha
     kind: 'modal',
     config: {
       kind: 'modal',
-      title: 'Agent modal',
       layout: 'vertical',
       gap: 'md',
       columns: 2,
@@ -1517,7 +1519,6 @@ await test('representative screen/component/state/event/API writes reach the cha
     kind: 'modal',
     config: {
       kind: 'modal',
-      title: 'Nested modal',
       layout: 'vertical',
       gap: 'md',
       columns: 2,
@@ -1645,7 +1646,7 @@ await test('modal roots own independent trees and clean references on removal', 
     screenId: 'screen-list',
     parentId: null,
     kind: 'modal',
-    config: { kind: 'modal', title: 'User details', ...layout },
+    config: { kind: 'modal', ...layout },
   })
   assert(
     document.screens['screen-list'].modalComponentIds.join(',') === 'modal-root' &&
@@ -1708,7 +1709,7 @@ await test('modal roots own independent trees and clean references on removal', 
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'modal',
-      config: { kind: 'modal', title: 'Nested', ...layout },
+      config: { kind: 'modal', ...layout },
     },
     {
       type: 'addComponent',
@@ -1767,7 +1768,7 @@ await test('modal roots own independent trees and clean references on removal', 
     screenId: 'screen-list',
     parentId: null,
     kind: 'modal',
-    config: { kind: 'modal', title: 'Human modal', ...layout },
+    config: { kind: 'modal', ...layout },
   })
   const state = store.getState()
   assert(
@@ -1837,7 +1838,7 @@ await test('component reorder and reparent reject invalid targets', async () => 
       type: 'moveComponent',
       componentId: 'comp-name-input',
       newParentId: 'comp-edit-section',
-      position: 0,
+      position: 1,
     },
   ]
   for (const command of invalidCommands) {
@@ -1855,15 +1856,15 @@ await test('component reorder and reparent reject invalid targets', async () => 
     ['comp-edit-section', 'comp-actions'],
     ['comp-cancel-btn', 'comp-name-input'],
     ['comp-list-heading', 'comp-edit-section'],
-    ['comp-name-input', 'comp-edit-section'],
+    ['comp-name-input', 'comp-edit-section', 1],
   ]
-  for (const [componentId, parentId] of invalidDrops) {
+  for (const [componentId, parentId, position = 0] of invalidDrops) {
     const parent = baseline.components[parentId]
     const resolution = resolveComponentDrop(baseline, componentId, {
       type: 'component-drop',
       parentId,
       screenId: parent.screenId,
-      position: 0,
+      position,
       label: 'invalid target',
     })
     assert(!resolution.ok, `invalid UI drop was accepted: ${componentId} -> ${parentId}`)
@@ -2081,7 +2082,7 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
   )
 })
 
-await test('component display labels come from visible specification fields', async () => {
+await test('component display labels separate structure from visible content', async () => {
   memoryStorage.clear()
   const { getComponentDisplayLabel } = await import(
     moduleUrl(componentDisplayLabelBundle, 'visible-component-labels')
@@ -2090,12 +2091,12 @@ await test('component display labels come from visible specification fields', as
   const document = store.getState().document
 
   assert(
-    getComponentDisplayLabel(document.components['comp-edit-page'], 'Fallback screen') === 'Edit User',
-    'page label did not use the page title',
+    getComponentDisplayLabel(document.components['comp-edit-page']) === 'Page',
+    'page label did not use its structural kind fallback',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-edit-section']) === 'User Details',
-    'section label did not use its title',
+    getComponentDisplayLabel(document.components['comp-edit-section']) === 'Section',
+    'section label did not use its structural kind fallback',
   )
   assert(
     getComponentDisplayLabel(document.components['comp-name-input']) === 'Name',
@@ -2110,15 +2111,12 @@ await test('component display labels come from visible specification fields', as
     'container label did not use its kind fallback',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-actions'], undefined, 'ja') === 'コンテナ',
+    getComponentDisplayLabel(document.components['comp-actions'], 'ja') === 'コンテナ',
     'container label did not use the selected locale',
   )
-
-  const pageWithoutTitle = clone(document.components['comp-edit-page'])
-  pageWithoutTitle.config.title = ' '
   assert(
-    getComponentDisplayLabel(pageWithoutTitle, 'Managed screen') === 'Managed screen',
-    'page label did not fall back to the screen name',
+    getComponentDisplayLabel(document.components['comp-edit-page'], 'ja') === 'ページ',
+    'page label did not use the selected locale',
   )
   const longHeading = clone(document.components['comp-list-heading'])
   longHeading.config.text = '1234567890123456789012345678901234567890'
@@ -2150,8 +2148,10 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
     'internal component name remains editable in the inspector',
   )
   assert(
-    inspectorSource.includes("t('inspector.pageTitle')"),
-    'page content title is not clearly labeled in the inspector',
+    !inspectorSource.includes("t('inspector.pageTitle')") &&
+      !inspectorSource.includes("t('inspector.sectionTitle')") &&
+      !inspectorSource.includes("t('inspector.modalTitle')"),
+    'structural content title fields remain in the inspector',
   )
 })
 
@@ -2537,6 +2537,104 @@ await test('component name metadata is rejected across document, command, and We
   )
   const componentResult = byName('get_component').execute({ componentId: 'comp-list-heading' })
   assert(componentResult.ok && !Object.hasOwn(componentResult.data.component, 'name'), 'read tool returned component name')
+})
+
+await test('structural components reject content titles across every write path', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('structural-title-baseline')
+  const baseline = store.getState().document
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'structural-title-domain'))
+  const layout = {
+    layout: 'vertical',
+    gap: 'md',
+    columns: 2,
+    justify: 'start',
+    align: 'stretch',
+    wrap: false,
+  }
+
+  for (const command of [
+    {
+      type: 'addComponent',
+      componentId: 'legacy-modal-title',
+      screenId: 'screen-list',
+      parentId: null,
+      kind: 'modal',
+      config: { kind: 'modal', title: 'Legacy modal title', ...layout },
+    },
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-section',
+      patch: { config: { title: 'Legacy section title' } },
+    },
+  ]) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(baseline, command)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `direct command accepted a structural title: ${JSON.stringify(command)}`)
+  }
+
+  memoryStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'structural-title-webmcp'))
+  const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const begin = byName('begin_change_set').execute({ summary: 'Reject structural titles' })
+  assert(begin.ok, 'structural-title change set did not begin')
+  const common = {
+    changeSetId: begin.data.changeSetId,
+    expectedRevision: begin.data.baseRevision,
+    expectedChangeSetVersion: 0,
+  }
+  const addTool = byName('change_component_structure')
+  const updateTool = byName('update_component_spec')
+  assert(
+    !JSON.stringify(addTool.inputSchema).includes('"title"') &&
+      !JSON.stringify(updateTool.inputSchema).includes('"title"'),
+    'WebMCP component schemas still expose structural titles',
+  )
+  const addResult = addTool.execute({
+    ...common,
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: null,
+    kind: 'modal',
+    config: { kind: 'modal', title: 'Legacy modal title', ...layout },
+  })
+  assert(!addResult.ok, 'WebMCP add accepted a structural title')
+  const updateResult = updateTool.execute({
+    ...common,
+    componentId: 'comp-list-section',
+    patch: { config: { title: 'Legacy section title' } },
+  })
+  assert(!updateResult.ok, 'WebMCP update accepted a structural title')
+  assert(
+    byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
+    'rejected structural titles changed pending operations',
+  )
+
+  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const canvasStyles = readFileSync(join(root, 'src/features/canvas/Canvas.module.css'), 'utf8')
+  const treeSource = readFileSync(join(root, 'src/features/structure-tree/StructureTree.tsx'), 'utf8')
+  assert(
+    !canvasSource.includes('cfg.title') &&
+      !canvasStyles.includes('.pageTitle') &&
+      !canvasStyles.includes('.sectionTitle') &&
+      !canvasStyles.includes('.modalTitle'),
+    'Canvas still renders structural titles in content flow',
+  )
+  assert(
+    canvasSource.includes("frameKind === 'page'") &&
+      canvasSource.includes("t('canvas.modalFrameLabel'") &&
+      treeSource.includes("t('canvas.modalFrameLabel'"),
+    'Page and modal editor frames do not use contextual editor-only labels',
+  )
+  assert(
+    baseline.components['comp-list-heading'].config.text === 'User List' &&
+      baseline.components['comp-edit-heading'].config.text === 'User Details',
+    'sample visible structure was not represented by Heading children',
+  )
 })
 
 await test('typed localization resolves and persists JA and EN safely', async () => {

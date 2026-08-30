@@ -65,7 +65,7 @@ AIがchange setへ型付きoperationを追加
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 Page／Modal root、別screen、leaf、自分自身・子孫へのdropは拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
-drop位置はdrag中だけ挿入line・outlineで示し、preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・管理用の名称、root pageの「ページタイトル」はpreview内容です。treeとdrag表示にはtitle、label、textなど実際の画面仕様を使います。
+drop位置はdrag中だけ挿入line・outlineで示し、preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Section／Container／Modalは構造とlayoutだけを持ち、表示する見出しや本文はchildのHeading／Text、操作文言は各leaf componentで明示します。treeとdrag表示はleafのlabel／textなどの仕様値、または構造kindのeditor-only名を使います。
 
 ## ローカル実行
 

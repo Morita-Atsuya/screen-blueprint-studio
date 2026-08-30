@@ -95,15 +95,21 @@ function TreeNode({
   t,
 }: TreeNodeProps) {
   const component = getOwnEntity(document.components, componentId)
-  const screenName = component
-    ? getOwnEntity(document.screens, component.screenId)?.name
+  const ownerScreen = component
+    ? getOwnEntity(document.screens, component.screenId)
     : undefined
-  const displayName = component
-    ? getComponentDisplayLabel(component, screenName, locale)
-    : ''
   const isIndependentRoot = component?.parentId === null
   const isPageRoot = component?.kind === 'page' && isIndependentRoot
   const isModalRoot = component?.kind === 'modal' && isIndependentRoot
+  const displayName = component
+    ? isPageRoot
+      ? ownerScreen?.name ?? t('component.page')
+      : isModalRoot
+        ? t('canvas.modalFrameLabel', {
+            number: (ownerScreen?.modalComponentIds.indexOf(component.id) ?? -1) + 1,
+          })
+        : getComponentDisplayLabel(component, locale)
+    : ''
   const {
     attributes,
     listeners,

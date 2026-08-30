@@ -124,6 +124,7 @@ export function Canvas() {
           <CanvasFrame
             componentId={screen.rootComponentId}
             frameKind="page"
+            frameIndex={0}
             document={effectiveDocument}
             activeState={activeState}
             selectedComponentId={selectedComponentId}
@@ -133,11 +134,12 @@ export function Canvas() {
             locale={locale}
             t={t}
           />
-          {screen.modalComponentIds.map(modalId => (
+          {screen.modalComponentIds.map((modalId, modalIndex) => (
             <CanvasFrame
               key={modalId}
               componentId={modalId}
               frameKind="modal"
+              frameIndex={modalIndex}
               document={effectiveDocument}
               activeState={activeState}
               selectedComponentId={selectedComponentId}
@@ -177,11 +179,13 @@ interface CanvasComponentProps {
 
 interface CanvasFrameProps extends Omit<CanvasComponentProps, 'independentRoot'> {
   frameKind: 'page' | 'modal'
+  frameIndex: number
 }
 
 function CanvasFrame({
   componentId,
   frameKind,
+  frameIndex,
   document,
   activeState,
   selectedComponentId,
@@ -195,7 +199,9 @@ function CanvasFrame({
   if (!base) return null
   const component = effectiveComponent(base, activeState)
   const screenName = getOwnEntity(document.screens, component.screenId)?.name
-  const label = getComponentDisplayLabel(component, screenName, locale)
+  const label = frameKind === 'page'
+    ? screenName ?? t('component.page')
+    : t('canvas.modalFrameLabel', { number: frameIndex + 1 })
   const hiddenInState = !component.common.visible
 
   return (
@@ -246,11 +252,8 @@ function CanvasComponent({
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
   const component = base ? effectiveComponent(base, activeState) : undefined
-  const screenName = component
-    ? getOwnEntity(document.screens, component.screenId)?.name
-    : undefined
   const displayName = component
-    ? getComponentDisplayLabel(component, screenName, locale)
+    ? getComponentDisplayLabel(component, locale)
     : ''
   const isRoot = base?.parentId === null
   const {
@@ -433,9 +436,7 @@ function ComponentView({
   const cfg = comp.config
   switch (cfg.kind) {
     case 'page':
-      return <div className={styles.pageTitle}>{cfg.title}</div>
     case 'section':
-      return <div className={styles.sectionTitle}>{cfg.title}</div>
     case 'container':
       return null
     case 'heading':
@@ -482,6 +483,6 @@ function ComponentView({
     case 'alert':
       return <div className={`${styles.alert} ${cfg.tone === 'info' ? styles.alertInfo : cfg.tone === 'success' ? styles.alertSuccess : cfg.tone === 'warning' ? styles.alertWarning : styles.alertError}`}>{cfg.message}</div>
     case 'modal':
-      return <div className={styles.modalTitle}>{cfg.title}</div>
+      return null
   }
 }

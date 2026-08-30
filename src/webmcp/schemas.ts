@@ -75,13 +75,13 @@ const validationRuleSchema = {
 const configVariants = [
   {
     kind: 'page',
-    properties: { kind: { const: 'page' }, title: string, ...layoutProperties },
-    required: ['kind', 'title', ...layoutRequired],
+    properties: { kind: { const: 'page' }, ...layoutProperties },
+    required: ['kind', ...layoutRequired],
   },
   {
     kind: 'section',
-    properties: { kind: { const: 'section' }, title: string, ...layoutProperties },
-    required: ['kind', 'title', ...layoutRequired],
+    properties: { kind: { const: 'section' }, ...layoutProperties },
+    required: ['kind', ...layoutRequired],
   },
   {
     kind: 'container',
@@ -170,8 +170,8 @@ const configVariants = [
   },
   {
     kind: 'modal',
-    properties: { kind: { const: 'modal' }, title: string, ...layoutProperties },
-    required: ['kind', 'title', ...layoutRequired],
+    properties: { kind: { const: 'modal' }, ...layoutProperties },
+    required: ['kind', ...layoutRequired],
   },
 ] as const
 

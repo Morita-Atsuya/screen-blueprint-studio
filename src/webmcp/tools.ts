@@ -363,7 +363,7 @@ const getScreenDiagnostics: ToolDefinition = {
             return [{
               code: 'MISSING_FIELD_KEY',
               entityId: component.id,
-              message: `${getComponentDisplayLabel(component, screen.name, 'en')} has no fieldKey`,
+              message: `${getComponentDisplayLabel(component, 'en')} has no fieldKey`,
             }]
           }
           return []
