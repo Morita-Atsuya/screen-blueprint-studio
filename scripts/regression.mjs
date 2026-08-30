@@ -4159,10 +4159,190 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   )
   assert(
     inspectorSource.includes('getComponentBehavior(effectiveDocument, comp.id, locale)') &&
-      inspectorSource.includes('<BehaviorDetails behavior={behavior} />') &&
+      inspectorSource.includes('eventEditor={eventEditor}') &&
       detailsSource.includes('data-behavior-specification') &&
       detailsSource.includes('missingReference(operation.id, t)'),
     'Inspector does not render the effective behavior projection with visible fallbacks',
+  )
+})
+
+await test('Event editor saves validated ordered actions as one human operation', async () => {
+  memoryStorage.clear()
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'event-editor-domain')
+  )
+  const { getEventEditorContext } = await import(
+    moduleUrl(componentBehaviorBundle, 'event-editor-context')
+  )
+  const store = await freshStore('event-editor-history')
+  const original = structuredClone(store.getState().document.events['event-submit'])
+  const editedActions = [
+    { type: 'navigate', destinationScreenId: 'screen-list' },
+    { type: 'showAlert', componentId: 'comp-status-alert' },
+    { type: 'callApi', apiOperationId: 'api-save-user' },
+    { type: 'setState', stateId: 'state-edit-default' },
+  ]
+  const updateCommand = {
+    type: 'updateEvent',
+    eventId: 'event-submit',
+    name: 'Save and return',
+    trigger: { type: 'submit', componentId: 'comp-save-btn' },
+    actions: editedActions,
+  }
+  const beforeRevision = store.getState().document.revision
+  const beforeHistory = store.getState().history.length
+  assert(store.getState().dispatch(updateCommand, 'Edit save event'), 'event update failed')
+  assert(
+    store.getState().document.revision === beforeRevision + 1 &&
+      store.getState().history.length === beforeHistory + 1 &&
+      store.getState().document.events['event-submit'].name === 'Save and return' &&
+      store.getState().document.events['event-submit'].trigger.type === 'submit' &&
+      store.getState().document.events['event-submit'].actions
+        .map(action => action.type)
+        .join(',') === 'navigate,showAlert,callApi,setState',
+    'event draft did not commit as one ordered history entry',
+  )
+  store.getState().undo()
+  assert(
+    JSON.stringify(store.getState().document.events['event-submit']) ===
+      JSON.stringify(original),
+    'Undo did not restore the event before editing',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().document.events['event-submit'].name === 'Save and return',
+    'Redo did not restore the edited event',
+  )
+
+  const context = getEventEditorContext(
+    store.getState().effectiveDocument,
+    'comp-save-btn',
+    'en',
+  )
+  assert(
+    context?.events.length === 1 &&
+      context.events[0].event.id === 'event-submit' &&
+      context.states.every(state => state.id.startsWith('state-edit-')) &&
+      context.states.some(state => state.id === 'state-edit-default' && state.isDefault) &&
+      context.apiOperations.map(operation => operation.id).join(',') === 'api-save-user' &&
+      context.alerts.map(alert => alert.id).join(',') === 'comp-status-alert' &&
+      context.screens.map(screen => screen.id).join(',') === 'screen-list,screen-edit',
+    'event editor candidates were not restricted or resolved correctly',
+  )
+  assert(
+    getEventEditorContext(
+      store.getState().effectiveDocument,
+      'comp-list-title',
+      'en',
+    )?.supportsEventCreation === true &&
+      getEventEditorContext(
+        store.getState().effectiveDocument,
+        'comp-list-page',
+        'en',
+      )?.supportsEventCreation === false,
+    'event creation was not limited to semantic leaf components',
+  )
+
+  for (const [label, command] of [
+    ['cross-screen state', {
+      ...updateCommand,
+      actions: [{ type: 'setState', stateId: 'state-list-default' }],
+    }],
+    ['cross-screen API', {
+      ...updateCommand,
+      actions: [{ type: 'callApi', apiOperationId: 'missing-api' }],
+    }],
+    ['non-alert component', {
+      ...updateCommand,
+      actions: [{ type: 'showAlert', componentId: 'comp-name-input' }],
+    }],
+    ['unknown command field', {
+      ...updateCommand,
+      unexpected: true,
+    }],
+  ]) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(store.getState().document, command)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `${label} event update was accepted`)
+  }
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('event-editor-proposal')
+  proposalStore.getState().beginChangeSet('Edit event')
+  assert(
+    proposalStore.getState().dispatch(updateCommand, 'Edit save event'),
+    'human event edit failed in active change set',
+  )
+  assert(
+    proposalStore.getState().activeChangeSet.operations.length === 1 &&
+      proposalStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      proposalStore.getState().activeChangeSet.operations[0].command.type === 'updateEvent' &&
+      proposalStore.getState().document.events['event-submit'].name === original.name &&
+      proposalStore.getState().effectiveDocument.events['event-submit'].name ===
+        'Save and return',
+    'human event edit did not remain one effective-only change-set operation',
+  )
+  const proposalReload = await freshStore('event-editor-proposal-reload')
+  assert(
+    proposalReload.getState().activeChangeSet?.operations.length === 1 &&
+      proposalReload.getState().effectiveDocument.events['event-submit'].name ===
+        'Save and return',
+    'event edit did not survive active change-set reload',
+  )
+  proposalReload.getState().rejectChangeSet()
+  assert(
+    proposalReload.getState().document.events['event-submit'].name === original.name,
+    'Reject did not discard the human event edit',
+  )
+
+  proposalReload.getState().beginChangeSet('Accept event edit')
+  proposalReload.getState().dispatch(updateCommand, 'Edit save event')
+  proposalReload.getState().acceptChangeSet()
+  assert(
+    proposalReload.getState().activeChangeSet === null &&
+      proposalReload.getState().document.events['event-submit'].name === 'Save and return',
+    'Accept did not confirm the human event edit',
+  )
+
+  memoryStorage.clear()
+  const deleteStore = await freshStore('event-editor-delete')
+  assert(
+    deleteStore.getState().document.components['comp-save-btn'].config.eventId ===
+      'event-submit',
+    'sample button event reference is missing',
+  )
+  deleteStore.getState().dispatch(
+    { type: 'removeEvent', eventId: 'event-submit' },
+    'Delete save event',
+  )
+  assert(
+    deleteStore.getState().document.events['event-submit'] === undefined &&
+      deleteStore.getState().document.components['comp-save-btn'].config.eventId === null,
+    'event deletion did not clear the event and Button primary reference',
+  )
+  deleteStore.getState().undo()
+  assert(
+    deleteStore.getState().document.events['event-submit']?.name === original.name &&
+      deleteStore.getState().document.components['comp-save-btn'].config.eventId ===
+        'event-submit',
+    'Undo did not restore the deleted event and Button primary reference',
+  )
+
+  const eventDialogSource = readFileSync(
+    join(root, 'src/features/inspector/EventDialog.tsx'),
+    'utf8',
+  )
+  assert(
+    eventDialogSource.includes("type: 'connectEvent'") &&
+      eventDialogSource.includes("type: 'updateEvent'") &&
+      eventDialogSource.includes("type: 'removeEvent'") &&
+      eventDialogSource.includes('setActions') &&
+      !eventDialogSource.includes("type: 'bindApiOperation'"),
+    'Inspector event UI is not draft-based or crossed into API operation editing',
   )
 })
 

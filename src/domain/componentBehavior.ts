@@ -6,8 +6,10 @@ import type {
   EventAction,
   HttpMethod,
   ProjectDocument,
+  ScreenEvent,
   ValidationRule,
 } from './model'
+import { CONTAINER_KINDS } from './model'
 
 export interface ResolvedReference {
   id: EntityId
@@ -56,6 +58,26 @@ export interface ComponentBehaviorProjection {
   requestBinding: ResolvedFieldBinding | null
   apiBindings: ResolvedApiBinding[]
   hasBehavior: boolean
+}
+
+export interface EventEditorStateOption extends ResolvedReference {
+  isDefault: boolean
+}
+
+export interface EventEditorEvent {
+  event: ScreenEvent
+  configuredByButton: boolean
+}
+
+export interface EventEditorContext {
+  componentId: EntityId
+  screenId: EntityId
+  supportsEventCreation: boolean
+  events: EventEditorEvent[]
+  states: EventEditorStateOption[]
+  screens: ResolvedScreenReference[]
+  apiOperations: ResolvedApiReference[]
+  alerts: ResolvedReference[]
 }
 
 function resolveState(document: ProjectDocument, stateId: EntityId): ResolvedReference {
@@ -123,6 +145,24 @@ function resolveAction(
   }
 }
 
+function componentEvents(
+  document: ProjectDocument,
+  componentId: EntityId,
+): ScreenEvent[] {
+  const component = getOwnEntity(document.components, componentId)
+  if (!component) return []
+  const screen = getOwnEntity(document.screens, component.screenId)
+  const seenEventIds = new Set<EntityId>()
+  const events: ScreenEvent[] = []
+  for (const eventId of screen?.eventIds ?? []) {
+    if (seenEventIds.has(eventId)) continue
+    seenEventIds.add(eventId)
+    const event = getOwnEntity(document.events, eventId)
+    if (event?.trigger.componentId === componentId) events.push(event)
+  }
+  return events
+}
+
 export function getComponentBehavior(
   document: ProjectDocument,
   componentId: EntityId,
@@ -131,27 +171,17 @@ export function getComponentBehavior(
   const component = getOwnEntity(document.components, componentId)
   if (!component) return null
 
-  const screen = getOwnEntity(document.screens, component.screenId)
-  const seenEventIds = new Set<EntityId>()
-  const events: ComponentBehaviorEvent[] = []
-  for (const eventId of screen?.eventIds ?? []) {
-    if (seenEventIds.has(eventId)) continue
-    seenEventIds.add(eventId)
-    const event = getOwnEntity(document.events, eventId)
-    const triggeredByComponent = event?.trigger.componentId === componentId
-    if (!triggeredByComponent) continue
-    events.push({
-      id: eventId,
-      name: event?.name ?? null,
-      triggerType: event?.trigger.type ?? null,
-      configuredByButton: (
-        component.config.kind === 'button' &&
-        component.config.eventId === eventId
-      ),
-      triggeredByComponent,
-      actions: event?.actions.map(action => resolveAction(document, action, locale)) ?? [],
-    })
-  }
+  const events = componentEvents(document, componentId).map(event => ({
+    id: event.id,
+    name: event.name,
+    triggerType: event.trigger.type,
+    configuredByButton: (
+      component.config.kind === 'button' &&
+      component.config.eventId === event.id
+    ),
+    triggeredByComponent: true,
+    actions: event.actions.map(action => resolveAction(document, action, locale)),
+  }))
 
   const validationRules = component.config.kind === 'textInput'
     ? component.config.validationRules
@@ -188,5 +218,54 @@ export function getComponentBehavior(
       requestBinding !== null ||
       apiBindings.length > 0
     ),
+  }
+}
+
+export function getEventEditorContext(
+  document: ProjectDocument,
+  componentId: EntityId,
+  locale: Locale = 'en',
+): EventEditorContext | null {
+  const component = getOwnEntity(document.components, componentId)
+  if (!component) return null
+  const screen = getOwnEntity(document.screens, component.screenId)
+  if (!screen) return null
+
+  return {
+    componentId,
+    screenId: screen.id,
+    supportsEventCreation: !CONTAINER_KINDS.includes(component.kind),
+    events: componentEvents(document, componentId).map(event => ({
+      event,
+      configuredByButton: (
+        component.config.kind === 'button' &&
+        component.config.eventId === event.id
+      ),
+    })),
+    states: screen.stateIds.flatMap(stateId => {
+      const state = getOwnEntity(document.screenStates, stateId)
+      return state
+        ? [{
+            ...resolveState(document, stateId),
+            isDefault: stateId === screen.defaultStateId,
+          }]
+        : []
+    }),
+    screens: document.project.screenIds.flatMap(screenId => {
+      const candidate = getOwnEntity(document.screens, screenId)
+      return candidate
+        ? [{
+            id: candidate.id,
+            label: candidate.name,
+            route: candidate.route,
+          }]
+        : []
+    }),
+    apiOperations: Object.values(document.apiOperations)
+      .filter(operation => operation.screenId === screen.id)
+      .map(operation => resolveApi(document, operation.id)),
+    alerts: Object.values(document.components)
+      .filter(candidate => candidate.screenId === screen.id && candidate.kind === 'alert')
+      .map(candidate => resolveComponent(document, candidate.id, locale)),
   }
 }

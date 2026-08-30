@@ -1,5 +1,7 @@
+import { useRef, useState } from 'react'
 import type {
   ComponentBehaviorProjection,
+  EventEditorContext,
   ResolvedApiReference,
   ResolvedEventAction,
   ResolvedReference,
@@ -7,31 +9,87 @@ import type {
 import type { ValidationRule } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
+import { EventDialog } from './EventDialog'
 import styles from './Inspector.module.css'
 
 export function BehaviorDetails({
   behavior,
+  eventEditor,
 }: {
   behavior: ComponentBehaviorProjection
+  eventEditor: EventEditorContext
 }) {
   const { t } = useI18n()
-  if (!behavior.hasBehavior) return null
+  const [dialog, setDialog] = useState<
+    { mode: 'create' } | { mode: 'edit'; eventId: string } | null
+  >(null)
+  const openerRef = useRef<HTMLButtonElement | null>(null)
+  const addButtonRef = useRef<HTMLButtonElement | null>(null)
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const showEvents = behavior.events.length > 0 || eventEditor.supportsEventCreation
+  if (!behavior.hasBehavior && !showEvents) return null
+
+  function closeDialog(result: 'cancelled' | 'saved' | 'deleted') {
+    const focusTarget = result === 'deleted'
+      ? addButtonRef.current ?? headingRef.current
+      : openerRef.current
+    setDialog(null)
+    requestAnimationFrame(() => focusTarget?.focus())
+  }
 
   return (
     <section className={styles.behaviorSection} data-behavior-specification>
-      <h3>{t('behavior.title')}</h3>
-      {behavior.events.length > 0 ? (
-        <BehaviorGroup title={t('behavior.events')}>
-          <div className={styles.behaviorCards}>
+      <h3 ref={headingRef} tabIndex={-1}>{t('behavior.title')}</h3>
+      {showEvents ? (
+        <BehaviorGroup
+          title={t('behavior.events')}
+          action={eventEditor.supportsEventCreation ? (
+            <button
+              ref={addButtonRef}
+              type="button"
+              className={styles.behaviorAdd}
+              onClick={event => {
+                openerRef.current = event.currentTarget
+                setDialog({ mode: 'create' })
+              }}
+              data-event-add
+            >
+              + {t('behavior.addEvent')}
+            </button>
+          ) : null}
+        >
+          {behavior.events.length > 0 ? (
+            <div className={styles.behaviorCards}>
             {behavior.events.map(event => (
               <article className={styles.behaviorCard} key={event.id} data-behavior-event={event.id}>
                 <div className={styles.behaviorCardHeading}>
                   <strong>{event.name ?? missingReference(event.id, t)}</strong>
-                  {event.triggerType ? (
-                    <span className={styles.behaviorBadge}>
-                      {t('behavior.trigger')}: {t(`behavior.trigger.${event.triggerType}`)}
-                    </span>
-                  ) : null}
+                  <div className={styles.behaviorCardActions}>
+                    {event.configuredByButton ? (
+                      <span className={styles.behaviorBadge}>
+                        {t('behavior.buttonPrimary')}
+                      </span>
+                    ) : null}
+                    {event.triggerType ? (
+                      <span className={styles.behaviorBadge}>
+                        {t('behavior.trigger')}: {t(`behavior.trigger.${event.triggerType}`)}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={styles.behaviorEdit}
+                      aria-label={t('behavior.editEventAria', {
+                        name: event.name ?? event.id,
+                      })}
+                      onClick={clickEvent => {
+                        openerRef.current = clickEvent.currentTarget
+                        setDialog({ mode: 'edit', eventId: event.id })
+                      }}
+                      data-event-edit={event.id}
+                    >
+                      {t('behavior.editEvent')}
+                    </button>
+                  </div>
                 </div>
                 {event.actions.length > 0 ? (
                   <ol className={styles.actionList} aria-label={t('behavior.actions')}>
@@ -46,7 +104,10 @@ export function BehaviorDetails({
                 )}
               </article>
             ))}
-          </div>
+            </div>
+          ) : (
+            <p className={styles.behaviorMuted}>{t('behavior.noEvents')}</p>
+          )}
         </BehaviorGroup>
       ) : null}
       {behavior.validationRules.length > 0 ? (
@@ -89,20 +150,39 @@ export function BehaviorDetails({
           </div>
         </BehaviorGroup>
       ) : null}
+      {dialog ? (
+        <EventDialog
+          key={dialog.mode === 'create' ? 'new' : dialog.eventId}
+          mode={dialog.mode}
+          eventId={dialog.mode === 'edit' ? dialog.eventId : undefined}
+          event={dialog.mode === 'edit'
+            ? eventEditor.events.find(candidate =>
+                candidate.event.id === dialog.eventId,
+              )?.event
+            : undefined}
+          context={eventEditor}
+          onClose={closeDialog}
+        />
+      ) : null}
     </section>
   )
 }
 
 function BehaviorGroup({
   title,
+  action,
   children,
 }: {
   title: string
+  action?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <div className={styles.behaviorGroup}>
-      <h4>{title}</h4>
+      <div className={styles.behaviorGroupHeading}>
+        <h4>{title}</h4>
+        {action}
+      </div>
       {children}
     </div>
   )

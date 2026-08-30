@@ -26,6 +26,7 @@ export type DomainCommand =
   | RemoveScreenStateCommand
   // Event commands
   | ConnectEventCommand
+  | UpdateEventCommand
   | RemoveEventCommand
   // API commands
   | BindApiOperationCommand
@@ -121,6 +122,14 @@ export interface ConnectEventCommand {
   type: 'connectEvent'
   eventId: EntityId
   screenId: EntityId
+  name: string
+  trigger: EventTrigger
+  actions: EventAction[]
+}
+
+export interface UpdateEventCommand {
+  type: 'updateEvent'
+  eventId: EntityId
   name: string
   trigger: EventTrigger
   actions: EventAction[]

@@ -50,12 +50,36 @@
   margin-top: 12px;
 }
 .behaviorGroup h4 {
-  margin-bottom: 6px;
   color: var(--text-muted);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.behaviorGroupHeading,
+.behaviorCardActions {
+  display: flex;
+  align-items: center;
+}
+.behaviorGroupHeading {
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.behaviorAdd,
+.behaviorEdit {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.behaviorAdd { padding: 3px 7px; }
+.behaviorEdit { padding: 2px 6px; }
+.behaviorAdd:hover,
+.behaviorEdit:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
 }
 .behaviorCards {
   display: flex;
@@ -83,6 +107,16 @@
   justify-content: space-between;
   gap: 8px;
   color: var(--text);
+}
+.behaviorCardHeading > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.behaviorCardActions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
 }
 .behaviorBadge {
   flex: 0 0 auto;

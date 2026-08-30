@@ -40,6 +40,7 @@ const COMMAND_TYPES = new Set([
   'updateScreenState',
   'removeScreenState',
   'connectEvent',
+  'updateEvent',
   'removeEvent',
   'bindApiOperation',
   'removeApiOperation',

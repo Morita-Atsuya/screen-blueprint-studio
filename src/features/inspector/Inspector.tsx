@@ -12,7 +12,10 @@ import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { commandMessageKey } from '../../i18n/messages'
 import { DraftTextField } from '../../components/DraftTextField'
-import { getComponentBehavior } from '../../domain/componentBehavior'
+import {
+  getComponentBehavior,
+  getEventEditorContext,
+} from '../../domain/componentBehavior'
 import { BehaviorDetails } from './BehaviorDetails'
 
 export function Inspector() {
@@ -37,6 +40,7 @@ export function Inspector() {
 
   const cfg = comp.config
   const behavior = getComponentBehavior(effectiveDocument, comp.id, locale)
+  const eventEditor = getEventEditorContext(effectiveDocument, comp.id, locale)
 
   function updateConfig(partial: Record<string, unknown>, field = 'settings'): boolean {
     return dispatch(
@@ -282,7 +286,13 @@ export function Inspector() {
         cfg.kind === 'modal') && (
         <LayoutFields layout={cfg} onUpdate={updateConfig} />
       )}
-      {behavior ? <BehaviorDetails behavior={behavior} /> : null}
+      {behavior && eventEditor ? (
+        <BehaviorDetails
+          key={comp.id}
+          behavior={behavior}
+          eventEditor={eventEditor}
+        />
+      ) : null}
       {activeState && activeState.id !== screen?.defaultStateId ? (
         <>
           <hr className={styles.divider} />

@@ -332,7 +332,7 @@ interface ScreenEvent {
 }
 ```
 
-actionは配列順に実行される仕様としてInspectorへ表示し、`setState`はstate名、`navigate`はscreen名とroute、`callApi`はmethod・path・operation名、`showAlert`は対象Alertのsemantic labelへ解決する。Buttonの`eventId`とtrigger側で同じeventを指す場合は重複表示しない。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
+actionは配列順に実行される仕様としてInspectorへ表示し、`setState`は同screenのstate、`navigate`は任意screen、`callApi`は同screenの既存operation、`showAlert`は同screenのAlertから選択して、eventとactionを追加・編集・削除・並べ替えできる。編集dialogはlocal draftをSave時に1 commandとして確定する。`trigger.componentId`をcomponentとeventの正準な関連として扱い、Buttonの`eventId`は任意のprimary annotationに限定する。同じeventを両方が指しても一覧へ重複表示せず、event削除時はButton側の参照も解除する。API operationとvalidation rule自体の編集は別機能とする。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
 
 ### 5.6 API操作
 

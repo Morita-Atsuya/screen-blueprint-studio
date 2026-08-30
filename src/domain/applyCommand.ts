@@ -485,6 +485,11 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
 
     // ──────────── Event commands ────────────
     case 'connectEvent': {
+      requireExactKeys(
+        command,
+        ['type', 'eventId', 'screenId', 'name', 'trigger', 'actions'],
+        'connectEvent command',
+      )
       const { eventId, screenId, name, trigger, actions } = command
       const screen = getOwnEntity(next.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
@@ -496,7 +501,22 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       break
     }
 
+    case 'updateEvent': {
+      requireExactKeys(
+        command,
+        ['type', 'eventId', 'name', 'trigger', 'actions'],
+        'updateEvent command',
+      )
+      const event = getOwnEntity(next.events, command.eventId)
+      if (!event) throw new DomainError('NOT_FOUND', `Event ${command.eventId} not found`)
+      event.name = command.name
+      event.trigger = command.trigger
+      event.actions = command.actions
+      break
+    }
+
     case 'removeEvent': {
+      requireExactKeys(command, ['type', 'eventId'], 'removeEvent command')
       const event = getOwnEntity(next.events, command.eventId)
       if (!event) throw new DomainError('NOT_FOUND', `Event ${command.eventId} not found`)
       const screen = getOwnEntity(next.screens, event.screenId)
