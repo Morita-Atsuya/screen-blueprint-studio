@@ -1,7 +1,13 @@
 import { getOwnEntity } from '../domain/entityMap'
 import type { EntityId, ProjectDocument } from '../domain/model'
 
-export type EditorShortcut = 'delete-selection' | 'clear-selection' | 'undo' | 'redo' | null
+export type EditorShortcut =
+  | 'delete-selection'
+  | 'duplicate-selection'
+  | 'clear-selection'
+  | 'undo'
+  | 'redo'
+  | null
 export type HierarchySelectionShortcut =
   | 'select-parent'
   | 'select-first-child'
@@ -43,6 +49,22 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
   if (isEditableTarget(input.target)) return null
   const key = input.key.toLowerCase()
   if (key === 'escape') return 'clear-selection'
+  if (key === 'd' && (input.metaKey || input.ctrlKey)) {
+    if (
+      (input.metaKey && input.ctrlKey) ||
+      input.shiftKey ||
+      input.altKey ||
+      input.repeat ||
+      input.isComposing ||
+      input.keyCode === 229 ||
+      input.dragActive ||
+      !isHierarchyShortcutScope(input.target) ||
+      isBlockedHierarchyShortcutTarget(input.target)
+    ) {
+      return null
+    }
+    return 'duplicate-selection'
+  }
   if (key === 'delete' || key === 'backspace') {
     if (
       input.metaKey ||

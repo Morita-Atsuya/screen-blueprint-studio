@@ -15,6 +15,7 @@ import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
 import { useI18n } from '../../i18n/I18nProvider'
 import { createAddComponentCommand } from '../palette/componentFactory'
+import { canDuplicateComponent } from '../../domain/componentDuplication'
 import {
   clampContextMenuPosition,
   contextMenuPaletteItems,
@@ -57,6 +58,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const { locale, t } = useI18n()
   const effectiveDocument = useAppStore(state => state.effectiveDocument)
   const dispatch = useAppStore(state => state.dispatch)
+  const duplicateComponent = useAppStore(state => state.duplicateComponent)
   const setSelectedComponent = useAppStore(state => state.setSelectedComponent)
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null)
   const [position, setPosition] = useState<MenuPoint | null>(null)
@@ -104,6 +106,9 @@ export function useComponentAddMenu(): ComponentAddMenuController {
     ? resolveComponentInsertTargets(effectiveDocument, openMenu.componentId)
     : []
   const label = component ? getComponentDisplayLabel(component, locale) : ''
+  const canDuplicate = openMenu
+    ? canDuplicateComponent(effectiveDocument, openMenu.componentId)
+    : false
 
   useEffect(() => {
     if (openMenu && !component) close(false)
@@ -152,6 +157,12 @@ export function useComponentAddMenu(): ComponentAddMenuController {
       kind: t(COMPONENT_KIND_MESSAGE_KEYS[kind]),
     }))) return
     setSelectedComponent(command.componentId)
+    close()
+  }
+
+  function duplicate() {
+    if (!openMenu || !canDuplicate) return
+    if (!duplicateComponent(openMenu.componentId, t('componentMenu.duplicateHistory'))) return
     close()
   }
 
@@ -223,22 +234,40 @@ export function useComponentAddMenu(): ComponentAddMenuController {
           >
             <div className={styles.heading}>
               {t(openMenu.stage === 'position'
-                ? 'componentMenu.choosePosition'
+                ? 'componentMenu.chooseAction'
                 : 'componentMenu.chooseType')}
             </div>
             {openMenu.stage === 'position'
-              ? targets.map(target => (
-                  <button
-                    key={target.placement}
-                    type="button"
-                    role="menuitem"
-                    className={styles.item}
-                    data-insert-placement={target.placement}
-                    onClick={() => chooseTarget(target)}
-                  >
-                    {t(placementKeys[target.placement])}
-                  </button>
-                ))
+              ? (
+                  <>
+                    {canDuplicate ? (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={styles.item}
+                          data-component-duplicate
+                          onClick={duplicate}
+                        >
+                          {t('componentMenu.duplicate')}
+                        </button>
+                        <div className={styles.separator} role="separator" />
+                      </>
+                    ) : null}
+                    {targets.map(target => (
+                      <button
+                        key={target.placement}
+                        type="button"
+                        role="menuitem"
+                        className={styles.item}
+                        data-insert-placement={target.placement}
+                        onClick={() => chooseTarget(target)}
+                      >
+                        {t(placementKeys[target.placement])}
+                      </button>
+                    ))}
+                  </>
+                )
               : (
                   <>
                     {contextMenuPaletteItems().map(item => (

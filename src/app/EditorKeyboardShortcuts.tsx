@@ -6,8 +6,11 @@ import {
   resolveHierarchySelectionShortcut,
   resolveHierarchySelectionTarget,
 } from './editorShortcuts'
+import { canDuplicateComponent } from '../domain/componentDuplication'
+import { useI18n } from '../i18n/I18nProvider'
 
 export function EditorKeyboardShortcuts() {
+  const { t } = useI18n()
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const shortcut = resolveEditorShortcut({
@@ -47,6 +50,12 @@ export function EditorKeyboardShortcuts() {
 
       const selectedId = state.ui.selectedComponentId
       if (!selectedId) return
+      if (shortcut === 'duplicate-selection') {
+        if (!canDuplicateComponent(state.effectiveDocument, selectedId)) return
+        event.preventDefault()
+        state.duplicateComponent(selectedId, t('componentMenu.duplicateHistory'))
+        return
+      }
       event.preventDefault()
       const component = getOwnEntity(state.effectiveDocument.components, selectedId)
       if (!component) {
@@ -121,7 +130,7 @@ export function EditorKeyboardShortcuts() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keydown', handleHierarchySelection, true)
     }
-  }, [])
+  }, [t])
 
   return null
 }

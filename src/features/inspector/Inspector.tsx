@@ -20,6 +20,7 @@ import {
 import { BehaviorDetails } from './BehaviorDetails'
 import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
 import { ChangeOperationList } from '../change-review/ChangeOperationList'
+import { canDuplicateComponent } from '../../domain/componentDuplication'
 
 export function Inspector() {
   const { locale, t } = useI18n()
@@ -27,6 +28,7 @@ export function Inspector() {
     effectiveDocument,
     ui,
     dispatch,
+    duplicateComponent,
     activeChangeSet,
     setSelectedComponent,
   } = useAppStore()
@@ -84,6 +86,21 @@ export function Inspector() {
         <h2 className={styles.selectionTitle} title={selectionContext.targetLabel}>
           {selectionContext.targetLabel}
         </h2>
+        {canDuplicateComponent(effectiveDocument, comp.id) ? (
+          <button
+            type="button"
+            className={styles.duplicateButton}
+            title={t('inspector.duplicateTitle')}
+            aria-label={t('inspector.duplicateTitle')}
+            data-component-duplicate-inspector
+            onClick={() => duplicateComponent(
+              comp.id,
+              t('componentMenu.duplicateHistory'),
+            )}
+          >
+            {t('inspector.duplicate')}
+          </button>
+        ) : null}
         <nav className={styles.breadcrumb} aria-label={t('inspector.breadcrumbLabel')}>
           <ol className={styles.breadcrumbList}>
             <li className={`${styles.breadcrumbItem} ${styles.screenBreadcrumb}`}>

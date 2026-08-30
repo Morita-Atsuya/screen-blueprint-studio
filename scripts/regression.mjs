@@ -911,6 +911,196 @@ await test('UI references reconcile after preview, accept, initialization, and u
   assert(restoredStore.getState().ui.activeScreenId === 'screen-list', 'initialization retained a missing screen')
 })
 
+await test('duplicateComponent atomically copies subtrees, overrides, and safe config', async () => {
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'duplicate-domain'))
+  const { sampleProject } = await import(moduleUrl(sampleProjectBundle, 'duplicate-domain-sample'))
+
+  const duplicated = applyCommandWithoutRevision(sampleProject, {
+    type: 'duplicateComponent',
+    componentId: 'comp-actions',
+    componentIdMap: {
+      'comp-actions': 'copy-actions',
+      'comp-cancel-btn': 'copy-cancel',
+      'comp-save-btn': 'copy-save',
+    },
+  })
+  assert(
+    duplicated.components['comp-edit-section'].childIds.join(',').includes(
+      'comp-actions,copy-actions',
+    ) &&
+      duplicated.components['copy-actions'].parentId === 'comp-edit-section' &&
+      duplicated.components['copy-actions'].childIds.join(',') === 'copy-cancel,copy-save' &&
+      duplicated.components['copy-cancel'].parentId === 'copy-actions' &&
+      duplicated.components['copy-save'].parentId === 'copy-actions',
+    'duplicated subtree hierarchy or immediate-after insertion was incorrect',
+  )
+  assert(
+    JSON.stringify(duplicated.components['copy-actions'].common) ===
+      JSON.stringify(sampleProject.components['comp-actions'].common) &&
+      duplicated.components['copy-save'].config.eventId === null &&
+      sampleProject.components['comp-save-btn'].config.eventId === 'event-submit',
+    'duplicate did not preserve component config or clear the external event connection',
+  )
+  assert(
+    duplicated.screenStates['state-edit-success'].componentOverrides['copy-actions']
+      .visible === false &&
+      duplicated.screenStates['state-edit-saving'].componentOverrides['copy-cancel']
+        .enabled === false &&
+      duplicated.screenStates['state-edit-saving'].componentOverrides['copy-save']
+        .enabled === false,
+    'subtree overrides were not cloned across all screen states',
+  )
+  assert(
+    JSON.stringify(duplicated.events) === JSON.stringify(sampleProject.events) &&
+      JSON.stringify(duplicated.apiOperations) === JSON.stringify(sampleProject.apiOperations) &&
+      !duplicated.apiOperations['api-save-user'].requestBindings.some(
+        binding => binding.componentId.startsWith('copy-'),
+      ),
+    'events or API request bindings were duplicated',
+  )
+
+  const inputCopy = applyCommandWithoutRevision(sampleProject, {
+    type: 'duplicateComponent',
+    componentId: 'comp-name-input',
+    componentIdMap: { 'comp-name-input': 'copy-name-input' },
+  })
+  assert(
+    inputCopy.components['copy-name-input'].config.fieldKey === 'name_copy' &&
+      JSON.stringify(inputCopy.components['copy-name-input'].config.validationRules) ===
+        JSON.stringify(sampleProject.components['comp-name-input'].config.validationRules),
+    'duplicated input fieldKey was not made unique or validation config was lost',
+  )
+
+  for (const invalidCommand of [
+    {
+      type: 'duplicateComponent',
+      componentId: 'comp-edit-page',
+      componentIdMap: { 'comp-edit-page': 'copy-page' },
+    },
+    {
+      type: 'duplicateComponent',
+      componentId: 'comp-actions',
+      componentIdMap: { 'comp-actions': 'copy-actions' },
+    },
+    {
+      type: 'duplicateComponent',
+      componentId: 'comp-edit-title',
+      componentIdMap: { 'comp-edit-title': 'comp-list-title' },
+    },
+  ]) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(sampleProject, invalidCommand)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `invalid duplicate command was accepted: ${JSON.stringify(invalidCommand)}`)
+  }
+})
+
+await test('component duplication preserves selection through history and change review', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('duplicate-selection-history')
+  store.getState().setSelectedComponent('comp-list-grid')
+  assert(
+    store.getState().duplicateComponent('comp-list-grid', 'Duplicate component'),
+    'store duplication failed',
+  )
+  const parent = store.getState().document.components['comp-list-section']
+  const duplicatedRootId = parent.childIds[parent.childIds.indexOf('comp-list-grid') + 1]
+  assert(
+    duplicatedRootId &&
+      duplicatedRootId !== 'comp-list-grid' &&
+      store.getState().ui.selectedComponentId === duplicatedRootId &&
+      store.getState().history.length === 1,
+    'duplicated root was not inserted, selected, or committed as one history entry',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().ui.selectedComponentId === 'comp-list-grid' &&
+      !store.getState().document.components[duplicatedRootId],
+    'duplicate Undo did not restore the source selection',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().ui.selectedComponentId === duplicatedRootId &&
+      store.getState().document.components[duplicatedRootId],
+    'duplicate Redo did not restore the duplicated selection',
+  )
+
+  store.getState().resetToSample()
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().setSelectedComponent('comp-actions')
+  store.getState().beginChangeSet('Duplicate subtree')
+  store.getState().duplicateComponent('comp-actions', 'Duplicate component')
+  const changeSet = store.getState().activeChangeSet
+  const operation = changeSet?.operations[0]
+  const previewRootId = operation?.command.type === 'duplicateComponent'
+    ? operation.command.componentIdMap['comp-actions']
+    : null
+  const { presentChangeSetOperations } = await import(
+    moduleUrl(changeSetPresentationBundle, 'duplicate-presentation')
+  )
+  const { getChangeSetComponentChanges } = await import(
+    moduleUrl(changeSetComponentChangesBundle, 'duplicate-markers')
+  )
+  const presentation = presentChangeSetOperations(changeSet, 'en')[0]
+  const markers = getChangeSetComponentChanges(changeSet)
+  assert(
+    operation?.command.type === 'duplicateComponent' &&
+      changeSet.operations.length === 1 &&
+      previewRootId &&
+      store.getState().ui.selectedComponentId === previewRootId &&
+      presentation.commandType === 'duplicateComponent' &&
+      presentation.navigation.componentId === previewRootId &&
+      presentation.impact.includes('3 components') &&
+      [...markers.statuses.values()].filter(status => status === 'added').length === 3,
+    `change-set duplication was not a single reviewable operation with added subtree markers: ${JSON.stringify({
+      commandType: operation?.command.type,
+      operationCount: changeSet?.operations.length,
+      previewRootId,
+      selectedComponentId: store.getState().ui.selectedComponentId,
+      presentationCommandType: presentation.commandType,
+      navigationComponentId: presentation.navigation?.componentId,
+      impact: presentation.impact,
+      addedCount: [...markers.statuses.values()].filter(status => status === 'added').length,
+    })}`,
+  )
+
+  const reloaded = await freshStore('duplicate-active-reload')
+  assert(
+    reloaded.getState().activeChangeSet?.operations[0].command.type === 'duplicateComponent' &&
+      reloaded.getState().effectiveDocument.components[previewRootId],
+    'active duplicate change set did not survive reload',
+  )
+  reloaded.getState().setSelectedComponent(previewRootId)
+  reloaded.getState().rejectChangeSet()
+  assert(
+    reloaded.getState().ui.selectedComponentId === 'comp-actions' &&
+      !reloaded.getState().effectiveDocument.components[previewRootId],
+    'reject did not restore the source selection',
+  )
+
+  store.getState().acceptChangeSet()
+  assert(
+    store.getState().document.components[previewRootId] &&
+      store.getState().ui.selectedComponentId === previewRootId,
+    'accept did not retain the duplicated subtree selection',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().ui.selectedComponentId === 'comp-actions' &&
+      !store.getState().document.components[previewRootId],
+    'accepted duplicate Undo did not restore the source selection',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().ui.selectedComponentId === previewRootId &&
+      store.getState().document.components[previewRootId],
+    'accepted duplicate Redo did not restore the duplicated selection',
+  )
+})
+
 await test('normal edit storage failures remain visible and exportable', async () => {
   memoryStorage.clear()
   const store = await freshStore('persistence-unavailable-edit')
@@ -1843,8 +2033,12 @@ await test('representative screen/component/state/event/API writes reach the cha
       componentSchema.oneOf.some(variant =>
         variant.properties?.kind?.enum?.includes('container') &&
         !variant.properties?.kind?.enum?.includes('modal')
+      ) &&
+      componentSchema.oneOf.some(variant =>
+        variant.properties?.operation?.const === 'duplicate' &&
+        variant.required?.includes('componentId')
       ),
-    'WebMCP does not distinguish modal root creation from child creation',
+    'WebMCP does not distinguish modal creation, child creation, and duplication',
   )
 
   execute('change_screen_structure', { operation: 'add', name: 'Agent screen', route: '/agent' })
@@ -1886,6 +2080,17 @@ await test('representative screen/component/state/event/API writes reach the cha
     config: { kind: 'text', text: 'Agent text', style: 'heading2' },
   })
   const addedComponentId = latestCommand().componentId
+  execute('change_component_structure', {
+    operation: 'duplicate',
+    componentId: addedComponentId,
+  })
+  const duplicateCommand = latestCommand()
+  assert(
+    duplicateCommand.type === 'duplicateComponent' &&
+      duplicateCommand.componentIdMap[addedComponentId] &&
+      Object.keys(duplicateCommand.componentIdMap).length === 1,
+    'WebMCP duplicate did not emit one atomic duplicateComponent command',
+  )
   execute('change_component_structure', {
     operation: 'move',
     componentId: addedComponentId,
@@ -2537,6 +2742,56 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
     closest(selector) {
       return selector === '[data-hierarchy-shortcut-scope]' ? this : null
     },
+  }
+  assert(
+    resolveEditorShortcut({
+      key: 'd',
+      metaKey: true,
+      target: scopedTarget,
+    }) === 'duplicate-selection' &&
+      resolveEditorShortcut({
+        key: 'D',
+        ctrlKey: true,
+        target: scopedTarget,
+      }) === 'duplicate-selection',
+    'Cmd/Ctrl+D did not resolve in Canvas or Inspector scope',
+  )
+  for (const guard of [
+    { repeat: true },
+    { isComposing: true },
+    { keyCode: 229 },
+    { dragActive: true },
+    { shiftKey: true },
+    { altKey: true },
+    { metaKey: true, ctrlKey: true },
+    { target: { tagName: 'DIV', closest: () => null } },
+    {
+      target: {
+        tagName: 'INPUT',
+        closest: scopedTarget.closest,
+      },
+    },
+    {
+      target: {
+        tagName: 'BUTTON',
+        closest(selector) {
+          return selector.includes('[role="tree"]') ||
+            selector === '[data-hierarchy-shortcut-scope]'
+            ? this
+            : null
+        },
+      },
+    },
+  ]) {
+    assert(
+      resolveEditorShortcut({
+        key: 'd',
+        metaKey: true,
+        target: scopedTarget,
+        ...guard,
+      }) === null,
+      'duplicate shortcut guard was bypassed',
+    )
   }
   const hierarchyShortcut = (overrides = {}) =>
     resolveHierarchySelectionShortcut({

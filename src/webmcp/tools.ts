@@ -15,6 +15,7 @@ import { DomainError } from '../domain/errors'
 import { getOwnEntity } from '../domain/entityMap'
 import { getComponentDisplayLabel } from '../domain/componentDisplayLabel'
 import { effectiveComponent } from '../domain/selectors'
+import { createDuplicateComponentCommand } from '../domain/componentDuplication'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
@@ -513,7 +514,7 @@ const nonModalComponentKinds: ComponentKind[] = [
 
 const changeComponentStructure: ToolDefinition = {
   name: 'change_component_structure',
-  description: 'Add, move, or remove a component or independent modal root in the active change set.',
+  description: 'Add, move, duplicate, or remove a component or independent modal root in the active change set.',
   inputSchema: {
     oneOf: [
       {
@@ -554,6 +555,16 @@ const changeComponentStructure: ToolDefinition = {
           position: { type: 'integer', minimum: 0 },
         },
         required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId', 'newParentId'],
+        ...CLOSED_OBJECT,
+      },
+      {
+        type: 'object',
+        properties: {
+          ...writeBaseProperties,
+          operation: { const: 'duplicate' },
+          componentId: { type: 'string', minLength: 1 },
+        },
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId'],
         ...CLOSED_OBJECT,
       },
       {
@@ -610,6 +621,24 @@ const changeComponentStructure: ToolDefinition = {
           newParentId: requiredString(input, 'newParentId'),
           position: typeof input.position === 'number' ? input.position : undefined,
         }
+      } else if (operation === 'duplicate') {
+        requireExactKeys(input, [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'componentId',
+        ], 'change_component_structure duplicate input')
+        const componentId = requiredString(input, 'componentId')
+        const duplicateCommand = createDuplicateComponentCommand(
+          useAppStore.getState().effectiveDocument,
+          componentId,
+          nanoid,
+        )
+        if (!duplicateCommand) {
+          throw new DomainError('INVALID_PARENT', 'Independent screen roots cannot be duplicated')
+        }
+        command = duplicateCommand
       } else if (operation === 'remove') {
         requireExactKeys(input, [
           'changeSetId',

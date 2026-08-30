@@ -1,5 +1,6 @@
 import type { ProjectDocument, EntityId } from './model'
 import { CONTAINER_KINDS, DEFAULT_COMPONENT_LAYOUT } from './model'
+import type { ComponentConfig } from './model'
 import type { DomainCommand } from './commands'
 import { DomainError } from './errors'
 import { validateInvariants } from './invariants'
@@ -7,8 +8,10 @@ import {
   deleteOwnEntity,
   getOwnEntity,
   hasOwnEntity,
+  isSafeEntityId,
   setOwnEntity,
 } from './entityMap'
+import { duplicableSubtreeIds } from './componentDuplication'
 
 // Deep clone a document (JSON-safe)
 function clone<T>(v: T): T {
@@ -125,6 +128,47 @@ function cleanupStateRefsInEvents(stateId: EntityId, doc: ProjectDocument): void
       if (action.type === 'setState' && action.stateId === stateId) return false
       return true
     })
+  }
+}
+
+function duplicatedFieldKey(
+  sourceKey: string,
+  usedKeys: Set<string>,
+): string {
+  const normalized = sourceKey.trim()
+  if (!normalized) return ''
+  const base = `${normalized}_copy`
+  let candidate = base
+  let suffix = 2
+  while (usedKeys.has(candidate)) {
+    candidate = `${base}_${suffix}`
+    suffix += 1
+  }
+  usedKeys.add(candidate)
+  return candidate
+}
+
+function duplicateComponentConfig(
+  config: ComponentConfig,
+  usedFieldKeys: Set<string>,
+): ComponentConfig {
+  const copied = clone(config)
+  switch (copied.kind) {
+    case 'textInput':
+    case 'select':
+      return {
+        ...copied,
+        fieldKey: duplicatedFieldKey(copied.fieldKey, usedFieldKeys),
+      }
+    case 'button':
+      return { ...copied, eventId: null }
+    case 'page':
+    case 'section':
+    case 'container':
+    case 'text':
+    case 'alert':
+    case 'modal':
+      return copied
   }
 }
 
@@ -360,6 +404,119 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
 
       comp.parentId = newParentId
       newParent.childIds.splice(nextPosition, 0, componentId)
+      break
+    }
+
+    case 'duplicateComponent': {
+      requireExactKeys(
+        command,
+        ['type', 'componentId', 'componentIdMap'],
+        'duplicateComponent command',
+      )
+      const source = getOwnEntity(next.components, command.componentId)
+      if (!source) {
+        throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
+      }
+      if (!source.parentId) {
+        throw new DomainError('INVALID_PARENT', 'Independent screen roots cannot be duplicated')
+      }
+      const parent = getOwnEntity(next.components, source.parentId)
+      const sourcePosition = parent?.childIds.indexOf(source.id) ?? -1
+      if (!parent || sourcePosition < 0) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component parent is unavailable')
+      }
+      if (
+        typeof command.componentIdMap !== 'object' ||
+        command.componentIdMap === null ||
+        Array.isArray(command.componentIdMap)
+      ) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component ID map must be an object')
+      }
+
+      const sourceIds = duplicableSubtreeIds(next, source.id)
+      const mappedSourceIds = Object.keys(command.componentIdMap)
+      if (
+        mappedSourceIds.length !== sourceIds.length ||
+        sourceIds.some(id => !hasOwnEntity(command.componentIdMap, id))
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          'Component ID map must contain the complete source subtree',
+        )
+      }
+
+      const newIds = mappedSourceIds.map(sourceId => {
+        if (!isSafeEntityId(sourceId)) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe source ID')
+        }
+        const newId = getOwnEntity(command.componentIdMap, sourceId)
+        if (!isSafeEntityId(newId)) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe new ID')
+        }
+        if (hasOwnEntity(next.components, newId)) {
+          throw new DomainError('INVARIANT_VIOLATION', `Component ${newId} already exists`)
+        }
+        return newId
+      })
+      if (new Set(newIds).size !== newIds.length) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component IDs must be unique')
+      }
+
+      const usedFieldKeys = new Set(
+        Object.values(next.components).flatMap(component => {
+          if (component.screenId !== source.screenId) return []
+          const config = component.config
+          if (config.kind !== 'textInput' && config.kind !== 'select') return []
+          const fieldKey = config.fieldKey.trim()
+          return fieldKey ? [fieldKey] : []
+        }),
+      )
+
+      for (const sourceId of sourceIds) {
+        const sourceComponent = getOwnEntity(next.components, sourceId)
+        const newId = getOwnEntity(command.componentIdMap, sourceId)
+        if (!sourceComponent || !newId) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Source subtree changed during duplication')
+        }
+        const duplicatedParentId = sourceId === source.id
+          ? source.parentId
+          : sourceComponent.parentId
+            ? getOwnEntity(command.componentIdMap, sourceComponent.parentId)
+            : undefined
+        if (!duplicatedParentId) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component parent is missing')
+        }
+        setOwnEntity(next.components, newId, {
+          ...clone(sourceComponent),
+          id: newId,
+          parentId: duplicatedParentId,
+          childIds: sourceComponent.childIds.map(childId => {
+            const duplicatedChildId = getOwnEntity(command.componentIdMap, childId)
+            if (!duplicatedChildId) {
+              throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component child is missing')
+            }
+            return duplicatedChildId
+          }),
+          config: duplicateComponentConfig(sourceComponent.config, usedFieldKeys),
+        })
+      }
+
+      const duplicatedRootId = getOwnEntity(command.componentIdMap, source.id)
+      if (!duplicatedRootId) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Duplicated root component ID is missing')
+      }
+      parent.childIds.splice(sourcePosition + 1, 0, duplicatedRootId)
+
+      for (const state of Object.values(next.screenStates)) {
+        if (state.screenId !== source.screenId) continue
+        for (const sourceId of sourceIds) {
+          const sourceOverride = getOwnEntity(state.componentOverrides, sourceId)
+          const duplicatedId = getOwnEntity(command.componentIdMap, sourceId)
+          if (sourceOverride && duplicatedId) {
+            setOwnEntity(state.componentOverrides, duplicatedId, clone(sourceOverride))
+          }
+        }
+      }
       break
     }
 

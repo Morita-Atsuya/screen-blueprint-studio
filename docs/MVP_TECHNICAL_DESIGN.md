@@ -406,6 +406,7 @@ type DomainCommand =
   | UpdateScreenCommand
   | RemoveScreenCommand
   | AddComponentCommand
+  | DuplicateComponentCommand
   | MoveComponentCommand
   | RemoveComponentCommand
   | UpdateComponentSpecCommand
@@ -418,6 +419,8 @@ type DomainCommand =
 commandは成功時に全体適用、失敗時に無変更とする。
 
 screen追加時はroot pageとdefault stateを同一commandで作成する。screen削除時は配下のcomponent、state、event、APIをまとめて削除する。他screenの`navigate`から参照されているscreenは、参照を外すまで削除できない。選択中screenを削除したUIは、残った先頭screenへ選択をreconcileする。
+
+`duplicateComponent`はPage／Modal root以外の対象subtreeを1 commandでdeep copyし、全component IDをcommand内の対応表で新規IDへ置換して元component直後へ挿入する。全ScreenStateの対象overrideは新IDへ複製する一方、eventと`ApiOperation.requestBindings`は複製せず、Buttonのevent参照は外す。入力の`fieldKey`は一意なcopy suffixへ再採番する。
 
 ### 7.2 更新単位
 
@@ -640,7 +643,7 @@ active change setがすでに存在する場合は新規作成せず、既存ID�
 | Tool | 目的 | 主な入力 |
 | --- | --- | --- |
 | `change_screen_structure` | screenの追加、更新、削除 | `changeSetId`, `operation`, operation別のtyped fields |
-| `change_component_structure` | componentの追加、移動、subtree削除 | `changeSetId`, `operation`, operation別のtyped fields |
+| `change_component_structure` | componentの追加、複製、移動、subtree削除 | `changeSetId`, `operation`, operation別のtyped fields |
 | `update_component_spec` | componentの編集可能仕様を更新 | `changeSetId`, `componentId`, typed `patch` |
 | `upsert_screen_state` | 状態の追加、更新、削除 | `changeSetId`, `operation`, state fields |
 | `connect_behavior` | event/API操作の追加、削除 | `changeSetId`, `operation`, eventまたはAPI fields |
@@ -656,6 +659,7 @@ AIによる更新toolは次を共通要件とする。
 `change_component_structure`は巨大な汎用編集toolではなく、component treeだけを対象にしたdiscriminated operationである。
 
 - `add`: `parentId`, `kind`, `config`, `position`。Modalは`parentId: null`、それ以外はcontainer parentを必須とする
+- `duplicate`: `componentId`。Page／Modal root以外のsubtreeを同一parent内の直後へatomicに複製する
 - `move`: `componentId`, `newParentId`, `position`
 - `remove`: `componentId`
 

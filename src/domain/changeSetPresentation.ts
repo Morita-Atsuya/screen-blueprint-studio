@@ -457,6 +457,7 @@ function commandEntityKind(command: DomainCommand): 'screen' | 'component' | 'st
       return 'screen'
     case 'addComponent':
     case 'moveComponent':
+    case 'duplicateComponent':
     case 'removeComponent':
     case 'updateComponentSpec':
       return 'component'
@@ -497,6 +498,21 @@ function targetForCommand(
     case 'moveComponent':
     case 'updateComponentSpec': {
       const component = getOwnEntity(after.components, command.componentId)
+      return {
+        label: component
+          ? getComponentHierarchyLabel(after, component, locale)
+          : translate(locale, 'review.value.missing'),
+        screenId: component?.screenId ?? null,
+      }
+    }
+    case 'duplicateComponent': {
+      const duplicatedId = getOwnEntity(
+        command.componentIdMap,
+        command.componentId,
+      )
+      const component = duplicatedId
+        ? getOwnEntity(after.components, duplicatedId)
+        : undefined
       return {
         label: component
           ? getComponentHierarchyLabel(after, component, locale)
@@ -596,6 +612,18 @@ function navigationForCommand(
         ? { screenId: component.screenId, componentId: component.id }
         : null
     }
+    case 'duplicateComponent': {
+      const duplicatedId = getOwnEntity(
+        command.componentIdMap,
+        command.componentId,
+      )
+      const component = duplicatedId
+        ? getOwnEntity(after.components, duplicatedId)
+        : undefined
+      return component
+        ? { screenId: component.screenId, componentId: component.id }
+        : null
+    }
     case 'createScreenState': {
       const state = getOwnEntity(after.screenStates, command.stateId)
       return state ? { screenId: state.screenId, stateId: state.id } : null
@@ -679,6 +707,19 @@ function buildChanges(
     case 'addComponent': {
       addStatus(changes, 'review.value.notSet', 'review.value.added', locale)
       addComponentFields(changes, getOwnEntity(after.components, command.componentId)!, after, locale)
+      return changes
+    }
+    case 'duplicateComponent': {
+      const duplicatedId = getOwnEntity(
+        command.componentIdMap,
+        command.componentId,
+      )
+      const duplicated = duplicatedId
+        ? getOwnEntity(after.components, duplicatedId)
+        : undefined
+      if (!duplicated) return changes
+      addStatus(changes, 'review.value.notSet', 'review.value.added', locale)
+      addComponentFields(changes, duplicated, after, locale)
       return changes
     }
     case 'moveComponent': {
@@ -858,6 +899,22 @@ function presentOperation(
       ? translate(locale, 'review.action.reorderComponent')
       : translate(locale, 'review.action.reparentComponent')
     : translate(locale, commandMessageKey(operation.command))
+  const duplicateComponentIdMap = operation.command.type === 'duplicateComponent'
+    ? operation.command.componentIdMap
+    : null
+  const duplicationImpact = duplicateComponentIdMap
+    ? translate(locale, 'review.duplicateImpact', {
+        components: Object.values(duplicateComponentIdMap).filter(
+          id => !getOwnEntity(before.components, id) && getOwnEntity(after.components, id),
+        ).length,
+        overrides: Object.values(after.screenStates).reduce(
+          (count, state) => count + Object.values(duplicateComponentIdMap).filter(
+            id => getOwnEntity(state.componentOverrides, id),
+          ).length,
+          0,
+        ),
+      })
+    : null
   return {
     operationId: operation.id,
     source: operation.source,
@@ -869,7 +926,9 @@ function presentOperation(
       ? screenLabel(isDeletion ? before : after, target.screenId, locale)
       : null,
     changes: buildChanges(operation.command, before, after, locale),
-    impact: isDeletion ? entityImpact(before, after, operation.command, locale) : null,
+    impact: isDeletion
+      ? entityImpact(before, after, operation.command, locale)
+      : duplicationImpact,
     navigation: navigationForCommand(operation.command, before, after),
   }
 }

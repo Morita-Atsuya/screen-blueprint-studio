@@ -16,6 +16,9 @@ import type { UiMessage } from '../i18n/messages'
 import { domainErrorMessage } from '../i18n/messages'
 import type { ToastInput, ToastState } from './toastModel'
 import {
+  createDuplicateComponentCommand,
+} from '../domain/componentDuplication'
+import {
   analyzeDeleteImpact,
   type DeleteCommand,
   type DeleteImpactAnalysis,
@@ -38,6 +41,8 @@ export interface HistoryEntry {
   source: 'human' | 'accepted-change-set'
   before: ProjectDocument
   after: ProjectDocument
+  selectionBefore?: EntityId | null
+  selectionAfter?: EntityId | null
 }
 
 export interface UiState {
@@ -81,6 +86,7 @@ export interface AppStore {
   effectiveDocument: ProjectDocument
 
   dispatch(command: DomainCommand, label?: string): boolean
+  duplicateComponent(componentId: EntityId, label: string): boolean
   beginChangeSet(summary: string): ChangeSet
   dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'human' | 'agent'): void
   acceptChangeSet(): void
@@ -186,8 +192,44 @@ function persist(document: ProjectDocument, activeChangeSet: ChangeSet | null, a
   })
 }
 
-function buildHistory(before: ProjectDocument, after: ProjectDocument, label: string, source: HistoryEntry['source']): HistoryEntry {
-  return { id: nanoid(), label, source, before, after }
+function buildHistory(
+  before: ProjectDocument,
+  after: ProjectDocument,
+  label: string,
+  source: HistoryEntry['source'],
+  selection?: {
+    before: EntityId | null
+    after: EntityId | null
+  },
+): HistoryEntry {
+  return {
+    id: nanoid(),
+    label,
+    source,
+    before,
+    after,
+    selectionBefore: selection?.before,
+    selectionAfter: selection?.after,
+  }
+}
+
+function selectionBeforeChangeSet(
+  changeSet: ChangeSet,
+  selectedComponentId: EntityId | null,
+): EntityId | null {
+  let candidate = selectedComponentId
+  if (!candidate) return null
+
+  for (const operation of [...changeSet.operations].reverse()) {
+    const command = operation.command
+    if (command.type !== 'duplicateComponent') continue
+    const componentIdMap = command.componentIdMap
+    const sourceId = Object.keys(componentIdMap).find(
+      id => getOwnEntity(componentIdMap, id) === candidate,
+    )
+    if (sourceId) candidate = sourceId
+  }
+  return hasOwnEntity(changeSet.baseDocument.components, candidate) ? candidate : null
 }
 
 function toDomainError(error: unknown): DomainError {
@@ -440,6 +482,42 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    duplicateComponent(componentId, label) {
+      requireWritable()
+      const before = get()
+      const command = createDuplicateComponentCommand(
+        before.effectiveDocument,
+        componentId,
+        nanoid,
+      )
+      if (!command) return false
+      const duplicatedRootId = getOwnEntity(command.componentIdMap, componentId)
+      if (!duplicatedRootId || !before.dispatch(command, label)) return false
+
+      set(state => {
+        const ui = reconcileUiState(state.effectiveDocument, {
+          ...state.ui,
+          selectedComponentId: duplicatedRootId,
+        })
+        if (before.activeChangeSet) return { ui }
+
+        const last = state.history[state.history.length - 1]
+        if (!last) return { ui }
+        return {
+          ui,
+          history: [
+            ...state.history.slice(0, -1),
+            {
+              ...last,
+              selectionBefore: before.ui.selectedComponentId,
+              selectionAfter: duplicatedRootId,
+            },
+          ],
+        }
+      })
+      return true
+    },
+
     beginChangeSet(summary) {
       requireWritable()
       const state = get()
@@ -501,9 +579,19 @@ export const useAppStore = create<AppStore>((set, get) => {
           state.activeChangeSet.baseDocument,
           state.activeChangeSet.operations.map(op => op.command),
         )
+        const selectedBefore = selectionBeforeChangeSet(
+          state.activeChangeSet,
+          state.ui.selectedComponentId,
+        )
         const newHistory = [
           ...state.history.slice(-(MAX_HISTORY - 1)),
-          buildHistory(state.document, next, `Accept: ${state.activeChangeSet.summary}`, 'accepted-change-set'),
+          buildHistory(
+            state.document,
+            next,
+            `Accept: ${state.activeChangeSet.summary}`,
+            'accepted-change-set',
+            { before: selectedBefore, after: state.ui.selectedComponentId },
+          ),
         ]
         const nextUi = {
           ...reconcileUiState(next, state.ui),
@@ -551,8 +639,15 @@ export const useAppStore = create<AppStore>((set, get) => {
       const rejectedRecords = Array.isArray(state.rejectedRecords)
         ? [record, ...state.rejectedRecords].slice(0, 20)
         : [record]
+      const selectedBefore = selectionBeforeChangeSet(
+        state.activeChangeSet,
+        state.ui.selectedComponentId,
+      )
       const nextUi = {
-        ...reconcileUiState(state.document, state.ui),
+        ...reconcileUiState(state.document, {
+          ...state.ui,
+          selectedComponentId: selectedBefore,
+        }),
         rightPanelTab: 'inspector' as const,
       }
       set({ activeChangeSet: null, effectiveDocument: state.document, rejectedRecords, ui: nextUi })
@@ -578,7 +673,12 @@ export const useAppStore = create<AppStore>((set, get) => {
         ...last.before,
         revision: nextRevision(state.document.revision),
       }
-      const nextUi = reconcileUiState(restored, state.ui)
+      const nextUi = reconcileUiState(restored, {
+        ...state.ui,
+        selectedComponentId: last.selectionBefore !== undefined
+          ? last.selectionBefore
+          : state.ui.selectedComponentId,
+      })
       const redoStack = [
         ...state.redoStack.slice(-(MAX_HISTORY - 1)),
         last,
@@ -602,10 +702,26 @@ export const useAppStore = create<AppStore>((set, get) => {
         ...entry.after,
         revision: nextRevision(state.document.revision),
       }
-      const nextUi = reconcileUiState(restored, state.ui)
+      const nextUi = reconcileUiState(restored, {
+        ...state.ui,
+        selectedComponentId: entry.selectionAfter !== undefined
+          ? entry.selectionAfter
+          : state.ui.selectedComponentId,
+      })
       const newHistory = [
         ...state.history.slice(-(MAX_HISTORY - 1)),
-        buildHistory(state.document, restored, entry.label, entry.source),
+        buildHistory(
+          state.document,
+          restored,
+          entry.label,
+          entry.source,
+          entry.selectionBefore !== undefined || entry.selectionAfter !== undefined
+            ? {
+                before: entry.selectionBefore ?? null,
+                after: entry.selectionAfter ?? null,
+              }
+            : undefined,
+        ),
       ]
       set({
         document: restored,

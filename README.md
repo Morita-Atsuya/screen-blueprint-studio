@@ -14,6 +14,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - Page、Section、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
 - Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
+- Page／Modal root以外のcomponent subtreeを直後へatomicに複製。全状態overrideを引き継ぎ、event／API field bindingは複製しない
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
 - Inspectorで選択componentのevent／実行順actionと、同screenのAPI operation／request binding／結果state、`textInput`のvalidation ruleを追加・編集・削除・並べ替え
 - 自由に命名できる画面状態と状態別override
@@ -62,6 +63,7 @@ AIがchange setへ型付きoperationを追加
 - treeの`⠿` handle、またはcanvas上のPage／Modal root以外のcomponent面全体を掴み、同一container内の並び替えまたは別containerへ移動
 - Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
+- Canvas／InspectorでPage／Modal root以外のcomponentを選択し、右クリックメニュー、Inspector、または`Cmd/Ctrl+D`からsubtreeを直後へ複製
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すとUndo、`Cmd/Ctrl+Shift+Z`または`Ctrl+Y`でRedo
 - Screen／Inspectorのテキスト入力は編集中の内容をlocal draftとして保持し、単一行は`Enter`またはフォーカス移動、複数行はフォーカス移動で1操作として確定。`Escape`で未確定入力を取り消す
 - Screensタブで画面の追加、選択、名前・route編集、削除
@@ -123,7 +125,7 @@ chrome://flags/#enable-webmcp-testing
 | Read | `get_pending_change_set` | active change setとoperationを取得 |
 | Write | `begin_change_set` | review対象のchange setを開始 |
 | Write | `change_screen_structure` | 画面の追加、更新、削除を提案 |
-| Write | `change_component_structure` | コンポーネントの追加、移動、削除を提案 |
+| Write | `change_component_structure` | コンポーネントの追加、複製、移動、削除を提案 |
 | Write | `update_component_spec` | コンポーネントの共通仕様、種類別設定を提案 |
 | Write | `upsert_screen_state` | 非default状態の作成、更新、削除を提案 |
 | Write | `connect_behavior` | イベント／API operationの接続または削除を提案 |

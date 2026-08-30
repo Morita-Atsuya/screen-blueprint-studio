@@ -34,6 +34,7 @@ const COMMAND_TYPES = new Set([
   'removeScreen',
   'addComponent',
   'moveComponent',
+  'duplicateComponent',
   'removeComponent',
   'updateComponentSpec',
   'createScreenState',

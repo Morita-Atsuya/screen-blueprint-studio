@@ -18,6 +18,7 @@ export type DomainCommand =
   // Component commands
   | AddComponentCommand
   | MoveComponentCommand
+  | DuplicateComponentCommand
   | RemoveComponentCommand
   | UpdateComponentSpecCommand
   // State commands
@@ -75,6 +76,12 @@ export interface MoveComponentCommand {
   componentId: EntityId
   newParentId: EntityId
   position?: number
+}
+
+export interface DuplicateComponentCommand {
+  type: 'duplicateComponent'
+  componentId: EntityId
+  componentIdMap: Record<EntityId, EntityId>
 }
 
 export interface RemoveComponentCommand {
