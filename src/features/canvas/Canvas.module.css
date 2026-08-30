@@ -158,6 +158,11 @@
   cursor: pointer;
 }
 
+.draggable {
+  cursor: grab;
+  touch-action: manipulation;
+}
+
 .comp::after {
   position: absolute;
   z-index: 4;
@@ -176,15 +181,15 @@
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-.comp:focus-within::after {
+.comp:focus-visible::after {
   box-shadow: 0 0 0 1px var(--accent);
 }
 
-.selected:focus-within::after {
+.selected:focus-visible::after {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-.dragging { opacity: 0.3; }
+.dragging { cursor: grabbing; opacity: 0.3; }
 .componentDisabled { opacity: 0.55; }
 
 .componentChrome {
@@ -203,13 +208,8 @@
 
 .hovered > .componentChrome,
 .selected > .componentChrome,
-.componentChrome:focus-within {
+.comp:focus-visible > .componentChrome {
   opacity: 1;
-}
-
-.hovered > .componentChrome,
-.selected > .componentChrome {
-  pointer-events: auto;
 }
 
 .componentLabel {
@@ -228,20 +228,6 @@
 .componentLabel:last-child {
   border-radius: 4px;
 }
-
-.dragHandle {
-  width: 22px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 0 4px 4px 0;
-  background: #3730a3;
-  color: white;
-  cursor: grab;
-  touch-action: none;
-}
-.dragHandle:active { cursor: grabbing; }
-.dragHandle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .children {
   position: relative;

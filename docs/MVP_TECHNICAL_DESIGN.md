@@ -584,7 +584,7 @@ interface Diagnostic {
 - `Screens`: 画面一覧、entry表示、作成、選択、名称変更、削除
 - `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
 - `Structure`: component tree。leafはlabel／text等から、構造componentはlocalized kindまたはScreen内のframe順からeditor-only表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
-- `Canvas`: idle時はartboardと仕様上の表示内容だけを描画し、componentのsemantic label、outline、drag handleはhover／選択／focus時だけflow外のeditor overlayとして表示する。overlay上のhandleからtreeと同じcommandで並び替え・親変更し、drop中だけ挿入lineまたはoutlineを表示する
+- `Canvas`: idle時はartboardと仕様上の表示内容だけを描画し、componentのsemantic labelとoutlineはhover／選択／focus時だけflow外のeditor overlayとして表示する。Page／Modal root以外のcomponent面全体をpointerまたはkeyboardで掴み、treeと同じcommandで並び替え・親変更する。pointerは5px移動後にdrag開始し、click selectionと誤dragを分離する。drop中だけ挿入lineまたはoutlineを表示する
 - 追加不可の場合は無効理由を表示
 
 ### 10.3 中央ペイン
@@ -772,7 +772,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 ## 14. アクセシビリティとレスポンシブ
 
 - 主要操作をbutton、form control、tree semanticsで提供
-- dnd-kitのpointer、touch、keyboard sensorとdrag handleのaccessible nameを提供
+- dnd-kitのpointer、touch、keyboard sensorを提供し、Tree drag handleとCanvasのfocus可能なcomponent面にaccessible nameを設定
 - DnD状態は視覚的なline・outlineに加え、選択localeのscreen reader announcementで通知
 - キーボードで選択、クリック追加、上下移動、削除、選択解除、Undoが可能
 - 選択を色だけで示さない

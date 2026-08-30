@@ -55,7 +55,7 @@ AIがchange setへ型付きoperationを追加
 ## 基本操作
 
 - パレット項目はクリックで選択中containerへ追加、ドラッグでtree/canvasの任意位置へ追加。Modalだけは選択位置に依存せずScreen直下の独立frameとして追加
-- treeの`⠿` handle、またはcanvasでcomponentをhover／選択した時だけ現れるfloating handleで、同一container内の並び替えまたは別containerへの移動
+- treeの`⠿` handle、またはcanvas上のPage／Modal root以外のcomponent面全体を掴み、同一container内の並び替えまたは別containerへ移動
 - Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo

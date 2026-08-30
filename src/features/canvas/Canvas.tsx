@@ -257,6 +257,7 @@ function CanvasComponent({
     : ''
   const isRoot = base?.parentId === null
   const {
+    active,
     attributes,
     listeners,
     isDragging,
@@ -315,6 +316,7 @@ function CanvasComponent({
       ref={setNodeRef}
       className={[
         styles.comp,
+        !isRoot ? styles.draggable : '',
         isSelected ? styles.selected : '',
         isHovered ? styles.hovered : '',
         isDragging ? styles.dragging : '',
@@ -323,7 +325,23 @@ function CanvasComponent({
         component.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}
       style={style}
+      {...(!isRoot ? attributes : {})}
+      {...(!isRoot ? listeners : {})}
+      aria-label={!isRoot ? t('canvas.dragAria', { label: displayName }) : undefined}
       onClick={event => { event.stopPropagation(); onSelect(component.id) }}
+      onPointerDown={event => {
+        event.stopPropagation()
+        if (!isRoot) listeners?.onPointerDown?.(event)
+      }}
+      onTouchStart={event => {
+        event.stopPropagation()
+        if (!isRoot) listeners?.onTouchStart?.(event)
+      }}
+      onKeyDown={event => {
+        if (active) return
+        event.stopPropagation()
+        if (!isRoot) listeners?.onKeyDown?.(event)
+      }}
       onPointerMove={event => {
         event.stopPropagation()
         if (!isHovered) onHover(component.id)
@@ -332,21 +350,13 @@ function CanvasComponent({
       data-editor-hovered={isHovered || undefined}
       data-editor-selected={isSelected || undefined}
       data-component-visible={component.common.visible}
+      data-canvas-draggable={!isRoot || undefined}
+      data-drag-surface={!isRoot ? 'canvas' : undefined}
+      data-drag-component={!isRoot ? component.id : undefined}
     >
       {!independentRoot ? (
         <div className={styles.componentChrome} data-editor-chrome>
           <span className={styles.componentLabel}>{displayName}</span>
-          <button
-            className={styles.dragHandle}
-            aria-label={t('tree.dragAria', { label: displayName })}
-            title={t('tree.drag')}
-            data-drag-surface="canvas"
-            data-drag-component={component.id}
-            {...attributes}
-            {...listeners}
-          >
-            ⠿
-          </button>
         </div>
       ) : null}
       <ComponentView comp={component} override={stateOverride} t={t} />

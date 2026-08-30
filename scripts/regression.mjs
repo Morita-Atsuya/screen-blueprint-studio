@@ -2225,7 +2225,7 @@ await test('Canvas component chrome stays outside the idle preview flow', async 
       canvasStyles.includes('opacity: 0') &&
       canvasStyles.includes('.hovered > .componentChrome') &&
       canvasStyles.includes('.selected > .componentChrome') &&
-      canvasStyles.includes('.comp:focus-within::after'),
+      canvasStyles.includes('.comp:focus-visible::after'),
     'floating Canvas chrome is not gated by hover, selection, or focus',
   )
   assert(
@@ -2239,6 +2239,73 @@ await test('Canvas component chrome stays outside the idle preview flow', async 
       dropZoneStyles.includes('position: absolute') &&
       dropZoneStyles.includes('.canvas.end { inset: auto 0 -5px; }'),
     'Canvas insertion targets still consume preview layout space',
+  )
+})
+
+await test('Canvas component surfaces are isolated accessible drag activators', async () => {
+  const canvasSource = readFileSync(
+    join(root, 'src/features/canvas/Canvas.tsx'),
+    'utf8',
+  )
+  const canvasStyles = readFileSync(
+    join(root, 'src/features/canvas/Canvas.module.css'),
+    'utf8',
+  )
+  const dndSource = readFileSync(
+    join(root, 'src/dnd/EditorDndContext.tsx'),
+    'utf8',
+  )
+  const dndStyles = readFileSync(
+    join(root, 'src/dnd/EditorDndContext.module.css'),
+    'utf8',
+  )
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+
+  assert(
+    !canvasSource.includes('styles.dragHandle') &&
+      !canvasSource.includes('data-drag-surface="canvas"') &&
+      canvasSource.includes('<span className={styles.componentLabel}>{displayName}</span>'),
+    'Canvas still renders a dedicated drag grip',
+  )
+  assert(
+    canvasSource.includes('{...(!isRoot ? attributes : {})}') &&
+      canvasSource.includes('{...(!isRoot ? listeners : {})}') &&
+      canvasSource.includes("data-canvas-draggable={!isRoot || undefined}") &&
+      canvasSource.includes("data-drag-surface={!isRoot ? 'canvas' : undefined}") &&
+      canvasSource.includes("aria-label={!isRoot ? t('canvas.dragAria'"),
+    'non-root Canvas wrappers are not accessible whole-surface drag activators',
+  )
+  assert(
+    canvasSource.includes('disabled: { draggable: isRoot, droppable: true }') &&
+      canvasSource.includes('if (!isRoot) listeners?.onPointerDown?.(event)') &&
+      canvasSource.includes('if (!isRoot) listeners?.onTouchStart?.(event)') &&
+    canvasSource.match(/onKeyDown=\{event => \{\s*if \(active\) return\s*event\.stopPropagation\(\)/) &&
+    canvasSource.includes('if (!isRoot) listeners?.onKeyDown?.(event)') &&
+    canvasSource.match(/onPointerDown=\{event => \{\s*event\.stopPropagation\(\)/),
+    'root gating or nested activator event isolation is missing',
+  )
+  assert(
+    dndSource.includes('PointerSensor, { activationConstraint: { distance: 5 } }') &&
+      dndSource.includes('KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }'),
+    'click separation or keyboard DnD sensor support is missing',
+  )
+  assert(
+    canvasStyles.includes('.draggable') &&
+      canvasStyles.includes('cursor: grab') &&
+      canvasStyles.includes('.dragging { cursor: grabbing') &&
+      canvasStyles.includes('.comp:focus-visible::after') &&
+      canvasStyles.includes('.comp:focus-visible > .componentChrome') &&
+      canvasStyles.includes('.previewControl { pointer-events: none; }') &&
+      dndStyles.includes('cursor: grabbing'),
+    'whole-surface cursor, focus, preview-control, or overlay feedback is incomplete',
+  )
+  assert(
+    treeSource.includes('className={styles.dragHandle}') &&
+      treeSource.includes('data-drag-surface="tree"'),
+    'Tree drag grip changed with the Canvas-only interaction',
   )
 })
 
