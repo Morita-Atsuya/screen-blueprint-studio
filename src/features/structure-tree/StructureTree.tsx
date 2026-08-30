@@ -112,14 +112,22 @@ function TreeNode({
   const isIndependentRoot = component?.parentId === null
   const isPageRoot = component?.kind === 'page' && isIndependentRoot
   const isModalRoot = component?.kind === 'modal' && isIndependentRoot
-  const displayName = component
+  const kindLabel = component ? t(COMPONENT_KIND_MESSAGE_KEYS[component.kind]) : ''
+  const spokenLabel = component
     ? isPageRoot
-      ? ownerScreen?.name ?? t('component.page')
+      ? ownerScreen?.name ?? kindLabel
       : isModalRoot
         ? t('canvas.modalFrameLabel', {
             number: (ownerScreen?.modalComponentIds.indexOf(component.id) ?? -1) + 1,
           })
-        : getComponentDisplayLabel(component, locale)
+        : CONTAINER_KINDS.includes(component.kind)
+          ? kindLabel
+          : getComponentDisplayLabel(component, locale)
+    : ''
+  const visibleLabel = component
+    ? CONTAINER_KINDS.includes(component.kind) && !isPageRoot && !isModalRoot
+      ? ''
+      : spokenLabel
     : ''
   const {
     attributes,
@@ -135,7 +143,7 @@ function TreeNode({
           type: 'component',
           componentId: component.id,
           screenId: component.screenId,
-          label: displayName,
+          label: spokenLabel,
         }
       : undefined,
     disabled: { draggable: isIndependentRoot, droppable: true },
@@ -160,6 +168,7 @@ function TreeNode({
     <li
       className={`${styles.nodeWrapper} ${isIndependentRoot ? styles.independentRoot : ''} ${isModalRoot ? styles.modalRoot : ''}`}
       data-tree-root={isPageRoot ? 'page' : isModalRoot ? 'modal' : undefined}
+      aria-label={spokenLabel || undefined}
     >
       <div
         ref={setNodeRef}
@@ -170,7 +179,7 @@ function TreeNode({
         {!isIndependentRoot && (
           <button
             className={styles.dragHandle}
-            aria-label={t('tree.dragAria', { label: displayName })}
+            aria-label={t('tree.dragAria', { label: spokenLabel })}
             title={t('tree.drag')}
             data-drag-surface="tree"
             data-drag-component={component.id}
@@ -182,7 +191,7 @@ function TreeNode({
           </button>
         )}
         <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
-        <span className={styles.name}>{displayName}</span>
+        {visibleLabel ? <span className={styles.name}>{visibleLabel}</span> : null}
         {!isPageRoot && (
           <div className={styles.nodeActions}>
             {!isIndependentRoot ? (
@@ -190,14 +199,14 @@ function TreeNode({
                 <button
                   className={styles.iconBtn}
                   title={t('tree.moveUp')}
-                  aria-label={t('tree.moveUpAria', { label: displayName })}
+                  aria-label={t('tree.moveUpAria', { label: spokenLabel })}
                   disabled={siblingIndex <= 0}
                   onClick={event => { event.stopPropagation(); onMove(component.id, -1) }}
                 >↑</button>
                 <button
                   className={styles.iconBtn}
                   title={t('tree.moveDown')}
-                  aria-label={t('tree.moveDownAria', { label: displayName })}
+                  aria-label={t('tree.moveDownAria', { label: spokenLabel })}
                   disabled={!parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
                   onClick={event => { event.stopPropagation(); onMove(component.id, 1) }}
                 >↓</button>
@@ -206,7 +215,7 @@ function TreeNode({
             <button
               className={`${styles.iconBtn} ${styles.danger}`}
               title={t('tree.delete')}
-              aria-label={t('tree.deleteAria', { label: displayName })}
+              aria-label={t('tree.deleteAria', { label: spokenLabel })}
               onClick={event => { event.stopPropagation(); onRemove(component.id) }}
             >×</button>
           </div>
@@ -227,7 +236,7 @@ function TreeNode({
                     screenId={component.screenId}
                     position={index}
                     label={index === 0
-                      ? t('dnd.first', { label: displayName })
+                      ? t('dnd.first', { label: spokenLabel })
                       : t('dnd.position', { position: index + 1 })}
                   />
                 </li>
@@ -251,7 +260,7 @@ function TreeNode({
                 parentId={component.id}
                 screenId={component.screenId}
                 position={component.childIds.length}
-                label={t('dnd.end', { label: displayName })}
+                label={t('dnd.end', { label: spokenLabel })}
               />
             </li>
           </ul>
