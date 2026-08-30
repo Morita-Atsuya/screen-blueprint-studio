@@ -41,6 +41,8 @@ export function App() {
     activeChangeSet,
     recoveryState,
     initializeWithRecovery,
+    startupNotice,
+    dismissStartupNotice,
     errorMessage,
     persistenceUnavailable,
     exportCurrentData,
@@ -140,6 +142,19 @@ export function App() {
             <span>{t('app.persistenceWarning')}</span>
             <button className={styles.exportBtn} onClick={exportCurrentData}>
               {t('app.downloadCurrent')}
+            </button>
+          </div>
+        )}
+
+        {startupNotice && (
+          <div className={styles.startupNotice} role="alert">
+            <span>{formatMessage(startupNotice)}</span>
+            <button
+              aria-label={t('common.close')}
+              onClick={dismissStartupNotice}
+              type="button"
+            >
+              ×
             </button>
           </div>
         )}

@@ -169,6 +169,163 @@ await test('storage access failures never crash initialization or reset', async 
   memoryStorage.throwOnRemove = false
 })
 
+await test('broken pending change sets never block or mutate confirmed data', async () => {
+  memoryStorage.clear()
+  const seedStore = await freshStore('broken-change-set-seed')
+  seedStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Confirmed before broken proposal',
+  })
+  const confirmed = clone(seedStore.getState().document)
+  const activeScreenId = 'screen-edit'
+  const cases = [
+    {
+      name: 'malformed-envelope',
+      activeChangeSet: { id: 'broken-envelope' },
+    },
+    {
+      name: 'invalid-replay',
+      activeChangeSet: {
+        id: 'broken-replay',
+        summary: 'Cannot replay',
+        baseRevision: confirmed.revision,
+        version: 1,
+        baseDocument: confirmed,
+        operations: [{
+          id: 'broken-operation',
+          source: 'agent',
+          issuedAt: new Date().toISOString(),
+          command: {
+            type: 'updateScreen',
+            screenId: 'missing-screen',
+            name: 'Must not apply',
+          },
+        }],
+        createdAt: new Date().toISOString(),
+      },
+    },
+  ]
+
+  for (const testCase of cases) {
+    memoryStorage.clear()
+    memoryStorage.setItem(storageKey, JSON.stringify({
+      document: confirmed,
+      activeScreenId,
+      activeChangeSet: testCase.activeChangeSet,
+    }))
+    const store = await freshStore(`broken-change-set-${testCase.name}`)
+    const state = store.getState()
+    assert(state.recoveryState === null, `${testCase.name} blocked the confirmed document`)
+    assert(state.activeChangeSet === null, `${testCase.name} remained active`)
+    assert(
+      JSON.stringify(state.document) === JSON.stringify(confirmed),
+      `${testCase.name} mutated the confirmed document`,
+    )
+    assert(
+      JSON.stringify(state.effectiveDocument) === JSON.stringify(confirmed),
+      `${testCase.name} changed the effective document`,
+    )
+    assert(state.document.revision === confirmed.revision, `${testCase.name} changed revision`)
+    assert(state.history.length === 0, `${testCase.name} created confirmed history`)
+    assert(state.ui.activeScreenId === activeScreenId, `${testCase.name} lost the active screen`)
+    assert(state.ui.rightPanelTab === 'inspector', `${testCase.name} opened Changes review`)
+    assert(
+      state.startupNotice?.key === 'app.invalidChangeSetDiscarded',
+      `${testCase.name} did not surface the discarded proposal`,
+    )
+
+    const sanitized = JSON.parse(memoryStorage.getItem(storageKey))
+    assert(!('activeChangeSet' in sanitized), `${testCase.name} remained in storage`)
+    assert(
+      JSON.stringify(sanitized.document) === JSON.stringify(confirmed),
+      `${testCase.name} cleanup rewrote confirmed data`,
+    )
+
+    const reloaded = await freshStore(`broken-change-set-${testCase.name}-reload`)
+    assert(reloaded.getState().recoveryState === null, `${testCase.name} reload entered recovery`)
+    assert(reloaded.getState().activeChangeSet === null, `${testCase.name} revived after reload`)
+    assert(reloaded.getState().startupNotice === null, `${testCase.name} cleanup repeated after reload`)
+  }
+})
+
+await test('failed broken-change-set cleanup stays non-blocking and explicit', async () => {
+  memoryStorage.clear()
+  const seedStore = await freshStore('broken-cleanup-seed')
+  seedStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Confirmed survives cleanup failure',
+  })
+  const confirmed = clone(seedStore.getState().document)
+  const raw = JSON.stringify({
+    document: confirmed,
+    activeChangeSet: { id: 'cannot-remove' },
+  })
+  memoryStorage.setItem(storageKey, raw)
+  memoryStorage.throwOnSetKeys.add(storageKey)
+
+  const store = await freshStore('broken-cleanup-write-failure')
+  const state = store.getState()
+  assert(state.recoveryState === null, 'cleanup write failure entered full recovery')
+  assert(state.activeChangeSet === null, 'cleanup write failure restored the broken proposal')
+  assert(
+    JSON.stringify(state.document) === JSON.stringify(confirmed),
+    'cleanup write failure changed confirmed data',
+  )
+  assert(state.persistenceUnavailable, 'cleanup write failure did not expose persistence failure')
+  assert(
+    state.startupNotice?.key === 'app.invalidChangeSetDiscardFailed',
+    'cleanup write failure did not explain that the proposal remains in storage',
+  )
+  assert(memoryStorage.getItem(storageKey) === raw, 'cleanup write failure altered the stored payload')
+
+  memoryStorage.throwOnSetKeys.delete(storageKey)
+  const retryStore = await freshStore('broken-cleanup-write-retry')
+  assert(retryStore.getState().recoveryState === null, 'cleanup retry entered recovery')
+  assert(retryStore.getState().activeChangeSet === null, 'cleanup retry restored the broken proposal')
+  assert(
+    retryStore.getState().startupNotice?.key === 'app.invalidChangeSetDiscarded',
+    'cleanup retry did not report successful discard',
+  )
+  assert(
+    !('activeChangeSet' in JSON.parse(memoryStorage.getItem(storageKey))),
+    'cleanup retry left the broken proposal in storage',
+  )
+})
+
+await test('effective-document replay failures fall back to confirmed data', async () => {
+  memoryStorage.clear()
+  const module = await import(moduleUrl(appStoreBundle, 'effective-replay-fallback'))
+  const confirmed = clone(module.useAppStore.getState().document)
+  const brokenChangeSet = {
+    id: 'broken-effective-replay',
+    summary: 'Broken effective replay',
+    baseRevision: confirmed.revision,
+    version: 1,
+    baseDocument: confirmed,
+    operations: [{
+      id: 'broken-effective-operation',
+      source: 'agent',
+      issuedAt: new Date().toISOString(),
+      command: {
+        type: 'updateScreen',
+        screenId: 'missing-screen',
+        name: 'Must not apply',
+      },
+    }],
+    createdAt: new Date().toISOString(),
+  }
+
+  const restoration = module.restoreEffectiveDocument(confirmed, brokenChangeSet)
+  assert(restoration.status === 'discarded', 'effective replay failure was treated as success')
+  assert(
+    JSON.stringify(restoration.effectiveDocument) === JSON.stringify(confirmed),
+    'effective replay failure did not return the confirmed document',
+  )
+  assert(confirmed.revision === module.useAppStore.getState().document.revision, 'fallback changed revision')
+})
+
 await test('malformed rejected history is ignored and cannot block rejection', async () => {
   const invalidSeeds = [
     {},
@@ -379,7 +536,7 @@ await test('persisted preview reloads separately and reject permanently clears i
   )
 })
 
-await test('malformed active change sets enter recovery state', async () => {
+await test('malformed active change sets are isolated from confirmed data', async () => {
   localStorage.clear()
   const baselineStore = await freshStore('malformed-baseline')
   const document = clone(baselineStore.getState().document)
@@ -409,7 +566,20 @@ await test('malformed active change sets enter recovery state', async () => {
   for (const [index, activeChangeSet] of cases.entries()) {
     localStorage.setItem(storageKey, JSON.stringify({ document, activeChangeSet }))
     const store = await freshStore(`malformed-${index}`)
-    assert(store.getState().recoveryState !== null, `case ${index} did not enter recovery`)
+    assert(store.getState().recoveryState === null, `case ${index} entered recovery`)
+    assert(store.getState().activeChangeSet === null, `case ${index} remained active`)
+    assert(
+      JSON.stringify(store.getState().document) === JSON.stringify(document),
+      `case ${index} changed confirmed data`,
+    )
+    assert(
+      store.getState().startupNotice?.key === 'app.invalidChangeSetDiscarded',
+      `case ${index} did not report discarded pending changes`,
+    )
+    assert(
+      !('activeChangeSet' in JSON.parse(localStorage.getItem(storageKey))),
+      `case ${index} remained in storage`,
+    )
   }
 
   const dangerousCommands = [
@@ -431,7 +601,12 @@ await test('malformed active change sets enter recovery state', async () => {
     }
     localStorage.setItem(storageKey, JSON.stringify({ document, activeChangeSet }))
     const store = await freshStore(`malformed-dangerous-${index}`)
-    assert(store.getState().recoveryState !== null, `dangerous replay ${index} did not enter recovery`)
+    assert(store.getState().recoveryState === null, `dangerous replay ${index} entered recovery`)
+    assert(store.getState().activeChangeSet === null, `dangerous replay ${index} remained active`)
+    assert(
+      JSON.stringify(store.getState().document) === JSON.stringify(document),
+      `dangerous replay ${index} changed confirmed data`,
+    )
     assert(({}).name === undefined, `dangerous replay ${index} modified Object.prototype`)
   }
 })

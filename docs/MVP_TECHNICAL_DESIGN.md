@@ -763,6 +763,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - historyはセッション内だけに保持
 - 読み込み時にschema versionと不変条件を検証
 - 不正データの場合は自動初期化せず、復旧またはsample再読み込みを選べるエラー画面を表示
+- 確定documentが正常でactive change setだけが不正または再生不能な場合は、確定documentを通常起動し、pending change setだけを破棄して永続noticeで通知する
 - 書き込み失敗時は永続警告bannerを表示し、確定documentとpreview中のeffective documentをJSONで退避できる
 - change set却下の保存に失敗した場合は古いactive payloadを削除し、rejected IDとの照合でも再復元を防ぐ
 - recovery中はJSON退避とsample初期化以外のwriteを拒否し、WebMCP readにはrecovery状態だけを公開する

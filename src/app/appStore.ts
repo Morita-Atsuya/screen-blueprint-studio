@@ -59,6 +59,7 @@ export interface AppStore {
   agentWritePolicy: AgentWritePolicy
   ui: UiState
   recoveryState: RecoveryState | null
+  startupNotice: UiMessage | null
   errorMessage: UiMessage | null
   persistenceUnavailable: boolean
   // effectiveDocument = computeEffective(document, activeChangeSet)
@@ -79,6 +80,7 @@ export interface AppStore {
 
   initializeWithRecovery(choice: 'sample' | 'download'): void
   exportCurrentData(): void
+  dismissStartupNotice(): void
   setErrorMessage(message: UiMessage | null): void
   resetToSample(): void
 }
@@ -132,6 +134,28 @@ function computeEffective(doc: ProjectDocument, changeSet: ChangeSet | null): Pr
   return current
 }
 
+export type EffectiveDocumentRestore =
+  | { status: 'success'; effectiveDocument: ProjectDocument }
+  | { status: 'discarded'; effectiveDocument: ProjectDocument; error: unknown }
+
+export function restoreEffectiveDocument(
+  document: ProjectDocument,
+  activeChangeSet: ChangeSet | null,
+): EffectiveDocumentRestore {
+  try {
+    return {
+      status: 'success',
+      effectiveDocument: computeEffective(document, activeChangeSet),
+    }
+  } catch (error) {
+    return {
+      status: 'discarded',
+      effectiveDocument: document,
+      error,
+    }
+  }
+}
+
 const MAX_HISTORY = 50
 
 function persist(document: ProjectDocument, activeChangeSet: ChangeSet | null, activeScreenId: EntityId | null): boolean {
@@ -169,6 +193,8 @@ export const useAppStore = create<AppStore>((set, get) => {
   let activeChangeSet: ChangeSet | null = null
   let ui = initialUiState(sampleProject)
   let recoveryState: RecoveryState | null = null
+  let startupNotice: UiMessage | null = null
+  let persistenceUnavailable = false
 
   if (loadResult.status === 'success') {
     confirmedDocument = loadResult.document
@@ -180,24 +206,36 @@ export const useAppStore = create<AppStore>((set, get) => {
       : restoredChangeSet
     ui = initialUiState(confirmedDocument, loadResult.activeScreenId)
     if (activeChangeSet) ui = { ...ui, rightPanelTab: 'changes' }
+    if (loadResult.discardedActiveChangeSet) {
+      persistenceUnavailable = !loadResult.discardedActiveChangeSet.persisted
+      startupNotice = {
+        key: loadResult.discardedActiveChangeSet.persisted
+          ? 'app.invalidChangeSetDiscarded'
+          : 'app.invalidChangeSetDiscardFailed',
+      }
+    }
   } else if (loadResult.status === 'invalid') {
     recoveryState = { status: 'invalid', rawData: loadResult.rawData, error: loadResult.error }
   }
 
   let effectiveDoc = confirmedDocument
   if (!recoveryState) {
-    try {
-      effectiveDoc = computeEffective(confirmedDocument, activeChangeSet)
-    } catch (error) {
-      recoveryState = {
-        status: 'invalid',
-        rawData: JSON.stringify({
-          document: confirmedDocument,
-          activeChangeSet: activeChangeSet ?? undefined,
-        }),
-        error: `Active change set could not be restored: ${toDomainError(error).message}`,
-      }
+    const restoration = restoreEffectiveDocument(confirmedDocument, activeChangeSet)
+    effectiveDoc = restoration.effectiveDocument
+    if (restoration.status === 'discarded') {
+      console.warn('Discarding active change set that could not be replayed', restoration.error)
       activeChangeSet = null
+      ui = {
+        ...reconcileUiState(confirmedDocument, ui),
+        rightPanelTab: 'inspector',
+      }
+      const persisted = persist(confirmedDocument, null, ui.activeScreenId)
+      persistenceUnavailable = !persisted
+      startupNotice = {
+        key: persisted
+          ? 'app.invalidChangeSetDiscarded'
+          : 'app.invalidChangeSetDiscardFailed',
+      }
     }
   }
   ui = reconcileUiState(effectiveDoc, ui)
@@ -233,8 +271,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     agentWritePolicy: 'review',
     ui,
     recoveryState,
+    startupNotice,
     errorMessage: null,
-    persistenceUnavailable: false,
+    persistenceUnavailable,
     effectiveDocument: effectiveDoc,
 
     dispatch(command, label = 'Edit') {
@@ -457,6 +496,10 @@ export const useAppStore = create<AppStore>((set, get) => {
       downloadCurrentData(state.document, state.effectiveDocument)
     },
 
+    dismissStartupNotice() {
+      set({ startupNotice: null })
+    },
+
     setErrorMessage(message) {
       set({ errorMessage: message })
     },
@@ -470,6 +513,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         ui: nextUi,
         recoveryState: null,
         effectiveDocument: sampleProject,
+        startupNotice: null,
         errorMessage: null,
       })
       const cleared = clearStorage()

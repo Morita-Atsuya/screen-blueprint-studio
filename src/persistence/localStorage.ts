@@ -12,9 +12,20 @@ export interface PersistedData {
   activeChangeSet?: ChangeSet
 }
 
+export interface DiscardedActiveChangeSet {
+  error: string
+  persisted: boolean
+}
+
 export type LoadResult =
   | { status: 'empty' }
-  | { status: 'success'; document: ProjectDocument; activeChangeSet?: ChangeSet; activeScreenId?: string }
+  | {
+      status: 'success'
+      document: ProjectDocument
+      activeChangeSet?: ChangeSet
+      activeScreenId?: string
+      discardedActiveChangeSet?: DiscardedActiveChangeSet
+    }
   | { status: 'invalid'; rawData: string; error: string }
 
 const COMMAND_TYPES = new Set([
@@ -110,27 +121,59 @@ export function loadFromStorage(): LoadResult {
   let raw = ''
   try {
     raw = storage().getItem(STORAGE_KEY) ?? ''
-    if (!raw) return { status: 'empty' }
-    const parsed: unknown = JSON.parse(raw)
+  } catch (e) {
+    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+  }
+  if (!raw) return { status: 'empty' }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
     if (!isRecord(parsed) || !isRecord(parsed.document)) {
       throw new Error('Persisted data must contain a document')
     }
-    const data = parsed as unknown as PersistedData
-    if (data.document.schemaVersion !== 1) {
-      return { status: 'invalid', rawData: raw, error: 'Unsupported schema version' }
-    }
+  } catch (e) {
+    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+  }
+
+  const data = parsed as unknown as PersistedData
+  if (data.document.schemaVersion !== 1) {
+    return { status: 'invalid', rawData: raw, error: 'Unsupported schema version' }
+  }
+  try {
     validateInvariants(data.document)
-    const activeChangeSet = data.activeChangeSet === undefined
-      ? undefined
-      : validateActiveChangeSet(data.activeChangeSet, data.document)
+  } catch (e) {
+    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+  }
+
+  if (data.activeChangeSet === undefined) {
     return {
       status: 'success',
       document: data.document,
-      activeChangeSet,
+      activeScreenId: data.activeScreenId,
+    }
+  }
+
+  try {
+    return {
+      status: 'success',
+      document: data.document,
+      activeChangeSet: validateActiveChangeSet(data.activeChangeSet, data.document),
       activeScreenId: data.activeScreenId,
     }
   } catch (e) {
-    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+    const error = e instanceof Error ? e.message : String(e)
+    console.warn('Discarding invalid active change set', e)
+    const persisted = saveToStorage({
+      document: data.document,
+      activeScreenId: data.activeScreenId,
+    })
+    return {
+      status: 'success',
+      document: data.document,
+      activeScreenId: data.activeScreenId,
+      discardedActiveChangeSet: { error, persisted },
+    }
   }
 }
 
