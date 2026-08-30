@@ -1,6 +1,6 @@
 import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
-import { deleteOwnEntity, getOwnEntity, setOwnEntity } from '../../domain/entityMap'
+import { getOwnEntity } from '../../domain/entityMap'
 import type {
   ComponentLayout,
   ComponentOverride,
@@ -24,6 +24,11 @@ import {
   canDuplicateComponent,
   canPasteComponent,
 } from '../../domain/componentDuplication'
+import { resolveEffectiveComponentState } from '../../domain/selectors'
+import {
+  createResetComponentOverrideCommand,
+  createSetComponentOverrideFieldCommand,
+} from '../../domain/stateOverrides'
 
 export function Inspector() {
   const { locale, t } = useI18n()
@@ -179,6 +184,15 @@ export function Inspector() {
           {t('inspector.hierarchyShortcutHint')}
         </p>
       </header>
+      <section
+        className={styles.baseSettings}
+        aria-labelledby={`base-settings-${comp.id}`}
+        data-base-settings
+      >
+        <div className={styles.settingsHeading}>
+          <h3 id={`base-settings-${comp.id}`}>{t('inspector.baseSettings')}</h3>
+          <p>{t('inspector.baseSettingsDescription')}</p>
+        </div>
       <div className={styles.section}>
         <label className={styles.label}>{t('inspector.description')}</label>
         <DraftTextField
@@ -404,6 +418,12 @@ export function Inspector() {
         cfg.kind === 'modal') && (
         <LayoutFields layout={cfg} onUpdate={updateConfig} />
       )}
+      </section>
+      <StateOverrides
+        component={comp}
+        state={activeState}
+        defaultStateId={screen?.defaultStateId ?? null}
+      />
       {behavior && eventEditor && apiEditor && validationEditor ? (
         <BehaviorDetails
           key={comp.id}
@@ -412,12 +432,6 @@ export function Inspector() {
           apiEditor={apiEditor}
           validationEditor={validationEditor}
         />
-      ) : null}
-      {activeState && activeState.id !== screen?.defaultStateId ? (
-        <>
-          <hr className={styles.divider} />
-          <StateOverrides component={comp} state={activeState} />
-        </>
       ) : null}
     </div>
   )
@@ -489,54 +503,95 @@ function LayoutFields({
 function StateOverrides({
   component,
   state,
+  defaultStateId,
 }: {
   component: ScreenComponent
-  state: ScreenState
+  state?: ScreenState
+  defaultStateId: string | null
 }) {
   const { t } = useI18n()
   const dispatch = useAppStore(current => current.dispatch)
-  const override = getOwnEntity(state.componentOverrides, component.id) ?? {}
+  const isDefaultState = !state || state.id === defaultStateId
+  if (isDefaultState) {
+    return (
+      <section
+        className={`${styles.overrideSection} ${styles.inactiveOverrideSection}`}
+        data-state-overrides
+        data-override-mode="base"
+      >
+        <div className={styles.overrideHeading}>
+          <h3>{t('overrides.title')}</h3>
+          <span>{state
+            ? t('overrides.forState', { name: state.name })
+            : t('overrides.noState')}</span>
+        </div>
+        <p className={styles.overrideExplanation}>
+          {t(state ? 'overrides.defaultStateExplanation' : 'overrides.noStateExplanation')}
+        </p>
+      </section>
+    )
+  }
+
+  const selectedState = state
+  const { component: effective, override: selectedOverride, hasOverride } =
+    resolveEffectiveComponentState(component, selectedState)
+  const override = selectedOverride ?? {}
 
   function updateOverride<Key extends keyof ComponentOverride>(
     key: Key,
     value: ComponentOverride[Key] | undefined,
   ): boolean {
-    const overrides = Object.assign(
-      Object.create(null),
-      state.componentOverrides,
-    ) as Record<string, ComponentOverride>
-    const componentOverride = { ...(getOwnEntity(overrides, component.id) ?? {}) }
-
-    if (value === undefined) {
-      delete componentOverride[key]
-    } else {
-      componentOverride[key] = value
-    }
-
-    if (Object.keys(componentOverride).length === 0) {
-      deleteOwnEntity(overrides, component.id)
-    } else {
-      setOwnEntity(overrides, component.id, componentOverride)
-    }
-
-    return dispatch({
-      type: 'updateScreenState',
-      stateId: state.id,
-      overrides,
-    }, `Update ${state.name} ${key} override: ${component.id}`)
+    const command = createSetComponentOverrideFieldCommand(
+      selectedState,
+      component.id,
+      key,
+      value,
+    )
+    return command
+      ? dispatch(command, `Update ${selectedState.name} ${key} override: ${component.id}`)
+      : true
   }
 
-  const content = overrideContent(component)
+  function resetAllOverrides() {
+    const command = createResetComponentOverrideCommand(selectedState, component.id)
+    if (command) {
+      dispatch(command, `Reset ${selectedState.name} override: ${component.id}`)
+    }
+  }
+
+  const content = overrideContent(component, effective)
 
   return (
-    <section className={styles.overrideSection} data-state-overrides>
+    <section
+      className={styles.overrideSection}
+      data-state-overrides
+      data-override-mode={hasOverride ? 'override' : 'base'}
+    >
       <div className={styles.overrideHeading}>
-        <h3>{t('overrides.title')}</h3>
-        <span>{t('overrides.forState', { name: state.name })}</span>
+        <div>
+          <h3>{t('overrides.title')}</h3>
+          <span>{t('overrides.forState', { name: selectedState.name })}</span>
+        </div>
+        {hasOverride ? (
+          <button
+            type="button"
+            className={styles.resetAllOverrides}
+            data-reset-all-overrides
+            onClick={resetAllOverrides}
+          >
+            {t('overrides.resetAll')}
+          </button>
+        ) : null}
       </div>
+      <p className={styles.overrideExplanation}>
+        {t(hasOverride
+          ? 'overrides.activeExplanation'
+          : 'overrides.inheritExplanation')}
+      </p>
       <Field label={t('inspector.visible')}>
         <select
           className={styles.input}
+          aria-label={t('overrides.fieldAria', { field: t('inspector.visible') })}
           value={override.visible === undefined ? 'inherit' : String(override.visible)}
           onChange={event => updateOverride(
             'visible',
@@ -549,10 +604,18 @@ function StateOverrides({
           <option value="true">{t('overrides.visible')}</option>
           <option value="false">{t('overrides.hidden')}</option>
         </select>
+        <OverrideValueSummary
+          baseValue={formatOverrideValue(component.common.visible, t)}
+          effectiveValue={formatOverrideValue(effective.common.visible, t)}
+          fieldLabel={t('inspector.visible')}
+          overridden={override.visible !== undefined}
+          onReset={() => updateOverride('visible', undefined)}
+        />
       </Field>
       <Field label={t('inspector.enabled')}>
         <select
           className={styles.input}
+          aria-label={t('overrides.fieldAria', { field: t('inspector.enabled') })}
           value={override.enabled === undefined ? 'inherit' : String(override.enabled)}
           onChange={event => updateOverride(
             'enabled',
@@ -565,12 +628,20 @@ function StateOverrides({
           <option value="true">{t('overrides.enabled')}</option>
           <option value="false">{t('overrides.disabled')}</option>
         </select>
+        <OverrideValueSummary
+          baseValue={formatOverrideValue(component.common.enabled, t)}
+          effectiveValue={formatOverrideValue(effective.common.enabled, t)}
+          fieldLabel={t('inspector.enabled')}
+          overridden={override.enabled !== undefined}
+          onReset={() => updateOverride('enabled', undefined)}
+        />
       </Field>
       {content ? (
         <div className={styles.overrideValue}>
           <label className={styles.checkLabel}>
             <input
               type="checkbox"
+              aria-label={t('overrides.toggleFieldAria', { field: t(content.labelKey) })}
               checked={override[content.key] !== undefined}
               disabled={content.options?.length === 0}
               onChange={event => updateOverride(
@@ -588,6 +659,7 @@ function StateOverrides({
             {content.options ? (
               <select
                 className={styles.input}
+                aria-label={t('overrides.fieldAria', { field: t(content.labelKey) })}
                 disabled={override[content.key] === undefined}
                 value={override[content.key] ?? content.baseValue}
                 onChange={event => updateOverride(content.key, event.target.value)}
@@ -601,15 +673,22 @@ function StateOverrides({
               </select>
             ) : (
               <DraftTextField
-                key={`${state.id}:${component.id}:${content.key}`}
-                draftId={`state:${state.id}:component:${component.id}:${content.key}`}
-                ariaLabel={t(content.labelKey)}
+                key={`${selectedState.id}:${component.id}:${content.key}`}
+                draftId={`state:${selectedState.id}:component:${component.id}:${content.key}`}
+                ariaLabel={t('overrides.fieldAria', { field: t(content.labelKey) })}
                 className={styles.input}
                 disabled={override[content.key] === undefined}
                 value={override[content.key] ?? content.baseValue}
                 onCommit={value => updateOverride(content.key, value)}
               />
             )}
+            <OverrideValueSummary
+              baseValue={formatOverrideValue(content.baseValue, t)}
+              effectiveValue={formatOverrideValue(content.effectiveValue, t)}
+              fieldLabel={t(content.labelKey)}
+              overridden={override[content.key] !== undefined}
+              onReset={() => updateOverride(content.key, undefined)}
+            />
           </Field>
         </div>
       ) : null}
@@ -617,27 +696,99 @@ function StateOverrides({
   )
 }
 
-function overrideContent(component: ScreenComponent): {
+function OverrideValueSummary({
+  baseValue,
+  effectiveValue,
+  fieldLabel,
+  overridden,
+  onReset,
+}: {
+  baseValue: string
+  effectiveValue: string
+  fieldLabel: string
+  overridden: boolean
+  onReset(): void
+}) {
+  const { t } = useI18n()
+  return (
+    <div className={styles.overrideSummary} data-field-overridden={overridden || undefined}>
+      <span className={overridden ? styles.overrideActive : styles.overrideInherited}>
+        {t(overridden ? 'overrides.overridden' : 'overrides.usingBase')}
+      </span>
+      <dl className={styles.overrideValues}>
+        <div>
+          <dt>{t('overrides.baseValue')}</dt>
+          <dd title={baseValue}>{baseValue}</dd>
+        </div>
+        <div>
+          <dt>{t('overrides.effectiveValue')}</dt>
+          <dd title={effectiveValue}>{effectiveValue}</dd>
+        </div>
+      </dl>
+      {overridden ? (
+        <button
+          type="button"
+          className={styles.resetFieldOverride}
+          data-reset-field-override
+          aria-label={t('overrides.resetFieldAria', { field: fieldLabel })}
+          onClick={onReset}
+        >
+          {t('overrides.resetField')}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function formatOverrideValue(
+  value: string | boolean,
+  t: ReturnType<typeof useI18n>['t'],
+): string {
+  if (typeof value === 'boolean') {
+    return t(value ? 'overrides.booleanTrue' : 'overrides.booleanFalse')
+  }
+  return value === '' ? t('overrides.emptyValue') : value
+}
+
+function overrideContent(component: ScreenComponent, effective: ScreenComponent): {
   key: 'text' | 'message' | 'value'
   labelKey: MessageKey
   baseValue: string
+  effectiveValue: string
   options?: Array<{ value: string; label: string }>
 } | null {
   const config = component.config
-  if (config.kind === 'text') {
-    return { key: 'text', labelKey: 'overrides.text', baseValue: config.text }
+  const effectiveConfig = effective.config
+  if (config.kind === 'text' && effectiveConfig.kind === 'text') {
+    return {
+      key: 'text',
+      labelKey: 'overrides.text',
+      baseValue: config.text,
+      effectiveValue: effectiveConfig.text,
+    }
   }
-  if (config.kind === 'alert') {
-    return { key: 'message', labelKey: 'overrides.message', baseValue: config.message }
+  if (config.kind === 'alert' && effectiveConfig.kind === 'alert') {
+    return {
+      key: 'message',
+      labelKey: 'overrides.message',
+      baseValue: config.message,
+      effectiveValue: effectiveConfig.message,
+    }
   }
-  if (config.kind === 'textInput') {
-    return { key: 'value', labelKey: 'overrides.value', baseValue: config.defaultValue }
-  }
-  if (config.kind === 'select') {
+  if (config.kind === 'textInput' && effectiveConfig.kind === 'textInput') {
     return {
       key: 'value',
       labelKey: 'overrides.value',
       baseValue: config.defaultValue,
+      effectiveValue: effectiveConfig.defaultValue,
+    }
+  }
+  if (config.kind === 'select' && effectiveConfig.kind === 'select') {
+    return {
+      key: 'value',
+      labelKey: 'overrides.value',
+      baseValue: config.defaultValue,
+      effectiveValue: effectiveConfig.defaultValue,
       options: config.options,
     }
   }

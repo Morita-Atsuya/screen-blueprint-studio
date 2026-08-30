@@ -113,6 +113,28 @@
   white-space: nowrap;
 }
 .section { margin-bottom: 8px; }
+.baseSettings {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.settingsHeading {
+  margin-bottom: 10px;
+}
+.settingsHeading h3 {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.settingsHeading p,
+.overrideExplanation {
+  margin: 3px 0 0;
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 .label { display: block; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
 .input { width: 100%; }
 .textarea { width: 100%; resize: vertical; }
@@ -130,22 +152,103 @@
   font-size: 0.82rem;
 }
 .overrideSection {
-  margin-top: 2px;
+  min-width: 0;
+  margin-top: 10px;
   padding: 10px;
   border: 1px solid var(--agent-change-border);
   border-radius: 8px;
   background: var(--agent-change);
 }
+.inactiveOverrideSection {
+  border-color: var(--border);
+  background: var(--bg-surface);
+}
 .overrideHeading {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
+.overrideHeading > div { min-width: 0; }
 .overrideHeading h3 { color: var(--agent-accent); font-size: 0.82rem; }
-.overrideHeading span { color: var(--text-faint); font-size: 0.72rem; }
-.overrideValue { display: flex; flex-direction: column; gap: 6px; }
+.overrideHeading span {
+  display: block;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+.inactiveOverrideSection .overrideHeading h3 { color: var(--text); }
+.overrideValue { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.resetAllOverrides,
+.resetFieldOverride {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid var(--agent-change-border);
+  border-radius: 5px;
+  background: var(--bg-surface);
+  color: var(--agent-accent);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.resetAllOverrides:hover,
+.resetFieldOverride:hover {
+  background: var(--bg-hover);
+}
+.resetAllOverrides:focus-visible,
+.resetFieldOverride:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.overrideSummary {
+  min-width: 0;
+  margin-top: 5px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+}
+.overrideActive,
+.overrideInherited {
+  display: inline-block;
+  color: var(--agent-accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.overrideInherited {
+  color: var(--text-faint);
+}
+.overrideValues {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  margin: 5px 0 0;
+}
+.overrideValues > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
+  gap: 6px;
+}
+.overrideValues dt,
+.overrideValues dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+.overrideValues dt {
+  color: var(--text-faint);
+}
+.overrideValues dd {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resetFieldOverride {
+  margin-top: 6px;
+}
 .behaviorSection {
   min-width: 0;
   margin-top: 12px;

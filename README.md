@@ -18,7 +18,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - Page／Modal root以外のcomponent subtreeをアプリ内clipboardへコピーし、選択したcontainer/rootの内側またはleaf直後へatomicに貼り付け。同一画面だけ状態overrideを引き継ぐ
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
 - Inspectorで選択componentのevent／実行順actionと、同screenのAPI operation／request binding／結果state、`textInput`のvalidation ruleを追加・編集・削除・並べ替え
-- 自由に命名できる画面状態と状態別override
+- 自由に命名できる画面状態と状態別override。Inspectorで基本値・明示override・実効値を分け、field単位またはcomponent単位で基本設定へ戻せる
 - click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
 - API operationと画面項目、成功／失敗状態の関連付け
 - 人間による通常編集、確定操作のUndo／Redo

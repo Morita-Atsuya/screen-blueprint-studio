@@ -4120,6 +4120,174 @@ await test('Tree state presentation uses effective values and atomic override re
   )
 })
 
+await test('Inspector keeps base values separate from field-level state overrides', async () => {
+  memoryStorage.clear()
+  const {
+    createResetComponentOverrideCommand,
+    createSetComponentOverrideFieldCommand,
+  } = await import(moduleUrl(stateOverridesBundle, 'inspector-field-overrides'))
+  const {
+    resolveEffectiveComponentState,
+  } = await import(moduleUrl(selectorsBundle, 'inspector-effective-overrides'))
+  const store = await freshStore('inspector-field-overrides')
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().setActiveState('state-edit-success')
+
+  const successState = store.getState().effectiveDocument.screenStates['state-edit-success']
+  const addVisibleOverride = createSetComponentOverrideFieldCommand(
+    successState,
+    'comp-role-select',
+    'visible',
+    false,
+  )
+  assert(addVisibleOverride, 'field override command was not created')
+  store.getState().dispatch(addVisibleOverride, 'Override Role visibility')
+  let roleOverride = store.getState().document.screenStates['state-edit-success']
+    .componentOverrides['comp-role-select']
+  let effectiveRole = resolveEffectiveComponentState(
+    store.getState().document.components['comp-role-select'],
+    store.getState().document.screenStates['state-edit-success'],
+  )
+  assert(
+    store.getState().history.length === 1 &&
+      roleOverride.value === 'admin' &&
+      roleOverride.visible === false &&
+      store.getState().document.components['comp-role-select'].common.visible === true &&
+      effectiveRole.component.common.visible === false &&
+      effectiveRole.component.config.defaultValue === 'admin',
+    'field override did not preserve the base value, sibling override, or effective projection',
+  )
+
+  const resetValue = createSetComponentOverrideFieldCommand(
+    store.getState().effectiveDocument.screenStates['state-edit-success'],
+    'comp-role-select',
+    'value',
+    undefined,
+  )
+  store.getState().dispatch(resetValue, 'Use base Role value')
+  roleOverride = store.getState().document.screenStates['state-edit-success']
+    .componentOverrides['comp-role-select']
+  effectiveRole = resolveEffectiveComponentState(
+    store.getState().document.components['comp-role-select'],
+    store.getState().document.screenStates['state-edit-success'],
+  )
+  assert(
+    roleOverride.value === undefined &&
+      roleOverride.visible === false &&
+      effectiveRole.component.config.defaultValue === 'member' &&
+      !effectiveRole.component.common.visible,
+    'field reset removed another override or retained the overridden effective value as base',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().document.screenStates['state-edit-success']
+      .componentOverrides['comp-role-select'].value === 'admin',
+    'field reset Undo did not restore exactly one operation',
+  )
+  store.getState().redo()
+
+  const textInputValue = createSetComponentOverrideFieldCommand(
+    store.getState().effectiveDocument.screenStates['state-edit-success'],
+    'comp-name-input',
+    'value',
+    'State-specific name',
+  )
+  store.getState().dispatch(textInputValue, 'Override Name value')
+  assert(
+    store.getState().document.components['comp-name-input'].config.defaultValue === '' &&
+      resolveEffectiveComponentState(
+        store.getState().document.components['comp-name-input'],
+        store.getState().document.screenStates['state-edit-success'],
+      ).component.config.defaultValue === 'State-specific name',
+    'TextInput value override mutated or replaced its base default value',
+  )
+  const resetAllName = createResetComponentOverrideCommand(
+    store.getState().effectiveDocument.screenStates['state-edit-success'],
+    'comp-name-input',
+  )
+  store.getState().dispatch(resetAllName, 'Reset Name overrides')
+  assert(
+    !store.getState().document.screenStates['state-edit-success']
+      .componentOverrides['comp-name-input'],
+    'component-level reset did not agree with field-level override storage',
+  )
+
+  const reloaded = await freshStore('inspector-field-overrides-reload')
+  assert(
+    reloaded.getState().document.screenStates['state-edit-success']
+      .componentOverrides['comp-role-select'].visible === false &&
+      reloaded.getState().document.screenStates['state-edit-success']
+        .componentOverrides['comp-role-select'].value === undefined,
+    'field-level override state did not survive reload',
+  )
+
+  memoryStorage.clear()
+  const proposalStore = await freshStore('inspector-field-override-change-set')
+  proposalStore.getState().setActiveScreen('screen-edit')
+  proposalStore.getState().setActiveState('state-edit-success')
+  proposalStore.getState().beginChangeSet('Edit one override field')
+  const proposal = createSetComponentOverrideFieldCommand(
+    proposalStore.getState().effectiveDocument.screenStates['state-edit-success'],
+    'comp-status-alert',
+    'message',
+    'Preview-only message',
+  )
+  proposalStore.getState().dispatch(proposal, 'Override Alert message')
+  assert(
+    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
+      proposalStore.getState().document.screenStates['state-edit-success']
+        .componentOverrides['comp-status-alert'].message === 'User saved successfully.' &&
+      proposalStore.getState().effectiveDocument.screenStates['state-edit-success']
+        .componentOverrides['comp-status-alert'].message === 'Preview-only message',
+    'field override bypassed active change-set preview routing',
+  )
+  proposalStore.getState().rejectChangeSet()
+  assert(
+    proposalStore.getState().effectiveDocument.screenStates['state-edit-success']
+      .componentOverrides['comp-status-alert'].message === 'User saved successfully.',
+    'Reject did not restore the prior field override',
+  )
+  proposalStore.getState().beginChangeSet('Accept one override field')
+  const accepted = createSetComponentOverrideFieldCommand(
+    proposalStore.getState().effectiveDocument.screenStates['state-edit-success'],
+    'comp-status-alert',
+    'message',
+    'Accepted message',
+  )
+  proposalStore.getState().dispatch(accepted, 'Override Alert message')
+  proposalStore.getState().acceptChangeSet()
+  assert(
+    proposalStore.getState().document.screenStates['state-edit-success']
+      .componentOverrides['comp-status-alert'].message === 'Accepted message',
+    'Accept did not persist the field override',
+  )
+
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  const inspectorStyles = readFileSync(
+    join(root, 'src/features/inspector/Inspector.module.css'),
+    'utf8',
+  )
+  assert(
+    inspectorSource.includes('data-base-settings') &&
+      inspectorSource.includes('data-state-overrides') &&
+      inspectorSource.includes('resolveEffectiveComponentState') &&
+      inspectorSource.includes('createSetComponentOverrideFieldCommand') &&
+      inspectorSource.includes('createResetComponentOverrideCommand') &&
+      inspectorSource.includes('data-field-overridden'),
+    'Inspector lost its explicit base/override/effective or shared reset path',
+  )
+  assert(
+    inspectorStyles.includes('.baseSettings') &&
+      inspectorStyles.includes('.overrideValues') &&
+      inspectorStyles.includes('text-overflow: ellipsis') &&
+      inspectorStyles.includes('min-width: 0'),
+    'Inspector override presentation no longer protects the 300px layout',
+  )
+})
+
 await test('change-set review presents sequential diffs for every command type', async () => {
   memoryStorage.clear()
   const { presentChangeSetOperations } = await import(
