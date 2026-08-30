@@ -8,6 +8,7 @@ import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
 import { EditorDndProvider } from '../dnd/EditorDndContext'
 import { EditorKeyboardShortcuts } from './EditorKeyboardShortcuts'
 import { useI18n } from '../i18n/I18nProvider'
+import { getOwnEntity } from '../domain/entityMap'
 import {
   clampRightPaneWidth,
   getRightPaneWidthBounds,
@@ -36,6 +37,7 @@ export function App() {
     ui,
     history,
     redoStack,
+    effectiveDocument,
     undo,
     redo,
     activeChangeSet,
@@ -58,6 +60,9 @@ export function App() {
   const redoTitle = nextRedo
     ? t('app.redoAction', { label: nextRedo.label })
     : t('app.redo')
+  const activeScreen = ui.activeScreenId
+    ? getOwnEntity(effectiveDocument.screens, ui.activeScreenId)
+    : undefined
   const [viewportWidth, setViewportWidth] = useState(browserWidth)
   const [preferredRightPaneWidth, setPreferredRightPaneWidth] = useState(() =>
     resolveInitialRightPaneWidth(browserStorage(), browserWidth()),
@@ -229,8 +234,39 @@ export function App() {
             <LeftPane />
           </aside>
 
-          <main className={styles.canvas}>
-            <Canvas />
+          <main className={styles.editor}>
+            {activeScreen ? (
+              <section
+                className={styles.screenContext}
+                aria-label={t('editor.screenContext')}
+                data-active-screen-context={activeScreen.id}
+                data-editor-chrome
+              >
+                <dl className={styles.screenContextList}>
+                  <div className={styles.screenContextItem}>
+                    <dt className={styles.screenContextLabel}>{t('editor.screenName')}</dt>
+                    <dd
+                      className={`${styles.screenContextValue} ${styles.screenName}`}
+                      title={activeScreen.name}
+                    >
+                      {activeScreen.name}
+                    </dd>
+                  </div>
+                  <div className={styles.screenContextItem}>
+                    <dt className={styles.screenContextLabel}>{t('editor.screenRoute')}</dt>
+                    <dd
+                      className={`${styles.screenContextValue} ${styles.screenRoute}`}
+                      title={activeScreen.route}
+                    >
+                      <code>{activeScreen.route}</code>
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            ) : null}
+            <div className={styles.canvas}>
+              <Canvas />
+            </div>
           </main>
 
           <div

@@ -170,9 +170,74 @@
   background: var(--bg-surface);
 }
 
-.canvas {
+.editor {
   flex: 1;
   min-width: 360px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.screenContext {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.screenContextList {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr);
+  gap: 8px 18px;
+  margin: 0;
+}
+
+.screenContextItem {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.screenContextLabel {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.screenContextValue {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screenName {
+  font-weight: 700;
+}
+
+.screenRoute {
+  color: var(--text-muted);
+}
+
+.screenRoute code {
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   background: var(--bg);
 }
@@ -424,7 +489,7 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .canvas {
+  .editor {
     min-width: 0;
     min-height: 480px;
     flex: 0 0 auto;

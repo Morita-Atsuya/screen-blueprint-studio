@@ -3616,6 +3616,79 @@ await test('active change-set component markers reflect final net effects', asyn
   )
 })
 
+await test('central editor screen context follows the effective active screen', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('active-screen-context')
+  store.getState().setActiveScreen('screen-list')
+
+  const previewChangeSet = store.getState().beginChangeSet('Preview screen context')
+  store.getState().dispatchToChangeSet(previewChangeSet.id, {
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Preview user list',
+    route: '/preview/users',
+  }, 'agent')
+  assert(
+    store.getState().document.screens['screen-list'].name === 'User List' &&
+      store.getState().effectiveDocument.screens['screen-list'].name === 'Preview user list' &&
+      store.getState().effectiveDocument.screens['screen-list'].route === '/preview/users',
+    'screen context source did not distinguish confirmed and preview values',
+  )
+
+  store.getState().rejectChangeSet()
+  assert(
+    store.getState().effectiveDocument.screens['screen-list'].name === 'User List',
+    'reject did not restore the screen context source',
+  )
+
+  const acceptedChangeSet = store.getState().beginChangeSet('Accept screen context')
+  store.getState().dispatchToChangeSet(acceptedChangeSet.id, {
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Accepted user list',
+    route: '/accepted/users',
+  }, 'agent')
+  store.getState().acceptChangeSet()
+  assert(
+    store.getState().effectiveDocument.screens['screen-list'].name === 'Accepted user list',
+    'accept did not retain the effective screen context',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().effectiveDocument.screens['screen-list'].name === 'User List',
+    'undo did not update the effective screen context',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().effectiveDocument.screens['screen-list'].route === '/accepted/users',
+    'redo did not update the effective screen route',
+  )
+
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  const contextIndex = appSource.indexOf('className={styles.screenContext}')
+  const canvasIndex = appSource.indexOf('className={styles.canvas}', contextIndex)
+  assert(
+    appSource.includes('getOwnEntity(effectiveDocument.screens, ui.activeScreenId)') &&
+      appSource.includes('data-active-screen-context={activeScreen.id}') &&
+      appSource.includes("t('editor.screenName')") &&
+      appSource.includes("t('editor.screenRoute')") &&
+      contextIndex >= 0 &&
+      canvasIndex > contextIndex,
+    'screen context is not derived from the effective document or placed before Canvas',
+  )
+  assert(
+    appStyles.includes('.editor') &&
+      appStyles.includes('.screenContext') &&
+      appStyles.includes('.screenContextList') &&
+      appStyles.includes('text-overflow: ellipsis') &&
+      appStyles.includes('ui-monospace') &&
+      appStyles.includes('.canvas') &&
+      appStyles.includes('min-height: 0'),
+    'screen context lost its fixed, truncating, route-readable central-pane layout',
+  )
+})
+
 await test('editor-only drop affordances and internal names stay out of idle UI', async () => {
   const dropZoneSource = readFileSync(
     join(root, 'src/dnd/ComponentDropZone.tsx'),
