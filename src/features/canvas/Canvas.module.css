@@ -82,10 +82,23 @@
 }
 
 .wireframe {
+  position: relative;
   flex: 1;
-  overflow: auto;
-  padding: 32px;
+  overflow: hidden;
   background: var(--bg);
+}
+
+.wireframe[data-pan-ready] {
+  cursor: grab;
+}
+
+.wireframe[data-panning] {
+  cursor: grabbing;
+}
+
+.canvasSurface {
+  position: relative;
+  width: max-content;
 }
 
 .frames {
@@ -107,6 +120,74 @@
 
 .modalFrame {
   width: 360px;
+}
+
+.zoomControls {
+  position: absolute;
+  z-index: 6;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  cursor: default;
+}
+
+.zoomBtn,
+.zoomIconBtn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.zoomLevelBtn {
+  min-width: 46px;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.zoomBtn:hover:not(:disabled),
+.zoomIconBtn:hover:not(:disabled),
+.zoomLevelBtn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.zoomBtn:disabled,
+.zoomIconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.zoomBtn:focus-visible,
+.zoomIconBtn:focus-visible,
+.zoomLevelBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.zoomDivider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--border);
 }
 
 .frameHeader {
@@ -333,7 +414,7 @@
 .buttonComponent { width: fit-content; max-width: 100%; }
 
 @media (max-width: 899px) {
-  .wireframe { padding: 24px 16px; }
+  .canvasSurface { width: 100%; }
   .frames {
     flex-direction: column;
     width: 100%;
@@ -341,5 +422,19 @@
   .pageFrame,
   .modalFrame {
     width: 100%;
+  }
+  .zoomControls {
+    right: 8px;
+    bottom: 8px;
+    gap: 1px;
+    padding: 3px;
+  }
+  .zoomBtn,
+  .zoomIconBtn,
+  .zoomLevelBtn {
+    height: 24px;
+  }
+  .zoomLevelBtn {
+    min-width: 38px;
   }
 }

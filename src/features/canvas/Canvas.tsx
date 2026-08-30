@@ -24,6 +24,8 @@ import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import { StateDialog } from './StateDialog'
+import { useCanvasViewport } from './useCanvasViewport'
+import type { CanvasViewportControls } from './useCanvasViewport'
 import styles from './Canvas.module.css'
 
 export function Canvas() {
@@ -32,6 +34,7 @@ export function Canvas() {
   const { activeScreenId, activeStateId, selectedComponentId } = ui
   const [stateDialog, setStateDialog] = useState<'create' | 'edit' | null>(null)
   const [hoveredComponentId, setHoveredComponentId] = useState<EntityId | null>(null)
+  const viewport = useCanvasViewport({ activeScreenId, selectedComponentId })
 
   if (!activeScreenId) {
     return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
@@ -50,7 +53,10 @@ export function Canvas() {
   return (
     <div
       className={styles.root}
-      onClick={() => setSelectedComponent(null)}
+      onClick={() => {
+        if (viewport.consumeSuppressedClick()) return
+        setSelectedComponent(null)
+      }}
       onPointerLeave={() => setHoveredComponentId(null)}
     >
       <div className={styles.stateBar}>
@@ -118,27 +124,19 @@ export function Canvas() {
           ) : null}
         </div>
       </div>
-      <div className={styles.wireframe}>
-        <div className={styles.frames}>
-          <CanvasFrame
-            componentId={screen.rootComponentId}
-            frameKind="page"
-            frameIndex={0}
-            document={effectiveDocument}
-            activeState={activeState}
-            selectedComponentId={selectedComponentId}
-            hoveredComponentId={hoveredComponentId}
-            onSelect={setSelectedComponent}
-            onHover={setHoveredComponentId}
-            locale={locale}
-            t={t}
-          />
-          {screen.modalComponentIds.map((modalId, modalIndex) => (
+      <div
+        className={styles.wireframe}
+        ref={viewport.viewportRef}
+        onPointerDown={viewport.handleViewportPointerDown}
+        data-pan-ready={viewport.isSpacePanMode || undefined}
+        data-panning={viewport.isPanning || undefined}
+      >
+        <div className={styles.canvasSurface} ref={viewport.surfaceRef} style={viewport.transformStyle}>
+          <div className={styles.frames} ref={viewport.framesRef}>
             <CanvasFrame
-              key={modalId}
-              componentId={modalId}
-              frameKind="modal"
-              frameIndex={modalIndex}
+              componentId={screen.rootComponentId}
+              frameKind="page"
+              frameIndex={0}
               document={effectiveDocument}
               activeState={activeState}
               selectedComponentId={selectedComponentId}
@@ -147,9 +145,34 @@ export function Canvas() {
               onHover={setHoveredComponentId}
               locale={locale}
               t={t}
+              viewportScale={viewport.scale}
+              spacePanActive={viewport.isSpacePanMode}
+              consumeSuppressedClick={viewport.consumeSuppressedClick}
+              beginPan={viewport.handleViewportPointerDown}
             />
-          ))}
+            {screen.modalComponentIds.map((modalId, modalIndex) => (
+              <CanvasFrame
+                key={modalId}
+                componentId={modalId}
+                frameKind="modal"
+                frameIndex={modalIndex}
+                document={effectiveDocument}
+                activeState={activeState}
+                selectedComponentId={selectedComponentId}
+                hoveredComponentId={hoveredComponentId}
+                onSelect={setSelectedComponent}
+                onHover={setHoveredComponentId}
+                locale={locale}
+                t={t}
+                viewportScale={viewport.scale}
+                spacePanActive={viewport.isSpacePanMode}
+                consumeSuppressedClick={viewport.consumeSuppressedClick}
+                beginPan={viewport.handleViewportPointerDown}
+              />
+            ))}
+          </div>
         </div>
+        <CanvasZoomControls viewport={viewport} t={t} />
       </div>
       {stateDialog ? (
         <StateDialog
@@ -159,6 +182,75 @@ export function Canvas() {
           onClose={() => setStateDialog(null)}
         />
       ) : null}
+    </div>
+  )
+}
+
+function CanvasZoomControls({
+  viewport,
+  t,
+}: {
+  viewport: CanvasViewportControls
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  return (
+    <div
+      className={styles.zoomControls}
+      role="group"
+      aria-label={t('canvas.zoom.controlsLabel')}
+      data-editor-chrome
+      onClick={event => event.stopPropagation()}
+      onPointerDown={event => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className={styles.zoomBtn}
+        onClick={viewport.zoomOut}
+        disabled={!viewport.canZoomOut}
+        title={t('canvas.zoom.out')}
+        aria-label={t('canvas.zoom.out')}
+      >
+        −
+      </button>
+      <button
+        type="button"
+        className={styles.zoomLevelBtn}
+        onClick={viewport.resetZoom}
+        title={t('canvas.zoom.reset')}
+        aria-label={t('canvas.zoom.level', { percent: viewport.scalePercent })}
+      >
+        {viewport.scalePercent}%
+      </button>
+      <button
+        type="button"
+        className={styles.zoomBtn}
+        onClick={viewport.zoomIn}
+        disabled={!viewport.canZoomIn}
+        title={t('canvas.zoom.in')}
+        aria-label={t('canvas.zoom.in')}
+      >
+        +
+      </button>
+      <span className={styles.zoomDivider} aria-hidden="true" />
+      <button
+        type="button"
+        className={styles.zoomIconBtn}
+        onClick={viewport.fitAll}
+        title={t('canvas.zoom.fitAll')}
+        aria-label={t('canvas.zoom.fitAll')}
+      >
+        ⤢
+      </button>
+      <button
+        type="button"
+        className={styles.zoomIconBtn}
+        onClick={viewport.fitSelection}
+        disabled={!viewport.canFitSelection}
+        title={t('canvas.zoom.fitSelection')}
+        aria-label={t('canvas.zoom.fitSelection')}
+      >
+        ⊡
+      </button>
     </div>
   )
 }
@@ -173,6 +265,10 @@ interface CanvasComponentProps {
   onHover(id: EntityId): void
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
+  viewportScale: number
+  spacePanActive: boolean
+  consumeSuppressedClick(): boolean
+  beginPan(event: React.PointerEvent<HTMLDivElement>): void
   independentRoot?: boolean
 }
 
@@ -193,6 +289,10 @@ function CanvasFrame({
   onHover,
   locale,
   t,
+  viewportScale,
+  spacePanActive,
+  consumeSuppressedClick,
+  beginPan,
 }: CanvasFrameProps) {
   const base = getOwnEntity(document.components, componentId)
   if (!base) return null
@@ -231,6 +331,10 @@ function CanvasFrame({
         onHover={onHover}
         locale={locale}
         t={t}
+        viewportScale={viewportScale}
+        spacePanActive={spacePanActive}
+        consumeSuppressedClick={consumeSuppressedClick}
+        beginPan={beginPan}
         independentRoot
       />
     </section>
@@ -247,6 +351,10 @@ function CanvasComponent({
   onHover,
   locale,
   t,
+  viewportScale,
+  spacePanActive,
+  consumeSuppressedClick,
+  beginPan,
   independentRoot = false,
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
@@ -301,8 +409,10 @@ function CanvasComponent({
       } as CSSProperties
     : undefined
   const style: CSSProperties = {
+    // dnd-kit computes the drag delta in raw screen px; divide by the current zoom scale so the
+    // dragged item still tracks the pointer 1:1 once rendered inside the scaled canvas surface.
     transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`
+      ? `translate3d(${transform.x / viewportScale}px, ${transform.y / viewportScale}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`
       : undefined,
     transition,
   }
@@ -324,13 +434,22 @@ function CanvasComponent({
       {...(!isRoot ? attributes : {})}
       {...(!isRoot ? listeners : {})}
       aria-label={!isRoot ? t('canvas.dragAria', { label: displayName }) : undefined}
-      onClick={event => { event.stopPropagation(); onSelect(component.id) }}
+      onClick={event => {
+        event.stopPropagation()
+        if (consumeSuppressedClick()) return
+        onSelect(component.id)
+      }}
       onPointerDown={event => {
         event.stopPropagation()
+        if (spacePanActive) {
+          beginPan(event)
+          return
+        }
         if (!isRoot) listeners?.onPointerDown?.(event)
       }}
       onTouchStart={event => {
         event.stopPropagation()
+        if (spacePanActive) return
         if (!isRoot) listeners?.onTouchStart?.(event)
       }}
       onKeyDown={event => {
@@ -393,6 +512,10 @@ function CanvasComponent({
                   onHover={onHover}
                   locale={locale}
                   t={t}
+                  viewportScale={viewportScale}
+                  spacePanActive={spacePanActive}
+                  consumeSuppressedClick={consumeSuppressedClick}
+                  beginPan={beginPan}
                 />
               </div>
             ))}
