@@ -407,6 +407,7 @@ type DomainCommand =
   | RemoveScreenCommand
   | AddComponentCommand
   | DuplicateComponentCommand
+  | PasteComponentCommand
   | MoveComponentCommand
   | RemoveComponentCommand
   | UpdateComponentSpecCommand
@@ -421,6 +422,8 @@ commandは成功時に全体適用、失敗時に無変更とする。
 screen追加時はroot pageとdefault stateを同一commandで作成する。screen削除時は配下のcomponent、state、event、APIをまとめて削除する。他screenの`navigate`から参照されているscreenは、参照を外すまで削除できない。選択中screenを削除したUIは、残った先頭screenへ選択をreconcileする。
 
 `duplicateComponent`はPage／Modal root以外の対象subtreeを1 commandでdeep copyし、全component IDをcommand内の対応表で新規IDへ置換して元component直後へ挿入する。全ScreenStateの対象overrideは新IDへ複製する一方、eventと`ApiOperation.requestBindings`は複製せず、Buttonのevent参照は外す。入力の`fieldKey`は一意なcopy suffixへ再採番する。
+
+Copyはdocumentやhistoryを変更せず、対象subtreeとコピー時点の状態overrideだけを型付きのアプリ内clipboardへ保持する。`pasteComponent`はそのsnapshot、貼り付け先、ID対応表を持つ1 commandで、duplicateと同じsubtree copy処理を使用する。container／Page／Modal選択時は子の末尾、leaf選択時は同一parent内の直後へ挿入する。同一画面ではsnapshotの状態overrideを複製し、別画面では状態間の対応を推測せずoverrideを省略して通知する。clipboardは同じproject ID内だけで有効で、sourceの後続編集・削除やchange setのAccept／Rejectを越えてsnapshotを利用できるが、reloadとsample resetでは破棄する。
 
 ### 7.2 更新単位
 
@@ -673,6 +676,7 @@ AIによる更新toolは次を共通要件とする。
 
 ### 11.4 公開しない操作
 
+- アプリ内clipboardのCopy／Paste（OS clipboardや外部JSONを扱わない人間向け操作）
 - change setの承認
 - change setの却下
 - Undo／Redo

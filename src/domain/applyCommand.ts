@@ -1,7 +1,11 @@
-import type { ProjectDocument, EntityId } from './model'
+import type {
+  ComponentOverride,
+  EntityId,
+  ProjectDocument,
+} from './model'
 import { CONTAINER_KINDS, DEFAULT_COMPONENT_LAYOUT } from './model'
 import type { ComponentConfig } from './model'
-import type { DomainCommand } from './commands'
+import type { ComponentSubtreeSnapshot, DomainCommand } from './commands'
 import { DomainError } from './errors'
 import { validateInvariants } from './invariants'
 import {
@@ -11,7 +15,10 @@ import {
   isSafeEntityId,
   setOwnEntity,
 } from './entityMap'
-import { duplicableSubtreeIds } from './componentDuplication'
+import {
+  createComponentSubtreeSnapshot,
+  resolveComponentPasteTarget,
+} from './componentDuplication'
 
 // Deep clone a document (JSON-safe)
 function clone<T>(v: T): T {
@@ -170,6 +177,194 @@ function duplicateComponentConfig(
     case 'modal':
       return copied
   }
+}
+
+function snapshotSubtreeIds(snapshot: ComponentSubtreeSnapshot): EntityId[] {
+  const root = getOwnEntity(snapshot.components, snapshot.rootComponentId)
+  if (!root) {
+    throw new DomainError('NOT_FOUND', 'Copied component root is missing')
+  }
+  if (root.kind === 'page' || root.kind === 'modal') {
+    throw new DomainError('INVALID_PARENT', 'Independent screen roots cannot be copied')
+  }
+
+  const result: EntityId[] = []
+  const visited = new Set<EntityId>()
+  function visit(componentId: EntityId, expectedParentId?: EntityId): void {
+    if (visited.has(componentId)) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree contains a cycle')
+    }
+    const component = getOwnEntity(snapshot.components, componentId)
+    if (
+      !component ||
+      component.id !== componentId ||
+      component.screenId !== snapshot.sourceScreenId ||
+      (expectedParentId !== undefined && component.parentId !== expectedParentId)
+    ) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree is inconsistent')
+    }
+    visited.add(componentId)
+    result.push(componentId)
+    component.childIds.forEach(childId => visit(childId, component.id))
+  }
+  visit(root.id)
+  if (result.length !== Object.keys(snapshot.components).length) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Copied component snapshot contains unrelated components')
+  }
+  for (const overrides of Object.values(snapshot.stateOverrides)) {
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied state overrides must be objects')
+    }
+    for (const [componentId, override] of Object.entries(overrides)) {
+      if (
+        !visited.has(componentId) ||
+        !override ||
+        typeof override !== 'object' ||
+        Array.isArray(override)
+      ) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Copied state override is invalid')
+      }
+    }
+  }
+  return result
+}
+
+function validatedComponentIdMap(
+  document: ProjectDocument,
+  sourceIds: EntityId[],
+  componentIdMap: Record<EntityId, EntityId>,
+): Map<EntityId, EntityId> {
+  if (
+    typeof componentIdMap !== 'object' ||
+    componentIdMap === null ||
+    Array.isArray(componentIdMap)
+  ) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Component ID map must be an object')
+  }
+  const mappedSourceIds = Object.keys(componentIdMap)
+  if (
+    mappedSourceIds.length !== sourceIds.length ||
+    sourceIds.some(id => !hasOwnEntity(componentIdMap, id))
+  ) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      'Component ID map must contain the complete source subtree',
+    )
+  }
+
+  const validated = new Map<EntityId, EntityId>()
+  for (const sourceId of mappedSourceIds) {
+    if (!isSafeEntityId(sourceId)) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe source ID')
+    }
+    const newId = getOwnEntity(componentIdMap, sourceId)
+    if (!isSafeEntityId(newId)) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe new ID')
+    }
+    if (hasOwnEntity(document.components, newId)) {
+      throw new DomainError('INVARIANT_VIOLATION', `Component ${newId} already exists`)
+    }
+    validated.set(sourceId, newId)
+  }
+  if (new Set(validated.values()).size !== validated.size) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component IDs must be unique')
+  }
+  return validated
+}
+
+function applyComponentSubtreeCopy(
+  document: ProjectDocument,
+  snapshot: ComponentSubtreeSnapshot,
+  destinationScreenId: EntityId,
+  destinationParentId: EntityId,
+  position: number,
+  componentIdMap: Record<EntityId, EntityId>,
+  copyStateOverrides: boolean,
+): EntityId {
+  const sourceIds = snapshotSubtreeIds(snapshot)
+  const mappedIds = validatedComponentIdMap(document, sourceIds, componentIdMap)
+  const root = getOwnEntity(snapshot.components, snapshot.rootComponentId)
+  const destinationScreen = getOwnEntity(document.screens, destinationScreenId)
+  const destinationParent = getOwnEntity(document.components, destinationParentId)
+  if (!root || !destinationScreen || !destinationParent) {
+    throw new DomainError('NOT_FOUND', 'Paste destination is unavailable')
+  }
+  if (
+    destinationParent.screenId !== destinationScreen.id ||
+    !CONTAINER_KINDS.includes(destinationParent.kind) ||
+    !Number.isInteger(position) ||
+    position < 0 ||
+    position > destinationParent.childIds.length
+  ) {
+    throw new DomainError('INVALID_PARENT', 'Paste destination cannot contain the copied subtree')
+  }
+
+  const usedFieldKeys = new Set(
+    Object.values(document.components).flatMap(component => {
+      if (component.screenId !== destinationScreenId) return []
+      const config = component.config
+      if (config.kind !== 'textInput' && config.kind !== 'select') return []
+      const fieldKey = config.fieldKey.trim()
+      return fieldKey ? [fieldKey] : []
+    }),
+  )
+
+  for (const sourceId of sourceIds) {
+    const sourceComponent = getOwnEntity(snapshot.components, sourceId)
+    const newId = mappedIds.get(sourceId)
+    if (!sourceComponent || !newId) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree changed during paste')
+    }
+    const parentId = sourceId === root.id
+      ? destinationParent.id
+      : sourceComponent.parentId
+        ? mappedIds.get(sourceComponent.parentId)
+        : undefined
+    if (!parentId) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied component parent is missing')
+    }
+    setOwnEntity(document.components, newId, {
+      ...clone(sourceComponent),
+      id: newId,
+      screenId: destinationScreenId,
+      parentId,
+      childIds: sourceComponent.childIds.map(childId => {
+        const copiedChildId = mappedIds.get(childId)
+        if (!copiedChildId) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Copied component child is missing')
+        }
+        return copiedChildId
+      }),
+      config: duplicateComponentConfig(sourceComponent.config, usedFieldKeys),
+    })
+  }
+
+  const copiedRootId = mappedIds.get(root.id)
+  if (!copiedRootId) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Copied root component ID is missing')
+  }
+  destinationParent.childIds.splice(position, 0, copiedRootId)
+
+  if (copyStateOverrides) {
+    for (const [stateId, overrides] of Object.entries(snapshot.stateOverrides)) {
+      const state = getOwnEntity(document.screenStates, stateId)
+      if (!state || state.screenId !== destinationScreenId) {
+        throw new DomainError('INVALID_REFERENCE', `Copied state ${stateId} is unavailable`)
+      }
+      for (const [sourceId, override] of Object.entries(overrides)) {
+        const copiedId = mappedIds.get(sourceId)
+        if (!copiedId || !getOwnEntity(snapshot.components, sourceId)) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Copied state override is invalid')
+        }
+        setOwnEntity(
+          state.componentOverrides,
+          copiedId,
+          clone(override as ComponentOverride),
+        )
+      }
+    }
+  }
+  return copiedRootId
 }
 
 export function applyCommandWithoutRevision(doc: ProjectDocument, command: DomainCommand): ProjectDocument {
@@ -425,98 +620,79 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       if (!parent || sourcePosition < 0) {
         throw new DomainError('INVARIANT_VIOLATION', 'Component parent is unavailable')
       }
-      if (
-        typeof command.componentIdMap !== 'object' ||
-        command.componentIdMap === null ||
-        Array.isArray(command.componentIdMap)
-      ) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Component ID map must be an object')
+      const snapshot = createComponentSubtreeSnapshot(next, source.id)
+      if (!snapshot) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component subtree cannot be duplicated')
       }
-
-      const sourceIds = duplicableSubtreeIds(next, source.id)
-      const mappedSourceIds = Object.keys(command.componentIdMap)
-      if (
-        mappedSourceIds.length !== sourceIds.length ||
-        sourceIds.some(id => !hasOwnEntity(command.componentIdMap, id))
-      ) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          'Component ID map must contain the complete source subtree',
-        )
-      }
-
-      const newIds = mappedSourceIds.map(sourceId => {
-        if (!isSafeEntityId(sourceId)) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe source ID')
-        }
-        const newId = getOwnEntity(command.componentIdMap, sourceId)
-        if (!isSafeEntityId(newId)) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe new ID')
-        }
-        if (hasOwnEntity(next.components, newId)) {
-          throw new DomainError('INVARIANT_VIOLATION', `Component ${newId} already exists`)
-        }
-        return newId
-      })
-      if (new Set(newIds).size !== newIds.length) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component IDs must be unique')
-      }
-
-      const usedFieldKeys = new Set(
-        Object.values(next.components).flatMap(component => {
-          if (component.screenId !== source.screenId) return []
-          const config = component.config
-          if (config.kind !== 'textInput' && config.kind !== 'select') return []
-          const fieldKey = config.fieldKey.trim()
-          return fieldKey ? [fieldKey] : []
-        }),
+      applyComponentSubtreeCopy(
+        next,
+        snapshot,
+        source.screenId,
+        parent.id,
+        sourcePosition + 1,
+        command.componentIdMap,
+        true,
       )
+      break
+    }
 
-      for (const sourceId of sourceIds) {
-        const sourceComponent = getOwnEntity(next.components, sourceId)
-        const newId = getOwnEntity(command.componentIdMap, sourceId)
-        if (!sourceComponent || !newId) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Source subtree changed during duplication')
-        }
-        const duplicatedParentId = sourceId === source.id
-          ? source.parentId
-          : sourceComponent.parentId
-            ? getOwnEntity(command.componentIdMap, sourceComponent.parentId)
-            : undefined
-        if (!duplicatedParentId) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component parent is missing')
-        }
-        setOwnEntity(next.components, newId, {
-          ...clone(sourceComponent),
-          id: newId,
-          parentId: duplicatedParentId,
-          childIds: sourceComponent.childIds.map(childId => {
-            const duplicatedChildId = getOwnEntity(command.componentIdMap, childId)
-            if (!duplicatedChildId) {
-              throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component child is missing')
-            }
-            return duplicatedChildId
-          }),
-          config: duplicateComponentConfig(sourceComponent.config, usedFieldKeys),
-        })
+    case 'pasteComponent': {
+      requireExactKeys(
+        command,
+        [
+          'type',
+          'snapshot',
+          'destinationComponentId',
+          'destinationScreenId',
+          'destinationParentId',
+          'position',
+          'componentIdMap',
+        ],
+        'pasteComponent command',
+      )
+      if (
+        typeof command.snapshot !== 'object' ||
+        command.snapshot === null ||
+        Array.isArray(command.snapshot)
+      ) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component snapshot must be an object')
       }
-
-      const duplicatedRootId = getOwnEntity(command.componentIdMap, source.id)
-      if (!duplicatedRootId) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Duplicated root component ID is missing')
+      requireExactKeys(
+        command.snapshot,
+        ['projectId', 'sourceScreenId', 'rootComponentId', 'components', 'stateOverrides'],
+        'component snapshot',
+      )
+      if (command.snapshot.projectId !== next.project.id) {
+        throw new DomainError('INVALID_REFERENCE', 'Copied component belongs to another project')
       }
-      parent.childIds.splice(sourcePosition + 1, 0, duplicatedRootId)
-
-      for (const state of Object.values(next.screenStates)) {
-        if (state.screenId !== source.screenId) continue
-        for (const sourceId of sourceIds) {
-          const sourceOverride = getOwnEntity(state.componentOverrides, sourceId)
-          const duplicatedId = getOwnEntity(command.componentIdMap, sourceId)
-          if (sourceOverride && duplicatedId) {
-            setOwnEntity(state.componentOverrides, duplicatedId, clone(sourceOverride))
-          }
-        }
+      if (
+        typeof command.snapshot.components !== 'object' ||
+        command.snapshot.components === null ||
+        Array.isArray(command.snapshot.components) ||
+        typeof command.snapshot.stateOverrides !== 'object' ||
+        command.snapshot.stateOverrides === null ||
+        Array.isArray(command.snapshot.stateOverrides)
+      ) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Component snapshot data must be objects')
       }
+      const target = resolveComponentPasteTarget(next, command.destinationComponentId)
+      if (
+        !target ||
+        target.destinationScreenId !== command.destinationScreenId ||
+        target.destinationParentId !== command.destinationParentId ||
+        target.position !== command.position
+      ) {
+        throw new DomainError('INVALID_REFERENCE', 'Paste destination changed or is unavailable')
+      }
+      applyComponentSubtreeCopy(
+        next,
+        command.snapshot,
+        command.destinationScreenId,
+        command.destinationParentId,
+        command.position,
+        command.componentIdMap,
+        command.snapshot.sourceScreenId === command.destinationScreenId,
+      )
       break
     }
 

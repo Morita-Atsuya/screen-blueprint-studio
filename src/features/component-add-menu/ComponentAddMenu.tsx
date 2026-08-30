@@ -15,7 +15,10 @@ import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
 import { useI18n } from '../../i18n/I18nProvider'
 import { createAddComponentCommand } from '../palette/componentFactory'
-import { canDuplicateComponent } from '../../domain/componentDuplication'
+import {
+  canDuplicateComponent,
+  canPasteComponent,
+} from '../../domain/componentDuplication'
 import {
   clampContextMenuPosition,
   contextMenuPaletteItems,
@@ -59,6 +62,9 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const effectiveDocument = useAppStore(state => state.effectiveDocument)
   const dispatch = useAppStore(state => state.dispatch)
   const duplicateComponent = useAppStore(state => state.duplicateComponent)
+  const copyComponent = useAppStore(state => state.copyComponent)
+  const pasteComponent = useAppStore(state => state.pasteComponent)
+  const componentClipboard = useAppStore(state => state.componentClipboard)
   const setSelectedComponent = useAppStore(state => state.setSelectedComponent)
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null)
   const [position, setPosition] = useState<MenuPoint | null>(null)
@@ -109,6 +115,10 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const canDuplicate = openMenu
     ? canDuplicateComponent(effectiveDocument, openMenu.componentId)
     : false
+  const canPaste = openMenu
+    ? canPasteComponent(effectiveDocument, componentClipboard, openMenu.componentId)
+    : false
+  const hasComponentActions = canDuplicate || canPaste
 
   useEffect(() => {
     if (openMenu && !component) close(false)
@@ -163,6 +173,18 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   function duplicate() {
     if (!openMenu || !canDuplicate) return
     if (!duplicateComponent(openMenu.componentId, t('componentMenu.duplicateHistory'))) return
+    close()
+  }
+
+  function copy() {
+    if (!openMenu || !canDuplicate) return
+    if (!copyComponent(openMenu.componentId)) return
+    close()
+  }
+
+  function paste() {
+    if (!openMenu || !canPaste) return
+    if (!pasteComponent(openMenu.componentId, t('componentMenu.pasteHistory'))) return
     close()
   }
 
@@ -240,17 +262,41 @@ export function useComponentAddMenu(): ComponentAddMenuController {
             {openMenu.stage === 'position'
               ? (
                   <>
-                    {canDuplicate ? (
+                    {hasComponentActions ? (
                       <>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={styles.item}
-                          data-component-duplicate
-                          onClick={duplicate}
-                        >
-                          {t('componentMenu.duplicate')}
-                        </button>
+                        {canDuplicate ? (
+                          <>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className={styles.item}
+                              data-component-copy
+                              onClick={copy}
+                            >
+                              {t('componentMenu.copy')}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className={styles.item}
+                              data-component-duplicate
+                              onClick={duplicate}
+                            >
+                              {t('componentMenu.duplicate')}
+                            </button>
+                          </>
+                        ) : null}
+                        {canPaste ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={styles.item}
+                            data-component-paste
+                            onClick={paste}
+                          >
+                            {t('componentMenu.paste')}
+                          </button>
+                        ) : null}
                         <div className={styles.separator} role="separator" />
                       </>
                     ) : null}

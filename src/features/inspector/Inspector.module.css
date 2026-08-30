@@ -21,8 +21,14 @@
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
-.duplicateButton {
+.componentActions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
   margin-top: 7px;
+}
+.componentActionButton {
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -31,11 +37,11 @@
   font-size: 0.72rem;
   font-weight: 650;
 }
-.duplicateButton:hover {
+.componentActionButton:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
-.duplicateButton:focus-visible {
+.componentActionButton:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

@@ -3,6 +3,8 @@ import type { EntityId, ProjectDocument } from '../domain/model'
 
 export type EditorShortcut =
   | 'delete-selection'
+  | 'copy-selection'
+  | 'paste-selection'
   | 'duplicate-selection'
   | 'clear-selection'
   | 'undo'
@@ -49,7 +51,7 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
   if (isEditableTarget(input.target)) return null
   const key = input.key.toLowerCase()
   if (key === 'escape') return 'clear-selection'
-  if (key === 'd' && (input.metaKey || input.ctrlKey)) {
+  if ((key === 'c' || key === 'v' || key === 'd') && (input.metaKey || input.ctrlKey)) {
     if (
       (input.metaKey && input.ctrlKey) ||
       input.shiftKey ||
@@ -63,6 +65,8 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
     ) {
       return null
     }
+    if (key === 'c') return 'copy-selection'
+    if (key === 'v') return 'paste-selection'
     return 'duplicate-selection'
   }
   if (key === 'delete' || key === 'backspace') {

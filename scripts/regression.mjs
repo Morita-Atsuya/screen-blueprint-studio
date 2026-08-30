@@ -84,6 +84,7 @@ const changeSetComponentChangesBundle = join(temp, 'changeSetComponentChanges.mj
 const structureTreeKeyboardBundle = join(temp, 'structureTreeKeyboard.mjs')
 const deleteImpactBundle = join(temp, 'deleteImpact.mjs')
 const sampleProjectBundle = join(temp, 'sampleProject.mjs')
+const componentDuplicationBundle = join(temp, 'componentDuplication.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -107,6 +108,7 @@ bundle('src/domain/changeSetComponentChanges.ts', changeSetComponentChangesBundl
 bundle('src/features/structure-tree/structureTreeKeyboard.ts', structureTreeKeyboardBundle)
 bundle('src/domain/deleteImpact.ts', deleteImpactBundle)
 bundle('src/sample/sampleProject.ts', sampleProjectBundle)
+bundle('src/domain/componentDuplication.ts', componentDuplicationBundle)
 
 let passed = 0
 
@@ -1098,6 +1100,284 @@ await test('component duplication preserves selection through history and change
     store.getState().ui.selectedComponentId === previewRootId &&
       store.getState().document.components[previewRootId],
     'accepted duplicate Redo did not restore the duplicated selection',
+  )
+})
+
+await test('component clipboard snapshots subtrees and pastes with safe target and state rules', async () => {
+  memoryStorage.clear()
+  const {
+    canPasteComponent,
+    resolveComponentPasteTarget,
+  } = await import(moduleUrl(componentDuplicationBundle, 'component-copy-paste'))
+  const store = await freshStore('component-copy-paste')
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().setSelectedComponent('comp-actions')
+  const documentBeforeCopy = store.getState().document
+  assert(store.getState().copyComponent('comp-actions'), 'component copy failed')
+  const clipboard = store.getState().componentClipboard
+  assert(
+    store.getState().document === documentBeforeCopy &&
+      store.getState().history.length === 0 &&
+      clipboard?.rootComponentId === 'comp-actions' &&
+      Object.keys(clipboard.components).length === 3 &&
+      Object.values(clipboard.stateOverrides).reduce(
+        (count, overrides) => count + Object.keys(overrides).length,
+        0,
+      ) === 3,
+    'copy mutated the document/history or captured an incomplete subtree snapshot',
+  )
+
+  assert(
+    store.getState().dispatch(
+      { type: 'removeComponent', componentId: 'comp-actions' },
+      'Remove copied source',
+    ),
+    'source removal after copy failed',
+  )
+  store.getState().setSelectedComponent('comp-edit-section')
+  assert(
+    canPasteComponent(
+      store.getState().effectiveDocument,
+      clipboard,
+      'comp-edit-section',
+    ) &&
+      store.getState().pasteComponent('comp-edit-section', 'Paste component'),
+    'snapshot could not be pasted after its source was deleted',
+  )
+  const section = store.getState().document.components['comp-edit-section']
+  const pastedRootId = section.childIds.at(-1)
+  const pastedRoot = store.getState().document.components[pastedRootId]
+  const pastedSaveId = pastedRoot.childIds[1]
+  assert(
+    pastedRootId !== 'comp-actions' &&
+      pastedRoot.kind === 'container' &&
+      pastedRoot.childIds.length === 2 &&
+      store.getState().document.components[pastedSaveId].config.eventId === null &&
+      store.getState().ui.selectedComponentId === pastedRootId &&
+      store.getState().history.length === 2,
+    'paste was not one atomic insertion with new IDs, cleared event reference, and new selection',
+  )
+  assert(
+    store.getState().document.screenStates['state-edit-success']
+      .componentOverrides[pastedRootId]?.visible === false &&
+      store.getState().document.screenStates['state-edit-saving']
+        .componentOverrides[pastedSaveId]?.enabled === false &&
+      Object.keys(store.getState().document.events).length === 0,
+    'same-screen paste did not copy snapshot overrides or recreated an event',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().ui.selectedComponentId === 'comp-edit-section' &&
+      !store.getState().document.components[pastedRootId],
+    'paste Undo did not restore the destination selection',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().ui.selectedComponentId === pastedRootId &&
+      store.getState().document.components[pastedRootId],
+    'paste Redo did not restore the pasted root selection',
+  )
+
+  store.getState().resetToSample()
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().setSelectedComponent('comp-actions')
+  store.getState().copyComponent('comp-actions')
+  const copiedAcrossScreens = store.getState().componentClipboard
+  store.getState().setActiveScreen('screen-list')
+  const pageTarget = resolveComponentPasteTarget(
+    store.getState().effectiveDocument,
+    'comp-list-page',
+  )
+  const eventSnapshot = JSON.stringify(store.getState().document.events)
+  const apiSnapshot = JSON.stringify(store.getState().document.apiOperations)
+  assert(
+    pageTarget?.destinationParentId === 'comp-list-page' &&
+      pageTarget.position === store.getState().document.components['comp-list-page'].childIds.length,
+    'Page root did not resolve to an inside-at-end paste target',
+  )
+  store.getState().setSelectedComponent('comp-list-page')
+  assert(
+    store.getState().pasteComponent('comp-list-page', 'Paste component'),
+    'cross-screen root paste failed',
+  )
+  const listPage = store.getState().document.components['comp-list-page']
+  const crossScreenRootId = listPage.childIds.at(-1)
+  const crossScreenSubtree = [
+    crossScreenRootId,
+    ...store.getState().document.components[crossScreenRootId].childIds,
+  ]
+  assert(
+    crossScreenSubtree.every(
+      id => store.getState().document.components[id].screenId === 'screen-list',
+    ) &&
+      Object.values(store.getState().document.screenStates)
+        .filter(state => state.screenId === 'screen-list')
+        .every(state => crossScreenSubtree.every(id => !state.componentOverrides[id])) &&
+      JSON.stringify(store.getState().document.events) === eventSnapshot &&
+      JSON.stringify(store.getState().document.apiOperations) === apiSnapshot &&
+      store.getState().toast?.message.key === 'clipboard.crossScreenOverridesOmitted',
+    'cross-screen paste copied overrides/events/API bindings or omitted its notice',
+  )
+
+  store.getState().resetToSample()
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().copyComponent('comp-name-input')
+  store.getState().setActiveScreen('screen-list')
+  store.getState().setSelectedComponent('comp-list-page')
+  store.getState().pasteComponent('comp-list-page', 'Paste component')
+  const pastedInputId = store.getState().ui.selectedComponentId
+  assert(
+    store.getState().document.components[pastedInputId].config.fieldKey === 'name_copy' &&
+      !store.getState().document.apiOperations['api-save-user'].requestBindings.some(
+        binding => binding.componentId === pastedInputId,
+      ),
+    'pasted input did not reuse fieldKey uniqueness or retained an API request binding',
+  )
+
+  store.getState().resetToSample()
+  store.getState().setSelectedComponent('comp-list-active')
+  store.getState().copyComponent('comp-list-active')
+  store.getState().setSelectedComponent('comp-list-invited')
+  store.getState().pasteComponent('comp-list-invited', 'Paste component')
+  const gridChildren = store.getState().document.components['comp-list-grid'].childIds
+  const invitedIndex = gridChildren.indexOf('comp-list-invited')
+  assert(
+    invitedIndex >= 0 &&
+      gridChildren[invitedIndex + 1] === store.getState().ui.selectedComponentId,
+    'non-container paste was not inserted immediately after the destination',
+  )
+  assert(
+    !store.getState().copyComponent('comp-list-page'),
+    'Page root was copied even though it cannot be pasted as a child',
+  )
+
+  store.getState().setSelectedComponent('comp-list-active')
+  store.getState().copyComponent('comp-list-active')
+  store.getState().dispatch({
+    type: 'addComponent',
+    componentId: 'copy-paste-modal',
+    screenId: 'screen-list',
+    parentId: null,
+    kind: 'modal',
+    config: {
+      kind: 'modal',
+      layout: 'vertical',
+      gap: 'md',
+      columns: 2,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    },
+  }, 'Add modal')
+  store.getState().setSelectedComponent('copy-paste-modal')
+  assert(
+    store.getState().pasteComponent('copy-paste-modal', 'Paste component') &&
+      store.getState().document.components['copy-paste-modal'].childIds.length === 1,
+    'Modal root did not accept a copied child at the end',
+  )
+
+  const invalidClipboard = structuredClone(store.getState().componentClipboard)
+  invalidClipboard.projectId = 'another-project'
+  store.setState({ componentClipboard: invalidClipboard })
+  const historyBeforeInvalidPaste = store.getState().history.length
+  assert(
+    !store.getState().pasteComponent('comp-list-page', 'Paste component') &&
+      store.getState().history.length === historyBeforeInvalidPaste &&
+      store.getState().toast?.message.key === 'clipboard.pasteUnavailable',
+    'cross-project clipboard was not rejected without mutation',
+  )
+
+  store.getState().resetToSample()
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().copyComponent('comp-actions')
+  const staleStateClipboard = store.getState().componentClipboard
+  store.getState().dispatch(
+    { type: 'removeScreenState', stateId: 'state-edit-saving' },
+    'Remove copied state',
+  )
+  assert(
+    !canPasteComponent(
+      store.getState().effectiveDocument,
+      staleStateClipboard,
+      'comp-edit-section',
+    ),
+    'clipboard with a removed same-screen override state remained pasteable',
+  )
+})
+
+await test('pasteComponent remains reviewable and selection-safe in active change sets', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('paste-change-set')
+  store.getState().setActiveScreen('screen-edit')
+  store.getState().setSelectedComponent('comp-actions')
+  store.getState().copyComponent('comp-actions')
+  store.getState().setSelectedComponent('comp-edit-section')
+  store.getState().beginChangeSet('Paste subtree')
+  assert(
+    store.getState().pasteComponent('comp-edit-section', 'Paste component'),
+    'active change-set paste failed',
+  )
+  const changeSet = store.getState().activeChangeSet
+  const command = changeSet?.operations[0]?.command
+  const pastedRootId = command?.type === 'pasteComponent'
+    ? command.componentIdMap[command.snapshot.rootComponentId]
+    : null
+  const { presentChangeSetOperations } = await import(
+    moduleUrl(changeSetPresentationBundle, 'paste-presentation')
+  )
+  const { getChangeSetComponentChanges } = await import(
+    moduleUrl(changeSetComponentChangesBundle, 'paste-markers')
+  )
+  const row = presentChangeSetOperations(changeSet, 'en')[0]
+  const markers = getChangeSetComponentChanges(changeSet)
+  assert(
+    command?.type === 'pasteComponent' &&
+      changeSet.operations.length === 1 &&
+      pastedRootId &&
+      store.getState().ui.selectedComponentId === pastedRootId &&
+      row.commandType === 'pasteComponent' &&
+      row.navigation?.componentId === pastedRootId &&
+      row.impact.includes('3 components') &&
+      row.impact.includes('3 state overrides') &&
+      [...markers.statuses.values()].filter(status => status === 'added').length === 3,
+    'paste was not represented as one reviewable operation with added subtree markers',
+  )
+
+  const reloaded = await freshStore('paste-active-reload')
+  assert(
+    reloaded.getState().activeChangeSet?.operations[0].command.type === 'pasteComponent' &&
+      reloaded.getState().effectiveDocument.components[pastedRootId] &&
+      reloaded.getState().componentClipboard === null,
+    'active paste did not reload safely or incorrectly persisted the app clipboard',
+  )
+  reloaded.getState().copyComponent('comp-actions')
+  reloaded.getState().setSelectedComponent(pastedRootId)
+  reloaded.getState().rejectChangeSet()
+  assert(
+    reloaded.getState().ui.selectedComponentId === 'comp-edit-section' &&
+      !reloaded.getState().effectiveDocument.components[pastedRootId] &&
+      reloaded.getState().componentClipboard?.rootComponentId === 'comp-actions',
+    'paste Reject did not restore selection or incorrectly cleared the same-project clipboard',
+  )
+
+  store.getState().acceptChangeSet()
+  assert(
+    store.getState().document.components[pastedRootId] &&
+      store.getState().ui.selectedComponentId === pastedRootId &&
+      store.getState().componentClipboard?.rootComponentId === 'comp-actions',
+    'paste Accept did not retain the pasted selection or same-project clipboard',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().ui.selectedComponentId === 'comp-edit-section' &&
+      !store.getState().document.components[pastedRootId],
+    'accepted paste Undo did not restore the destination selection',
+  )
+  store.getState().redo()
+  assert(
+    store.getState().ui.selectedComponentId === pastedRootId &&
+      store.getState().document.components[pastedRootId],
+    'accepted paste Redo did not restore the pasted selection',
   )
 })
 
@@ -2756,42 +3036,57 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
       }) === 'duplicate-selection',
     'Cmd/Ctrl+D did not resolve in Canvas or Inspector scope',
   )
-  for (const guard of [
-    { repeat: true },
-    { isComposing: true },
-    { keyCode: 229 },
-    { dragActive: true },
-    { shiftKey: true },
-    { altKey: true },
-    { metaKey: true, ctrlKey: true },
-    { target: { tagName: 'DIV', closest: () => null } },
-    {
-      target: {
-        tagName: 'INPUT',
-        closest: scopedTarget.closest,
-      },
-    },
-    {
-      target: {
-        tagName: 'BUTTON',
-        closest(selector) {
-          return selector.includes('[role="tree"]') ||
-            selector === '[data-hierarchy-shortcut-scope]'
-            ? this
-            : null
+  assert(
+    resolveEditorShortcut({
+      key: 'c',
+      metaKey: true,
+      target: scopedTarget,
+    }) === 'copy-selection' &&
+      resolveEditorShortcut({
+        key: 'v',
+        ctrlKey: true,
+        target: scopedTarget,
+      }) === 'paste-selection',
+    'Cmd/Ctrl+C and Cmd/Ctrl+V did not resolve in Canvas or Inspector scope',
+  )
+  for (const key of ['c', 'v', 'd']) {
+    for (const guard of [
+      { repeat: true },
+      { isComposing: true },
+      { keyCode: 229 },
+      { dragActive: true },
+      { shiftKey: true },
+      { altKey: true },
+      { metaKey: true, ctrlKey: true },
+      { target: { tagName: 'DIV', closest: () => null } },
+      {
+        target: {
+          tagName: 'INPUT',
+          closest: scopedTarget.closest,
         },
       },
-    },
-  ]) {
-    assert(
-      resolveEditorShortcut({
-        key: 'd',
-        metaKey: true,
-        target: scopedTarget,
-        ...guard,
-      }) === null,
-      'duplicate shortcut guard was bypassed',
-    )
+      {
+        target: {
+          tagName: 'BUTTON',
+          closest(selector) {
+            return selector.includes('[role="tree"]') ||
+              selector === '[data-hierarchy-shortcut-scope]'
+              ? this
+              : null
+          },
+        },
+      },
+    ]) {
+      assert(
+        resolveEditorShortcut({
+          key,
+          metaKey: true,
+          target: scopedTarget,
+          ...guard,
+        }) === null,
+        'component clipboard shortcut guard was bypassed',
+      )
+    }
   }
   const hierarchyShortcut = (overrides = {}) =>
     resolveHierarchySelectionShortcut({
@@ -3445,6 +3740,8 @@ await test('component add menu resolves valid positions and preserves atomic edi
     menuSource.includes('role="menu"') &&
       menuSource.includes('role="menuitem"') &&
       menuSource.includes('createAddComponentCommand') &&
+      menuSource.includes('data-component-copy') &&
+      menuSource.includes('data-component-paste') &&
       menuSource.includes('openFromKeyboard') &&
       menuSource.includes("event.key === 'Escape'") &&
       menuSource.includes("event.key === 'Enter' || event.key === ' '") &&

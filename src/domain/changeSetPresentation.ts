@@ -458,6 +458,7 @@ function commandEntityKind(command: DomainCommand): 'screen' | 'component' | 'st
     case 'addComponent':
     case 'moveComponent':
     case 'duplicateComponent':
+    case 'pasteComponent':
     case 'removeComponent':
     case 'updateComponentSpec':
       return 'component'
@@ -518,6 +519,21 @@ function targetForCommand(
           ? getComponentHierarchyLabel(after, component, locale)
           : translate(locale, 'review.value.missing'),
         screenId: component?.screenId ?? null,
+      }
+    }
+    case 'pasteComponent': {
+      const pastedId = getOwnEntity(
+        command.componentIdMap,
+        command.snapshot.rootComponentId,
+      )
+      const component = pastedId
+        ? getOwnEntity(after.components, pastedId)
+        : undefined
+      return {
+        label: component
+          ? getComponentHierarchyLabel(after, component, locale)
+          : translate(locale, 'review.value.missing'),
+        screenId: component?.screenId ?? command.destinationScreenId,
       }
     }
     case 'removeComponent': {
@@ -624,6 +640,18 @@ function navigationForCommand(
         ? { screenId: component.screenId, componentId: component.id }
         : null
     }
+    case 'pasteComponent': {
+      const pastedId = getOwnEntity(
+        command.componentIdMap,
+        command.snapshot.rootComponentId,
+      )
+      const component = pastedId
+        ? getOwnEntity(after.components, pastedId)
+        : undefined
+      return component
+        ? { screenId: component.screenId, componentId: component.id }
+        : null
+    }
     case 'createScreenState': {
       const state = getOwnEntity(after.screenStates, command.stateId)
       return state ? { screenId: state.screenId, stateId: state.id } : null
@@ -720,6 +748,19 @@ function buildChanges(
       if (!duplicated) return changes
       addStatus(changes, 'review.value.notSet', 'review.value.added', locale)
       addComponentFields(changes, duplicated, after, locale)
+      return changes
+    }
+    case 'pasteComponent': {
+      const pastedId = getOwnEntity(
+        command.componentIdMap,
+        command.snapshot.rootComponentId,
+      )
+      const pasted = pastedId
+        ? getOwnEntity(after.components, pastedId)
+        : undefined
+      if (!pasted) return changes
+      addStatus(changes, 'review.value.notSet', 'review.value.added', locale)
+      addComponentFields(changes, pasted, after, locale)
       return changes
     }
     case 'moveComponent': {
@@ -915,6 +956,28 @@ function presentOperation(
         ),
       })
     : null
+  const pasteComponentIdMap = operation.command.type === 'pasteComponent'
+    ? operation.command.componentIdMap
+    : null
+  const pasteImpact = operation.command.type === 'pasteComponent' && pasteComponentIdMap
+    ? operation.command.snapshot.sourceScreenId === operation.command.destinationScreenId
+      ? translate(locale, 'review.pasteImpact', {
+          components: Object.values(pasteComponentIdMap).filter(
+            id => !getOwnEntity(before.components, id) && getOwnEntity(after.components, id),
+          ).length,
+          overrides: Object.values(after.screenStates).reduce(
+            (count, state) => count + Object.values(pasteComponentIdMap).filter(
+              id => getOwnEntity(state.componentOverrides, id),
+            ).length,
+            0,
+          ),
+        })
+      : translate(locale, 'review.pasteCrossScreenImpact', {
+          components: Object.values(pasteComponentIdMap).filter(
+            id => !getOwnEntity(before.components, id) && getOwnEntity(after.components, id),
+          ).length,
+        })
+    : null
   return {
     operationId: operation.id,
     source: operation.source,
@@ -928,7 +991,7 @@ function presentOperation(
     changes: buildChanges(operation.command, before, after, locale),
     impact: isDeletion
       ? entityImpact(before, after, operation.command, locale)
-      : duplicationImpact,
+      : duplicationImpact ?? pasteImpact,
     navigation: navigationForCommand(operation.command, before, after),
   }
 }

@@ -8,6 +8,7 @@ import type {
   EventAction,
   HttpMethod,
   FieldBinding,
+  ScreenComponent,
 } from './model'
 
 export type DomainCommand =
@@ -19,6 +20,7 @@ export type DomainCommand =
   | AddComponentCommand
   | MoveComponentCommand
   | DuplicateComponentCommand
+  | PasteComponentCommand
   | RemoveComponentCommand
   | UpdateComponentSpecCommand
   // State commands
@@ -81,6 +83,24 @@ export interface MoveComponentCommand {
 export interface DuplicateComponentCommand {
   type: 'duplicateComponent'
   componentId: EntityId
+  componentIdMap: Record<EntityId, EntityId>
+}
+
+export interface ComponentSubtreeSnapshot {
+  projectId: EntityId
+  sourceScreenId: EntityId
+  rootComponentId: EntityId
+  components: Record<EntityId, ScreenComponent>
+  stateOverrides: Record<EntityId, Record<EntityId, ComponentOverride>>
+}
+
+export interface PasteComponentCommand {
+  type: 'pasteComponent'
+  snapshot: ComponentSubtreeSnapshot
+  destinationComponentId: EntityId
+  destinationScreenId: EntityId
+  destinationParentId: EntityId
+  position: number
   componentIdMap: Record<EntityId, EntityId>
 }
 

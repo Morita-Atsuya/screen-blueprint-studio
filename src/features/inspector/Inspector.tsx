@@ -20,7 +20,10 @@ import {
 import { BehaviorDetails } from './BehaviorDetails'
 import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
 import { ChangeOperationList } from '../change-review/ChangeOperationList'
-import { canDuplicateComponent } from '../../domain/componentDuplication'
+import {
+  canDuplicateComponent,
+  canPasteComponent,
+} from '../../domain/componentDuplication'
 
 export function Inspector() {
   const { locale, t } = useI18n()
@@ -29,6 +32,9 @@ export function Inspector() {
     ui,
     dispatch,
     duplicateComponent,
+    copyComponent,
+    pasteComponent,
+    componentClipboard,
     activeChangeSet,
     setSelectedComponent,
   } = useAppStore()
@@ -61,6 +67,8 @@ export function Inspector() {
   const eventEditor = getEventEditorContext(effectiveDocument, comp.id, locale)
   const apiEditor = getApiEditorContext(effectiveDocument, comp.id, locale)
   const validationEditor = getValidationRulesEditorContext(effectiveDocument, comp.id, locale)
+  const canCopy = canDuplicateComponent(effectiveDocument, comp.id)
+  const canPaste = canPasteComponent(effectiveDocument, componentClipboard, comp.id)
 
   function updateConfig(partial: Record<string, unknown>, field = 'settings'): boolean {
     return dispatch(
@@ -86,20 +94,51 @@ export function Inspector() {
         <h2 className={styles.selectionTitle} title={selectionContext.targetLabel}>
           {selectionContext.targetLabel}
         </h2>
-        {canDuplicateComponent(effectiveDocument, comp.id) ? (
-          <button
-            type="button"
-            className={styles.duplicateButton}
-            title={t('inspector.duplicateTitle')}
-            aria-label={t('inspector.duplicateTitle')}
-            data-component-duplicate-inspector
-            onClick={() => duplicateComponent(
-              comp.id,
-              t('componentMenu.duplicateHistory'),
-            )}
-          >
-            {t('inspector.duplicate')}
-          </button>
+        {canCopy || canPaste ? (
+          <div className={styles.componentActions}>
+            {canCopy ? (
+              <>
+                <button
+                  type="button"
+                  className={styles.componentActionButton}
+                  title={t('inspector.copyTitle')}
+                  aria-label={t('inspector.copyTitle')}
+                  data-component-copy-inspector
+                  onClick={() => copyComponent(comp.id)}
+                >
+                  {t('inspector.copy')}
+                </button>
+                <button
+                  type="button"
+                  className={styles.componentActionButton}
+                  title={t('inspector.duplicateTitle')}
+                  aria-label={t('inspector.duplicateTitle')}
+                  data-component-duplicate-inspector
+                  onClick={() => duplicateComponent(
+                    comp.id,
+                    t('componentMenu.duplicateHistory'),
+                  )}
+                >
+                  {t('inspector.duplicate')}
+                </button>
+              </>
+            ) : null}
+            {canPaste ? (
+              <button
+                type="button"
+                className={styles.componentActionButton}
+                title={t('inspector.pasteTitle')}
+                aria-label={t('inspector.pasteTitle')}
+                data-component-paste-inspector
+                onClick={() => pasteComponent(
+                  comp.id,
+                  t('componentMenu.pasteHistory'),
+                )}
+              >
+                {t('inspector.paste')}
+              </button>
+            ) : null}
+          </div>
         ) : null}
         <nav className={styles.breadcrumb} aria-label={t('inspector.breadcrumbLabel')}>
           <ol className={styles.breadcrumbList}>

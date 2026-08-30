@@ -15,6 +15,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - Page／Modal root以外のcomponent subtreeを直後へatomicに複製。全状態overrideを引き継ぎ、event／API field bindingは複製しない
+- Page／Modal root以外のcomponent subtreeをアプリ内clipboardへコピーし、選択したcontainer/rootの内側またはleaf直後へatomicに貼り付け。同一画面だけ状態overrideを引き継ぐ
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
 - Inspectorで選択componentのevent／実行順actionと、同screenのAPI operation／request binding／結果state、`textInput`のvalidation ruleを追加・編集・削除・並べ替え
 - 自由に命名できる画面状態と状態別override
@@ -64,6 +65,7 @@ AIがchange setへ型付きoperationを追加
 - Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - Canvas／InspectorでPage／Modal root以外のcomponentを選択し、右クリックメニュー、Inspector、または`Cmd/Ctrl+D`からsubtreeを直後へ複製
+- Canvas／Inspectorで`Cmd/Ctrl+C`またはCopyを使ってsubtreeをアプリ内clipboardへ保持し、有効な貼り付け先で`Cmd/Ctrl+V`またはPasteを実行。別画面へ貼り付ける場合は状態overrideを含めない
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すとUndo、`Cmd/Ctrl+Shift+Z`または`Ctrl+Y`でRedo
 - Screen／Inspectorのテキスト入力は編集中の内容をlocal draftとして保持し、単一行は`Enter`またはフォーカス移動、複数行はフォーカス移動で1操作として確定。`Escape`で未確定入力を取り消す
 - Screensタブで画面の追加、選択、名前・route編集、削除

@@ -6,7 +6,10 @@ import {
   resolveHierarchySelectionShortcut,
   resolveHierarchySelectionTarget,
 } from './editorShortcuts'
-import { canDuplicateComponent } from '../domain/componentDuplication'
+import {
+  canDuplicateComponent,
+  canPasteComponent,
+} from '../domain/componentDuplication'
 import { useI18n } from '../i18n/I18nProvider'
 
 export function EditorKeyboardShortcuts() {
@@ -50,6 +53,24 @@ export function EditorKeyboardShortcuts() {
 
       const selectedId = state.ui.selectedComponentId
       if (!selectedId) return
+      if (shortcut === 'copy-selection') {
+        if (!canDuplicateComponent(state.effectiveDocument, selectedId)) return
+        event.preventDefault()
+        state.copyComponent(selectedId)
+        return
+      }
+      if (shortcut === 'paste-selection') {
+        if (!canPasteComponent(
+          state.effectiveDocument,
+          state.componentClipboard,
+          selectedId,
+        )) {
+          return
+        }
+        event.preventDefault()
+        state.pasteComponent(selectedId, t('componentMenu.pasteHistory'))
+        return
+      }
       if (shortcut === 'duplicate-selection') {
         if (!canDuplicateComponent(state.effectiveDocument, selectedId)) return
         event.preventDefault()

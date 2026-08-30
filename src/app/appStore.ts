@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type { ProjectDocument, EntityId } from '../domain/model'
-import type { DomainCommand } from '../domain/commands'
+import type { ComponentSubtreeSnapshot, DomainCommand } from '../domain/commands'
 import type { ChangeSet, RejectedChangeSetRecord } from '../domain/collaboration'
 import { replayChangeSetOperations } from '../domain/changeSetReplay'
 import {
@@ -16,7 +16,10 @@ import type { UiMessage } from '../i18n/messages'
 import { domainErrorMessage } from '../i18n/messages'
 import type { ToastInput, ToastState } from './toastModel'
 import {
+  canPasteComponent,
+  createComponentSubtreeSnapshot,
   createDuplicateComponentCommand,
+  createPasteComponentCommand,
 } from '../domain/componentDuplication'
 import {
   analyzeDeleteImpact,
@@ -81,12 +84,15 @@ export interface AppStore {
   startupNotice: UiMessage | null
   toast: ToastState | null
   pendingDelete: PendingDeleteRequest | null
+  componentClipboard: ComponentSubtreeSnapshot | null
   persistenceUnavailable: boolean
   // effectiveDocument = computeEffective(document, activeChangeSet)
   effectiveDocument: ProjectDocument
 
   dispatch(command: DomainCommand, label?: string): boolean
   duplicateComponent(componentId: EntityId, label: string): boolean
+  copyComponent(componentId: EntityId): boolean
+  pasteComponent(destinationComponentId: EntityId, label: string): boolean
   beginChangeSet(summary: string): ChangeSet
   dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'human' | 'agent'): void
   acceptChangeSet(): void
@@ -222,6 +228,13 @@ function selectionBeforeChangeSet(
 
   for (const operation of [...changeSet.operations].reverse()) {
     const command = operation.command
+    if (command.type === 'pasteComponent') {
+      const sourceId = Object.keys(command.componentIdMap).find(
+        id => getOwnEntity(command.componentIdMap, id) === candidate,
+      )
+      if (sourceId) candidate = command.destinationComponentId
+      continue
+    }
     if (command.type !== 'duplicateComponent') continue
     const componentIdMap = command.componentIdMap
     const sourceId = Object.keys(componentIdMap).find(
@@ -444,6 +457,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     startupNotice,
     toast: null,
     pendingDelete: null,
+    componentClipboard: null,
     persistenceUnavailable,
     effectiveDocument: effectiveDoc,
 
@@ -515,6 +529,75 @@ export const useAppStore = create<AppStore>((set, get) => {
           ],
         }
       })
+      return true
+    },
+
+    copyComponent(componentId) {
+      requireWritable()
+      const snapshot = createComponentSubtreeSnapshot(
+        get().effectiveDocument,
+        componentId,
+      )
+      if (!snapshot) return false
+      set({ componentClipboard: snapshot })
+      return true
+    },
+
+    pasteComponent(destinationComponentId, label) {
+      requireWritable()
+      const before = get()
+      const clipboard = before.componentClipboard
+      if (
+        !clipboard ||
+        !canPasteComponent(
+          before.effectiveDocument,
+          clipboard,
+          destinationComponentId,
+        )
+      ) {
+        before.showToast({
+          severity: 'error',
+          message: { key: 'clipboard.pasteUnavailable' },
+        })
+        return false
+      }
+      const command = createPasteComponentCommand(
+        before.effectiveDocument,
+        clipboard,
+        destinationComponentId,
+        nanoid,
+      )
+      const pastedRootId = command
+        ? getOwnEntity(command.componentIdMap, command.snapshot.rootComponentId)
+        : undefined
+      if (!command || !pastedRootId || !before.dispatch(command, label)) return false
+
+      set(state => {
+        const ui = reconcileUiState(state.effectiveDocument, {
+          ...state.ui,
+          selectedComponentId: pastedRootId,
+        })
+        if (before.activeChangeSet) return { ui }
+        const last = state.history[state.history.length - 1]
+        if (!last) return { ui }
+        return {
+          ui,
+          history: [
+            ...state.history.slice(0, -1),
+            {
+              ...last,
+              selectionBefore: before.ui.selectedComponentId,
+              selectionAfter: pastedRootId,
+            },
+          ],
+        }
+      })
+      if (clipboard.sourceScreenId !== command.destinationScreenId) {
+        get().showToast({
+          severity: 'info',
+          message: { key: 'clipboard.crossScreenOverridesOmitted' },
+        })
+      }
       return true
     },
 
@@ -911,6 +994,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         startupNotice: null,
         toast: null,
         pendingDelete: null,
+        componentClipboard: null,
       })
       const cleared = clearStorage()
       markPersistence(cleared && persistIfAvailable(sampleProject, null, nextUi.activeScreenId))
