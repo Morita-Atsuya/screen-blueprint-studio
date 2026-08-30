@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800" role="img" aria-labelledby="profile-title profile-desc">
+  <title id="profile-title">Screen Blueprint Studio YouTube profile image</title>
+  <desc id="profile-desc">The white Screen Blueprint Studio mark centered on an indigo blueprint background.</desc>
+  <!-- Primary mark bounds: x=176..624, y=176..624; designed for YouTube circular crop. -->
+  <defs>
+    <radialGradient id="profile-bg" cx="50%" cy="42%" r="66%">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset=".7" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </radialGradient>
+    <pattern id="profile-grid" width="100" height="100" patternUnits="userSpaceOnUse">
+      <path d="M0 0H100V100" fill="none" stroke="#fff" stroke-opacity=".075" stroke-width="3"/>
+      <path d="M50 0V100M0 50H100" fill="none" stroke="#fff" stroke-opacity=".04" stroke-width="2"/>
+    </pattern>
+    <mask id="profile-mark-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect width="64" height="64" fill="#fff"/>
+      <rect x="13.5" y="13.5" width="37" height="37" rx="6" fill="none" stroke="#000" stroke-width="4.5"/>
+      <circle cx="23" cy="24" r="3.25" fill="#000"/>
+      <circle cx="41" cy="32.5" r="3.25" fill="#000"/>
+      <circle cx="41" cy="42" r="3.25" fill="#000"/>
+      <path d="M23 27.25V42M23 32.5H37.75M23 42H37.75" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+    <filter id="mark-shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#1e1b4b" flood-opacity=".25"/>
+    </filter>
+  </defs>
+
+  <rect width="800" height="800" fill="url(#profile-bg)"/>
+  <rect width="800" height="800" fill="url(#profile-grid)"/>
+  <circle cx="400" cy="400" r="346" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="4"/>
+  <circle cx="400" cy="400" r="302" fill="#4338ca" fill-opacity=".2" stroke="#fff" stroke-opacity=".08" stroke-width="4"/>
+  <path d="M90 400h74M127 363v74M636 400h74M673 363v74M400 90v74M363 127h74M400 636v74M363 673h74"
+    fill="none" stroke="#fff" stroke-opacity=".13" stroke-width="4" stroke-linecap="round"/>
+
+  <g transform="translate(144 144) scale(8)" filter="url(#mark-shadow)">
+    <rect x="4" y="4" width="56" height="56" rx="12" fill="#fff" mask="url(#profile-mark-cutout)"/>
+  </g>
+</svg>

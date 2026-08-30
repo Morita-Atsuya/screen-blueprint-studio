@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1440" viewBox="0 0 2560 1440" role="img" aria-labelledby="banner-title banner-desc">
+  <title id="banner-title">Screen Blueprint Studio YouTube banner</title>
+  <desc id="banner-desc">The Screen Blueprint Studio logo on a light architectural blueprint background.</desc>
+  <!-- YouTube all-device safe area: x=507..2053, y=508.5..931.5 (1546 x 423). -->
+  <defs>
+    <linearGradient id="banner-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.55" stop-color="#eef2ff"/>
+      <stop offset="1" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <radialGradient id="banner-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#c7d2fe" stop-opacity=".54"/>
+      <stop offset=".68" stop-color="#e0e7ff" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#e0e7ff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="blueprint-grid" width="256" height="256" patternUnits="userSpaceOnUse">
+      <path d="M64 0V256M128 0V256M192 0V256M0 64H256M0 128H256M0 192H256"
+        fill="none" stroke="#6366f1" stroke-opacity=".09" stroke-width="2"/>
+      <path d="M0 0H256V256" fill="none" stroke="#475569" stroke-opacity=".13" stroke-width="3"/>
+    </pattern>
+    <filter id="panel-shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="22" stdDeviation="30" flood-color="#312e81" flood-opacity=".12"/>
+    </filter>
+    <mask id="banner-mark-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect width="64" height="64" fill="#fff"/>
+      <rect x="13.5" y="13.5" width="37" height="37" rx="6" fill="none" stroke="#000" stroke-width="4.5"/>
+      <circle cx="23" cy="24" r="3.25" fill="#000"/>
+      <circle cx="41" cy="32.5" r="3.25" fill="#000"/>
+      <circle cx="41" cy="42" r="3.25" fill="#000"/>
+      <path d="M23 27.25V42M23 32.5H37.75M23 42H37.75" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+    <path id="glyph-b" d="M0 7V0H3.25Q5 0 5 1.75T3.25 3.5H0H3.25Q5 3.5 5 5.25T3.25 7H0"/>
+    <path id="glyph-c" d="M5 0H1Q0 0 0 1V6Q0 7 1 7H5"/>
+    <path id="glyph-d" d="M0 0V7H3Q5 7 5 5V2Q5 0 3 0H0"/>
+    <path id="glyph-e" d="M5 0H0V7H5M0 3.5H4"/>
+    <path id="glyph-i" d="M0 0H5M2.5 0V7M0 7H5"/>
+    <path id="glyph-l" d="M0 0V7H5"/>
+    <path id="glyph-n" d="M0 7V0L5 7V0"/>
+    <path id="glyph-o" d="M1 0H4Q5 0 5 1V6Q5 7 4 7H1Q0 7 0 6V1Q0 0 1 0Z"/>
+    <path id="glyph-p" d="M0 7V0H3Q5 0 5 2T3 4H0"/>
+    <path id="glyph-r" d="M0 7V0H3Q5 0 5 2T3 4H0M3 4L5 7"/>
+    <path id="glyph-s" d="M5 0H1Q0 0 0 1V2.5Q0 3.5 1 3.5H4Q5 3.5 5 4.5V6Q5 7 4 7H0"/>
+    <path id="glyph-t" d="M0 0H5M2.5 0V7"/>
+    <path id="glyph-u" d="M0 0V5Q0 7 2.5 7T5 5V0"/>
+  </defs>
+
+  <rect width="2560" height="1440" fill="url(#banner-bg)"/>
+  <ellipse cx="1280" cy="720" rx="930" ry="620" fill="url(#banner-glow)"/>
+  <rect width="2560" height="1440" fill="url(#blueprint-grid)"/>
+
+  <g fill="none" stroke="#4f46e5" stroke-opacity=".19" stroke-width="8">
+    <rect x="-90" y="220" width="1050" height="700" rx="58"/>
+    <rect x="70" y="370" width="1050" height="700" rx="58"/>
+    <rect x="1600" y="520" width="1050" height="700" rx="58"/>
+    <rect x="1760" y="370" width="1050" height="700" rx="58"/>
+  </g>
+  <g fill="#f8fafc" stroke="#6366f1" stroke-opacity=".3" stroke-width="8">
+    <circle cx="214" cy="520" r="21"/>
+    <circle cx="392" cy="520" r="21"/>
+    <circle cx="392" cy="698" r="21"/>
+    <circle cx="2170" cy="742" r="21"/>
+    <circle cx="2348" cy="742" r="21"/>
+    <circle cx="2170" cy="920" r="21"/>
+  </g>
+  <g fill="none" stroke="#64748b" stroke-opacity=".28" stroke-width="8" stroke-linecap="round">
+    <path d="M235 520H371M392 541V677"/>
+    <path d="M2191 742H2327M2170 763V899"/>
+  </g>
+
+  <g filter="url(#panel-shadow)">
+    <rect x="640" y="548" width="1280" height="344" rx="60" fill="#fff" fill-opacity=".96"/>
+    <rect x="642" y="550" width="1276" height="340" rx="58" fill="none" stroke="#c7d2fe" stroke-width="4"/>
+    <path d="M704 612h54M731 585v54M1802 828h54M1829 801v54"
+      fill="none" stroke="#4f46e5" stroke-opacity=".2" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(794 624) scale(3)">
+    <rect x="4" y="4" width="56" height="56" rx="12" fill="#4f46e5" mask="url(#banner-mark-cutout)"/>
+    <g fill="none" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke="#1e293b">
+        <g transform="translate(78 10) scale(2.5)"><use href="#glyph-s"/></g>
+        <g transform="translate(93 10) scale(2.5)"><use href="#glyph-c"/></g>
+        <g transform="translate(108 10) scale(2.5)"><use href="#glyph-r"/></g>
+        <g transform="translate(123 10) scale(2.5)"><use href="#glyph-e"/></g>
+        <g transform="translate(138 10) scale(2.5)"><use href="#glyph-e"/></g>
+        <g transform="translate(153 10) scale(2.5)"><use href="#glyph-n"/></g>
+      </g>
+      <g stroke="#4f46e5">
+        <g transform="translate(180 10) scale(2.5)"><use href="#glyph-b"/></g>
+        <g transform="translate(195 10) scale(2.5)"><use href="#glyph-l"/></g>
+        <g transform="translate(210 10) scale(2.5)"><use href="#glyph-u"/></g>
+        <g transform="translate(225 10) scale(2.5)"><use href="#glyph-e"/></g>
+        <g transform="translate(240 10) scale(2.5)"><use href="#glyph-p"/></g>
+        <g transform="translate(255 10) scale(2.5)"><use href="#glyph-r"/></g>
+        <g transform="translate(270 10) scale(2.5)"><use href="#glyph-i"/></g>
+        <g transform="translate(285 10) scale(2.5)"><use href="#glyph-n"/></g>
+        <g transform="translate(300 10) scale(2.5)"><use href="#glyph-t"/></g>
+      </g>
+      <g stroke="#1e293b">
+        <g transform="translate(78 36) scale(2.5)"><use href="#glyph-s"/></g>
+        <g transform="translate(93 36) scale(2.5)"><use href="#glyph-t"/></g>
+        <g transform="translate(108 36) scale(2.5)"><use href="#glyph-u"/></g>
+        <g transform="translate(123 36) scale(2.5)"><use href="#glyph-d"/></g>
+        <g transform="translate(138 36) scale(2.5)"><use href="#glyph-i"/></g>
+        <g transform="translate(153 36) scale(2.5)"><use href="#glyph-o"/></g>
+      </g>
+    </g>
+  </g>
+</svg>
