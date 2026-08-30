@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useAppStore } from './appStore'
 import { ScreenList } from '../features/screens/ScreenList'
 import { Palette } from '../features/palette/Palette'
@@ -8,7 +10,26 @@ import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
 import { EditorDndProvider } from '../dnd/EditorDndContext'
 import { EditorKeyboardShortcuts } from './EditorKeyboardShortcuts'
 import { useI18n } from '../i18n/I18nProvider'
+import {
+  clampRightPaneWidth,
+  getRightPaneWidthBounds,
+  persistRightPaneWidth,
+  resolveInitialRightPaneWidth,
+  rightPaneWidthForKey,
+} from './rightPaneWidth'
 import styles from './App.module.css'
+
+function browserStorage(): Storage | undefined {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function browserWidth(): number {
+  return globalThis.innerWidth || 1280
+}
 
 export function App() {
   const { t, formatMessage } = useI18n()
@@ -26,6 +47,46 @@ export function App() {
     setErrorMessage,
   } = useAppStore()
   const canUndo = history.length > 0 && !activeChangeSet
+  const [viewportWidth, setViewportWidth] = useState(browserWidth)
+  const [preferredRightPaneWidth, setPreferredRightPaneWidth] = useState(() =>
+    resolveInitialRightPaneWidth(browserStorage(), browserWidth()),
+  )
+  const [isResizingRightPane, setIsResizingRightPane] = useState(false)
+  const rightPaneWidth = clampRightPaneWidth(preferredRightPaneWidth, viewportWidth)
+  const rightPaneBounds = getRightPaneWidthBounds(viewportWidth)
+  const rightPaneWidthRef = useRef(rightPaneWidth)
+  const resizeStartRef = useRef<{
+    pointerId: number
+    clientX: number
+    width: number
+  } | null>(null)
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(browserWidth())
+    globalThis.addEventListener('resize', updateViewportWidth)
+    return () => globalThis.removeEventListener('resize', updateViewportWidth)
+  }, [])
+
+  useEffect(() => {
+    rightPaneWidthRef.current = rightPaneWidth
+  }, [rightPaneWidth])
+
+  function updateRightPaneWidth(nextWidth: number, persist = false) {
+    const clamped = clampRightPaneWidth(nextWidth, viewportWidth)
+    rightPaneWidthRef.current = clamped
+    setPreferredRightPaneWidth(clamped)
+    if (persist) persistRightPaneWidth(browserStorage(), clamped)
+  }
+
+  function finishRightPaneResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (resizeStartRef.current?.pointerId !== event.pointerId) return
+    resizeStartRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    setIsResizingRightPane(false)
+    persistRightPaneWidth(browserStorage(), rightPaneWidthRef.current)
+  }
 
   // ── Recovery screen ─────────────────────────────────────────
   if (recoveryState) {
@@ -56,7 +117,7 @@ export function App() {
   return (
     <EditorDndProvider>
       <EditorKeyboardShortcuts />
-      <div className={styles.root}>
+      <div className={`${styles.root} ${isResizingRightPane ? styles.resizing : ''}`}>
         <header className={styles.header}>
           <span className={styles.logo}>Screen Blueprint Studio</span>
           <div className={styles.headerActions}>
@@ -118,8 +179,57 @@ export function App() {
             <Canvas />
           </main>
 
+          <div
+            className={styles.resizeHandle}
+            data-right-pane-resizer
+            role="separator"
+            aria-label={t('app.resizeRightPane')}
+            aria-orientation="vertical"
+            aria-valuemin={rightPaneBounds.min}
+            aria-valuemax={rightPaneBounds.max}
+            aria-valuenow={rightPaneWidth}
+            tabIndex={0}
+            onPointerDown={event => {
+              if (event.button !== 0) return
+              event.preventDefault()
+              event.stopPropagation()
+              event.currentTarget.setPointerCapture(event.pointerId)
+              resizeStartRef.current = {
+                pointerId: event.pointerId,
+                clientX: event.clientX,
+                width: rightPaneWidth,
+              }
+              setIsResizingRightPane(true)
+            }}
+            onPointerMove={event => {
+              const start = resizeStartRef.current
+              if (!start || start.pointerId !== event.pointerId) return
+              updateRightPaneWidth(start.width + start.clientX - event.clientX)
+            }}
+            onPointerUp={finishRightPaneResize}
+            onPointerCancel={finishRightPaneResize}
+            onLostPointerCapture={event => {
+              if (resizeStartRef.current?.pointerId !== event.pointerId) return
+              resizeStartRef.current = null
+              setIsResizingRightPane(false)
+              persistRightPaneWidth(browserStorage(), rightPaneWidthRef.current)
+            }}
+            onKeyDown={event => {
+              const nextWidth = rightPaneWidthForKey(
+                event.key,
+                rightPaneWidth,
+                viewportWidth,
+                event.shiftKey,
+              )
+              if (nextWidth === null) return
+              event.preventDefault()
+              event.stopPropagation()
+              updateRightPaneWidth(nextWidth, true)
+            }}
+          />
+
           {/* Right panel */}
-          <aside className={styles.right}>
+          <aside className={styles.right} style={{ width: rightPaneWidth }}>
             <div className={styles.tabs}>
               {(['inspector', 'changes'] as const).map(tab => (
                 <button

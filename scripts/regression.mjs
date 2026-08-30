@@ -72,6 +72,7 @@ const componentDisplayLabelBundle = join(temp, 'componentDisplayLabel.mjs')
 const selectorsBundle = join(temp, 'selectors.mjs')
 const messagesBundle = join(temp, 'messages.mjs')
 const localeBundle = join(temp, 'locale.mjs')
+const rightPaneWidthBundle = join(temp, 'rightPaneWidth.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -83,6 +84,7 @@ bundle('src/domain/componentDisplayLabel.ts', componentDisplayLabelBundle)
 bundle('src/domain/selectors.ts', selectorsBundle)
 bundle('src/i18n/messages.ts', messagesBundle)
 bundle('src/i18n/locale.ts', localeBundle)
+bundle('src/app/rightPaneWidth.ts', rightPaneWidthBundle)
 
 let passed = 0
 
@@ -2238,6 +2240,94 @@ await test('typed localization resolves and persists JA and EN safely', async ()
       setItem() {},
     }, 'en-US') === 'en',
     'locale read failure blocked navigator fallback',
+  )
+})
+
+await test('right specification pane resizing clamps and persists safely', async () => {
+  const {
+    DEFAULT_RIGHT_PANE_WIDTH,
+    MIN_RIGHT_PANE_WIDTH,
+    RIGHT_PANE_WIDTH_STORAGE_KEY,
+    clampRightPaneWidth,
+    getRightPaneWidthBounds,
+    persistRightPaneWidth,
+    resolveInitialRightPaneWidth,
+    rightPaneWidthForKey,
+  } = await import(moduleUrl(rightPaneWidthBundle, 'right-pane-preference'))
+  const values = new Map()
+  const storage = {
+    getItem(key) { return values.get(key) ?? null },
+    setItem(key, value) { values.set(key, value) },
+  }
+
+  assert(
+    resolveInitialRightPaneWidth(storage, 1440) === DEFAULT_RIGHT_PANE_WIDTH,
+    'right pane did not use its wider default',
+  )
+  values.set(RIGHT_PANE_WIDTH_STORAGE_KEY, '9999')
+  assert(
+    resolveInitialRightPaneWidth(storage, 1000) === getRightPaneWidthBounds(1000).max,
+    'oversized stored width was not clamped',
+  )
+  values.set(RIGHT_PANE_WIDTH_STORAGE_KEY, '100')
+  assert(
+    resolveInitialRightPaneWidth(storage, 1000) === MIN_RIGHT_PANE_WIDTH,
+    'undersized stored width was not clamped',
+  )
+  values.set(RIGHT_PANE_WIDTH_STORAGE_KEY, 'NaN')
+  assert(
+    resolveInitialRightPaneWidth(storage, 1440) === DEFAULT_RIGHT_PANE_WIDTH,
+    'invalid stored width did not fall back safely',
+  )
+  assert(
+    resolveInitialRightPaneWidth({
+      getItem() { throw new DOMException('Denied', 'SecurityError') },
+    }, 1440) === DEFAULT_RIGHT_PANE_WIDTH,
+    'right pane storage read failure escaped',
+  )
+  assert(
+    !persistRightPaneWidth({
+      setItem() { throw new DOMException('Denied', 'SecurityError') },
+    }, 400),
+    'right pane storage write failure escaped',
+  )
+  assert(persistRightPaneWidth(storage, 400), 'right pane width was not persisted')
+  assert(values.get(RIGHT_PANE_WIDTH_STORAGE_KEY) === '400', 'persisted width is incorrect')
+
+  assert(
+    rightPaneWidthForKey('ArrowLeft', 380, 1440) === 388 &&
+      rightPaneWidthForKey('ArrowRight', 380, 1440) === 372 &&
+      rightPaneWidthForKey('ArrowRight', 380, 1440, true) === 348,
+    'keyboard resize direction or step is incorrect',
+  )
+  assert(
+    rightPaneWidthForKey('Home', 380, 1000) === MIN_RIGHT_PANE_WIDTH &&
+      rightPaneWidthForKey('End', 380, 1000) === getRightPaneWidthBounds(1000).max &&
+      rightPaneWidthForKey('Escape', 380, 1000) === null,
+    'keyboard resize limits or unrelated-key handling is incorrect',
+  )
+  assert(
+    clampRightPaneWidth(380, 900) === getRightPaneWidthBounds(900).max,
+    'viewport resize did not preserve the minimum canvas width',
+  )
+
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  assert(
+    appSource.includes('role="separator"') &&
+      appSource.includes('aria-orientation="vertical"') &&
+      appSource.includes('setPointerCapture') &&
+      appSource.includes('onPointerCancel={finishRightPaneResize}') &&
+      appSource.includes('onLostPointerCapture='),
+    'split-pane separator lacks pointer capture cleanup or accessibility metadata',
+  )
+  assert(
+    appStyles.includes('cursor: col-resize') &&
+      appStyles.includes('-webkit-user-select: none') &&
+      appStyles.includes('user-select: none') &&
+      appStyles.includes('@media (max-width: 899px)') &&
+      appStyles.includes('display: none'),
+    'split-pane feedback or stacked responsive behavior is missing',
   )
 })
 
