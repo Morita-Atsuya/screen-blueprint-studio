@@ -101,6 +101,7 @@ const componentPreviewBundle = join(temp, 'componentPreview.mjs')
 const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
 const screenFlowBundle = join(temp, 'screenFlow.mjs')
 const renderInspectorBundle = join(temp, 'renderInspector.mjs')
+const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -135,6 +136,14 @@ bundle('src/domain/screenFlow.ts', screenFlowBundle)
 bundle(
   'scripts/fixtures/renderInspector.tsx',
   renderInspectorBundle,
+  [
+    '--jsx=automatic',
+    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  ],
+)
+bundle(
+  'scripts/fixtures/mountLockedDialog.tsx',
+  mountLockedDialogBundle,
   [
     '--jsx=automatic',
     "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
@@ -8982,6 +8991,167 @@ await test('Inspector select controls use unique IDs and visible accessible labe
     new Set(allControlIds).size === allControlIds.length,
     'multiple Inspector instances produced duplicate control IDs',
   )
+})
+
+await test('review lock disables every dialog draft control without discarding it', async () => {
+  memoryStorage.clear()
+  function installDialogDom() {
+    const { document, window } = parseHTML('<html><body></body></html>')
+    let activeElement = document.body
+    Object.defineProperty(document, 'activeElement', {
+      configurable: true,
+      get: () => activeElement,
+    })
+    Object.defineProperty(document, 'simulateDisabledFocusLoss', {
+      configurable: true,
+      value: () => {
+        activeElement = document.body
+      },
+    })
+    window.HTMLElement.prototype.focus = function focus() {
+      const previous = activeElement
+      if (previous && previous !== this) {
+        const focusOut = new window.Event('focusout', { bubbles: true })
+        Object.defineProperty(focusOut, 'relatedTarget', { value: this })
+        previous.dispatchEvent(focusOut)
+      }
+      activeElement = this
+      const focusIn = new window.Event('focusin', { bubbles: true })
+      Object.defineProperty(focusIn, 'relatedTarget', { value: previous })
+      this.dispatchEvent(focusIn)
+    }
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new URL('http://localhost/'),
+    })
+    Object.defineProperties(globalThis, {
+      document: { configurable: true, value: document },
+      window: { configurable: true, value: window },
+      navigator: { configurable: true, value: window.navigator },
+      Node: { configurable: true, value: window.Node },
+      Element: { configurable: true, value: window.Element },
+      HTMLElement: { configurable: true, value: window.HTMLElement },
+      Event: { configurable: true, value: window.Event },
+      requestAnimationFrame: {
+        configurable: true,
+        value: callback => {
+          callback(performance.now())
+          return 1
+        },
+      },
+      cancelAnimationFrame: { configurable: true, value: () => {} },
+    })
+    return document
+  }
+
+  let document = installDialogDom()
+  const { mountLockedDialog } = await import(
+    moduleUrl(mountLockedDialogBundle, 'locked-dialog-controls')
+  )
+  const controlValue = control => (
+    control.tagName === 'TEXTAREA' && control.value === ''
+      ? control.textContent
+      : control.value
+  )
+  for (const kind of ['event', 'api', 'validation', 'state']) {
+    document = installDialogDom()
+    const harness = mountLockedDialog(kind)
+    const dialog = document.querySelector('[role="dialog"]')
+    assert(dialog, `${kind} dialog did not mount`)
+    const fieldset = dialog.querySelector('fieldset')
+    assert(fieldset && !fieldset.hasAttribute('disabled'), `${kind} draft began disabled`)
+    const draftControls = [...dialog.querySelectorAll('input, select, textarea')]
+    assert(draftControls.length > 0, `${kind} dialog has no draft controls`)
+    assert(
+      draftControls.every(control => fieldset.contains(control)),
+      `${kind} dialog left a draft control outside its lock fieldset`,
+    )
+    const draftSnapshot = draftControls.map(controlValue)
+    const rowCount = dialog.querySelectorAll(
+      '[data-event-action], [data-api-binding], [data-validation-rule]',
+    ).length
+
+    draftControls[0].focus()
+    assert(document.activeElement === draftControls[0], `${kind} draft control could not receive focus`)
+    harness.startReview()
+    assert(fieldset.hasAttribute('disabled'), `${kind} fieldset stayed editable during review`)
+    const noticeId = fieldset.getAttribute('aria-describedby')
+    assert(noticeId && document.getElementById(noticeId), `${kind} lock reason is not described`)
+    assert(
+      draftControls.every((control, index) => (
+        draftSnapshot[index] === '' || controlValue(control) === draftSnapshot[index]
+      )),
+      `${kind} review lock discarded a local draft ` +
+        `(before: ${JSON.stringify(draftSnapshot)}, after: ${JSON.stringify(
+          draftControls.map(controlValue),
+        )})`,
+    )
+    const localMutationButton = fieldset.querySelector('button')
+    if (localMutationButton) harness.click(localMutationButton)
+    assert(
+      dialog.querySelectorAll(
+        '[data-event-action], [data-api-binding], [data-validation-rule]',
+      ).length === rowCount,
+      `${kind} fieldset allowed add, reorder, or remove while locked`,
+    )
+
+    const reviewActions = dialog.querySelector('[data-dialog-review-actions]')
+    assert(reviewActions, `${kind} dialog hid Accept and Reject while locked`)
+    assert(
+      reviewActions.contains(document.activeElement),
+      `${kind} dialog lost focus when its draft became disabled ` +
+        `(active: ${document.activeElement?.tagName ?? 'none'} ` +
+        `${document.activeElement?.textContent?.trim() ?? ''})`,
+    )
+    const reviewButtons = [...reviewActions.querySelectorAll('button')]
+    assert(
+      reviewButtons.length === 2 && reviewButtons.every(button => !button.disabled),
+      `${kind} dialog disabled its review actions`,
+    )
+    const cancel = [...dialog.querySelectorAll('button')]
+      .find(button => button.textContent.trim() === 'Cancel')
+    assert(cancel && !cancel.disabled, `${kind} dialog disabled Cancel`)
+    const submit = dialog.querySelector('button[type="submit"]')
+    assert(submit?.disabled, `${kind} dialog left Save enabled`)
+
+    harness.click(reviewButtons[0])
+    assert(!fieldset.hasAttribute('disabled'), `${kind} draft did not unlock after Reject`)
+    harness.click(cancel)
+    assert(harness.getCloseCount() === 1, `${kind} Cancel stopped working after Reject`)
+    harness.unmount()
+  }
+
+  document = installDialogDom()
+  const acceptedHarness = mountLockedDialog('event')
+  const acceptedDialog = document.querySelector('[role="dialog"]')
+  const acceptedFieldset = acceptedDialog.querySelector('fieldset')
+  const acceptedDraft = acceptedDialog.querySelector('input').value
+  acceptedHarness.startReview(true)
+  const acceptButton = [...acceptedDialog.querySelectorAll('[data-dialog-review-actions] button')]
+    .find(button => button.textContent.trim() === 'Accept')
+  assert(acceptButton, 'locked Event dialog did not expose Accept')
+  acceptedHarness.click(acceptButton)
+  assert(
+    acceptedFieldset.hasAttribute('disabled') &&
+      acceptedDialog.querySelector('[role="alert"]') &&
+      acceptedDialog.querySelector('input').value === acceptedDraft,
+    'Accept did not preserve and stale-lock the open Event draft',
+  )
+  acceptedHarness.unmount()
+
+  document = installDialogDom()
+  const externalFocusHarness = mountLockedDialog('state')
+  const externalFocusDialog = document.querySelector('[role="dialog"]')
+  const externalDraft = externalFocusDialog.querySelector('input')
+  const closeButton = externalFocusDialog.querySelector('[aria-label="Close"]')
+  externalDraft.focus()
+  closeButton.focus()
+  externalFocusHarness.startReview()
+  assert(
+    document.activeElement === closeButton,
+    'review lock stole focus that had already left the dialog draft',
+  )
+  externalFocusHarness.unmount()
 })
 
 console.log(`\n${passed} regression groups passed`)

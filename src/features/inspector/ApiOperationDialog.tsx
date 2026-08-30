@@ -10,7 +10,10 @@ import type { FieldBinding, HttpMethod } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
-import { useDialogReviewLock } from '../../app/reviewLock'
+import {
+  useDialogDraftFieldsetFocus,
+  useDialogReviewLock,
+} from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 type DialogMode = 'create' | 'edit'
@@ -44,8 +47,11 @@ export function ApiOperationDialog({
   const dialogRef = useRef<HTMLElement>(null)
   const addBindingRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
+  const reviewNoticeId = useId()
   const operation = editorOperation?.operation
   const persistedOperationId = operation?.id ?? operationId
+  const draftLocked = reviewLocked || staleAfterReview
+  const draftFieldsetFocus = useDialogDraftFieldsetFocus(draftLocked)
   const [name, setName] = useState(operation?.name ?? t('behavior.newApiOperationName'))
   const [method, setMethod] = useState<HttpMethod>(operation?.method ?? 'GET')
   const [path, setPath] = useState(operation?.path ?? '/api/')
@@ -126,12 +132,14 @@ export function ApiOperationDialog({
   }
 
   function updateBinding(index: number, value: FieldBinding) {
+    if (draftLocked) return
     setBindings(current => current.map((binding, bindingIndex) =>
       bindingIndex === index ? { ...binding, value } : binding,
     ))
   }
 
   function moveBinding(index: number, offset: -1 | 1) {
+    if (draftLocked) return
     setBindings(current => {
       const destination = index + offset
       if (destination < 0 || destination >= current.length) return current
@@ -143,6 +151,7 @@ export function ApiOperationDialog({
   }
 
   function addBinding() {
+    if (draftLocked) return
     const used = new Set(bindings.map(binding => binding.value.componentId))
     const componentId = context.inputComponents.find(component => !used.has(component.id))?.id
       ?? context.inputComponents[0]?.id
@@ -154,6 +163,7 @@ export function ApiOperationDialog({
   }
 
   function removeBinding(key: string, index: number) {
+    if (draftLocked) return
     setBindings(current => current.filter(candidate => candidate.key !== key))
     requestAnimationFrame(() => {
       const rows = dialogRef.current?.querySelectorAll<HTMLElement>('[data-api-binding]')
@@ -211,11 +221,21 @@ export function ApiOperationDialog({
           }}
         >
           {reviewLocked || staleAfterReview ? (
-            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+            <p
+              id={reviewNoticeId}
+              className={styles.reviewLockNotice}
+              role={staleAfterReview ? 'alert' : 'status'}
+            >
               {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
             </p>
           ) : null}
           {reviewLocked ? <DialogReviewActions /> : null}
+          <fieldset
+            {...draftFieldsetFocus}
+            className={styles.draftFields}
+            disabled={draftLocked}
+            aria-describedby={reviewLocked || staleAfterReview ? reviewNoticeId : undefined}
+          >
           <label className={styles.field}>
             <span>{t('behavior.apiName')}</span>
             <input
@@ -373,6 +393,7 @@ export function ApiOperationDialog({
               {t('behavior.apiUnavailable')}
             </p>
           ) : null}
+          </fieldset>
 
           <div className={styles.actions}>
             {mode === 'edit' ? (

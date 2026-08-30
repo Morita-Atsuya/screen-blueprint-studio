@@ -193,6 +193,13 @@
   line-height: 1.4;
 }
 
+.draftFields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .unavailable {
   margin-top: 12px;
   color: var(--danger);

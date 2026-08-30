@@ -7,7 +7,10 @@ import type { EventAction, ScreenEvent } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
-import { useDialogReviewLock } from '../../app/reviewLock'
+import {
+  useDialogDraftFieldsetFocus,
+  useDialogReviewLock,
+} from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 type DialogMode = 'create' | 'edit'
@@ -39,6 +42,7 @@ export function EventDialog({
   const { reviewLocked, staleAfterReview } = useDialogReviewLock()
   const dialogRef = useRef<HTMLElement>(null)
   const titleId = useId()
+  const reviewNoticeId = useId()
   const [name, setName] = useState(event?.name ?? t('behavior.newEventName'))
   const [triggerType, setTriggerType] = useState<'click' | 'submit'>(
     event?.trigger.type ?? 'click',
@@ -47,6 +51,8 @@ export function EventDialog({
     (event?.actions ?? []).map(value => ({ key: nanoid(), value: { ...value } })),
   )
   const persistedEventId = event?.id ?? eventId
+  const draftLocked = reviewLocked || staleAfterReview
+  const draftFieldsetFocus = useDialogDraftFieldsetFocus(draftLocked)
   const eventAvailable = (
     mode === 'create' ||
     context.events.some(candidate => candidate.event.id === persistedEventId)
@@ -93,12 +99,14 @@ export function EventDialog({
   }
 
   function updateAction(index: number, value: EventAction) {
+    if (draftLocked) return
     setActions(current => current.map((action, actionIndex) =>
       actionIndex === index ? { ...action, value } : action,
     ))
   }
 
   function moveAction(index: number, offset: -1 | 1) {
+    if (draftLocked) return
     setActions(current => {
       const destination = index + offset
       if (destination < 0 || destination >= current.length) return current
@@ -107,6 +115,19 @@ export function EventDialog({
       next.splice(destination, 0, action)
       return next
     })
+  }
+
+  function addAction() {
+    if (draftLocked) return
+    setActions(current => [
+      ...current,
+      { key: nanoid(), value: createAction('setState', context) },
+    ])
+  }
+
+  function removeAction(key: string) {
+    if (draftLocked) return
+    setActions(current => current.filter(candidate => candidate.key !== key))
   }
 
   function close() {
@@ -158,125 +179,131 @@ export function EventDialog({
           }}
         >
           {reviewLocked || staleAfterReview ? (
-            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+            <p
+              id={reviewNoticeId}
+              className={styles.reviewLockNotice}
+              role={staleAfterReview ? 'alert' : 'status'}
+            >
               {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
             </p>
           ) : null}
           {reviewLocked ? <DialogReviewActions /> : null}
-          <label className={styles.field}>
-            <span>{t('behavior.eventName')}</span>
-            <input
-              autoFocus
-              required
-              value={name}
-              onChange={inputEvent => setName(inputEvent.target.value)}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>{t('behavior.triggerType')}</span>
-            <select
-              value={triggerType}
-              onChange={selectEvent => setTriggerType(
-                selectEvent.target.value as 'click' | 'submit',
-              )}
-            >
-              <option value="click">{t('behavior.trigger.click')}</option>
-              <option value="submit">{t('behavior.trigger.submit')}</option>
-            </select>
-          </label>
+          <fieldset
+            {...draftFieldsetFocus}
+            className={styles.draftFields}
+            disabled={draftLocked}
+            aria-describedby={reviewLocked || staleAfterReview ? reviewNoticeId : undefined}
+          >
+            <label className={styles.field}>
+              <span>{t('behavior.eventName')}</span>
+              <input
+                autoFocus
+                required
+                value={name}
+                onChange={inputEvent => setName(inputEvent.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>{t('behavior.triggerType')}</span>
+              <select
+                value={triggerType}
+                onChange={selectEvent => setTriggerType(
+                  selectEvent.target.value as 'click' | 'submit',
+                )}
+              >
+                <option value="click">{t('behavior.trigger.click')}</option>
+                <option value="submit">{t('behavior.trigger.submit')}</option>
+              </select>
+            </label>
 
-          <div className={styles.actionHeading}>
-            <h3>{t('behavior.actions')}</h3>
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={() => setActions(current => [
-                ...current,
-                { key: nanoid(), value: createAction('setState', context) },
-              ])}
-            >
-              + {t('behavior.addAction')}
-            </button>
-          </div>
-          {actions.length > 0 ? (
-            <ol className={styles.actionList}>
-              {actions.map((action, index) => (
-                <li className={styles.actionCard} key={action.key} data-event-action={index}>
-                  <div className={styles.actionPosition}>
-                    <span>{index + 1}</span>
-                    <div className={styles.reorderActions}>
-                      <button
-                        type="button"
-                        className={styles.iconButton}
-                        disabled={index === 0}
-                        aria-label={t('behavior.moveActionUp', { position: index + 1 })}
-                        onClick={() => moveAction(index, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.iconButton}
-                        disabled={index === actions.length - 1}
-                        aria-label={t('behavior.moveActionDown', { position: index + 1 })}
-                        onClick={() => moveAction(index, 1)}
-                      >
-                        ↓
-                      </button>
+            <div className={styles.actionHeading}>
+              <h3>{t('behavior.actions')}</h3>
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={addAction}
+              >
+                + {t('behavior.addAction')}
+              </button>
+            </div>
+            {actions.length > 0 ? (
+              <ol className={styles.actionList}>
+                {actions.map((action, index) => (
+                  <li className={styles.actionCard} key={action.key} data-event-action={index}>
+                    <div className={styles.actionPosition}>
+                      <span>{index + 1}</span>
+                      <div className={styles.reorderActions}>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          disabled={index === 0}
+                          aria-label={t('behavior.moveActionUp', { position: index + 1 })}
+                          onClick={() => moveAction(index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          disabled={index === actions.length - 1}
+                          aria-label={t('behavior.moveActionDown', { position: index + 1 })}
+                          onClick={() => moveAction(index, 1)}
+                        >
+                          ↓
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className={styles.actionFields}>
-                    <label className={styles.compactField}>
-                      <span>{t('behavior.actionType')}</span>
-                      <select
-                        value={action.value.type}
-                        onChange={selectEvent => updateAction(
-                          index,
-                          createAction(selectEvent.target.value as ActionType, context),
-                        )}
-                      >
-                        {ACTION_TYPES.map(type => (
-                          <option
-                            key={type}
-                            value={type}
-                            disabled={(
-                              !hasActionCandidates(type, context) &&
-                              action.value.type !== type
-                            )}
-                          >
-                            {t(`behavior.action.${type}`)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <ActionTarget
-                      action={action.value}
-                      context={context}
-                      onChange={value => updateAction(index, value)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.removeAction}
-                    aria-label={t('behavior.removeAction', { position: index + 1 })}
-                    onClick={() => setActions(current =>
-                      current.filter(candidate => candidate.key !== action.key),
-                    )}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className={styles.muted}>{t('behavior.noActions')}</p>
-          )}
+                    <div className={styles.actionFields}>
+                      <label className={styles.compactField}>
+                        <span>{t('behavior.actionType')}</span>
+                        <select
+                          value={action.value.type}
+                          onChange={selectEvent => updateAction(
+                            index,
+                            createAction(selectEvent.target.value as ActionType, context),
+                          )}
+                        >
+                          {ACTION_TYPES.map(type => (
+                            <option
+                              key={type}
+                              value={type}
+                              disabled={(
+                                !hasActionCandidates(type, context) &&
+                                action.value.type !== type
+                              )}
+                            >
+                              {t(`behavior.action.${type}`)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <ActionTarget
+                        action={action.value}
+                        context={context}
+                        onChange={value => updateAction(index, value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.removeAction}
+                      aria-label={t('behavior.removeAction', { position: index + 1 })}
+                      onClick={() => removeAction(action.key)}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className={styles.muted}>{t('behavior.noActions')}</p>
+            )}
 
-          {!eventAvailable ? (
-            <p className={styles.unavailable} role="alert">
-              {t('behavior.eventUnavailable')}
-            </p>
-          ) : null}
+            {!eventAvailable ? (
+              <p className={styles.unavailable} role="alert">
+                {t('behavior.eventUnavailable')}
+              </p>
+            ) : null}
+          </fieldset>
 
           <div className={styles.actions}>
             {mode === 'edit' ? (

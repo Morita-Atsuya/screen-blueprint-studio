@@ -5,7 +5,10 @@ import type { ScreenState } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import { useI18n } from '../../i18n/I18nProvider'
 import styles from './StateDialog.module.css'
-import { useDialogReviewLock } from '../../app/reviewLock'
+import {
+  useDialogDraftFieldsetFocus,
+  useDialogReviewLock,
+} from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 interface StateDialogProps {
@@ -24,6 +27,9 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
   const [name, setName] = useState(state?.name ?? t('states.newName'))
   const [description, setDescription] = useState(state?.description ?? '')
   const titleId = `state-dialog-title-${state?.id ?? 'new'}`
+  const reviewNoticeId = `state-dialog-review-${state?.id ?? 'new'}`
+  const draftLocked = reviewLocked || staleAfterReview
+  const draftFieldsetFocus = useDialogDraftFieldsetFocus(draftLocked)
   const canSubmit = name.trim().length > 0
 
   function save() {
@@ -99,28 +105,39 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
           }}
         >
           {reviewLocked || staleAfterReview ? (
-            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+            <p
+              id={reviewNoticeId}
+              className={styles.reviewLockNotice}
+              role={staleAfterReview ? 'alert' : 'status'}
+            >
               {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
             </p>
           ) : null}
           {reviewLocked ? <DialogReviewActions /> : null}
-          <label className={styles.field}>
-            <span>{t('states.name')}</span>
-            <input
-              autoFocus
-              required
-              value={name}
-              onChange={event => setName(event.target.value)}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>{t('states.description')}</span>
-            <textarea
-              rows={3}
-              value={description}
-              onChange={event => setDescription(event.target.value)}
-            />
-          </label>
+          <fieldset
+            {...draftFieldsetFocus}
+            className={styles.draftFields}
+            disabled={draftLocked}
+            aria-describedby={reviewLocked || staleAfterReview ? reviewNoticeId : undefined}
+          >
+            <label className={styles.field}>
+              <span>{t('states.name')}</span>
+              <input
+                autoFocus
+                required
+                value={name}
+                onChange={event => setName(event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>{t('states.description')}</span>
+              <textarea
+                rows={3}
+                value={description}
+                onChange={event => setDescription(event.target.value)}
+              />
+            </label>
+          </fieldset>
 
           <div className={styles.actions}>
             {mode === 'edit' ? (

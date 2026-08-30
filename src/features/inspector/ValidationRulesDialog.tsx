@@ -8,7 +8,10 @@ import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
-import { useDialogReviewLock } from '../../app/reviewLock'
+import {
+  useDialogDraftFieldsetFocus,
+  useDialogReviewLock,
+} from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
 
 type RuleType = ValidationRule['type']
@@ -181,6 +184,9 @@ export function ValidationRulesDialog({
   const dialogRef = useRef<HTMLElement>(null)
   const addRuleRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
+  const reviewNoticeId = useId()
+  const draftLocked = reviewLocked || staleAfterReview
+  const draftFieldsetFocus = useDialogDraftFieldsetFocus(draftLocked)
   const [rules, setRules] = useState<DraftRule[]>(() => context.rules.map(draftFromRule))
   const errors = computeErrors(rules, t)
   const canSubmit = errors.size === 0
@@ -206,12 +212,14 @@ export function ValidationRulesDialog({
   }
 
   function updateRule(index: number, partial: Partial<DraftRule>) {
+    if (draftLocked) return
     setRules(current => current.map((rule, ruleIndex) =>
       ruleIndex === index ? { ...rule, ...partial } : rule,
     ))
   }
 
   function changeType(index: number, type: RuleType) {
+    if (draftLocked) return
     setRules(current => current.map((rule, ruleIndex) => {
       if (ruleIndex !== index) return rule
       return { ...rule, type, value: rule.value || '0' }
@@ -219,6 +227,7 @@ export function ValidationRulesDialog({
   }
 
   function moveRule(index: number, offset: -1 | 1) {
+    if (draftLocked) return
     setRules(current => {
       const destination = index + offset
       if (destination < 0 || destination >= current.length) return current
@@ -230,10 +239,12 @@ export function ValidationRulesDialog({
   }
 
   function addRule() {
+    if (draftLocked) return
     setRules(current => [...current, createDraftRule(current)])
   }
 
   function removeRule(key: string, index: number) {
+    if (draftLocked) return
     setRules(current => current.filter(candidate => candidate.key !== key))
     requestAnimationFrame(() => {
       const rows = dialogRef.current?.querySelectorAll<HTMLElement>('[data-validation-rule]')
@@ -289,11 +300,21 @@ export function ValidationRulesDialog({
           }}
         >
           {reviewLocked || staleAfterReview ? (
-            <p className={styles.reviewLockNotice} role={staleAfterReview ? 'alert' : 'status'}>
+            <p
+              id={reviewNoticeId}
+              className={styles.reviewLockNotice}
+              role={staleAfterReview ? 'alert' : 'status'}
+            >
               {t(staleAfterReview ? 'changes.dialogDraftStale' : 'changes.dialogDraftLocked')}
             </p>
           ) : null}
           {reviewLocked ? <DialogReviewActions /> : null}
+          <fieldset
+            {...draftFieldsetFocus}
+            className={styles.draftFields}
+            disabled={draftLocked}
+            aria-describedby={reviewLocked || staleAfterReview ? reviewNoticeId : undefined}
+          >
           <div className={styles.actionHeading}>
             <h3>{t('behavior.validation')}</h3>
             <button
@@ -425,6 +446,7 @@ export function ValidationRulesDialog({
           ) : (
             <p className={styles.muted}>{t('behavior.noValidationRules')}</p>
           )}
+          </fieldset>
 
           <div className={styles.actions}>
             <span className={styles.spacer} />
