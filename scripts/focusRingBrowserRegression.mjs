@@ -21,6 +21,41 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+function contrastRatio(first, second) {
+  const luminance = color => {
+    const values = color.match(/[\d.]+/g).slice(0, 3).map(value => {
+      const channel = Number(value) / 255
+      return channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2]
+  }
+  const values = [luminance(first), luminance(second)]
+    .sort((left, right) => right - left)
+  return (values[0] + 0.05) / (values[1] + 0.05)
+}
+
+function assertFlowMetadata(labels, expectedTexts, width, locale) {
+  assert(
+    JSON.stringify(labels.map(label => label.text)) === JSON.stringify(expectedTexts),
+    `${width}px ${locale} Flow metadata labels are incomplete`,
+  )
+  for (const label of labels) {
+    assert(
+      contrastRatio(label.foreground, label.background) >= 4.5,
+      `${width}px ${locale} "${label.text}" contrast is below 4.5:1`,
+    )
+    assert(
+      Math.abs(Number.parseFloat(label.fontSize) - 9.8) < 0.1 &&
+        label.fontWeight === '600' &&
+        label.columnGap === '8px' &&
+        label.rowGap === '3px',
+      `${width}px ${locale} "${label.text}" lost its metadata hierarchy metrics`,
+    )
+  }
+}
+
 function injectFailure(stage) {
   if (process.env.FOCUS_RING_FAILURE_STAGE === stage) {
     throw new Error(`Injected focus-ring regression failure: ${stage}`)
@@ -592,6 +627,15 @@ async function run() {
           const flowInitiallyOpen = flowDetails?.open
           flowSummary?.click()
           const flowOpened = flowDetails?.open
+          const flowMetadata = [...(flowDetails?.querySelectorAll('dt') ?? [])].map(label => ({
+            text: label.textContent.trim(),
+            foreground: getComputedStyle(label).color,
+            background: opaqueBackground(label),
+            fontSize: getComputedStyle(label).fontSize,
+            fontWeight: getComputedStyle(label).fontWeight,
+            columnGap: getComputedStyle(label.parentElement).columnGap,
+            rowGap: getComputedStyle(label.closest('dl')).rowGap,
+          }))
           flowSummary?.click()
           const flowClosed = !flowDetails?.open
           if (flowSummary) snapshot(flowSummary, 'flow-summary')
@@ -604,6 +648,7 @@ async function run() {
             flowInitiallyOpen,
             flowOpened,
             flowClosed,
+            flowMetadata,
             maxLeftScroll,
             middleLeftScroll,
             actualMiddleLeftScroll,
@@ -628,6 +673,12 @@ async function run() {
           measurement.flowOpened === true &&
           measurement.flowClosed === true,
         `${width}px Screen Flow transition details did not open and close`,
+      )
+      assertFlowMetadata(
+        measurement.flowMetadata,
+        ['Trigger component', 'Event position', 'Action position'],
+        width,
+        'English',
       )
       assert(
         measurement.maxLeftScroll > 0 &&
@@ -672,6 +723,63 @@ async function run() {
       assert(
         measurement.horizontalOverflow === 0,
         `${width}px focus controls introduced document overflow`,
+      )
+
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const selector = document.querySelector('[data-locale-selector]')
+          selector.value = 'ja'
+          selector.dispatchEvent(new Event('change', { bubbles: true }))
+        })()`,
+      })
+      await waitForExpression(
+        `document.documentElement.lang === 'ja'`,
+        `${width}px locale did not switch to Japanese`,
+      )
+      const japaneseResult = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const details = document.querySelector(
+            '[data-screen-flow] [data-flow-edge] details'
+          )
+          if (!details.open) details.querySelector('summary').click()
+          function opaqueBackground(element) {
+            for (let current = element; current; current = current.parentElement) {
+              const color = getComputedStyle(current).backgroundColor
+              if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return color
+            }
+            return 'rgb(255, 255, 255)'
+          }
+          const labels = [...details.querySelectorAll('dt')].map(label => ({
+            text: label.textContent.trim(),
+            foreground: getComputedStyle(label).color,
+            background: opaqueBackground(label),
+            fontSize: getComputedStyle(label).fontSize,
+            fontWeight: getComputedStyle(label).fontWeight,
+            columnGap: getComputedStyle(label.parentElement).columnGap,
+            rowGap: getComputedStyle(label.closest('dl')).rowGap,
+          }))
+          details.querySelector('summary').click()
+          return labels
+        })()`,
+        returnByValue: true,
+      })
+      const japaneseMetadata = japaneseResult.result.value
+      assertFlowMetadata(
+        japaneseMetadata,
+        ['起点コンポーネント', 'イベント位置', 'action位置'],
+        width,
+        'Japanese',
+      )
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const selector = document.querySelector('[data-locale-selector]')
+          selector.value = 'en'
+          selector.dispatchEvent(new Event('change', { bubbles: true }))
+        })()`,
+      })
+      await waitForExpression(
+        `document.documentElement.lang === 'en'`,
+        `${width}px locale did not switch back to English`,
       )
     }
 

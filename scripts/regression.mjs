@@ -8620,6 +8620,14 @@ await test('button focus and change count tokens meet light-theme contrast thres
       flowForcedColorsRule.includes('box-shadow: none'),
     'Screen Flow transition summary has no internal forced-colors focus perimeter',
   )
+  const flowMetadataLabelRule = flowStyles.match(
+    /[.]transitionContent dt\s*\{([^}]*)\}/,
+  )?.[1] ?? ''
+  assert(
+    flowMetadataLabelRule.includes('color: var(--text-muted)') &&
+      flowMetadataLabelRule.includes('font-weight: 600'),
+    'Screen Flow metadata labels do not preserve hierarchy with readable color and weight',
+  )
 
   const agentChange = globalStyles.match(
     /--agent-change:\s*rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)/,

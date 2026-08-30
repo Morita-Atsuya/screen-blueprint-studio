@@ -349,7 +349,8 @@ button.node:hover {
 }
 
 .transitionContent dt {
-  color: var(--text-faint);
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .transitionContent dd {
