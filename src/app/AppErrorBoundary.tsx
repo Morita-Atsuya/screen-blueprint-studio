@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useAppStore } from './appStore'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface Props {
   children: ReactNode
@@ -24,21 +25,31 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (!this.state.error) return this.props.children
 
     return (
-      <main style={{ padding: 40, textAlign: 'center' }}>
-        <h1>画面の表示中に問題が発生しました</h1>
-        <p>{this.state.error.message}</p>
-        <button onClick={() => useAppStore.getState().exportCurrentData()}>
-          現在のJSONを保存
-        </button>
-        <button
-          onClick={() => {
-            useAppStore.getState().resetToSample()
-            this.setState({ error: null })
-          }}
-        >
-          サンプルで初期化
-        </button>
-      </main>
+      <LocalizedErrorFallback
+        error={this.state.error}
+        onReset={() => this.setState({ error: null })}
+      />
     )
   }
+}
+
+function LocalizedErrorFallback({ error, onReset }: { error: Error; onReset(): void }) {
+  const { t } = useI18n()
+  return (
+    <main style={{ padding: 40, textAlign: 'center' }}>
+      <h1>{t('errors.renderFailure')}</h1>
+      <p>{error.message}</p>
+      <button onClick={() => useAppStore.getState().exportCurrentData()}>
+        {t('app.downloadCurrent')}
+      </button>
+      <button
+        onClick={() => {
+          useAppStore.getState().resetToSample()
+          onReset()
+        }}
+      >
+        {t('app.resetSample')}
+      </button>
+    </main>
+  )
 }

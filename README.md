@@ -46,6 +46,7 @@ AIがchange setへ型付きoperationを追加
 - Zustand 5
 - nanoid
 - dnd-kit
+- 型付きJA/EN UI辞書
 - CSS Modules
 - WebMCP `document.modelContext`
 - ブラウザ`localStorage`
@@ -57,9 +58,10 @@ AIがchange setへ型付きoperationを追加
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
 - Screensタブで画面の追加、名前・route編集、Entry設定、削除
+- headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 root component、別screen、leaf、自分自身・子孫へのdropは拒否されます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
-画面名は画面一覧・管理用の名称、root pageの「ページタイトル」はpreview内容です。treeとdrag表示にはtitle、label、textなど実際の画面仕様を使います。
+drop位置はdrag中だけ挿入line・outlineで示し、preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・管理用の名称、root pageの「ページタイトル」はpreview内容です。treeとdrag表示にはtitle、label、textなど実際の画面仕様を使います。
 
 ## ローカル実行
 
@@ -112,7 +114,7 @@ chrome://flags/#enable-webmcp-testing
 | Write | `begin_change_set` | review対象のchange setを開始 |
 | Write | `change_screen_structure` | 画面の追加、更新、削除、entry変更を提案 |
 | Write | `change_component_structure` | コンポーネントの追加、移動、削除を提案 |
-| Write | `update_component_spec` | コンポーネント名、共通仕様、種類別設定を提案 |
+| Write | `update_component_spec` | コンポーネントの共通仕様、種類別設定を提案 |
 | Write | `upsert_screen_state` | 非default状態の作成、更新、削除を提案 |
 | Write | `connect_behavior` | イベント／API operationの接続または削除を提案 |
 
@@ -133,6 +135,7 @@ Readツールには`readOnlyHint`を付与しています。Writeツールはact
 │   ├── dnd/             # dnd-kit context、drop validation、drop zones
 │   ├── domain/          # model、commands、invariants、runtime validation
 │   ├── features/        # canvas、palette、screen list、tree、inspector
+│   ├── i18n/            # 型付きJA/EN UI辞書とlocale provider
 │   ├── persistence/     # localStorage保存・復旧
 │   ├── sample/          # 初期サンプルproject
 │   ├── styles/

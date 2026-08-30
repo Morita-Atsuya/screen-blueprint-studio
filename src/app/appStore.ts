@@ -11,6 +11,8 @@ import {
 } from '../domain/applyCommand'
 import { DomainError } from '../domain/errors'
 import { getOwnEntity, hasOwnEntity } from '../domain/entityMap'
+import type { UiMessage } from '../i18n/messages'
+import { domainErrorMessage } from '../i18n/messages'
 import { sampleProject } from '../sample/sampleProject'
 import {
   clearStorage,
@@ -57,7 +59,7 @@ export interface AppStore {
   agentWritePolicy: AgentWritePolicy
   ui: UiState
   recoveryState: RecoveryState | null
-  errorMessage: string | null
+  errorMessage: UiMessage | null
   persistenceUnavailable: boolean
   // effectiveDocument = computeEffective(document, activeChangeSet)
   effectiveDocument: ProjectDocument
@@ -77,7 +79,7 @@ export interface AppStore {
 
   initializeWithRecovery(choice: 'sample' | 'download'): void
   exportCurrentData(): void
-  setErrorMessage(message: string | null): void
+  setErrorMessage(message: UiMessage | null): void
   resetToSample(): void
 }
 
@@ -152,6 +154,14 @@ function toDomainError(error: unknown): DomainError {
   )
 }
 
+function toUiMessage(error: unknown): UiMessage {
+  if (error instanceof DomainError) return domainErrorMessage(error.code)
+  return {
+    key: 'errors.unexpected',
+    params: { message: error instanceof Error ? error.message : String(error) },
+  }
+}
+
 export const useAppStore = create<AppStore>((set, get) => {
   const loadResult = loadFromStorage()
   const rejectedRecords = loadRejectedRecords()
@@ -198,7 +208,7 @@ export const useAppStore = create<AppStore>((set, get) => {
   function requireWritable(): void {
     const recovery = get().recoveryState
     if (recovery) {
-      throw new DomainError('RECOVERY_REQUIRED', '保存データの復旧または初期化が必要です', {
+      throw new DomainError('RECOVERY_REQUIRED', 'Persisted data must be recovered or reset', {
         status: recovery.status,
         error: recovery.error,
       })
@@ -234,8 +244,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         try {
           state.dispatchToChangeSet(state.activeChangeSet.id, command, 'human')
         } catch (e) {
-          const message = e instanceof DomainError ? e.message : e instanceof Error ? e.message : String(e)
-          set({ errorMessage: message })
+          set({ errorMessage: toUiMessage(e) })
         }
         return
       }
@@ -249,8 +258,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ document: next, history: newHistory, effectiveDocument: next, ui: newUi, errorMessage: null })
         markPersistence(persistIfAvailable(next, null, newUi.activeScreenId))
       } catch (e) {
-        const message = e instanceof DomainError ? e.message : e instanceof Error ? e.message : String(e)
-        set({ errorMessage: message })
+        set({ errorMessage: toUiMessage(e) })
       }
     },
 
@@ -290,7 +298,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         applyCommandWithoutRevision(previewDoc, command)
       } catch (error) {
         const domainError = toDomainError(error)
-        set({ errorMessage: domainError.message })
+        set({ errorMessage: domainErrorMessage(domainError.code) })
         throw domainError
       }
       const operation = { id: nanoid(), source, command, issuedAt: new Date().toISOString() }
@@ -323,8 +331,16 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ document: next, activeChangeSet: null, history: newHistory, effectiveDocument: next, ui: nextUi, errorMessage: null })
         markPersistence(persistIfAvailable(next, null, nextUi.activeScreenId))
       } catch (e) {
-        const message = e instanceof DomainError ? e.message : e instanceof Error ? e.message : String(e)
-        set({ errorMessage: `承認失敗: ${message}` })
+        if (e instanceof DomainError) {
+          set({ errorMessage: domainErrorMessage(e.code) })
+        } else {
+          set({
+            errorMessage: {
+              key: 'errors.acceptFailed',
+              params: { message: e instanceof Error ? e.message : String(e) },
+            },
+          })
+        }
       }
     },
 
@@ -357,7 +373,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       markPersistence(documentSaved && rejectionSaved)
       if (!documentSaved || !rejectionSaved) {
         set({
-          errorMessage: '変更案は却下しましたが、ブラウザ保存領域への記録に失敗しました。',
+          errorMessage: { key: 'errors.rejectionPersistence' },
         })
       }
     },

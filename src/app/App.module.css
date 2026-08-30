@@ -24,6 +24,33 @@
   letter-spacing: 0.02em;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.language select {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .policyLabel {
   display: flex;
   align-items: center;
@@ -176,6 +203,12 @@
 
 .recovery h1 {
   color: #991b1b;
+}
+
+.recoveryLanguage {
+  position: absolute;
+  top: 16px;
+  right: 16px;
 }
 
 .recoveryActions {

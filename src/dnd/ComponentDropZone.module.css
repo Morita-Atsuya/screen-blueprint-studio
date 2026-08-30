@@ -30,20 +30,6 @@
   opacity: 0.35;
 }
 
-.empty {
-  min-height: 34px;
-  margin-top: 4px;
-  border: 1px dashed #a5b4fc;
-  border-radius: 5px;
-  background: rgba(238, 242, 255, 0.5);
-}
-
-.empty.over {
-  border-color: var(--accent);
-  background: var(--bg-selected);
-  box-shadow: 0 0 0 2px var(--bg-selected);
-}
-
 .tree {
   margin-left: 8px;
 }

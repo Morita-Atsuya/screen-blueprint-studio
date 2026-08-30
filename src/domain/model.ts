@@ -103,7 +103,6 @@ export interface ScreenComponent {
   parentId: EntityId | null
   childIds: EntityId[]
   kind: ComponentKind
-  name: string
   common: CommonComponentSpec
   config: ComponentConfig
 }

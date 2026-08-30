@@ -5,17 +5,22 @@ import type { EntityId, ProjectDocument, ScreenComponent, ScreenState } from '..
 import { CONTAINER_KINDS } from '../../domain/model'
 import { effectiveComponent } from '../../domain/selectors'
 import { getOwnEntity } from '../../domain/entityMap'
-import { deriveComponentDisplayName } from '../../domain/componentDisplayName'
+import {
+  COMPONENT_KIND_MESSAGE_KEYS,
+  getComponentDisplayLabel,
+} from '../../domain/componentDisplayLabel'
+import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import styles from './Canvas.module.css'
 
 export function Canvas() {
+  const { locale, t } = useI18n()
   const { effectiveDocument, ui, setSelectedComponent, setActiveState } = useAppStore()
   const { activeScreenId, activeStateId, selectedComponentId } = ui
 
   if (!activeScreenId) {
-    return <div className={styles.empty}>← 左から画面を選択してください</div>
+    return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
   }
 
   const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
@@ -49,6 +54,8 @@ export function Canvas() {
           activeState={activeState}
           selectedComponentId={selectedComponentId}
           onSelect={setSelectedComponent}
+          locale={locale}
+          t={t}
         />
       </div>
     </div>
@@ -61,6 +68,8 @@ interface CanvasComponentProps {
   activeState?: ScreenState
   selectedComponentId: EntityId | null
   onSelect(id: EntityId): void
+  locale: 'ja' | 'en'
+  t: ReturnType<typeof useI18n>['t']
 }
 
 function CanvasComponent({
@@ -69,6 +78,8 @@ function CanvasComponent({
   activeState,
   selectedComponentId,
   onSelect,
+  locale,
+  t,
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
   const component = base ? effectiveComponent(base, activeState) : undefined
@@ -76,7 +87,7 @@ function CanvasComponent({
     ? getOwnEntity(document.screens, component.screenId)?.name
     : undefined
   const displayName = component
-    ? deriveComponentDisplayName(component, screenName)
+    ? getComponentDisplayLabel(component, screenName, locale)
     : ''
   const isRoot = base?.parentId === null
   const {
@@ -119,12 +130,12 @@ function CanvasComponent({
       data-component-id={component.id}
     >
       <div className={styles.componentChrome}>
-        <span className={styles.componentKind}>{component.kind}</span>
+        <span className={styles.componentKind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
         {!isRoot && (
           <button
             className={styles.dragHandle}
-            aria-label={`${displayName}を並び替え`}
-            title="ドラッグして移動"
+            aria-label={t('tree.dragAria', { label: displayName })}
+            title={t('tree.drag')}
             data-drag-surface="canvas"
             data-drag-component={component.id}
             {...attributes}
@@ -134,7 +145,7 @@ function CanvasComponent({
           </button>
         )}
       </div>
-      <ComponentView comp={component} />
+      <ComponentView comp={component} t={t} />
       {isContainer && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
@@ -148,7 +159,9 @@ function CanvasComponent({
                   parentId={component.id}
                   screenId={component.screenId}
                   position={index}
-                  label={index === 0 ? `${displayName}の先頭` : `${index + 1}番目`}
+                  label={index === 0
+                    ? t('dnd.first', { label: displayName })
+                    : t('dnd.position', { position: index + 1 })}
                 />
                 <CanvasComponent
                   componentId={childId}
@@ -156,6 +169,8 @@ function CanvasComponent({
                   activeState={activeState}
                   selectedComponentId={selectedComponentId}
                   onSelect={onSelect}
+                  locale={locale}
+                  t={t}
                 />
               </div>
             ))}
@@ -164,8 +179,7 @@ function CanvasComponent({
               parentId={component.id}
               screenId={component.screenId}
               position={component.childIds.length}
-              label={`${displayName}の末尾`}
-              empty={component.childIds.length === 0}
+              label={t('dnd.end', { label: displayName })}
             />
           </div>
         </SortableContext>
@@ -174,7 +188,13 @@ function CanvasComponent({
   )
 }
 
-function ComponentView({ comp }: { comp: ScreenComponent }) {
+function ComponentView({
+  comp,
+  t,
+}: {
+  comp: ScreenComponent
+  t: ReturnType<typeof useI18n>['t']
+}) {
   const cfg = comp.config
   switch (cfg.kind) {
     case 'page':
@@ -182,11 +202,31 @@ function ComponentView({ comp }: { comp: ScreenComponent }) {
     case 'section':
       return <div className={styles.sectionTitle}>{cfg.title}</div>
     case 'stack':
-      return <div className={styles.containerLabel}>Stack ({cfg.gap})</div>
+      return (
+        <div className={styles.containerLabel}>
+          {t('component.stack')} ({t(
+            cfg.gap === 'sm'
+              ? 'inspector.gapSmall'
+              : cfg.gap === 'md'
+                ? 'inspector.gapMedium'
+                : 'inspector.gapLarge',
+          )})
+        </div>
+      )
     case 'columns':
-      return <div className={styles.containerLabel}>Columns ({cfg.columns})</div>
+      return <div className={styles.containerLabel}>{t('component.columns')} ({cfg.columns})</div>
     case 'actionArea':
-      return <div className={styles.containerLabel}>Action Area ({cfg.align})</div>
+      return (
+        <div className={styles.containerLabel}>
+          {t('component.actionArea')} ({t(
+            cfg.align === 'start'
+              ? 'inspector.alignStart'
+              : cfg.align === 'end'
+                ? 'inspector.alignEnd'
+                : 'inspector.alignBetween',
+          )})
+        </div>
+      )
     case 'heading':
       return <div className={`${styles.heading} ${styles[`h${cfg.level}`]}`}>{cfg.text}</div>
     case 'text':
@@ -210,7 +250,7 @@ function ComponentView({ comp }: { comp: ScreenComponent }) {
         <div className={styles.field}>
           <label className={styles.fieldLabel}>{cfg.label}{cfg.required && <span className={styles.required}>*</span>}</label>
           <select disabled className={`${styles.fieldInput} ${styles.previewControl}`}>
-            <option>選択してください</option>
+            <option>{t('canvas.selectPlaceholder')}</option>
             {cfg.options.map(option => <option key={option.value}>{option.label}</option>)}
           </select>
         </div>

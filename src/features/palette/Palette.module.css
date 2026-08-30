@@ -1,5 +1,4 @@
 .root { display: flex; flex-direction: column; gap: 4px; }
-.hint { font-size: 0.75rem; color: var(--text-faint); margin-bottom: 8px; }
 .list { display: flex; flex-direction: column; gap: 3px; }
 .item {
   display: flex;

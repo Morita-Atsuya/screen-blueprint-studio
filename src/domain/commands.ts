@@ -72,7 +72,6 @@ export interface AddComponentCommand {
   screenId: EntityId
   parentId: EntityId
   kind: ComponentKind
-  name: string
   config: ComponentConfig
   position?: number
 }
@@ -93,7 +92,6 @@ export interface UpdateComponentSpecCommand {
   type: 'updateComponentSpec'
   componentId: EntityId
   patch: {
-    name?: string
     common?: Partial<CommonComponentSpec>
     config?: Partial<ComponentConfig>
   }

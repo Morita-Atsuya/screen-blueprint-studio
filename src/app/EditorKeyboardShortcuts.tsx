@@ -20,7 +20,7 @@ export function EditorKeyboardShortcuts() {
       if (shortcut === 'undo') {
         if (state.activeChangeSet) {
           event.preventDefault()
-          state.setErrorMessage('変更案の確認中はUndoできません。先に承認または却下してください。')
+          state.setErrorMessage({ key: 'errors.undoDuringReview' })
           return
         }
         if (state.history.length === 0) return
@@ -34,16 +34,16 @@ export function EditorKeyboardShortcuts() {
       event.preventDefault()
       const component = getOwnEntity(state.effectiveDocument.components, selectedId)
       if (!component) {
-        state.setErrorMessage('選択中のコンポーネントが見つかりません。')
+        state.setErrorMessage({ key: 'errors.selectedComponentMissing' })
         return
       }
       if (component.parentId === null) {
-        state.setErrorMessage('ルートコンポーネントは削除できません。')
+        state.setErrorMessage({ key: 'errors.cannotDeleteRoot' })
         return
       }
       state.dispatch(
         { type: 'removeComponent', componentId: selectedId },
-        'コンポーネント削除',
+        'Delete component',
       )
     }
 

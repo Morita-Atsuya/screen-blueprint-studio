@@ -13,6 +13,7 @@ import type {
 } from '../domain/model'
 import { DomainError } from '../domain/errors'
 import { getOwnEntity } from '../domain/entityMap'
+import { getComponentDisplayLabel } from '../domain/componentDisplayLabel'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
@@ -92,6 +93,17 @@ function requiredRecord(input: JsonObject, key: string): JsonObject {
     throw new DomainError('INVALID_REFERENCE', `${key} must be an object`)
   }
   return value
+}
+
+function requireExactKeys(input: JsonObject, allowedKeys: readonly string[], path: string): void {
+  const allowed = new Set(allowedKeys)
+  const unknown = Object.keys(input).filter(key => !allowed.has(key))
+  if (unknown.length > 0) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${path} contains unknown fields: ${unknown.join(', ')}`,
+    )
+  }
 }
 
 function success<T extends JsonObject>(data: T): ToolSuccess<T> {
@@ -342,7 +354,7 @@ const getScreenDiagnostics: ToolDefinition = {
             return [{
               code: 'MISSING_FIELD_KEY',
               entityId: component.id,
-              message: `${component.name} has no fieldKey`,
+              message: `${getComponentDisplayLabel(component, screen.name, 'en')} has no fieldKey`,
             }]
           }
           return []
@@ -503,11 +515,10 @@ const changeComponentStructure: ToolDefinition = {
           screenId: { type: 'string', minLength: 1 },
           parentId: { type: 'string', minLength: 1 },
           kind: { type: 'string', enum: componentKinds },
-          name: { type: 'string', minLength: 1 },
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'name', 'config'],
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'config'],
         ...CLOSED_OBJECT,
       },
       {
@@ -539,6 +550,17 @@ const changeComponentStructure: ToolDefinition = {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
       if (operation === 'add') {
+        requireExactKeys(input, [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'screenId',
+          'parentId',
+          'kind',
+          'config',
+          'position',
+        ], 'change_component_structure add input')
         const config = requiredRecord(input, 'config') as ComponentConfig
         command = {
           type: 'addComponent',
@@ -546,11 +568,19 @@ const changeComponentStructure: ToolDefinition = {
           screenId: requiredString(input, 'screenId'),
           parentId: requiredString(input, 'parentId'),
           kind: requiredString(input, 'kind') as ComponentKind,
-          name: requiredString(input, 'name'),
           config,
           position: typeof input.position === 'number' ? input.position : undefined,
         }
       } else if (operation === 'move') {
+        requireExactKeys(input, [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'componentId',
+          'newParentId',
+          'position',
+        ], 'change_component_structure move input')
         command = {
           type: 'moveComponent',
           componentId: requiredString(input, 'componentId'),
@@ -558,6 +588,13 @@ const changeComponentStructure: ToolDefinition = {
           position: typeof input.position === 'number' ? input.position : undefined,
         }
       } else if (operation === 'remove') {
+        requireExactKeys(input, [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'componentId',
+        ], 'change_component_structure remove input')
         command = { type: 'removeComponent', componentId: requiredString(input, 'componentId') }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported component operation: ${operation}`)
@@ -569,7 +606,7 @@ const changeComponentStructure: ToolDefinition = {
 
 const updateComponentSpec: ToolDefinition = {
   name: 'update_component_spec',
-  description: 'Update editable component name, common spec, or kind-specific config.',
+  description: 'Update a component common spec or kind-specific config.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -578,7 +615,6 @@ const updateComponentSpec: ToolDefinition = {
       patch: {
         type: 'object',
         properties: {
-          name: { type: 'string' },
           common: {
             type: 'object',
             properties: {
@@ -599,18 +635,19 @@ const updateComponentSpec: ToolDefinition = {
   },
   execute(input) {
     return withWriteFailure(() => {
+      requireExactKeys(input, [
+        'changeSetId',
+        'expectedRevision',
+        'expectedChangeSetVersion',
+        'componentId',
+        'patch',
+      ], 'update_component_spec input')
       const patchInput = requiredRecord(input, 'patch')
+      requireExactKeys(patchInput, ['common', 'config'], 'update_component_spec patch')
       const patch: {
-        name?: string
         common?: Partial<CommonComponentSpec>
         config?: Partial<ComponentConfig>
       } = {}
-      if (patchInput.name !== undefined) {
-        if (typeof patchInput.name !== 'string') {
-          throw new DomainError('INVARIANT_VIOLATION', 'patch.name must be a string')
-        }
-        patch.name = patchInput.name
-      }
       if (patchInput.common !== undefined) {
         if (!isRecord(patchInput.common)) {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.common must be an object')

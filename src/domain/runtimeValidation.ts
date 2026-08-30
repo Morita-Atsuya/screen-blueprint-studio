@@ -120,7 +120,7 @@ export function validateScreenComponent(
   const component = record(value, path)
   exactKeys(
     component,
-    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'name', 'common', 'config'],
+    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'common', 'config'],
     [],
     path,
   )
@@ -146,7 +146,6 @@ export function validateScreenComponent(
     ],
     `${path}.kind`,
   )
-  string(component.name, `${path}.name`)
   validateCommonComponentSpec(component.common, `${path}.common`)
   validateComponentConfig(component.config, component.kind, `${path}.config`)
 }

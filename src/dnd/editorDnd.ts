@@ -26,7 +26,7 @@ export interface ComponentDropData {
 
 export type MoveResolution =
   | { ok: true; position: number }
-  | { ok: false; message: string }
+  | { ok: false; reason: 'missing' | 'root' | 'crossScreen' | 'invalidParent' | 'descendant' | 'position' | 'order' | 'noOp' }
 
 export function isEditorDragData(value: unknown): value is EditorDragData {
   if (!value || typeof value !== 'object') return false
@@ -60,37 +60,37 @@ export function resolveComponentDrop(
   target: ComponentDropData,
 ): MoveResolution {
   const component = getOwnEntity(doc.components, componentId)
-  if (!component) return { ok: false, message: '移動するコンポーネントが見つかりません。' }
-  if (component.parentId === null) return { ok: false, message: 'ルートコンポーネントは移動できません。' }
+  if (!component) return { ok: false, reason: 'missing' }
+  if (component.parentId === null) return { ok: false, reason: 'root' }
   if (component.screenId !== target.screenId) {
-    return { ok: false, message: '別画面へコンポーネントを移動できません。' }
+    return { ok: false, reason: 'crossScreen' }
   }
 
   const parent = getOwnEntity(doc.components, target.parentId)
   if (!parent || parent.screenId !== component.screenId) {
-    return { ok: false, message: '移動先のコンテナが見つかりません。' }
+    return { ok: false, reason: 'invalidParent' }
   }
   if (!CONTAINER_KINDS.includes(parent.kind)) {
-    return { ok: false, message: `${parent.name}は子要素を持てません。` }
+    return { ok: false, reason: 'invalidParent' }
   }
   if (isDescendant(doc, component.id, parent.id)) {
-    return { ok: false, message: '自分自身または子孫の中へ移動できません。' }
+    return { ok: false, reason: 'descendant' }
   }
   if (!Number.isInteger(target.position) || target.position < 0 || target.position > parent.childIds.length) {
-    return { ok: false, message: '挿入位置が無効です。' }
+    return { ok: false, reason: 'position' }
   }
 
   const oldParent = getOwnEntity(doc.components, component.parentId)
-  if (!oldParent) return { ok: false, message: '現在の親コンテナが見つかりません。' }
+  if (!oldParent) return { ok: false, reason: 'invalidParent' }
   const oldIndex = oldParent.childIds.indexOf(component.id)
-  if (oldIndex < 0) return { ok: false, message: '現在の並び順が不正です。' }
+  if (oldIndex < 0) return { ok: false, reason: 'order' }
 
   const sameParent = oldParent.id === parent.id
   const position = sameParent && oldIndex < target.position
     ? target.position - 1
     : target.position
   if (sameParent && position === oldIndex) {
-    return { ok: false, message: 'コンポーネントはすでにその位置にあります。' }
+    return { ok: false, reason: 'noOp' }
   }
   return { ok: true, position }
 }

@@ -68,7 +68,9 @@ const screenNamingBundle = join(temp, 'screenNaming.mjs')
 const componentFactoryBundle = join(temp, 'componentFactory.mjs')
 const editorDndBundle = join(temp, 'editorDnd.mjs')
 const editorShortcutsBundle = join(temp, 'editorShortcuts.mjs')
-const componentDisplayNameBundle = join(temp, 'componentDisplayName.mjs')
+const componentDisplayLabelBundle = join(temp, 'componentDisplayLabel.mjs')
+const messagesBundle = join(temp, 'messages.mjs')
+const localeBundle = join(temp, 'locale.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -76,7 +78,9 @@ bundle('src/features/screens/screenNaming.ts', screenNamingBundle)
 bundle('src/features/palette/componentFactory.ts', componentFactoryBundle)
 bundle('src/dnd/editorDnd.ts', editorDndBundle)
 bundle('src/app/editorShortcuts.ts', editorShortcutsBundle)
-bundle('src/domain/componentDisplayName.ts', componentDisplayNameBundle)
+bundle('src/domain/componentDisplayLabel.ts', componentDisplayLabelBundle)
+bundle('src/i18n/messages.ts', messagesBundle)
+bundle('src/i18n/locale.ts', localeBundle)
 
 let passed = 0
 
@@ -624,15 +628,15 @@ await test('screen defaults reuse only suffixes free in both names and routes', 
     rootComponentId: `component-generated-${suffix}`,
     defaultStateId: `state-generated-${suffix}`,
     name: `画面 ${suffix}`,
-    route: `/画面-${suffix}`,
+    route: `/screen-${suffix}`,
   })
   add(1)
   add(2)
   add(3)
   store.getState().dispatch({ type: 'removeScreen', screenId: 'screen-generated-2' })
-  const defaults = findAvailableScreenDefaults(store.getState().effectiveDocument.screens)
+  const defaults = findAvailableScreenDefaults(store.getState().effectiveDocument.screens, 'ja')
   assert(defaults.name === '画面 2', `expected reusable name suffix 2, got ${defaults.name}`)
-  assert(defaults.route === '/画面-2', `expected reusable route suffix 2, got ${defaults.route}`)
+  assert(defaults.route === '/screen-2', `expected reusable route suffix 2, got ${defaults.route}`)
   store.getState().dispatch({
     type: 'addScreen',
     screenId: 'screen-generated-reused',
@@ -641,7 +645,7 @@ await test('screen defaults reuse only suffixes free in both names and routes', 
     ...defaults,
   })
   assert(
-    store.getState().document.screens['screen-generated-reused']?.route === '/画面-2',
+    store.getState().document.screens['screen-generated-reused']?.route === '/screen-2',
     'reused screen defaults could not be added',
   )
 })
@@ -778,7 +782,6 @@ await test('alert target removal filters only matching showAlert actions', async
       screenId: 'screen-edit',
       parentId: 'comp-edit-section',
       kind: 'alert',
-      name: alertId,
       config: { kind: 'alert', tone: 'error', message: alertId },
     })
   }
@@ -874,7 +877,6 @@ await test('event actions and API bindings reject cross-screen references', asyn
     screenId: 'screen-edit',
     parentId: 'comp-edit-page',
     kind: 'alert',
-    name: 'Edit alert',
     config: { kind: 'alert', tone: 'error', message: 'Failed' },
   })
   document = applyCommandWithoutRevision(document, {
@@ -934,7 +936,6 @@ await test('event actions and API bindings reject cross-screen references', asyn
         screenId: 'toString',
         parentId: 'comp-list-page',
         kind: 'heading',
-        name: 'Wrong screen',
         config: { kind: 'heading', text: 'Wrong', level: 2 },
       },
       {
@@ -943,7 +944,6 @@ await test('event actions and API bindings reject cross-screen references', asyn
         screenId: 'screen-list',
         parentId: 'comp-list-page',
         kind: 'heading',
-        name: 'Pollution attempt',
         config: { kind: 'heading', text: 'Wrong', level: 2 },
       },
       {
@@ -952,7 +952,6 @@ await test('event actions and API bindings reject cross-screen references', asyn
         screenId: 'screen-edit',
         parentId: 'comp-list-page',
         kind: 'heading',
-        name: 'Cross screen',
         config: { kind: 'heading', text: 'Wrong', level: 2 },
       },
       {
@@ -1011,7 +1010,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
         ['update_component_spec', {
           ...common,
           componentId: id,
-          patch: { name: 'Polluted component' },
+          patch: { common: { description: 'Polluted component' } },
         }],
         ['upsert_screen_state', {
           ...common,
@@ -1133,7 +1132,6 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       parentId: 'ghost',
       kind: 'heading',
-      name: 'Ghost',
       config: { kind: 'heading', text: 'Ghost', level: 2 },
     }],
     ['change_component_structure', { ...common, operation: 'remove', componentId: 'ghost' }],
@@ -1143,7 +1141,6 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'heading',
-      name: 'Object text',
       config: { kind: 'heading', text: { evil: 1 }, level: 2 },
     }],
     ['change_component_structure', {
@@ -1152,7 +1149,6 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'heading',
-      name: 'Bad level',
       config: { kind: 'heading', text: 'Bad', level: 99 },
     }],
     ['change_component_structure', {
@@ -1161,7 +1157,6 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'heading',
-      name: 'Foreign key',
       config: { kind: 'heading', text: 'Bad', level: 2, evil: true },
     }],
     ['change_component_structure', {
@@ -1170,7 +1165,6 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'textInput',
-      name: 'Ghost binding',
       config: {
         kind: 'textInput',
         fieldKey: 'ghost_binding',
@@ -1189,7 +1183,6 @@ await test('ten tools register and invalid writes fail without adding operations
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'textInput',
-      name: 'Cross binding',
       config: {
         kind: 'textInput',
         fieldKey: 'cross_binding',
@@ -1408,7 +1401,6 @@ await test('representative screen/component/state/event/API writes reach the cha
     screenId: 'screen-list',
     parentId: 'comp-list-page',
     kind: 'heading',
-    name: 'Agent heading',
     config: { kind: 'heading', text: 'Agent heading', level: 2 },
   })
   const addedComponentId = latestCommand().componentId
@@ -1419,7 +1411,7 @@ await test('representative screen/component/state/event/API writes reach the cha
   })
   execute('update_component_spec', {
     componentId: addedComponentId,
-    patch: { name: 'Updated heading' },
+    patch: { config: { text: 'Updated heading' } },
   })
   execute('change_component_structure', { operation: 'remove', componentId: addedComponentId })
 
@@ -1470,9 +1462,20 @@ await test('palette factory and component drops use validated commands', async (
     'screen-list',
     'comp-list-section',
     'textInput',
+    'en',
     0,
   )
   assert(command.config.fieldKey === 'field_1', 'palette factory did not allocate a unique field key')
+  assert(command.config.label === 'Field', 'English palette default was not localized')
+  assert(!Object.hasOwn(command, 'name'), 'palette command still contains component name')
+  const japaneseCommand = createAddComponentCommand(
+    store.getState().document,
+    'screen-list',
+    'comp-list-section',
+    'button',
+    'ja',
+  )
+  assert(japaneseCommand.config.label === 'ボタン', 'Japanese palette default was not localized')
   store.getState().dispatch(command, 'Palette drag add')
   assert(
     store.getState().document.components['comp-list-section'].childIds[0] === command.componentId,
@@ -1656,45 +1659,49 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
   )
 })
 
-await test('component display names come from visible specification fields', async () => {
+await test('component display labels come from visible specification fields', async () => {
   memoryStorage.clear()
-  const { deriveComponentDisplayName } = await import(
-    moduleUrl(componentDisplayNameBundle, 'visible-component-labels')
+  const { getComponentDisplayLabel } = await import(
+    moduleUrl(componentDisplayLabelBundle, 'visible-component-labels')
   )
   const store = await freshStore('visible-component-labels')
   const document = store.getState().document
 
   assert(
-    deriveComponentDisplayName(document.components['comp-edit-page'], 'Fallback screen') === 'ユーザー編集',
+    getComponentDisplayLabel(document.components['comp-edit-page'], 'Fallback screen') === 'Edit User',
     'page label did not use the page title',
   )
   assert(
-    deriveComponentDisplayName(document.components['comp-edit-section']) === 'ユーザー情報',
+    getComponentDisplayLabel(document.components['comp-edit-section']) === 'User Details',
     'section label did not use its title',
   )
   assert(
-    deriveComponentDisplayName(document.components['comp-name-input']) === '氏名',
+    getComponentDisplayLabel(document.components['comp-name-input']) === 'Name',
     'input label did not use its visible label',
   )
   assert(
-    deriveComponentDisplayName(document.components['comp-save-btn']) === '保存',
+    getComponentDisplayLabel(document.components['comp-save-btn']) === 'Save',
     'button label did not use its visible label',
   )
   assert(
-    deriveComponentDisplayName(document.components['comp-actions']) === '操作エリア',
+    getComponentDisplayLabel(document.components['comp-actions']) === 'Action area',
     'container label did not use its kind fallback',
+  )
+  assert(
+    getComponentDisplayLabel(document.components['comp-actions'], undefined, 'ja') === '操作エリア',
+    'container label did not use the selected locale',
   )
 
   const pageWithoutTitle = clone(document.components['comp-edit-page'])
   pageWithoutTitle.config.title = ' '
   assert(
-    deriveComponentDisplayName(pageWithoutTitle, '画面管理名') === '画面管理名',
+    getComponentDisplayLabel(pageWithoutTitle, 'Managed screen') === 'Managed screen',
     'page label did not fall back to the screen name',
   )
   const longHeading = clone(document.components['comp-list-heading'])
   longHeading.config.text = '1234567890123456789012345678901234567890'
   assert(
-    deriveComponentDisplayName(longHeading).endsWith('…'),
+    getComponentDisplayLabel(longHeading).endsWith('…'),
     'long visible text was not truncated',
   )
 })
@@ -1708,7 +1715,10 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
     join(root, 'src/features/inspector/Inspector.tsx'),
     'utf8',
   )
-  assert(!dropZoneSource.includes('ここに追加'), 'idle add placeholder remains in the drop zone')
+  assert(
+    !dropZoneSource.includes('ここに追加') && !dropZoneSource.includes('ここにドロップ'),
+    'visible drop instructions remain in the drop zone',
+  )
   assert(
     dropZoneSource.includes('validDrag && accepts'),
     'drop affordance is not gated by an active valid drag',
@@ -1718,8 +1728,122 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
     'internal component name remains editable in the inspector',
   )
   assert(
-    inspectorSource.includes('ページタイトル'),
+    inspectorSource.includes("t('inspector.pageTitle')"),
     'page content title is not clearly labeled in the inspector',
+  )
+})
+
+await test('component name metadata is rejected across document, command, and WebMCP inputs', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('component-name-removed')
+  const baseline = store.getState().document
+  assert(
+    Object.values(baseline.components).every(component => !Object.hasOwn(component, 'name')),
+    'sample components still contain name metadata',
+  )
+  assert(
+    !/[ぁ-んァ-ヶ一-龠]/.test(JSON.stringify(baseline)),
+    'English sample contains Japanese user content',
+  )
+
+  const legacyDocument = clone(baseline)
+  legacyDocument.components['comp-list-heading'].name = 'Legacy component name'
+  memoryStorage.setItem(storageKey, JSON.stringify({ document: legacyDocument }))
+  const legacyReload = await freshStore('legacy-component-name')
+  assert(legacyReload.getState().recoveryState !== null, 'legacy component name did not enter recovery')
+
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'legacy-name-command'))
+  let directRejected = false
+  try {
+    applyCommandWithoutRevision(baseline, {
+      type: 'addComponent',
+      componentId: 'legacy-component',
+      screenId: 'screen-list',
+      parentId: 'comp-list-page',
+      kind: 'heading',
+      name: 'Legacy component name',
+      config: { kind: 'heading', text: 'Legacy', level: 2 },
+    })
+  } catch {
+    directRejected = true
+  }
+  assert(directRejected, 'direct addComponent accepted legacy name metadata')
+
+  memoryStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'legacy-name-webmcp'))
+  const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const begin = byName('begin_change_set').execute({ summary: 'Reject legacy component names' })
+  assert(begin.ok, 'legacy-name change set did not begin')
+  const common = {
+    changeSetId: begin.data.changeSetId,
+    expectedRevision: begin.data.baseRevision,
+    expectedChangeSetVersion: 0,
+  }
+  const addTool = byName('change_component_structure')
+  const updateTool = byName('update_component_spec')
+  assert(
+    addTool.inputSchema.oneOf[0].properties.name === undefined &&
+      updateTool.inputSchema.properties.patch.properties.name === undefined,
+    'WebMCP schema still exposes component name',
+  )
+  const addResult = addTool.execute({
+    ...common,
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: 'comp-list-page',
+    kind: 'heading',
+    name: 'Legacy component name',
+    config: { kind: 'heading', text: 'Legacy', level: 2 },
+  })
+  assert(!addResult.ok, 'WebMCP add accepted legacy component name')
+  const updateResult = updateTool.execute({
+    ...common,
+    componentId: 'comp-list-heading',
+    patch: {
+      name: 'Legacy component name',
+      config: { text: 'Changed' },
+    },
+  })
+  assert(!updateResult.ok, 'WebMCP update accepted legacy component name')
+  assert(
+    byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
+    'legacy component name changed the pending operations',
+  )
+  const componentResult = byName('get_component').execute({ componentId: 'comp-list-heading' })
+  assert(componentResult.ok && !Object.hasOwn(componentResult.data.component, 'name'), 'read tool returned component name')
+})
+
+await test('typed localization resolves and persists JA and EN safely', async () => {
+  const { translate } = await import(moduleUrl(messagesBundle, 'typed-translations'))
+  const { LOCALE_STORAGE_KEY, persistLocale, resolveInitialLocale } = await import(
+    moduleUrl(localeBundle, 'locale-storage')
+  )
+  assert(translate('en', 'tabs.screens') === 'Screens', 'English catalog did not resolve')
+  assert(translate('ja', 'tabs.screens') === '画面', 'Japanese catalog did not resolve')
+  assert(
+    resolveInitialLocale(undefined, 'ja-JP') === 'ja' &&
+      resolveInitialLocale(undefined, 'en-US') === 'en',
+    'navigator locale fallback is incorrect',
+  )
+
+  const values = new Map()
+  const storage = {
+    getItem(key) { return values.get(key) ?? null },
+    setItem(key, value) { values.set(key, value) },
+  }
+  assert(persistLocale(storage, 'ja'), 'locale persistence reported failure')
+  assert(values.get(LOCALE_STORAGE_KEY) === 'ja', 'locale preference was not persisted')
+  assert(resolveInitialLocale(storage, 'en-US') === 'ja', 'stored locale did not win')
+  assert(
+    !persistLocale({ setItem() { throw new DOMException('Denied', 'SecurityError') } }, 'en'),
+    'locale storage failure was not contained',
+  )
+  assert(
+    resolveInitialLocale({
+      getItem() { throw new DOMException('Denied', 'SecurityError') },
+      setItem() {},
+    }, 'en-US') === 'en',
+    'locale read failure blocked navigator fallback',
   )
 })
 

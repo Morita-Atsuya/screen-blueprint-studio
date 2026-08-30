@@ -5,14 +5,14 @@ export const sampleProject: ProjectDocument = {
   revision: 1,
   project: {
     id: 'proj-1',
-    name: 'ユーザー管理',
+    name: 'User Management',
     entryScreenId: 'screen-list',
     screenIds: ['screen-list', 'screen-edit'],
   },
   screens: {
     'screen-list': {
       id: 'screen-list',
-      name: 'ユーザー一覧',
+      name: 'User List',
       route: '/users',
       rootComponentId: 'comp-list-page',
       defaultStateId: 'state-list-default',
@@ -21,7 +21,7 @@ export const sampleProject: ProjectDocument = {
     },
     'screen-edit': {
       id: 'screen-edit',
-      name: 'ユーザー編集',
+      name: 'Edit User',
       route: '/users/:id/edit',
       rootComponentId: 'comp-edit-page',
       defaultStateId: 'state-edit-default',
@@ -30,16 +30,15 @@ export const sampleProject: ProjectDocument = {
     },
   },
   components: {
-    // ── 一覧画面 ──
+    // User list screen
     'comp-list-page': {
       id: 'comp-list-page',
       screenId: 'screen-list',
       parentId: null,
       childIds: ['comp-list-section'],
       kind: 'page',
-      name: 'ユーザー一覧 Root',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'page', title: 'ユーザー一覧' },
+      config: { kind: 'page', title: 'User List' },
     },
     'comp-list-section': {
       id: 'comp-list-section',
@@ -47,9 +46,8 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-page',
       childIds: ['comp-list-heading'],
       kind: 'section',
-      name: '一覧セクション',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', title: 'ユーザー一覧' },
+      config: { kind: 'section', title: 'Users' },
     },
     'comp-list-heading': {
       id: 'comp-list-heading',
@@ -57,20 +55,18 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'heading',
-      name: 'タイトル',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'heading', text: 'ユーザー一覧', level: 1 },
+      config: { kind: 'heading', text: 'User List', level: 1 },
     },
-    // ── 編集画面 ──
+    // Edit user screen
     'comp-edit-page': {
       id: 'comp-edit-page',
       screenId: 'screen-edit',
       parentId: null,
       childIds: ['comp-edit-section'],
       kind: 'page',
-      name: 'ユーザー編集 Root',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'page', title: 'ユーザー編集' },
+      config: { kind: 'page', title: 'Edit User' },
     },
     'comp-edit-section': {
       id: 'comp-edit-section',
@@ -78,9 +74,8 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-page',
       childIds: ['comp-name-input', 'comp-email-input', 'comp-actions'],
       kind: 'section',
-      name: '編集フォーム',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', title: 'ユーザー情報' },
+      config: { kind: 'section', title: 'User Details' },
     },
     'comp-name-input': {
       id: 'comp-name-input',
@@ -88,19 +83,18 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'textInput',
-      name: '氏名',
       common: { description: '', visible: true, enabled: true },
       config: {
         kind: 'textInput',
         fieldKey: 'name',
-        label: '氏名',
+        label: 'Name',
         inputType: 'text',
         required: true,
-        placeholder: '例: 山田 太郎',
+        placeholder: 'e.g. Alex Smith',
         defaultValue: '',
         validationRules: [
-          { id: 'vr-1', type: 'required', message: '氏名は必須です' },
-          { id: 'vr-2', type: 'maxLength', value: 50, message: '50文字以内で入力してください' },
+          { id: 'vr-1', type: 'required', message: 'Name is required' },
+          { id: 'vr-2', type: 'maxLength', value: 50, message: 'Enter no more than 50 characters' },
         ],
         requestBinding: null,
       },
@@ -111,19 +105,18 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'textInput',
-      name: 'メールアドレス',
       common: { description: '', visible: true, enabled: true },
       config: {
         kind: 'textInput',
         fieldKey: 'email',
-        label: 'メールアドレス',
+        label: 'Email address',
         inputType: 'email',
         required: true,
         placeholder: 'example@example.com',
         defaultValue: '',
         validationRules: [
-          { id: 'vr-3', type: 'required', message: 'メールアドレスは必須です' },
-          { id: 'vr-4', type: 'email', message: '正しいメールアドレスを入力してください' },
+          { id: 'vr-3', type: 'required', message: 'Email address is required' },
+          { id: 'vr-4', type: 'email', message: 'Enter a valid email address' },
         ],
         requestBinding: null,
       },
@@ -134,7 +127,6 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: ['comp-cancel-btn', 'comp-save-btn'],
       kind: 'actionArea',
-      name: 'アクション',
       common: { description: '', visible: true, enabled: true },
       config: { kind: 'actionArea', align: 'end' },
     },
@@ -144,11 +136,10 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-actions',
       childIds: [],
       kind: 'button',
-      name: 'キャンセル',
       common: { description: '', visible: true, enabled: true },
       config: {
         kind: 'button',
-        label: 'キャンセル',
+        label: 'Cancel',
         variant: 'secondary',
         eventId: null,
         confirmationMessage: null,
@@ -161,11 +152,10 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-actions',
       childIds: [],
       kind: 'button',
-      name: '保存',
       common: { description: '', visible: true, enabled: true },
       config: {
         kind: 'button',
-        label: '保存',
+        label: 'Save',
         variant: 'primary',
         eventId: 'event-submit',
         confirmationMessage: null,
@@ -185,9 +175,9 @@ export const sampleProject: ProjectDocument = {
     'state-list-loading': {
       id: 'state-list-loading',
       screenId: 'screen-list',
-      name: '読み込み中',
+      name: 'Loading',
       kind: 'loading',
-      description: 'ユーザー一覧を取得中',
+      description: 'Loading the user list',
       componentOverrides: {},
     },
     'state-edit-default': {
@@ -201,9 +191,9 @@ export const sampleProject: ProjectDocument = {
     'state-edit-saving': {
       id: 'state-edit-saving',
       screenId: 'screen-edit',
-      name: '保存中',
+      name: 'Saving',
       kind: 'loading',
-      description: 'APIへ送信中',
+      description: 'Sending data to the API',
       componentOverrides: {
         'comp-save-btn': { enabled: false },
         'comp-cancel-btn': { enabled: false },
@@ -214,7 +204,7 @@ export const sampleProject: ProjectDocument = {
     'event-submit': {
       id: 'event-submit',
       screenId: 'screen-edit',
-      name: '保存ボタン クリック',
+      name: 'Save button click',
       trigger: { type: 'click', componentId: 'comp-save-btn' },
       actions: [
         { type: 'setState', stateId: 'state-edit-saving' },

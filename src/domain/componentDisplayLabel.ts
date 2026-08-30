@@ -1,18 +1,20 @@
 import type { ScreenComponent } from './model'
+import type { Locale, MessageKey } from '../i18n/messages'
+import { translate } from '../i18n/messages'
 
-const KIND_LABELS: Record<ScreenComponent['kind'], string> = {
-  page: 'ページ',
-  section: 'セクション',
-  stack: '縦並び',
-  columns: 'カラム',
-  actionArea: '操作エリア',
-  heading: '見出し',
-  text: 'テキスト',
-  textInput: 'テキスト入力',
-  select: '選択肢',
-  button: 'ボタン',
-  alert: 'アラート',
-  modal: 'モーダル',
+export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], MessageKey> = {
+  page: 'component.page',
+  section: 'component.section',
+  stack: 'component.stack',
+  columns: 'component.columns',
+  actionArea: 'component.actionArea',
+  heading: 'component.heading',
+  text: 'component.text',
+  textInput: 'component.textInput',
+  select: 'component.select',
+  button: 'component.button',
+  alert: 'component.alert',
+  modal: 'component.modal',
 }
 
 function readableText(value: string, fallback: string, maxLength = 32): string {
@@ -24,11 +26,12 @@ function readableText(value: string, fallback: string, maxLength = 32): string {
   return `${characters.slice(0, maxLength - 1).join('')}…`
 }
 
-export function deriveComponentDisplayName(
+export function getComponentDisplayLabel(
   component: ScreenComponent,
   screenName?: string,
+  locale: Locale = 'en',
 ): string {
-  const fallback = KIND_LABELS[component.kind]
+  const fallback = translate(locale, COMPONENT_KIND_MESSAGE_KEYS[component.kind])
   const config = component.config
 
   switch (config.kind) {

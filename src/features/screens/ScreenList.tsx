@@ -2,9 +2,11 @@ import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import { findAvailableScreenDefaults } from './screenNaming'
 import { getOwnEntity } from '../../domain/entityMap'
+import { useI18n } from '../../i18n/I18nProvider'
 import styles from './ScreenList.module.css'
 
 export function ScreenList() {
+  const { locale, t } = useI18n()
   const { effectiveDocument, ui, dispatch, setActiveScreen } = useAppStore()
   const { project, screens } = effectiveDocument
   const activeScreen = ui.activeScreenId
@@ -15,7 +17,7 @@ export function ScreenList() {
     const screenId = nanoid()
     const rootComponentId = nanoid()
     const defaultStateId = nanoid()
-    const { name, route } = findAvailableScreenDefaults(screens)
+    const { name, route } = findAvailableScreenDefaults(screens, locale)
     dispatch(
       {
         type: 'addScreen',
@@ -25,7 +27,7 @@ export function ScreenList() {
         name,
         route,
       },
-      `画面を追加: ${name}`,
+      `Add screen: ${name}`,
     )
     setActiveScreen(screenId)
   }
@@ -39,14 +41,14 @@ export function ScreenList() {
         screenId: activeScreen.id,
         nextEntryScreenId,
       },
-      `画面を削除: ${activeScreen.name}`,
+      `Delete screen: ${activeScreen.name}`,
     )
   }
 
   return (
     <div className={styles.root}>
       <div className={styles.actions}>
-        <button className={styles.addBtn} onClick={addScreen}>+ 画面を追加</button>
+        <button className={styles.addBtn} onClick={addScreen}>+ {t('screens.add')}</button>
       </div>
       <ul className={styles.list}>
         {project.screenIds.map(id => {
@@ -61,7 +63,7 @@ export function ScreenList() {
                 onClick={() => setActiveScreen(id)}
               >
                 <span className={styles.name}>{screen.name}</span>
-                {isEntry && <span className={styles.entry}>Entry</span>}
+                {isEntry && <span className={styles.entry}>{t('screens.entryBadge')}</span>}
               </button>
             </li>
           )
@@ -69,9 +71,9 @@ export function ScreenList() {
       </ul>
       {activeScreen && (
         <div className={styles.editor}>
-          <h3 className={styles.editorTitle}>選択中の画面</h3>
+          <h3 className={styles.editorTitle}>{t('screens.selected')}</h3>
           <label className={styles.label}>
-            名前
+            {t('screens.name')}
             <input
               className={styles.input}
               value={activeScreen.name}
@@ -79,11 +81,11 @@ export function ScreenList() {
                 type: 'updateScreen',
                 screenId: activeScreen.id,
                 name: event.target.value,
-              }, '画面名を変更')}
+              }, 'Update screen name')}
             />
           </label>
           <label className={styles.label}>
-            Route
+            {t('screens.route')}
             <input
               className={styles.input}
               value={activeScreen.route}
@@ -91,7 +93,7 @@ export function ScreenList() {
                 type: 'updateScreen',
                 screenId: activeScreen.id,
                 route: event.target.value,
-              }, '画面routeを変更')}
+              }, 'Update screen route')}
             />
           </label>
           <div className={styles.manageActions}>
@@ -101,20 +103,20 @@ export function ScreenList() {
               onClick={() => dispatch({
                 type: 'setEntryScreen',
                 screenId: activeScreen.id,
-              }, 'Entry画面を変更')}
+              }, 'Set entry screen')}
             >
-              {project.entryScreenId === activeScreen.id ? 'Entry画面' : 'Entryに設定'}
+              {project.entryScreenId === activeScreen.id ? t('screens.entry') : t('screens.setEntry')}
             </button>
             <button
               className={styles.deleteBtn}
               disabled={project.screenIds.length <= 1}
               onClick={removeActiveScreen}
             >
-              画面を削除
+              {t('screens.delete')}
             </button>
           </div>
           {project.screenIds.length <= 1 && (
-            <p className={styles.note}>最後の1画面は削除できません。</p>
+            <p className={styles.note}>{t('screens.lastCannotDelete')}</p>
           )}
         </div>
       )}

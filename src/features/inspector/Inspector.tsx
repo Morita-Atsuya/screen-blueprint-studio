@@ -1,8 +1,11 @@
 import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
 import { getOwnEntity } from '../../domain/entityMap'
+import { useI18n } from '../../i18n/I18nProvider'
+import { commandMessageKey } from '../../i18n/messages'
 
 export function Inspector() {
+  const { t } = useI18n()
   const { effectiveDocument, ui, dispatch } = useAppStore()
   const { selectedComponentId, rightPanelTab } = ui
 
@@ -11,7 +14,7 @@ export function Inspector() {
   }
 
   if (!selectedComponentId) {
-    return <p className={styles.empty}>コンポーネントを選択してください</p>
+    return <p className={styles.empty}>{t('inspector.selectComponent')}</p>
   }
 
   const comp = getOwnEntity(effectiveDocument.components, selectedComponentId)
@@ -22,21 +25,21 @@ export function Inspector() {
   function updateConfig(partial: Record<string, unknown>) {
     dispatch(
       { type: 'updateComponentSpec', componentId: comp!.id, patch: { config: partial as never } },
-      '仕様を編集',
+      'Update component specification',
     )
   }
 
   function updateCommon(partial: { description?: string; visible?: boolean; enabled?: boolean }) {
     dispatch(
       { type: 'updateComponentSpec', componentId: comp!.id, patch: { common: partial } },
-      '仕様を編集',
+      'Update component specification',
     )
   }
 
   return (
     <div className={styles.root}>
       <div className={styles.section}>
-        <label className={styles.label}>説明</label>
+        <label className={styles.label}>{t('inspector.description')}</label>
         <textarea
           className={styles.textarea}
           value={comp.common.description}
@@ -47,21 +50,21 @@ export function Inspector() {
       <div className={styles.row}>
         <label className={styles.checkLabel}>
           <input type="checkbox" checked={comp.common.visible} onChange={e => updateCommon({ visible: e.target.checked })} />
-          表示
+          {t('inspector.visible')}
         </label>
         <label className={styles.checkLabel}>
           <input type="checkbox" checked={comp.common.enabled} onChange={e => updateCommon({ enabled: e.target.checked })} />
-          有効
+          {t('inspector.enabled')}
         </label>
       </div>
       <hr className={styles.divider} />
       {/* Kind-specific fields */}
       {cfg.kind === 'heading' && (
         <>
-          <Field label="テキスト">
+          <Field label={t('inspector.text')}>
             <input className={styles.input} value={cfg.text} onChange={e => updateConfig({ text: e.target.value })} />
           </Field>
-          <Field label="レベル">
+          <Field label={t('inspector.level')}>
             <select className={styles.input} value={cfg.level} onChange={e => updateConfig({ level: Number(e.target.value) })}>
               <option value={1}>H1</option><option value={2}>H2</option><option value={3}>H3</option>
             </select>
@@ -69,21 +72,21 @@ export function Inspector() {
         </>
       )}
       {cfg.kind === 'text' && (
-        <Field label="テキスト">
+        <Field label={t('inspector.text')}>
           <textarea className={styles.textarea} value={cfg.text} rows={3} onChange={e => updateConfig({ text: e.target.value })} />
         </Field>
       )}
       {cfg.kind === 'stack' && (
-        <Field label="間隔">
+        <Field label={t('inspector.gap')}>
           <select className={styles.input} value={cfg.gap} onChange={e => updateConfig({ gap: e.target.value })}>
-            <option value="sm">small</option>
-            <option value="md">medium</option>
-            <option value="lg">large</option>
+            <option value="sm">{t('inspector.gapSmall')}</option>
+            <option value="md">{t('inspector.gapMedium')}</option>
+            <option value="lg">{t('inspector.gapLarge')}</option>
           </select>
         </Field>
       )}
       {cfg.kind === 'columns' && (
-        <Field label="カラム数">
+        <Field label={t('inspector.columns')}>
           <select className={styles.input} value={cfg.columns} onChange={e => updateConfig({ columns: Number(e.target.value) })}>
             <option value={2}>2</option>
             <option value={3}>3</option>
@@ -91,110 +94,117 @@ export function Inspector() {
         </Field>
       )}
       {cfg.kind === 'actionArea' && (
-        <Field label="配置">
+        <Field label={t('inspector.alignment')}>
           <select className={styles.input} value={cfg.align} onChange={e => updateConfig({ align: e.target.value })}>
-            <option value="start">start</option>
-            <option value="end">end</option>
-            <option value="between">space between</option>
+            <option value="start">{t('inspector.alignStart')}</option>
+            <option value="end">{t('inspector.alignEnd')}</option>
+            <option value="between">{t('inspector.alignBetween')}</option>
           </select>
         </Field>
       )}
       {cfg.kind === 'textInput' && (
         <>
-          <Field label="フィールドキー">
+          <Field label={t('inspector.fieldKey')}>
             <input className={styles.input} value={cfg.fieldKey} onChange={e => updateConfig({ fieldKey: e.target.value })} />
           </Field>
-          <Field label="ラベル">
+          <Field label={t('inspector.label')}>
             <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
           </Field>
-          <Field label="プレースホルダー">
+          <Field label={t('inspector.placeholder')}>
             <input className={styles.input} value={cfg.placeholder} onChange={e => updateConfig({ placeholder: e.target.value })} />
           </Field>
-          <Field label="初期値">
+          <Field label={t('inspector.defaultValue')}>
             <input className={styles.input} value={cfg.defaultValue} onChange={e => updateConfig({ defaultValue: e.target.value })} />
           </Field>
-          <Field label="型">
+          <Field label={t('inspector.inputType')}>
             <select className={styles.input} value={cfg.inputType} onChange={e => updateConfig({ inputType: e.target.value })}>
-              <option value="text">text</option><option value="email">email</option><option value="password">password</option>
+              <option value="text">{t('inspector.inputText')}</option>
+              <option value="email">{t('inspector.inputEmail')}</option>
+              <option value="password">{t('inspector.inputPassword')}</option>
             </select>
           </Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
-            必須
+            {t('inspector.required')}
           </label>
         </>
       )}
       {cfg.kind === 'select' && (
         <>
-          <Field label="フィールドキー">
+          <Field label={t('inspector.fieldKey')}>
             <input className={styles.input} value={cfg.fieldKey} onChange={e => updateConfig({ fieldKey: e.target.value })} />
           </Field>
-          <Field label="ラベル">
+          <Field label={t('inspector.label')}>
             <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
           </Field>
-          <Field label="選択肢（value:label、1行1件）">
+          <Field label={t('inspector.options')}>
             <textarea
               className={styles.textarea}
               rows={4}
               value={formatSelectOptions(cfg.options)}
-              placeholder={'active:有効\ninactive:無効'}
+              placeholder={t('inspector.optionsPlaceholder')}
               onChange={e => updateConfig({ options: parseSelectOptions(e.target.value) })}
             />
           </Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.required} onChange={e => updateConfig({ required: e.target.checked })} />
-            必須
+            {t('inspector.required')}
           </label>
         </>
       )}
       {cfg.kind === 'button' && (
         <>
-          <Field label="ラベル">
+          <Field label={t('inspector.label')}>
             <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
           </Field>
-          <Field label="バリアント">
+          <Field label={t('inspector.variant')}>
             <select className={styles.input} value={cfg.variant} onChange={e => updateConfig({ variant: e.target.value })}>
-              <option value="primary">primary</option><option value="secondary">secondary</option><option value="danger">danger</option>
+              <option value="primary">{t('inspector.variantPrimary')}</option>
+              <option value="secondary">{t('inspector.variantSecondary')}</option>
+              <option value="danger">{t('inspector.variantDanger')}</option>
             </select>
           </Field>
-          <Field label="確認メッセージ">
+          <Field label={t('inspector.confirmationMessage')}>
             <input
               className={styles.input}
               value={cfg.confirmationMessage ?? ''}
-              placeholder="空欄なら確認なし"
+              placeholder={t('inspector.noConfirmation')}
               onChange={e => updateConfig({ confirmationMessage: e.target.value || null })}
             />
           </Field>
           <label className={styles.checkLabel}>
             <input type="checkbox" checked={cfg.preventDoubleSubmit} onChange={e => updateConfig({ preventDoubleSubmit: e.target.checked })} />
-            二重送信防止
+            {t('inspector.preventDoubleSubmit')}
           </label>
         </>
       )}
       {cfg.kind === 'alert' && (
         <>
-          <Field label="トーン">
+          <Field label={t('inspector.tone')}>
             <select className={styles.input} value={cfg.tone} onChange={e => updateConfig({ tone: e.target.value })}>
-              <option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option>
+              <option value="info">{t('inspector.toneInfo')}</option>
+              <option value="success">{t('inspector.toneSuccess')}</option>
+              <option value="warning">{t('inspector.toneWarning')}</option>
+              <option value="error">{t('inspector.toneError')}</option>
             </select>
           </Field>
-          <Field label="メッセージ">
+          <Field label={t('inspector.message')}>
             <input className={styles.input} value={cfg.message} onChange={e => updateConfig({ message: e.target.value })} />
           </Field>
         </>
       )}
       {cfg.kind === 'page' && (
-        <Field label="ページタイトル">
+        <Field label={t('inspector.pageTitle')}>
           <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
         </Field>
       )}
       {cfg.kind === 'section' && (
-        <Field label="セクションタイトル">
+        <Field label={t('inspector.sectionTitle')}>
           <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
         </Field>
       )}
       {cfg.kind === 'modal' && (
-        <Field label="モーダルタイトル">
+        <Field label={t('inspector.modalTitle')}>
           <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
         </Field>
       )}
@@ -231,8 +241,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function ChangesPanel() {
+  const { t } = useI18n()
   const { activeChangeSet, acceptChangeSet, rejectChangeSet } = useAppStore()
-  if (!activeChangeSet) return <p className={styles.empty}>変更案はありません</p>
+  if (!activeChangeSet) return <p className={styles.empty}>{t('changes.none')}</p>
 
   return (
     <div className={styles.changes}>
@@ -243,13 +254,13 @@ function ChangesPanel() {
             key={op.id}
             className={`${styles.changeItem} ${op.source === 'agent' ? styles.agentChange : ''}`}
           >
-            [{op.source}] {op.command.type}
+            [{t(op.source === 'agent' ? 'changes.sourceAgent' : 'changes.sourceHuman')}] {t(commandMessageKey(op.command))}
           </li>
         ))}
       </ul>
       <div className={styles.changeActions}>
-        <button className={styles.acceptBtn} onClick={acceptChangeSet}>承認</button>
-        <button className={styles.rejectBtn} onClick={rejectChangeSet}>却下</button>
+        <button className={styles.acceptBtn} onClick={acceptChangeSet}>{t('changes.accept')}</button>
+        <button className={styles.rejectBtn} onClick={rejectChangeSet}>{t('changes.reject')}</button>
       </div>
     </div>
   )

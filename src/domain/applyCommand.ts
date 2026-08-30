@@ -15,6 +15,21 @@ function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T
 }
 
+function requireExactKeys(
+  value: object,
+  allowedKeys: readonly string[],
+  path: string,
+): void {
+  const allowed = new Set(allowedKeys)
+  const unknown = Object.keys(value).filter(key => !allowed.has(key))
+  if (unknown.length > 0) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${path} contains unknown fields: ${unknown.join(', ')}`,
+    )
+  }
+}
+
 export function nextRevision(revision: number): number {
   if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER) {
     throw new DomainError('INVARIANT_VIOLATION', 'Revision cannot be incremented safely')
@@ -153,7 +168,6 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         parentId: null,
         childIds: [],
         kind: 'page',
-        name: `${name} Root`,
         common: { description: '', visible: true, enabled: true },
         config: { kind: 'page', title: name },
       })
@@ -238,7 +252,12 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
 
     // ──────────── Component commands ────────────
     case 'addComponent': {
-      const { componentId, screenId, parentId, kind, name, config, position } = command
+      requireExactKeys(
+        command,
+        ['type', 'componentId', 'screenId', 'parentId', 'kind', 'config', 'position'],
+        'addComponent command',
+      )
+      const { componentId, screenId, parentId, kind, config, position } = command
       const screen = getOwnEntity(next.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
       const parent = getOwnEntity(next.components, parentId)
@@ -264,7 +283,6 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         parentId,
         childIds: [],
         kind,
-        name,
         common: { description: '', visible: true, enabled: true },
         config,
       })
@@ -345,10 +363,14 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
     }
 
     case 'updateComponentSpec': {
+      requireExactKeys(command, ['type', 'componentId', 'patch'], 'updateComponentSpec command')
+      requireExactKeys(command.patch, ['common', 'config'], 'updateComponentSpec patch')
+      if (Object.keys(command.patch).length === 0) {
+        throw new DomainError('INVARIANT_VIOLATION', 'updateComponentSpec patch must not be empty')
+      }
       const comp = getOwnEntity(next.components, command.componentId)
       if (!comp) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
       const { patch } = command
-      if (patch.name !== undefined) comp.name = patch.name
       if (patch.common) comp.common = { ...comp.common, ...patch.common }
       if (patch.config) comp.config = { ...comp.config, ...patch.config } as typeof comp.config
       break

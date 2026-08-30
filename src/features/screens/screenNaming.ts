@@ -1,6 +1,8 @@
 import type { Screen } from '../../domain/model'
+import type { Locale } from '../../i18n/messages'
+import { translate } from '../../i18n/messages'
 
-export function findAvailableScreenDefaults(screens: Record<string, Screen>): {
+export function findAvailableScreenDefaults(screens: Record<string, Screen>, locale: Locale): {
   name: string
   route: string
 } {
@@ -9,8 +11,8 @@ export function findAvailableScreenDefaults(screens: Record<string, Screen>): {
   let suffix = 1
 
   while (true) {
-    const name = `画面 ${suffix}`
-    const route = `/画面-${suffix}`
+    const name = translate(locale, 'screens.defaultName', { number: suffix })
+    const route = `/screen-${suffix}`
     if (!names.has(name) && !routes.has(route)) return { name, route }
     suffix += 1
   }

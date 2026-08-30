@@ -5,16 +5,19 @@ import { useAppStore } from '../../app/appStore'
 import type { EntityId, ProjectDocument } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
-import { deriveComponentDisplayName } from '../../domain/componentDisplayName'
+import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
+import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
+import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import styles from './StructureTree.module.css'
 
 export function StructureTree() {
+  const { locale, t } = useI18n()
   const { effectiveDocument, ui, setSelectedComponent, dispatch } = useAppStore()
   const { activeScreenId, selectedComponentId } = ui
 
-  if (!activeScreenId) return <p className={styles.empty}>画面を選択してください</p>
+  if (!activeScreenId) return <p className={styles.empty}>{t('tree.selectScreen')}</p>
 
   const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
   if (!screen) return null
@@ -29,12 +32,12 @@ export function StructureTree() {
     if (index < 0 || position < 0 || position >= parent.childIds.length) return
     dispatch(
       { type: 'moveComponent', componentId: id, newParentId: parent.id, position },
-      direction < 0 ? '上へ移動' : '下へ移動',
+      direction < 0 ? 'Move component up' : 'Move component down',
     )
   }
 
   function remove(id: EntityId) {
-    dispatch({ type: 'removeComponent', componentId: id }, 'コンポーネント削除')
+    dispatch({ type: 'removeComponent', componentId: id }, 'Delete component')
   }
 
   return (
@@ -47,6 +50,8 @@ export function StructureTree() {
         onSelect={setSelectedComponent}
         onMove={move}
         onRemove={remove}
+        locale={locale}
+        t={t}
       />
     </ul>
   )
@@ -60,6 +65,8 @@ interface TreeNodeProps {
   onSelect(id: EntityId): void
   onMove(id: EntityId, direction: -1 | 1): void
   onRemove(id: EntityId): void
+  locale: 'ja' | 'en'
+  t: ReturnType<typeof useI18n>['t']
 }
 
 function TreeNode({
@@ -70,13 +77,15 @@ function TreeNode({
   onSelect,
   onMove,
   onRemove,
+  locale,
+  t,
 }: TreeNodeProps) {
   const component = getOwnEntity(document.components, componentId)
   const screenName = component
     ? getOwnEntity(document.screens, component.screenId)?.name
     : undefined
   const displayName = component
-    ? deriveComponentDisplayName(component, screenName)
+    ? getComponentDisplayLabel(component, screenName, locale)
     : ''
   const isRoot = component?.parentId === null
   const {
@@ -125,8 +134,8 @@ function TreeNode({
         {!isRoot && (
           <button
             className={styles.dragHandle}
-            aria-label={`${displayName}を並び替え`}
-            title="ドラッグして移動"
+            aria-label={t('tree.dragAria', { label: displayName })}
+            title={t('tree.drag')}
             data-drag-surface="tree"
             data-drag-component={component.id}
             onClick={event => event.stopPropagation()}
@@ -136,28 +145,28 @@ function TreeNode({
             ⠿
           </button>
         )}
-        <span className={styles.kind}>{component.kind}</span>
+        <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
         <span className={styles.name}>{displayName}</span>
         {!isRoot && (
           <div className={styles.nodeActions}>
             <button
               className={styles.iconBtn}
-              title="上へ移動"
-              aria-label={`${displayName}を上へ移動`}
+              title={t('tree.moveUp')}
+              aria-label={t('tree.moveUpAria', { label: displayName })}
               disabled={siblingIndex <= 0}
               onClick={event => { event.stopPropagation(); onMove(component.id, -1) }}
             >↑</button>
             <button
               className={styles.iconBtn}
-              title="下へ移動"
-              aria-label={`${displayName}を下へ移動`}
+              title={t('tree.moveDown')}
+              aria-label={t('tree.moveDownAria', { label: displayName })}
               disabled={!parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
               onClick={event => { event.stopPropagation(); onMove(component.id, 1) }}
             >↓</button>
             <button
               className={`${styles.iconBtn} ${styles.danger}`}
-              title="削除"
-              aria-label={`${displayName}を削除`}
+              title={t('tree.delete')}
+              aria-label={t('tree.deleteAria', { label: displayName })}
               onClick={event => { event.stopPropagation(); onRemove(component.id) }}
             >×</button>
           </div>
@@ -177,7 +186,9 @@ function TreeNode({
                     parentId={component.id}
                     screenId={component.screenId}
                     position={index}
-                    label={index === 0 ? `${displayName}の先頭` : `${index + 1}番目`}
+                    label={index === 0
+                      ? t('dnd.first', { label: displayName })
+                      : t('dnd.position', { position: index + 1 })}
                   />
                 </li>
                 <TreeNode
@@ -188,6 +199,8 @@ function TreeNode({
                   onSelect={onSelect}
                   onMove={onMove}
                   onRemove={onRemove}
+                  locale={locale}
+                  t={t}
                 />
               </Fragment>
             ))}
@@ -197,8 +210,7 @@ function TreeNode({
                 parentId={component.id}
                 screenId={component.screenId}
                 position={component.childIds.length}
-                label={`${displayName}の末尾`}
-                empty={component.childIds.length === 0}
+                label={t('dnd.end', { label: displayName })}
               />
             </li>
           </ul>

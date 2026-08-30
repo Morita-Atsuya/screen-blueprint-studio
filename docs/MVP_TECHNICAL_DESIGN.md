@@ -195,7 +195,6 @@ interface ScreenComponent {
   parentId: EntityId | null;
   childIds: EntityId[];
   kind: ComponentKind;
-  name: string;
   common: CommonComponentSpec;
   config: ComponentConfig;
 }
@@ -431,10 +430,7 @@ interface UpdateComponentSpecCommand {
   type: "updateComponentSpec";
   componentId: EntityId;
   patch: {
-    name?: string;
-    description?: string;
-    visible?: boolean;
-    enabled?: boolean;
+    common?: Partial<CommonComponentSpec>;
     config?: PartialEditableComponentConfig;
   };
 }
@@ -585,25 +581,27 @@ interface Diagnostic {
 
 - `Screens`: 画面一覧、entry表示、作成、選択、名称変更、削除
 - `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
-- `Structure`: component tree。選択、dragによる並び替え・親変更、矢印移動、削除
-- `Canvas`: preview上のhandleからtreeと同じcommandで並び替え・親変更
+- `Structure`: component tree。title、label、text等から表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
+- `Canvas`: preview上のhandleからtreeと同じcommandで並び替え・親変更。drop中だけ挿入lineまたはoutlineを表示し、説明placeholderは描画しない
 - 追加不可の場合は無効理由を表示
 
 ### 10.3 中央ペイン
 
 - 選択中stateを適用したワイヤーフレーム
 - component選択
-- containerの追加先表示
+- drag中だけ表示する挿入line・outline
 - AI変更箇所にaccent outline
 - 人間がchange set内で修正した箇所には別のmarker
 - 空状態、loading、errorを実際の見た目でpreview
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの編集可能仕様。内部metadataの`name`は表示せず、page titleなどkind固有の内容を編集
+- `Inspector`: 選択componentの共通仕様とpage titleなどkind固有の内容を編集
 - `Changes`: operation一覧とbefore/after
 
 component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameとpreview内容であるpage titleは別fieldとして扱う。
+
+UI static copyは型付きJA/EN辞書へ集約し、headerで即時切替する。localeは専用localStorage keyへbest-effortで保存し、利用不能でもnavigator languageによる初期化と画面操作を継続する。sample documentのユーザーcontentは英語へ統一し、UI localeによる自動翻訳対象にはしない。
 
 ### 10.5 Change set bar
 
@@ -774,6 +772,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 
 - 主要操作をbutton、form control、tree semanticsで提供
 - dnd-kitのpointer、touch、keyboard sensorとdrag handleのaccessible nameを提供
+- DnD状態は視覚的なline・outlineに加え、選択localeのscreen reader announcementで通知
 - キーボードで選択、クリック追加、上下移動、削除、選択解除、Undoが可能
 - 選択を色だけで示さない
 - change setのAI変更と人間修正を色とlabelの両方で示す

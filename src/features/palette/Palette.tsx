@@ -4,9 +4,12 @@ import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import type { PaletteItem } from './componentFactory'
 import { createAddComponentCommand, PALETTE_ITEMS } from './componentFactory'
+import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
+import { useI18n } from '../../i18n/I18nProvider'
 import styles from './Palette.module.css'
 
 export function Palette() {
+  const { locale, t } = useI18n()
   const { effectiveDocument, ui, dispatch, setSelectedComponent } = useAppStore()
   const activeScreenId = ui.activeScreenId
 
@@ -30,19 +33,20 @@ export function Palette() {
       activeScreenId,
       parentId,
       item.kind,
+      locale,
     )
-    dispatch(command, `コンポーネント追加: ${item.kind}`)
+    dispatch(command, `Add component: ${item.kind}`)
     setSelectedComponent(command.componentId)
   }
 
   return (
     <div className={styles.root}>
-      <p className={styles.hint}>クリックで選択先へ追加、ドラッグで位置を指定</p>
       <ul className={styles.list}>
         {PALETTE_ITEMS.map(item => (
           <PaletteButton
             key={item.kind}
             item={item}
+            label={t(COMPONENT_KIND_MESSAGE_KEYS[item.kind])}
             disabled={!activeScreenId}
             onAdd={() => handleAdd(item)}
           />
@@ -54,16 +58,19 @@ export function Palette() {
 
 function PaletteButton({
   item,
+  label,
   disabled,
   onAdd,
 }: {
   item: PaletteItem
+  label: string
   disabled: boolean
   onAdd(): void
 }) {
+  const { t } = useI18n()
   const { attributes, listeners, isDragging, setNodeRef } = useDraggable({
     id: `palette:${item.kind}`,
-    data: { type: 'palette', kind: item.kind, label: item.label },
+    data: { type: 'palette', kind: item.kind, label },
     disabled,
   })
 
@@ -73,13 +80,13 @@ function PaletteButton({
         className={styles.item}
         onClick={onAdd}
         disabled={disabled}
-        aria-label={`${item.label}を追加またはドラッグ`}
+        aria-label={t('palette.addOrDrag', { label })}
         data-palette-kind={item.kind}
         {...attributes}
         {...listeners}
       >
         <span className={styles.grip} aria-hidden="true">⠿</span>
-        {item.label}
+        {label}
       </button>
     </li>
   )

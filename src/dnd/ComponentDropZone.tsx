@@ -3,10 +3,10 @@ import { useAppStore } from '../app/appStore'
 import { canAcceptDrop, componentDropId, isEditorDragData } from './editorDnd'
 import type { ComponentDropData } from './editorDnd'
 import styles from './ComponentDropZone.module.css'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface ComponentDropZoneProps extends Omit<ComponentDropData, 'type'> {
   surface: 'tree' | 'canvas'
-  empty?: boolean
 }
 
 export function ComponentDropZone({
@@ -15,8 +15,8 @@ export function ComponentDropZone({
   screenId,
   position,
   label,
-  empty = false,
 }: ComponentDropZoneProps) {
+  const { t } = useI18n()
   const document = useAppStore(state => state.effectiveDocument)
   const { active } = useDndContext()
   const drag = active?.data.current
@@ -36,8 +36,6 @@ export function ComponentDropZone({
     data: target,
     disabled: validDrag && !accepts,
   })
-  const isActiveOver = isOver && showAffordance
-
   return (
     <div
       ref={setNodeRef}
@@ -46,17 +44,14 @@ export function ComponentDropZone({
         styles[surface],
         showAffordance ? styles.active : '',
         validDrag && !accepts ? styles.invalid : '',
-        isActiveOver ? styles.over : '',
-        empty && showAffordance ? styles.empty : '',
+        isOver && showAffordance ? styles.over : '',
       ].join(' ')}
-      aria-label={`${label}へドロップ`}
+      aria-label={t('dnd.dropAria', { label })}
       data-drop-surface={surface}
       data-drop-parent={parentId}
       data-drop-position={position}
       data-editor-drop-id={dropId}
       data-drop-visible={showAffordance}
-    >
-      {isActiveOver && empty ? 'ここにドロップ' : ''}
-    </div>
+    />
   )
 }

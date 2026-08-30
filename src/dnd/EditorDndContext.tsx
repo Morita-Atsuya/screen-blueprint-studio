@@ -20,8 +20,10 @@ import {
   resolveComponentDrop,
 } from './editorDnd'
 import styles from './EditorDndContext.module.css'
+import { useI18n } from '../i18n/I18nProvider'
 
 export function EditorDndProvider({ children }: { children: React.ReactNode }) {
+  const { locale, t } = useI18n()
   const [dragLabel, setDragLabel] = useState<string | null>(null)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -40,7 +42,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
     const target = event.over?.data.current
     if (!isEditorDragData(drag)) return
     if (!isComponentDropData(target)) {
-      useAppStore.getState().setErrorMessage('有効なコンテナまたは挿入位置へドロップしてください。')
+      useAppStore.getState().setErrorMessage({ key: 'errors.invalidDrop' })
       return
     }
 
@@ -51,16 +53,17 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
         target.screenId,
         target.parentId,
         drag.kind,
+        locale,
         target.position,
       )
-      state.dispatch(command, `コンポーネント追加: ${drag.kind}`)
+      state.dispatch(command, `Add component: ${drag.kind}`)
       useAppStore.getState().setSelectedComponent(command.componentId)
       return
     }
 
     const resolution = resolveComponentDrop(state.effectiveDocument, drag.componentId, target)
     if (!resolution.ok) {
-      state.setErrorMessage(resolution.message)
+      state.setErrorMessage({ key: 'errors.invalidDrop' })
       return
     }
     state.dispatch({
@@ -68,13 +71,46 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       componentId: drag.componentId,
       newParentId: target.parentId,
       position: resolution.position,
-    }, `コンポーネント移動: ${drag.label}`)
+    }, `Move component: ${drag.label}`)
     useAppStore.getState().setSelectedComponent(drag.componentId)
   }
 
   return (
     <DndContext
       sensors={sensors}
+      accessibility={{
+        announcements: {
+          onDragStart({ active }) {
+            const drag = active.data.current
+            return isEditorDragData(drag)
+              ? t('dnd.announcementStart', { label: drag.label })
+              : ''
+          },
+          onDragOver({ over }) {
+            const target = over?.data.current
+            return isComponentDropData(target)
+              ? t('dnd.announcementOver', { label: target.label })
+              : ''
+          },
+          onDragEnd({ active, over }) {
+            const drag = active.data.current
+            return isEditorDragData(drag)
+              ? t(
+                  isComponentDropData(over?.data.current)
+                    ? 'dnd.announcementEnd'
+                    : 'dnd.announcementCancel',
+                  { label: drag.label },
+                )
+              : ''
+          },
+          onDragCancel({ active }) {
+            const drag = active.data.current
+            return isEditorDragData(drag)
+              ? t('dnd.announcementCancel', { label: drag.label })
+              : ''
+          },
+        },
+      }}
       collisionDetection={collisionArguments => {
         if (collisionArguments.pointerCoordinates) {
           const directDrop = document

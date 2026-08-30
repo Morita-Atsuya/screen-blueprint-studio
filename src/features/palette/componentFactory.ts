@@ -1,24 +1,25 @@
 import { nanoid } from 'nanoid'
 import type { AddComponentCommand } from '../../domain/commands'
 import type { ComponentConfig, ComponentKind, EntityId, ProjectDocument } from '../../domain/model'
+import type { Locale } from '../../i18n/messages'
+import { translate } from '../../i18n/messages'
 
 export interface PaletteItem {
   kind: Exclude<ComponentKind, 'page'>
-  label: string
 }
 
 export const PALETTE_ITEMS: PaletteItem[] = [
-  { kind: 'section', label: 'Section' },
-  { kind: 'stack', label: 'Stack' },
-  { kind: 'columns', label: 'Columns' },
-  { kind: 'actionArea', label: 'Action Area' },
-  { kind: 'heading', label: 'Heading' },
-  { kind: 'text', label: 'Text' },
-  { kind: 'textInput', label: 'Text Input' },
-  { kind: 'select', label: 'Select' },
-  { kind: 'button', label: 'Button' },
-  { kind: 'alert', label: 'Alert' },
-  { kind: 'modal', label: 'Modal' },
+  { kind: 'section' },
+  { kind: 'stack' },
+  { kind: 'columns' },
+  { kind: 'actionArea' },
+  { kind: 'heading' },
+  { kind: 'text' },
+  { kind: 'textInput' },
+  { kind: 'select' },
+  { kind: 'button' },
+  { kind: 'alert' },
+  { kind: 'modal' },
 ]
 
 function generateUniqueFieldKey(doc: ProjectDocument): string {
@@ -38,10 +39,11 @@ function generateUniqueFieldKey(doc: ProjectDocument): string {
 export function createDefaultComponentConfig(
   kind: PaletteItem['kind'],
   doc: ProjectDocument,
+  locale: Locale,
 ): ComponentConfig {
   switch (kind) {
     case 'section':
-      return { kind, title: '新しいセクション' }
+      return { kind, title: translate(locale, 'defaults.sectionTitle') }
     case 'stack':
       return { kind, gap: 'md' }
     case 'columns':
@@ -49,14 +51,14 @@ export function createDefaultComponentConfig(
     case 'actionArea':
       return { kind, align: 'end' }
     case 'heading':
-      return { kind, text: '見出し', level: 2 }
+      return { kind, text: translate(locale, 'defaults.headingText'), level: 2 }
     case 'text':
-      return { kind, text: 'テキスト' }
+      return { kind, text: translate(locale, 'defaults.text') }
     case 'textInput':
       return {
         kind,
         fieldKey: generateUniqueFieldKey(doc),
-        label: '項目名',
+        label: translate(locale, 'defaults.fieldLabel'),
         inputType: 'text',
         required: false,
         placeholder: '',
@@ -68,7 +70,7 @@ export function createDefaultComponentConfig(
       return {
         kind,
         fieldKey: generateUniqueFieldKey(doc),
-        label: '選択肢',
+        label: translate(locale, 'defaults.selectLabel'),
         required: false,
         options: [],
         requestBinding: null,
@@ -76,16 +78,16 @@ export function createDefaultComponentConfig(
     case 'button':
       return {
         kind,
-        label: 'ボタン',
+        label: translate(locale, 'defaults.buttonLabel'),
         variant: 'primary',
         eventId: null,
         confirmationMessage: null,
         preventDoubleSubmit: false,
       }
     case 'alert':
-      return { kind, tone: 'info', message: 'メッセージ' }
+      return { kind, tone: 'info', message: translate(locale, 'defaults.alertMessage') }
     case 'modal':
-      return { kind, title: 'モーダル' }
+      return { kind, title: translate(locale, 'defaults.modalTitle') }
   }
 }
 
@@ -94,6 +96,7 @@ export function createAddComponentCommand(
   screenId: EntityId,
   parentId: EntityId,
   kind: PaletteItem['kind'],
+  locale: Locale,
   position?: number,
 ): AddComponentCommand {
   return {
@@ -102,8 +105,7 @@ export function createAddComponentCommand(
     screenId,
     parentId,
     kind,
-    name: kind,
-    config: createDefaultComponentConfig(kind, doc),
+    config: createDefaultComponentConfig(kind, doc, locale),
     position,
   }
 }
