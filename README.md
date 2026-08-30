@@ -1,41 +1,143 @@
-# Screen Spec Studio — WebMCP Challenge
+# Screen Blueprint Studio
 
-WebMCP Challenge向けに、ワイヤーフレームと画面仕様を同じ構造化モデルから作成する共同編集Webアプリを開発するリポジトリです。
+> **Turn semantic screen blueprints into a shared workspace where humans and AI refine product behavior through reviewable WebMCP change sets.**
 
-再利用可能なUIコンポーネントをCMSのように組み合わせ、画面項目、状態、イベント、API、権限、テスト観点を一体的に管理します。人間とAIエージェントは、同じキャンバス、選択、未保存ドラフト、変更案をWebMCP経由で共有します。
+Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合わせて画面を構築し、同じ構造化モデルからワイヤーフレーム、画面状態、イベント、API連携を管理するWebアプリです。npm packageおよび想定リポジトリ名は`screen-blueprint-studio`です。
 
-- 決定したプロダクト方針と設計引き継ぎ: [docs/PRODUCT_DIRECTION.md](./docs/PRODUCT_DIRECTION.md)
-- Challenge概要、公式評価基準、提出要件: [docs/HACKATHON_BRIEF.md](./docs/HACKATHON_BRIEF.md)
+自由描画型のデザインツールではありません。画面をコンポーネントツリーとして定義することで、表示と仕様の乖離を抑えます。人間は通常のUIで直接編集でき、AIエージェントはWebMCPを通じて現在の画面や選択状態を読み取り、安全な変更案を作成できます。
 
-## 起動
+## 主な機能
 
-WebMCPはブラウザ上のページとして動かすため、ローカルHTTPサーバーで起動します。
+- 複数画面とentry screenの管理
+- Page、Section、Stack、Columns、入力、ボタン、Alert、Modalなどの構造化コンポーネント
+- コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
+- default、loading、success、error、custom状態と状態別override
+- click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
+- API operationと画面項目、成功／失敗状態の関連付け
+- 人間による通常編集、確定操作のUndo
+- `localStorage`への保存、破損データのrecovery UI、保存不能時のJSON退避
+- runtime invariant validationとprototype-chain ID対策
+- 10個の型付きWebMCPツール
 
-```bash
-cd /Users/moritaatsuya/Desktop/work/webmcp-challenge
-python3 -m http.server 4173
+## 人間とAIの共同編集
+
+AIによる書き込みは確定モデルへ直接反映されません。まずactive change setを開始し、その中へoperationを追加します。変更は同じキャンバスへpreviewされ、人間が内容を確認して承認または却下します。
+
+```text
+人間が画面やコンポーネントを選択
+  ↓
+AIがWebMCPで現在のページ状態を取得
+  ↓
+AIがchange setへ型付きoperationを追加
+  ↓
+同じUIでpreview
+  ↓
+人間が修正・承認・却下
 ```
 
-Chromeで <http://localhost:4173> を開いてください。Chrome側で次を有効にして再起動しておきます。
+確定済みの`document`とpreview用の`effectiveDocument`は分離されています。無効なoperation、古いrevision、壊れた参照、型不一致は共通のdomain validationで拒否されます。
+
+## 技術スタック
+
+- React 19
+- TypeScript（strict mode）
+- Vite 6
+- Zustand 5
+- nanoid
+- CSS Modules
+- WebMCP `document.modelContext`
+- ブラウザ`localStorage`
+
+## ローカル実行
+
+Node.jsとnpmが利用できる環境で、リポジトリのルートから実行します。
+
+```bash
+npm install
+npm run dev
+```
+
+Viteが表示したURL（通常は <http://localhost:5173>）をChromeで開きます。
+
+その他のコマンド:
+
+```bash
+# TypeScript buildとproduction bundle
+npm run build
+
+# domain、persistence、store、WebMCPの回帰テスト
+npm run test:regression
+
+# build済みproduction bundleのローカルpreview
+npm run preview
+```
+
+`npm run preview`を使う場合は、先に`npm run build`を実行してください。
+
+## WebMCPをChromeで確認する
+
+WebMCP testing対応Chromeで次のflagを有効にし、ブラウザを再起動します。
 
 ```text
 chrome://flags/#enable-webmcp-testing
 ```
 
-Chrome DevToolsの `Application → WebMCP` で、次の2つのツールが表示されます。
+アプリを開き、Chrome DevToolsの`Application`内にあるWebMCP表示から登録ツールを確認します。WebMCPは実験的APIのため、ChromeのバージョンによってDevTools上の表示名や場所が変わる場合があります。
 
-- `getNotes`（読み取り）
-- `addNote`（書き込み）
+`document.modelContext`が利用できないブラウザでも登録処理は安全にskipされ、**人間向けUIはそのまま利用できます**。
 
-## 構成
+## WebMCPツール
 
-- `index.html`: 人間向けのメモ画面
-- `app.js`: 画面ロジックとWebMCPツール登録
-- `styles.css`: 最小限のスタイル
+現在は次の10ツールを登録します。
 
-## 現在地
+| 分類 | ツール | 概要 |
+| --- | --- | --- |
+| Read | `get_current_screen_context` | 現在の画面、状態、選択、revision、change set contextを取得 |
+| Read | `get_component` | ID指定または選択中のコンポーネント詳細を取得 |
+| Read | `get_screen_diagnostics` | 画面の軽量な構造診断を取得 |
+| Read | `get_pending_change_set` | active change setとoperationを取得 |
+| Write | `begin_change_set` | review対象のchange setを開始 |
+| Write | `change_screen_structure` | 画面の追加、更新、削除、entry変更を提案 |
+| Write | `change_component_structure` | コンポーネントの追加、移動、削除を提案 |
+| Write | `update_component_spec` | コンポーネント名、共通仕様、種類別設定を提案 |
+| Write | `upsert_screen_state` | 非default状態の作成、更新、削除を提案 |
+| Write | `connect_behavior` | イベント／API operationの接続または削除を提案 |
 
-- プロダクト方針はScreen Spec Studioで決定済み
-- 現在のメモアプリはWebMCP接続確認用スターターであり、今後置き換える
-- 次はデータモデル、コンポーネント、画面構成、WebMCPツールを設計する
-- `screen-spec/` は参考調査用であり、提出アプリは原則として独立実装する
+Readツールには`readOnlyHint`を付与しています。Writeツールはactive change set ID、確定revision、change set versionを検証し、成功したoperationだけをpreviewへ追加します。承認と却下は人間向けUIに限定しています。
+
+## プロジェクト構成
+
+```text
+.
+├── docs/
+│   ├── HACKATHON_BRIEF.md
+│   ├── MVP_TECHNICAL_DESIGN.md
+│   └── PRODUCT_DIRECTION.md
+├── scripts/
+│   └── regression.mjs
+├── src/
+│   ├── app/             # Zustand store、app shell、recovery/error UI
+│   ├── domain/          # model、commands、invariants、runtime validation
+│   ├── features/        # canvas、palette、screen list、tree、inspector
+│   ├── persistence/     # localStorage保存・復旧
+│   ├── sample/          # 初期サンプルproject
+│   ├── styles/
+│   └── webmcp/          # tool definitionsとJSON Schema
+├── index.html
+├── package.json
+└── vite.config.ts
+```
+
+## 設計ドキュメント
+
+- [プロダクト方針](./docs/PRODUCT_DIRECTION.md)
+- [MVP技術設計](./docs/MVP_TECHNICAL_DESIGN.md)
+- [WebMCP Challenge概要・評価基準](./docs/HACKATHON_BRIEF.md)
+
+## Acknowledgements
+
+画面仕様を構造化し、状態・イベント・APIとの関係を扱う考え方について、[itwillrain/screen-spec](https://github.com/itwillrain/screen-spec)を参考にしました。本アプリはその着想を踏まえつつ、独自のデータモデル、UI、WebMCP共同編集フローとして新規実装しています。screen-specのソースコードやアセットは流用していません。
+
+## License
+
+このプロジェクトは[MIT License](./LICENSE)で公開します。

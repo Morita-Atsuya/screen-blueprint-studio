@@ -49,7 +49,7 @@ WebMCPは、現在開いているページの次のような状態と結びつ�
 - 未保存の編集内容
 - 現在の選択範囲、フィルター、表示期間、ズーム位置
 - ドラッグ中または仮配置中の要素
-- 人間がロック、承認、却下した項目
+- 人間が承認、却下した項目
 - ページ内だけに読み込まれたローカルデータ
 - エージェントが追加し、人間がこれから確認する変更
 
@@ -115,7 +115,7 @@ WebMCPは通常のMCPやComputer Useの置き換えではなく、現在のWeb U
   ↓
 提案や変更が同じUIにレビュー可能な状態で現れる
   ↓
-人間が承認、却下、修正、ロックする
+人間が承認、却下、修正する
   ↓
 エージェントがその判断を使って次の処理を行う
 ```
@@ -132,17 +132,17 @@ WebMCPは通常のMCPやComputer Useの置き換えではなく、現在のWeb U
 
 ## 5. 採用するプロダクト
 
-企画選定の結果、**Screen Spec Studio**を作成する。
+企画選定の結果、**Screen Blueprint Studio**を作成する。
 
 再利用可能なUIコンポーネントをCMSのように組み合わせてワイヤーフレームを構築し、同じ構造化モデルから画面項目、状態、イベント、API、権限、テスト観点を管理・生成するWebアプリである。
 
-自由描画型のワイヤーフレームツールではない。ワイヤーフレームは独立した画像ではなく、画面仕様モデルの視覚表現とする。人間とエージェントは同じキャンバス、選択中の要素、未保存ドラフト、診断結果、変更案を共有し、提案、修正、承認、却下を交互に行う。
+自由描画型のワイヤーフレームツールではない。ワイヤーフレームは独立した画像ではなく、画面仕様モデルの視覚表現とする。人間とエージェントは同じキャンバス、選択中の要素、未保存ドラフト、変更案を共有し、提案、修正、承認、却下を交互に行う。
 
 この案を採用する主な理由:
 
 - AIなしでも人間が画面を構築し、仕様を確認・編集できる
 - WFと仕様書を別々に更新することによる乖離を減らせる
-- 現在の選択、未保存仕様、却下履歴など、WebMCPと結びつくページ固有状態がある
+- 現在の選択、未保存仕様、active change setなど、WebMCPと結びつくページ固有状態がある
 - 人間の視覚判断とエージェントの網羅性・一括更新を明確に分担できる
 - 仕様漏れ、状態、API、権限、テストまで扱うため、汎用AIワイヤーフレームとの差別化ができる
 
@@ -179,7 +179,7 @@ WebMCPは通常のMCPやComputer Useの置き換えではなく、現在のWeb U
 - 人間向けUIと同じ状態管理・検証ロジックを再利用する
 - ツール実行後、UIが即座に更新される
 - 大きな一括更新を、レビュー前の未確定状態として扱える
-- 人間のロック、却下、確定状態を上書きしない
+- 承認前の変更案と確定状態を分離する
 - DevToolsでツール一覧、Schema、実行履歴、結果を確認できる
 
 ### 通常MCP / Computer Useとの差を示す
@@ -230,7 +230,7 @@ WebMCPは通常のMCPやComputer Useの置き換えではなく、現在のWeb U
 | 0:00〜0:20 | 誰の何の問題を解決するか | Potential Impact |
 | 0:20〜0:45 | 人間がアプリを直接操作する | Execution |
 | 0:45〜1:20 | エージェントが複数のWebMCPツールを実行する | WebMCP Leverage |
-| 1:20〜1:50 | 変更が同じUIに現れ、人間が一部を修正・ロックする | Human-agent collaboration |
+| 1:20〜1:50 | 変更が同じUIに現れ、人間が一部を修正する | Human-agent collaboration |
 | 1:50〜2:20 | エージェントが人間の修正を使って再処理する | WebMCP Leverage |
 | 2:20〜2:40 | 最終成果と改善量を示す | Potential Impact / Execution |
 | 2:40〜2:55 | DevToolsまたはコードでWebMCP実装を短く示す | WebMCP Leverage |
@@ -252,13 +252,18 @@ WebMCPは通常のMCPやComputer Useの置き換えではなく、現在のWeb U
 
 ## 11. 現在のリポジトリ状態
 
-現時点では、次の最小スターターが実装されている。
+Screen Blueprint StudioのReact MVPを実装済みで、現在は提出品質を整えるフェーズにある。
 
-- 人間が画面からメモを追加できる
-- WebMCPの `getNotes` と `addNote` で同じ状態を読み書きできる
-- Chrome DevToolsの `Application → WebMCP` からツールを確認できる
+- React、TypeScript、Vite、Zustandによる3ペインの画面仕様エディタ
+- 複数screen、semantic component tree、state、event、API operationの構造化モデル
+- 確定documentとpreview用effective documentを分離したreviewable change set
+- 人間だけが行う承認・却下、確定transactionのUndo
+- read 4件、write 6件の計10 WebMCP tools
+- `localStorage`永続化、破損データrecovery、保存不能時のJSON退避
+- exact runtime validation、参照整合性、prototype-chain ID対策
+- buildと21グループの回帰テストを通過
 
-これはWebMCPの接続確認用であり、Challengeへ提出できる完成プロダクトではない。企画はScreen Spec Studioで決定済みである。次に画面仕様のデータモデル、コンポーネント、画面構成、WebMCPツール、デモデータを設計し、現在のスターターを置き換える。
+残作業は公開リポジトリとlive URLの準備、Chrome WebMCP testing環境での最終デモ確認、提出文と動画の作成である。
 
 ## 12. 参照資料
 

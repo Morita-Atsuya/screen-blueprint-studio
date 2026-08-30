@@ -1,0 +1,9 @@
+.root { display: flex; flex-direction: column; gap: 6px; }
+.empty { color: var(--text-faint); font-size: 0.82rem; }
+.section { margin-bottom: 8px; }
+.label { display: block; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
+.input { width: 100%; }
+.textarea { width: 100%; resize: vertical; }
+.row { display: flex; gap: 16px; }
+.checkLabel { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.divider { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }

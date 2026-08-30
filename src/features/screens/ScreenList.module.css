@@ -1,0 +1,47 @@
+.root { display: flex; flex-direction: column; gap: 4px; }
+
+.actions { padding: 4px 0 8px; }
+
+.addBtn {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.addBtn:hover { background: var(--bg-hover); color: var(--text); }
+
+.list { display: flex; flex-direction: column; gap: 2px; }
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.item:hover { background: var(--bg-hover); color: var(--text); }
+
+.active { background: var(--bg-selected); color: var(--text); border-color: var(--border); }
+
+.name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.entry {
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--agent-change);
+  color: var(--accent);
+  border: 1px solid var(--agent-change-border);
+  margin-left: 6px;
+}

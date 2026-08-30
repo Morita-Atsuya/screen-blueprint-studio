@@ -1,0 +1,48 @@
+.root { display: flex; flex-direction: column; gap: 1px; padding: 0; }
+.empty { color: var(--text-faint); font-size: 0.82rem; }
+.children { list-style: none; padding: 0; margin: 0; }
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 30px;
+}
+.node:hover { background: var(--bg-hover); }
+.selected { background: var(--bg-selected); }
+
+.kind {
+  font-size: 0.72rem;
+  color: var(--accent);
+  background: var(--agent-change);
+  border: 1px solid var(--agent-change-border);
+  border-radius: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.name {
+  flex: 1;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeActions { display: none; gap: 2px; }
+.node:hover .nodeActions { display: flex; }
+
+.iconBtn {
+  padding: 2px 5px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+}
+.iconBtn:hover { background: var(--bg-surface); color: var(--text); }
+.danger:hover { color: var(--danger); border-color: var(--danger); }

@@ -1,0 +1,15 @@
+.root { display: flex; flex-direction: column; gap: 4px; }
+.hint { font-size: 0.75rem; color: var(--text-faint); margin-bottom: 8px; }
+.list { display: flex; flex-direction: column; gap: 3px; }
+.item {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  font-size: 0.83rem;
+}
+.item:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.item:disabled { opacity: 0.4; cursor: default; }

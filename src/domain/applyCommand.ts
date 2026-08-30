@@ -1,0 +1,463 @@
+import type { ProjectDocument, EntityId } from './model'
+import { CONTAINER_KINDS } from './model'
+import type { DomainCommand } from './commands'
+import { DomainError } from './errors'
+import { validateInvariants } from './invariants'
+import {
+  deleteOwnEntity,
+  getOwnEntity,
+  hasOwnEntity,
+  setOwnEntity,
+} from './entityMap'
+
+// Deep clone a document (JSON-safe)
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T
+}
+
+export function nextRevision(revision: number): number {
+  if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Revision cannot be incremented safely')
+  }
+  return revision + 1
+}
+
+// Remove component and all its descendants; returns IDs removed
+function removeSubtree(componentId: EntityId, doc: ProjectDocument): EntityId[] {
+  const removed: EntityId[] = []
+  function rec(id: EntityId) {
+    const comp = getOwnEntity(doc.components, id)
+    if (!comp) return
+    for (const childId of [...comp.childIds]) rec(childId)
+    removed.push(id)
+    deleteOwnEntity(doc.components, id)
+  }
+  rec(componentId)
+  return removed
+}
+
+// Clean up references to removed component IDs
+function cleanupComponentRefs(removedIds: Set<EntityId>, doc: ProjectDocument): void {
+  // 1. Remove component overrides in states
+  for (const state of Object.values(doc.screenStates)) {
+    for (const id of removedIds) {
+      deleteOwnEntity(state.componentOverrides, id)
+    }
+  }
+
+  // 2. Remove/fix events that reference removed components
+  for (const [eventId, event] of Object.entries(doc.events)) {
+    if (removedIds.has(event.trigger.componentId)) {
+      deleteOwnEntity(doc.events, eventId)
+      const screen = getOwnEntity(doc.screens, event.screenId)
+      if (screen) {
+        screen.eventIds = screen.eventIds.filter(id => id !== eventId)
+      }
+      for (const component of Object.values(doc.components)) {
+        if (component.config.kind === 'button' && component.config.eventId === eventId) {
+          component.config.eventId = null
+        }
+      }
+    } else {
+      event.actions = event.actions.filter(action => {
+        if (action.type === 'showAlert' && removedIds.has(action.componentId)) return false
+        return true
+      })
+    }
+  }
+
+  // 3. Clean up API operation request bindings
+  for (const apiOp of Object.values(doc.apiOperations)) {
+    apiOp.requestBindings = apiOp.requestBindings.filter(b => !removedIds.has(b.componentId))
+  }
+
+  // 4. Clear component-level request bindings to removed components.
+  for (const component of Object.values(doc.components)) {
+    if (
+      (component.config.kind === 'textInput' || component.config.kind === 'select') &&
+      component.config.requestBinding !== null &&
+      removedIds.has(component.config.requestBinding.componentId)
+    ) {
+      component.config.requestBinding = null
+    }
+  }
+}
+
+// Clean up API operations belonging to a screen, plus callApi event actions
+function cleanupScreenApiOps(screenId: EntityId, doc: ProjectDocument): void {
+  const opsToRemove = Object.keys(doc.apiOperations).filter(
+    id => getOwnEntity(doc.apiOperations, id)?.screenId === screenId
+  )
+  const opIdSet = new Set(opsToRemove)
+
+  for (const opId of opsToRemove) {
+    deleteOwnEntity(doc.apiOperations, opId)
+  }
+
+  // Remove callApi actions that reference now-deleted operations
+  for (const [eventId, event] of Object.entries(doc.events)) {
+    event.actions = event.actions.filter(action => {
+      if (action.type === 'callApi' && opIdSet.has(action.apiOperationId)) return false
+      return true
+    })
+    // If event has no actions left and would be invalid, remove it entirely is NOT done here
+    // (events with no actions are still valid in our model)
+    setOwnEntity(doc.events, eventId, event)
+  }
+}
+
+// Nullify success/error state references on API ops when a state is removed
+function cleanupStateRefsInApiOps(stateId: EntityId, doc: ProjectDocument): void {
+  for (const apiOp of Object.values(doc.apiOperations)) {
+    if (apiOp.successStateId === stateId) apiOp.successStateId = null
+    if (apiOp.errorStateId === stateId) apiOp.errorStateId = null
+  }
+}
+
+// Nullify setState event actions that reference a removed state
+function cleanupStateRefsInEvents(stateId: EntityId, doc: ProjectDocument): void {
+  for (const event of Object.values(doc.events)) {
+    event.actions = event.actions.filter(action => {
+      if (action.type === 'setState' && action.stateId === stateId) return false
+      return true
+    })
+  }
+}
+
+export function applyCommandWithoutRevision(doc: ProjectDocument, command: DomainCommand): ProjectDocument {
+  const next = clone(doc)
+
+  switch (command.type) {
+    // ──────────── Screen commands ────────────
+    case 'addScreen': {
+      const { screenId, rootComponentId, defaultStateId, name, route, makeEntry } = command
+      if (
+        hasOwnEntity(next.screens, screenId) ||
+        hasOwnEntity(next.components, rootComponentId) ||
+        hasOwnEntity(next.screenStates, defaultStateId)
+      ) {
+        throw new DomainError('INVARIANT_VIOLATION', 'New screen entity IDs must be unique')
+      }
+      setOwnEntity(next.screens, screenId, {
+        id: screenId,
+        name,
+        route,
+        rootComponentId,
+        defaultStateId,
+        stateIds: [defaultStateId],
+        eventIds: [],
+      })
+      setOwnEntity(next.components, rootComponentId, {
+        id: rootComponentId,
+        screenId,
+        parentId: null,
+        childIds: [],
+        kind: 'page',
+        name: `${name} Root`,
+        common: { description: '', visible: true, enabled: true },
+        config: { kind: 'page', title: name },
+      })
+      setOwnEntity(next.screenStates, defaultStateId, {
+        id: defaultStateId,
+        screenId,
+        name: 'Default',
+        kind: 'default',
+        description: '',
+        componentOverrides: {},
+      })
+      next.project.screenIds.push(screenId)
+      if (makeEntry) next.project.entryScreenId = screenId
+      break
+    }
+
+    case 'updateScreen': {
+      const screen = getOwnEntity(next.screens, command.screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
+      if (command.name !== undefined) screen.name = command.name
+      if (command.route !== undefined) screen.route = command.route
+      break
+    }
+
+    case 'removeScreen': {
+      const { screenId, nextEntryScreenId } = command
+      const screen = getOwnEntity(next.screens, screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+      if (next.project.screenIds.length <= 1) throw new DomainError('CANNOT_REMOVE_LAST_SCREEN', 'Cannot remove the last screen')
+
+      // Check navigate references from other screens
+      for (const event of Object.values(next.events)) {
+        if (event.screenId === screenId) continue
+        for (const action of event.actions) {
+          if (action.type === 'navigate' && action.destinationScreenId === screenId) {
+            throw new DomainError('SCREEN_REFERENCED_BY_NAVIGATE', `Screen ${screenId} is referenced by a navigate action`)
+          }
+        }
+      }
+
+      // Handle entry screen reassignment
+      if (next.project.entryScreenId === screenId) {
+        if (nextEntryScreenId) {
+          next.project.entryScreenId = nextEntryScreenId
+        } else {
+          const remaining = next.project.screenIds.filter(id => id !== screenId)
+          next.project.entryScreenId = remaining[0]!
+        }
+      }
+
+      // Clean references before removing entities so no dangling IDs remain.
+      const screenComps = Object.values(next.components).filter(c => c.screenId === screenId)
+      const removedComponentIds = new Set(screenComps.map(c => c.id))
+      cleanupComponentRefs(removedComponentIds, next)
+      const removedStateIds = [...screen.stateIds]
+      for (const stateId of removedStateIds) {
+        cleanupStateRefsInApiOps(stateId, next)
+        cleanupStateRefsInEvents(stateId, next)
+      }
+      cleanupScreenApiOps(screenId, next)
+
+      // Remove all components in this screen
+      for (const id of removedComponentIds) deleteOwnEntity(next.components, id)
+
+      // Remove states
+      for (const stateId of removedStateIds) deleteOwnEntity(next.screenStates, stateId)
+      // Remove events
+      for (const eventId of screen.eventIds) deleteOwnEntity(next.events, eventId)
+      // Remove screen itself
+      deleteOwnEntity(next.screens, screenId)
+      next.project.screenIds = next.project.screenIds.filter(id => id !== screenId)
+      break
+    }
+
+    case 'setEntryScreen': {
+      if (!hasOwnEntity(next.screens, command.screenId)) {
+        throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
+      }
+      next.project.entryScreenId = command.screenId
+      break
+    }
+
+    // ──────────── Component commands ────────────
+    case 'addComponent': {
+      const { componentId, screenId, parentId, kind, name, config, position } = command
+      const screen = getOwnEntity(next.screens, screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+      const parent = getOwnEntity(next.components, parentId)
+      if (!parent) throw new DomainError('NOT_FOUND', `Parent component ${parentId} not found`)
+      if (parent.screenId !== screen.id) {
+        throw new DomainError('INVALID_PARENT', `Parent component ${parentId} belongs to a different screen`)
+      }
+      if (hasOwnEntity(next.components, componentId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `Component ${componentId} already exists`)
+      }
+      if (!CONTAINER_KINDS.includes(parent.kind)) {
+        throw new DomainError('INVALID_PARENT', `${parent.kind} cannot contain children`)
+      }
+      setOwnEntity(next.components, componentId, {
+        id: componentId,
+        screenId,
+        parentId,
+        childIds: [],
+        kind,
+        name,
+        common: { description: '', visible: true, enabled: true },
+        config,
+      })
+      if (position !== undefined) {
+        parent.childIds.splice(position, 0, componentId)
+      } else {
+        parent.childIds.push(componentId)
+      }
+      break
+    }
+
+    case 'moveComponent': {
+      const { componentId, newParentId, position } = command
+      const comp = getOwnEntity(next.components, componentId)
+      if (!comp) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
+      if (comp.parentId === null) throw new DomainError('INVARIANT_VIOLATION', 'Cannot move root component')
+
+      const newParent = getOwnEntity(next.components, newParentId)
+      if (!newParent) throw new DomainError('NOT_FOUND', `New parent ${newParentId} not found`)
+      if (!CONTAINER_KINDS.includes(newParent.kind)) {
+        throw new DomainError('INVALID_PARENT', `${newParent.kind} cannot contain children`)
+      }
+
+      const oldParent = getOwnEntity(next.components, comp.parentId)
+      if (oldParent) {
+        oldParent.childIds = oldParent.childIds.filter(id => id !== componentId)
+      }
+
+      comp.parentId = newParentId
+      if (position !== undefined) {
+        newParent.childIds.splice(position, 0, componentId)
+      } else {
+        newParent.childIds.push(componentId)
+      }
+      break
+    }
+
+    case 'removeComponent': {
+      const comp = getOwnEntity(next.components, command.componentId)
+      if (!comp) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
+      if (comp.parentId === null) throw new DomainError('CANNOT_REMOVE_ROOT', 'Cannot remove root component')
+
+      const parent = getOwnEntity(next.components, comp.parentId)
+      if (parent) {
+        parent.childIds = parent.childIds.filter(id => id !== command.componentId)
+      }
+
+      const removed = removeSubtree(command.componentId, next)
+      cleanupComponentRefs(new Set(removed), next)
+      break
+    }
+
+    case 'updateComponentSpec': {
+      const comp = getOwnEntity(next.components, command.componentId)
+      if (!comp) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
+      const { patch } = command
+      if (patch.name !== undefined) comp.name = patch.name
+      if (patch.common) comp.common = { ...comp.common, ...patch.common }
+      if (patch.config) comp.config = { ...comp.config, ...patch.config } as typeof comp.config
+      break
+    }
+
+    // ──────────── State commands ────────────
+    case 'createScreenState': {
+      const { stateId, screenId, name, kind, description, overrides } = command
+      const screen = getOwnEntity(next.screens, screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+      if (hasOwnEntity(next.screenStates, stateId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `State ${stateId} already exists`)
+      }
+      setOwnEntity(next.screenStates, stateId, {
+        id: stateId,
+        screenId,
+        name,
+        kind,
+        description: description ?? '',
+        componentOverrides: overrides ?? {},
+      })
+      screen.stateIds.push(stateId)
+      break
+    }
+
+    case 'updateScreenState': {
+      const state = getOwnEntity(next.screenStates, command.stateId)
+      if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
+      if (state.kind === 'default' && command.overrides !== undefined) {
+        throw new DomainError('INVARIANT_VIOLATION', 'Default state overrides cannot be changed')
+      }
+      if (command.name !== undefined) state.name = command.name
+      if (command.description !== undefined) state.description = command.description
+      if (command.overrides !== undefined) state.componentOverrides = command.overrides
+      break
+    }
+
+    case 'removeScreenState': {
+      const state = getOwnEntity(next.screenStates, command.stateId)
+      if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
+      if (state.kind === 'default') throw new DomainError('INVARIANT_VIOLATION', 'Cannot remove the default state')
+      const screen = getOwnEntity(next.screens, state.screenId)
+      if (screen) {
+        screen.stateIds = screen.stateIds.filter(id => id !== command.stateId)
+      }
+      // Cleanup API op success/error state refs
+      cleanupStateRefsInApiOps(command.stateId, next)
+      // Cleanup setState event actions
+      cleanupStateRefsInEvents(command.stateId, next)
+      deleteOwnEntity(next.screenStates, command.stateId)
+      break
+    }
+
+    // ──────────── Event commands ────────────
+    case 'connectEvent': {
+      const { eventId, screenId, name, trigger, actions } = command
+      const screen = getOwnEntity(next.screens, screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+      if (hasOwnEntity(next.events, eventId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `Event ${eventId} already exists`)
+      }
+      setOwnEntity(next.events, eventId, { id: eventId, screenId, name, trigger, actions })
+      if (!screen.eventIds.includes(eventId)) screen.eventIds.push(eventId)
+      break
+    }
+
+    case 'removeEvent': {
+      const event = getOwnEntity(next.events, command.eventId)
+      if (!event) throw new DomainError('NOT_FOUND', `Event ${command.eventId} not found`)
+      const screen = getOwnEntity(next.screens, event.screenId)
+      if (screen) screen.eventIds = screen.eventIds.filter(id => id !== command.eventId)
+      for (const component of Object.values(next.components)) {
+        if (component.config.kind === 'button' && component.config.eventId === command.eventId) {
+          component.config.eventId = null
+        }
+      }
+      deleteOwnEntity(next.events, command.eventId)
+      break
+    }
+
+    // ──────────── API commands ────────────
+    case 'bindApiOperation': {
+      const { operationId, screenId, name, method, path, requestBindings, successStateId, errorStateId } = command
+      if (!hasOwnEntity(next.screens, screenId)) {
+        throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+      }
+      if (hasOwnEntity(next.apiOperations, operationId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `API operation ${operationId} already exists`)
+      }
+      setOwnEntity(next.apiOperations, operationId, {
+        id: operationId,
+        screenId,
+        name,
+        method,
+        path,
+        requestBindings: requestBindings ?? [],
+        successStateId: successStateId ?? null,
+        errorStateId: errorStateId ?? null,
+      })
+      break
+    }
+
+    case 'removeApiOperation': {
+      const op = getOwnEntity(next.apiOperations, command.operationId)
+      if (!op) throw new DomainError('NOT_FOUND', `API operation ${command.operationId} not found`)
+      // Remove callApi references to this operation in events
+      for (const event of Object.values(next.events)) {
+        event.actions = event.actions.filter(action => {
+          if (action.type === 'callApi' && action.apiOperationId === command.operationId) return false
+          return true
+        })
+      }
+      deleteOwnEntity(next.apiOperations, command.operationId)
+      break
+    }
+
+    default: {
+      const runtimeCommand = command as { type?: unknown }
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Unsupported command type: ${String(runtimeCommand.type)}`,
+      )
+    }
+  }
+
+  validateInvariants(next)
+  return next
+}
+
+export function applyCommand(doc: ProjectDocument, command: DomainCommand): ProjectDocument {
+  const revision = nextRevision(doc.revision)
+  const next = applyCommandWithoutRevision(doc, command)
+  next.revision = revision
+  return next
+}
+
+export function applyTransaction(doc: ProjectDocument, commands: DomainCommand[]): ProjectDocument {
+  const revision = nextRevision(doc.revision)
+  let current = clone(doc)
+  for (const command of commands) {
+    current = applyCommandWithoutRevision(current, command)
+  }
+  current.revision = revision
+  return current
+}
