@@ -19,7 +19,10 @@
   cursor: pointer;
   min-height: 30px;
 }
-.node:hover { background: var(--bg-hover); }
+.node:hover,
+.node:focus-within {
+  background: var(--bg-hover);
+}
 .selected { background: var(--bg-selected); }
 
 .kind {
@@ -34,6 +37,7 @@
 
 .name {
   flex: 1;
+  min-width: 0;
   font-size: 0.83rem;
   color: var(--text-muted);
   overflow: hidden;
@@ -41,8 +45,20 @@
   white-space: nowrap;
 }
 
-.nodeActions { display: none; gap: 2px; }
-.node:hover .nodeActions { display: flex; }
+.nodeActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.node:hover .nodeActions,
+.node:focus-within .nodeActions {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 .dragHandle {
   padding: 0 2px;
