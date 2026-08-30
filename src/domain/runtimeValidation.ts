@@ -99,7 +99,7 @@ export function validateScreen(value: unknown, path = 'screen'): asserts value i
   const screen = record(value, path)
   exactKeys(
     screen,
-    ['id', 'name', 'route', 'rootComponentId', 'defaultStateId', 'stateIds', 'eventIds'],
+    ['id', 'name', 'route', 'rootComponentId', 'modalComponentIds', 'defaultStateId', 'stateIds', 'eventIds'],
     [],
     path,
   )
@@ -107,6 +107,7 @@ export function validateScreen(value: unknown, path = 'screen'): asserts value i
   string(screen.name, `${path}.name`)
   string(screen.route, `${path}.route`)
   entityId(screen.rootComponentId, `${path}.rootComponentId`)
+  entityIdArray(screen.modalComponentIds, `${path}.modalComponentIds`)
   entityId(screen.defaultStateId, `${path}.defaultStateId`)
   entityIdArray(screen.stateIds, `${path}.stateIds`)
   entityIdArray(screen.eventIds, `${path}.eventIds`)

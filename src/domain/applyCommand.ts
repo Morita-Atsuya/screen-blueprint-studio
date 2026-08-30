@@ -163,6 +163,7 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         name,
         route,
         rootComponentId,
+        modalComponentIds: [],
         defaultStateId,
         stateIds: [defaultStateId],
         eventIds: [],
@@ -247,23 +248,44 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       const { componentId, screenId, parentId, kind, config, position } = command
       const screen = getOwnEntity(next.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
-      const parent = getOwnEntity(next.components, parentId)
-      if (!parent) throw new DomainError('NOT_FOUND', `Parent component ${parentId} not found`)
-      if (parent.screenId !== screen.id) {
-        throw new DomainError('INVALID_PARENT', `Parent component ${parentId} belongs to a different screen`)
-      }
       if (hasOwnEntity(next.components, componentId)) {
         throw new DomainError('INVARIANT_VIOLATION', `Component ${componentId} already exists`)
       }
-      if (!CONTAINER_KINDS.includes(parent.kind)) {
-        throw new DomainError('INVALID_PARENT', `${parent.kind} cannot contain children`)
+
+      if (kind === 'page') {
+        throw new DomainError('INVALID_PARENT', 'Page components can only be created with a screen')
       }
-      if (
-        position !== undefined &&
-        (!Number.isInteger(position) || position < 0 || position > parent.childIds.length)
-      ) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Component position is out of range')
+
+      if (kind === 'modal') {
+        if (parentId !== null) {
+          throw new DomainError('INVALID_PARENT', 'Modal components must be independent screen roots')
+        }
+        if (
+          position !== undefined &&
+          (!Number.isInteger(position) || position < 0 || position > screen.modalComponentIds.length)
+        ) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Modal position is out of range')
+        }
+      } else {
+        if (parentId === null) {
+          throw new DomainError('INVALID_PARENT', 'Non-modal components require a container parent')
+        }
+        const parent = getOwnEntity(next.components, parentId)
+        if (!parent) throw new DomainError('NOT_FOUND', `Parent component ${parentId} not found`)
+        if (parent.screenId !== screen.id) {
+          throw new DomainError('INVALID_PARENT', `Parent component ${parentId} belongs to a different screen`)
+        }
+        if (!CONTAINER_KINDS.includes(parent.kind)) {
+          throw new DomainError('INVALID_PARENT', `${parent.kind} cannot contain children`)
+        }
+        if (
+          position !== undefined &&
+          (!Number.isInteger(position) || position < 0 || position > parent.childIds.length)
+        ) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Component position is out of range')
+        }
       }
+
       setOwnEntity(next.components, componentId, {
         id: componentId,
         screenId,
@@ -273,15 +295,33 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         common: { description: '', visible: true, enabled: true },
         config,
       })
-      if (position !== undefined) {
-        parent.childIds.splice(position, 0, componentId)
+      if (kind === 'modal') {
+        if (position !== undefined) {
+          screen.modalComponentIds.splice(position, 0, componentId)
+        } else {
+          screen.modalComponentIds.push(componentId)
+        }
       } else {
-        parent.childIds.push(componentId)
+        if (parentId === null) {
+          throw new DomainError('INVALID_PARENT', 'Non-modal components require a container parent')
+        }
+        const parent = getOwnEntity(next.components, parentId)
+        if (!parent) throw new DomainError('INVALID_PARENT', 'Component parent is unavailable')
+        if (position !== undefined) {
+          parent.childIds.splice(position, 0, componentId)
+        } else {
+          parent.childIds.push(componentId)
+        }
       }
       break
     }
 
     case 'moveComponent': {
+      requireExactKeys(
+        command,
+        ['type', 'componentId', 'newParentId', 'position'],
+        'moveComponent command',
+      )
       const { componentId, newParentId, position } = command
       const comp = getOwnEntity(next.components, componentId)
       if (!comp) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
@@ -335,13 +375,25 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
     }
 
     case 'removeComponent': {
+      requireExactKeys(command, ['type', 'componentId'], 'removeComponent command')
       const comp = getOwnEntity(next.components, command.componentId)
       if (!comp) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
-      if (comp.parentId === null) throw new DomainError('CANNOT_REMOVE_ROOT', 'Cannot remove root component')
+      const screen = getOwnEntity(next.screens, comp.screenId)
+      if (!screen) throw new DomainError('INVARIANT_VIOLATION', 'Component owner screen not found')
+      if (comp.id === screen.rootComponentId) {
+        throw new DomainError('CANNOT_REMOVE_ROOT', 'Cannot remove the page root component')
+      }
 
-      const parent = getOwnEntity(next.components, comp.parentId)
-      if (parent) {
-        parent.childIds = parent.childIds.filter(id => id !== command.componentId)
+      if (comp.parentId === null) {
+        if (comp.kind !== 'modal' || !screen.modalComponentIds.includes(comp.id)) {
+          throw new DomainError('INVARIANT_VIOLATION', 'Only listed modal roots can be removed')
+        }
+        screen.modalComponentIds = screen.modalComponentIds.filter(id => id !== comp.id)
+      } else {
+        const parent = getOwnEntity(next.components, comp.parentId)
+        if (parent) {
+          parent.childIds = parent.childIds.filter(id => id !== command.componentId)
+        }
       }
 
       const removed = removeSubtree(command.componentId, next)

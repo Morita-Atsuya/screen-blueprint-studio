@@ -79,6 +79,15 @@ function optionalString(input: JsonObject, key: string): string | undefined {
   return value
 }
 
+function requiredNullableString(input: JsonObject, key: string): string | null {
+  const value = input[key]
+  if (value === null) return null
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new DomainError('INVALID_REFERENCE', `${key} must be a non-empty string or null`)
+  }
+  return value
+}
+
 function requiredNumber(input: JsonObject, key: string): number {
   const value = input[key]
   if (!Number.isInteger(value) || (value as number) < 0) {
@@ -496,14 +505,14 @@ const changeScreenStructure: ToolDefinition = {
   },
 }
 
-const componentKinds: ComponentKind[] = [
+const nonModalComponentKinds: ComponentKind[] = [
   'section', 'container', 'heading', 'text',
-  'textInput', 'select', 'button', 'alert', 'modal',
+  'textInput', 'select', 'button', 'alert',
 ]
 
 const changeComponentStructure: ToolDefinition = {
   name: 'change_component_structure',
-  description: 'Add, move, or remove a component in the active change set.',
+  description: 'Add, move, or remove a component or independent modal root in the active change set.',
   inputSchema: {
     oneOf: [
       {
@@ -513,7 +522,21 @@ const changeComponentStructure: ToolDefinition = {
           operation: { const: 'add' },
           screenId: { type: 'string', minLength: 1 },
           parentId: { type: 'string', minLength: 1 },
-          kind: { type: 'string', enum: componentKinds },
+          kind: { type: 'string', enum: nonModalComponentKinds },
+          config: componentConfigSchema,
+          position: { type: 'integer', minimum: 0 },
+        },
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'config'],
+        ...CLOSED_OBJECT,
+      },
+      {
+        type: 'object',
+        properties: {
+          ...writeBaseProperties,
+          operation: { const: 'add' },
+          screenId: { type: 'string', minLength: 1 },
+          parentId: { type: 'null' },
+          kind: { const: 'modal' },
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },
@@ -565,7 +588,7 @@ const changeComponentStructure: ToolDefinition = {
           type: 'addComponent',
           componentId: nanoid(),
           screenId: requiredString(input, 'screenId'),
-          parentId: requiredString(input, 'parentId'),
+          parentId: requiredNullableString(input, 'parentId'),
           kind: requiredString(input, 'kind') as ComponentKind,
           config,
           position: typeof input.position === 'number' ? input.position : undefined,

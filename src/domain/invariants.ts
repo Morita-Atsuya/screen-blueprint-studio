@@ -1,4 +1,4 @@
-import type { ProjectDocument, Screen, ScreenComponent, EntityId } from './model'
+import type { ProjectDocument, Screen, EntityId } from './model'
 import { CONTAINER_KINDS, LEAF_KINDS } from './model'
 import { DomainError } from './errors'
 import {
@@ -166,7 +166,7 @@ export function validateInvariants(doc: ProjectDocument): void {
 function validateScreen(screen: Screen, doc: ProjectDocument): void {
   const { components, screenStates, events } = doc
 
-  // 4. each screen has exactly one page-type root
+  // Each screen has one page root and zero or more independent modal roots.
   const root = getOwnEntity(components, screen.rootComponentId)
   if (!root) {
     throw new DomainError('INVARIANT_VIOLATION', `Root component ${screen.rootComponentId} not found`)
@@ -178,19 +178,81 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     throw new DomainError('INVARIANT_VIOLATION', `Root component must belong to screen ${screen.id}`)
   }
 
-  // 5. root parentId is null
   if (root.parentId !== null) {
     throw new DomainError('INVARIANT_VIOLATION', `Root component must have parentId null`)
   }
 
-  // Collect all components in this screen
+  const rootIds = [screen.rootComponentId, ...screen.modalComponentIds]
+  if (new Set(rootIds).size !== rootIds.length) {
+    throw new DomainError('INVARIANT_VIOLATION', `Screen ${screen.id} root IDs must be unique`)
+  }
+  for (const modalId of screen.modalComponentIds) {
+    const modal = getOwnEntity(components, modalId)
+    if (!modal || modal.screenId !== screen.id || modal.kind !== 'modal' || modal.parentId !== null) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Modal root ${modalId} must be a parentless modal on screen ${screen.id}`,
+      )
+    }
+  }
+
   const screenComponents = Object.values(components).filter(c => c.screenId === screen.id)
+  const reached = new Set<EntityId>()
+  const visiting = new Set<EntityId>()
+
+  function visit(componentId: EntityId, expectedParentId: EntityId | null): void {
+    if (visiting.has(componentId)) {
+      throw new DomainError('INVARIANT_VIOLATION', `Cycle detected at component ${componentId}`)
+    }
+    if (reached.has(componentId)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Component ${componentId} is reachable from more than one screen root`,
+      )
+    }
+    const component = getOwnEntity(components, componentId)
+    if (!component || component.screenId !== screen.id) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Component ${componentId} is missing or belongs to a different screen`,
+      )
+    }
+    if (component.parentId !== expectedParentId) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Component ${componentId} has inconsistent parentId`,
+      )
+    }
+    visiting.add(componentId)
+    reached.add(componentId)
+    for (const childId of component.childIds) visit(childId, component.id)
+    visiting.delete(componentId)
+  }
+
+  for (const rootId of rootIds) visit(rootId, null)
+  if (reached.size !== screenComponents.length) {
+    const orphan = screenComponents.find(component => !reached.has(component.id))
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Component ${orphan?.id ?? 'unknown'} is not reachable from the page or a modal root`,
+    )
+  }
 
   for (const comp of screenComponents) {
-    // 6. non-root has parent in same screen
-    if (comp.id !== screen.rootComponentId) {
+    const isPageRoot = comp.id === screen.rootComponentId
+    const isModalRoot = screen.modalComponentIds.includes(comp.id)
+    if (comp.parentId === null && !isPageRoot && !isModalRoot) {
+      throw new DomainError('INVARIANT_VIOLATION', `Unlisted component root ${comp.id}`)
+    }
+    if (comp.kind === 'page' && !isPageRoot) {
+      throw new DomainError('INVARIANT_VIOLATION', `Page component ${comp.id} must be the screen root`)
+    }
+    if (comp.kind === 'modal' && !isModalRoot) {
+      throw new DomainError('INVARIANT_VIOLATION', `Modal component ${comp.id} must be an independent root`)
+    }
+    if (!isPageRoot && !isModalRoot) {
       if (comp.parentId === null) {
-        throw new DomainError('INVARIANT_VIOLATION', `Non-root component ${comp.id} has null parentId`)
+        throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} requires a parent`)
       }
       const parent = getOwnEntity(components, comp.parentId)
       if (!parent || parent.screenId !== screen.id) {
@@ -198,7 +260,6 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
       }
     }
 
-    // 7. bidirectional parent/child consistency
     if (comp.parentId !== null) {
       const parent = getOwnEntity(components, comp.parentId)
       if (!parent?.childIds.includes(comp.id)) {
@@ -212,15 +273,10 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
       }
     }
 
-    // 8. no cycles
-    checkNoCycle(comp.id, components)
-
-    // 9. leaf components have empty childIds
     if (LEAF_KINDS.includes(comp.kind) && comp.childIds.length > 0) {
       throw new DomainError('INVARIANT_VIOLATION', `Leaf component ${comp.id} (${comp.kind}) must have no children`)
     }
 
-    // 10. containers only accept valid children
     if (comp.childIds.length > 0 && !CONTAINER_KINDS.includes(comp.kind)) {
       throw new DomainError('INVARIANT_VIOLATION', `Non-container ${comp.id} (${comp.kind}) must not have children`)
     }
@@ -233,7 +289,7 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     }
   }
 
-  // 11. fieldKey uniqueness per screen (only non-empty, trimmed keys)
+  // fieldKey uniqueness per screen (only non-empty, trimmed keys)
   const fieldKeys: string[] = []
   for (const comp of screenComponents) {
     if (comp.config.kind === 'textInput' || comp.config.kind === 'select') {
@@ -247,7 +303,7 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     }
   }
 
-  // 12. references exist; navigate can point to other screens
+  // References exist; navigate can point to other screens.
   for (const eventId of screen.eventIds) {
     const event = getOwnEntity(events, eventId)
     if (!event || event.screenId !== screen.id) {
@@ -262,7 +318,7 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     }
   }
 
-  // 13. defaultStateId identifies one listed state
+  // defaultStateId identifies one listed state.
   for (const stateId of screen.stateIds) {
     const state = getOwnEntity(screenStates, stateId)
     if (!state || state.screenId !== screen.id) {
@@ -297,20 +353,4 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
   if (!screen.stateIds.includes(screen.defaultStateId)) {
     throw new DomainError('INVARIANT_VIOLATION', `defaultStateId not in screen.stateIds`)
   }
-}
-
-function checkNoCycle(startId: EntityId, components: Record<EntityId, ScreenComponent>): void {
-  const visited = new Set<EntityId>()
-  function dfs(id: EntityId) {
-    if (visited.has(id)) {
-      throw new DomainError('INVARIANT_VIOLATION', `Cycle detected at component ${id}`)
-    }
-    visited.add(id)
-    const comp = getOwnEntity(components, id)
-    if (comp) {
-      for (const childId of comp.childIds) dfs(childId)
-    }
-    visited.delete(id)
-  }
-  dfs(startId)
 }

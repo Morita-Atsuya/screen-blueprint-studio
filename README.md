@@ -9,7 +9,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 ## 主な機能
 
 - 複数画面の管理
-- Page、Section、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント
+- Page、Section、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
 - Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
@@ -54,7 +54,7 @@ AIがchange setへ型付きoperationを追加
 
 ## 基本操作
 
-- パレット項目はクリックで選択中containerへ追加、ドラッグでtree/canvasの任意位置へ追加
+- パレット項目はクリックで選択中containerへ追加、ドラッグでtree/canvasの任意位置へ追加。Modalだけは選択位置に依存せずScreen直下の独立frameとして追加
 - treeの`⠿` handle、またはcanvasでcomponentをhover／選択した時だけ現れるfloating handleで、同一container内の並び替えまたは別containerへの移動
 - Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
@@ -64,7 +64,7 @@ AIがchange setへ型付きoperationを追加
 - 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
-root component、別screen、leaf、自分自身・子孫へのdropは拒否されます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
+Page／Modal root、別screen、leaf、自分自身・子孫へのdropは拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
 drop位置はdrag中だけ挿入line・outlineで示し、preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・管理用の名称、root pageの「ページタイトル」はpreview内容です。treeとdrag表示にはtitle、label、textなど実際の画面仕様を使います。
 
 ## ローカル実行

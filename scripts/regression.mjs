@@ -1421,6 +1421,18 @@ await test('representative screen/component/state/event/API writes reach the cha
       !stateSchema.oneOf[0].required.includes('kind'),
     'WebMCP state schema still exposes a state kind',
   )
+  const componentSchema = byName('change_component_structure').inputSchema
+  assert(
+    componentSchema.oneOf.some(variant =>
+      variant.properties?.kind?.const === 'modal' &&
+      variant.properties?.parentId?.type === 'null'
+    ) &&
+      componentSchema.oneOf.some(variant =>
+        variant.properties?.kind?.enum?.includes('container') &&
+        !variant.properties?.kind?.enum?.includes('modal')
+      ),
+    'WebMCP does not distinguish modal root creation from child creation',
+  )
 
   execute('change_screen_structure', { operation: 'add', name: 'Agent screen', route: '/agent' })
   const addedScreenId = latestCommand().screenId
@@ -1472,6 +1484,53 @@ await test('representative screen/component/state/event/API writes reach the cha
   })
   execute('change_component_structure', { operation: 'remove', componentId: addedComponentId })
   execute('change_component_structure', { operation: 'remove', componentId: addedContainerId })
+
+  execute('change_component_structure', {
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: null,
+    kind: 'modal',
+    config: {
+      kind: 'modal',
+      title: 'Agent modal',
+      layout: 'vertical',
+      gap: 'md',
+      columns: 2,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    },
+  })
+  const addedModalId = latestCommand().componentId
+  assert(
+    latestCommand().parentId === null &&
+      pending().operations.at(-1).command.kind === 'modal',
+    'WebMCP modal add did not create an independent root command',
+  )
+  const invalidNestedModal = byName('change_component_structure').execute({
+    changeSetId,
+    expectedRevision: revision,
+    expectedChangeSetVersion: version,
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: 'comp-list-page',
+    kind: 'modal',
+    config: {
+      kind: 'modal',
+      title: 'Nested modal',
+      layout: 'vertical',
+      gap: 'md',
+      columns: 2,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    },
+  })
+  assert(
+    !invalidNestedModal.ok && pending().operations.length === version,
+    'WebMCP accepted a nested modal or changed the proposal after rejection',
+  )
+  execute('change_component_structure', { operation: 'remove', componentId: addedModalId })
 
   execute('upsert_screen_state', {
     operation: 'create',
@@ -1537,6 +1596,17 @@ await test('palette factory and component drops use validated commands', async (
     'ja',
   )
   assert(japaneseCommand.config.label === 'ボタン', 'Japanese palette default was not localized')
+  const modalCommand = createAddComponentCommand(
+    store.getState().document,
+    'screen-list',
+    null,
+    'modal',
+    'en',
+  )
+  assert(
+    modalCommand.parentId === null && modalCommand.kind === 'modal',
+    'palette factory did not create an independent modal root command',
+  )
   store.getState().dispatch(command, 'Palette drag add')
   assert(
     store.getState().document.components['comp-list-section'].childIds[0] === command.componentId,
@@ -1555,6 +1625,157 @@ await test('palette factory and component drops use validated commands', async (
     },
   )
   assert(resolution.ok && resolution.position === 0, 'drop position was not resolved')
+})
+
+await test('modal roots own independent trees and clean references on removal', async () => {
+  memoryStorage.clear()
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'modal-root-domain'))
+  const store = await freshStore('modal-root-store')
+  const layout = {
+    layout: 'vertical',
+    gap: 'md',
+    columns: 2,
+    justify: 'start',
+    align: 'stretch',
+    wrap: false,
+  }
+  let document = applyCommandWithoutRevision(store.getState().document, {
+    type: 'addComponent',
+    componentId: 'modal-root',
+    screenId: 'screen-list',
+    parentId: null,
+    kind: 'modal',
+    config: { kind: 'modal', title: 'User details', ...layout },
+  })
+  assert(
+    document.screens['screen-list'].modalComponentIds.join(',') === 'modal-root' &&
+      document.components['modal-root'].parentId === null,
+    'modal was not registered as an independent screen root',
+  )
+
+  document = applyCommandWithoutRevision(document, {
+    type: 'addComponent',
+    componentId: 'modal-button',
+    screenId: 'screen-list',
+    parentId: 'modal-root',
+    kind: 'button',
+    config: {
+      kind: 'button',
+      label: 'Close',
+      variant: 'secondary',
+      eventId: null,
+      confirmationMessage: null,
+      preventDoubleSubmit: false,
+    },
+  })
+  document = applyCommandWithoutRevision(document, {
+    type: 'moveComponent',
+    componentId: 'comp-list-heading',
+    newParentId: 'modal-root',
+    position: 0,
+  })
+  assert(
+    document.components['comp-list-heading'].parentId === 'modal-root' &&
+      document.components['modal-root'].childIds[0] === 'comp-list-heading',
+    'page child could not be moved into a modal tree',
+  )
+  document = applyCommandWithoutRevision(document, {
+    type: 'moveComponent',
+    componentId: 'comp-list-heading',
+    newParentId: 'comp-list-section',
+    position: 0,
+  })
+  document = applyCommandWithoutRevision(document, {
+    type: 'createScreenState',
+    stateId: 'state-modal-hidden',
+    screenId: 'screen-list',
+    name: 'Modal hidden',
+    overrides: { 'modal-button': { visible: false } },
+  })
+  document = applyCommandWithoutRevision(document, {
+    type: 'connectEvent',
+    eventId: 'event-modal-button',
+    screenId: 'screen-list',
+    name: 'Close modal',
+    trigger: { type: 'click', componentId: 'modal-button' },
+    actions: [],
+  })
+
+  for (const command of [
+    {
+      type: 'addComponent',
+      componentId: 'nested-modal',
+      screenId: 'screen-list',
+      parentId: 'comp-list-page',
+      kind: 'modal',
+      config: { kind: 'modal', title: 'Nested', ...layout },
+    },
+    {
+      type: 'addComponent',
+      componentId: 'orphan-heading',
+      screenId: 'screen-list',
+      parentId: null,
+      kind: 'heading',
+      config: { kind: 'heading', text: 'Orphan', level: 2 },
+    },
+    {
+      type: 'moveComponent',
+      componentId: 'modal-root',
+      newParentId: 'comp-list-page',
+    },
+  ]) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(document, command)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `invalid modal structure was accepted: ${JSON.stringify(command)}`)
+  }
+
+  const orphaned = clone(document)
+  orphaned.screens['screen-list'].modalComponentIds = []
+  let orphanRejected = false
+  try {
+    applyCommandWithoutRevision(orphaned, {
+      type: 'updateScreen',
+      screenId: 'screen-list',
+      name: 'User List',
+    })
+  } catch {
+    orphanRejected = true
+  }
+  assert(orphanRejected, 'an unlisted modal root passed reachability validation')
+
+  document = applyCommandWithoutRevision(document, {
+    type: 'removeComponent',
+    componentId: 'modal-root',
+  })
+  assert(
+    document.screens['screen-list'].modalComponentIds.length === 0 &&
+      !document.components['modal-root'] &&
+      !document.components['modal-button'] &&
+      !document.events['event-modal-button'] &&
+      !document.screenStates['state-modal-hidden'].componentOverrides['modal-button'],
+    'modal subtree removal left roots, descendants, or references behind',
+  )
+
+  store.getState().beginChangeSet('Add modal frame')
+  store.getState().dispatch({
+    type: 'addComponent',
+    componentId: 'human-modal-root',
+    screenId: 'screen-list',
+    parentId: null,
+    kind: 'modal',
+    config: { kind: 'modal', title: 'Human modal', ...layout },
+  })
+  const state = store.getState()
+  assert(
+    state.activeChangeSet.operations.at(-1)?.source === 'human' &&
+      state.effectiveDocument.screens['screen-list'].modalComponentIds.includes('human-modal-root') &&
+      !state.document.screens['screen-list'].modalComponentIds.includes('human-modal-root'),
+    'human modal addition did not route through the active change set',
+  )
 })
 
 await test('component reorder and reparent reject invalid targets', async () => {
@@ -2014,6 +2235,57 @@ await test('Canvas component chrome stays outside the idle preview flow', async 
       dropZoneStyles.includes('position: absolute') &&
       dropZoneStyles.includes('.canvas.end { inset: auto 0 -5px; }'),
     'Canvas insertion targets still consume preview layout space',
+  )
+})
+
+await test('Canvas and Tree present modal roots as independent frames', async () => {
+  const canvasSource = readFileSync(
+    join(root, 'src/features/canvas/Canvas.tsx'),
+    'utf8',
+  )
+  const canvasStyles = readFileSync(
+    join(root, 'src/features/canvas/Canvas.module.css'),
+    'utf8',
+  )
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+  const paletteSource = readFileSync(
+    join(root, 'src/features/palette/Palette.tsx'),
+    'utf8',
+  )
+  const dndSource = readFileSync(
+    join(root, 'src/dnd/EditorDndContext.tsx'),
+    'utf8',
+  )
+
+  assert(
+    canvasSource.includes('screen.modalComponentIds.map') &&
+      canvasSource.includes('data-canvas-frame={frameKind}') &&
+      canvasSource.includes('independentRoot') &&
+      canvasSource.includes("t('canvas.hiddenInState')"),
+    'Canvas does not render Page and Modal roots as independently editable frames',
+  )
+  assert(
+    canvasStyles.includes('.frames {') &&
+      canvasStyles.includes('.pageFrame') &&
+      canvasStyles.includes('.modalFrame') &&
+      canvasStyles.includes('width: max-content') &&
+      !canvasStyles.includes('.modalComponent {'),
+    'Canvas frame layout still treats Modal as an in-flow component card',
+  )
+  assert(
+    treeSource.includes('screen.modalComponentIds.map') &&
+      treeSource.includes("data-tree-root={isPageRoot ? 'page' : isModalRoot ? 'modal' : undefined}") &&
+      treeSource.includes('disabled: { draggable: isIndependentRoot'),
+    'Structure Tree does not expose separate non-draggable Page and Modal roots',
+  )
+  assert(
+    paletteSource.includes("if (item.kind !== 'modal')") &&
+      dndSource.includes("drag.kind === 'modal' ? null : target.parentId") &&
+      dndSource.includes("drag.kind === 'modal' ? undefined : target.position"),
+    'palette click and drag do not route Modal creation to an independent root',
   )
 })
 

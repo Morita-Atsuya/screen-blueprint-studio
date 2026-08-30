@@ -62,7 +62,7 @@ export interface AddComponentCommand {
   type: 'addComponent'
   componentId: EntityId
   screenId: EntityId
-  parentId: EntityId
+  parentId: EntityId | null
   kind: ComponentKind
   config: ComponentConfig
   position?: number

@@ -89,7 +89,7 @@ export function createDefaultComponentConfig(
 export function createAddComponentCommand(
   doc: ProjectDocument,
   screenId: EntityId,
-  parentId: EntityId,
+  parentId: EntityId | null,
   kind: PaletteItem['kind'],
   locale: Locale,
   position?: number,

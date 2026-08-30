@@ -81,7 +81,7 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 - Action: Button、Link
 - Feedback: Alert、Inline Error、Modal、Toast、Loading、Empty State
 
-配置結果は自由なピクセル座標ではなく、順序と親子関係を持つツリーとして保存する。
+配置結果は自由なピクセル座標ではなく、順序と親子関係を持つツリーとして保存する。PageとModalはScreen直下の独立rootとし、ModalをPageの通常レイアウトへ混在させない。
 
 ```text
 Page

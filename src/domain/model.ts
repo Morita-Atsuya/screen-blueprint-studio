@@ -182,6 +182,7 @@ export interface Screen {
   name: string
   route: string
   rootComponentId: EntityId
+  modalComponentIds: EntityId[]
   defaultStateId: EntityId
   stateIds: EntityId[]
   eventIds: EntityId[]

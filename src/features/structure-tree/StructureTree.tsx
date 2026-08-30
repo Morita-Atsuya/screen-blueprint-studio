@@ -53,6 +53,20 @@ export function StructureTree() {
         locale={locale}
         t={t}
       />
+      {screen.modalComponentIds.map(modalId => (
+        <TreeNode
+          key={modalId}
+          componentId={modalId}
+          depth={0}
+          document={effectiveDocument}
+          selectedComponentId={selectedComponentId}
+          onSelect={setSelectedComponent}
+          onMove={move}
+          onRemove={remove}
+          locale={locale}
+          t={t}
+        />
+      ))}
     </ul>
   )
 }
@@ -87,7 +101,9 @@ function TreeNode({
   const displayName = component
     ? getComponentDisplayLabel(component, screenName, locale)
     : ''
-  const isRoot = component?.parentId === null
+  const isIndependentRoot = component?.parentId === null
+  const isPageRoot = component?.kind === 'page' && isIndependentRoot
+  const isModalRoot = component?.kind === 'modal' && isIndependentRoot
   const {
     attributes,
     listeners,
@@ -105,7 +121,7 @@ function TreeNode({
           label: displayName,
         }
       : undefined,
-    disabled: { draggable: isRoot, droppable: true },
+    disabled: { draggable: isIndependentRoot, droppable: true },
   })
 
   if (!component) return null
@@ -124,14 +140,17 @@ function TreeNode({
   }
 
   return (
-    <li className={styles.nodeWrapper}>
+    <li
+      className={`${styles.nodeWrapper} ${isIndependentRoot ? styles.independentRoot : ''} ${isModalRoot ? styles.modalRoot : ''}`}
+      data-tree-root={isPageRoot ? 'page' : isModalRoot ? 'modal' : undefined}
+    >
       <div
         ref={setNodeRef}
         className={`${styles.node} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
         style={style}
         onClick={() => onSelect(component.id)}
       >
-        {!isRoot && (
+        {!isIndependentRoot && (
           <button
             className={styles.dragHandle}
             aria-label={t('tree.dragAria', { label: displayName })}
@@ -147,22 +166,26 @@ function TreeNode({
         )}
         <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
         <span className={styles.name}>{displayName}</span>
-        {!isRoot && (
+        {!isPageRoot && (
           <div className={styles.nodeActions}>
-            <button
-              className={styles.iconBtn}
-              title={t('tree.moveUp')}
-              aria-label={t('tree.moveUpAria', { label: displayName })}
-              disabled={siblingIndex <= 0}
-              onClick={event => { event.stopPropagation(); onMove(component.id, -1) }}
-            >↑</button>
-            <button
-              className={styles.iconBtn}
-              title={t('tree.moveDown')}
-              aria-label={t('tree.moveDownAria', { label: displayName })}
-              disabled={!parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
-              onClick={event => { event.stopPropagation(); onMove(component.id, 1) }}
-            >↓</button>
+            {!isIndependentRoot ? (
+              <>
+                <button
+                  className={styles.iconBtn}
+                  title={t('tree.moveUp')}
+                  aria-label={t('tree.moveUpAria', { label: displayName })}
+                  disabled={siblingIndex <= 0}
+                  onClick={event => { event.stopPropagation(); onMove(component.id, -1) }}
+                >↑</button>
+                <button
+                  className={styles.iconBtn}
+                  title={t('tree.moveDown')}
+                  aria-label={t('tree.moveDownAria', { label: displayName })}
+                  disabled={!parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
+                  onClick={event => { event.stopPropagation(); onMove(component.id, 1) }}
+                >↓</button>
+              </>
+            ) : null}
             <button
               className={`${styles.iconBtn} ${styles.danger}`}
               title={t('tree.delete')}

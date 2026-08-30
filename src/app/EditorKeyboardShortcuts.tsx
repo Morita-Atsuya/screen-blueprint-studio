@@ -37,7 +37,8 @@ export function EditorKeyboardShortcuts() {
         state.setErrorMessage({ key: 'errors.selectedComponentMissing' })
         return
       }
-      if (component.parentId === null) {
+      const screen = getOwnEntity(state.effectiveDocument.screens, component.screenId)
+      if (component.id === screen?.rootComponentId) {
         state.setErrorMessage({ key: 'errors.cannotDeleteRoot' })
         return
       }

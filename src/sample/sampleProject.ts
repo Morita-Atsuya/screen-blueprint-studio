@@ -15,6 +15,7 @@ export const sampleProject: ProjectDocument = {
       name: 'User List',
       route: '/users',
       rootComponentId: 'comp-list-page',
+      modalComponentIds: [],
       defaultStateId: 'state-list-default',
       stateIds: ['state-list-default', 'state-list-loading'],
       eventIds: [],
@@ -24,6 +25,7 @@ export const sampleProject: ProjectDocument = {
       name: 'Edit User',
       route: '/users/:id/edit',
       rootComponentId: 'comp-edit-page',
+      modalComponentIds: [],
       defaultStateId: 'state-edit-default',
       stateIds: [
         'state-edit-default',

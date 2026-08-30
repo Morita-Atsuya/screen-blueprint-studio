@@ -18,14 +18,17 @@ export function Palette() {
     const screen = getOwnEntity(effectiveDocument.screens, activeScreenId)
     if (!screen) return
 
-    let parentId = screen.rootComponentId
-    const selected = ui.selectedComponentId
-      ? getOwnEntity(effectiveDocument.components, ui.selectedComponentId)
-      : undefined
-    if (selected && CONTAINER_KINDS.includes(selected.kind)) {
-      parentId = selected.id
-    } else if (selected?.parentId) {
-      parentId = selected.parentId
+    let parentId: string | null = null
+    if (item.kind !== 'modal') {
+      parentId = screen.rootComponentId
+      const selected = ui.selectedComponentId
+        ? getOwnEntity(effectiveDocument.components, ui.selectedComponentId)
+        : undefined
+      if (selected && CONTAINER_KINDS.includes(selected.kind)) {
+        parentId = selected.id
+      } else if (selected?.parentId) {
+        parentId = selected.parentId
+      }
     }
 
     const command = createAddComponentCommand(

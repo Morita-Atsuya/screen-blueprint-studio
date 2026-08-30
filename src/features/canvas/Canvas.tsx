@@ -120,17 +120,35 @@ export function Canvas() {
         </div>
       </div>
       <div className={styles.wireframe}>
-        <CanvasComponent
-          componentId={screen.rootComponentId}
-          document={effectiveDocument}
-          activeState={activeState}
-          selectedComponentId={selectedComponentId}
-          hoveredComponentId={hoveredComponentId}
-          onSelect={setSelectedComponent}
-          onHover={setHoveredComponentId}
-          locale={locale}
-          t={t}
-        />
+        <div className={styles.frames}>
+          <CanvasFrame
+            componentId={screen.rootComponentId}
+            frameKind="page"
+            document={effectiveDocument}
+            activeState={activeState}
+            selectedComponentId={selectedComponentId}
+            hoveredComponentId={hoveredComponentId}
+            onSelect={setSelectedComponent}
+            onHover={setHoveredComponentId}
+            locale={locale}
+            t={t}
+          />
+          {screen.modalComponentIds.map(modalId => (
+            <CanvasFrame
+              key={modalId}
+              componentId={modalId}
+              frameKind="modal"
+              document={effectiveDocument}
+              activeState={activeState}
+              selectedComponentId={selectedComponentId}
+              hoveredComponentId={hoveredComponentId}
+              onSelect={setSelectedComponent}
+              onHover={setHoveredComponentId}
+              locale={locale}
+              t={t}
+            />
+          ))}
+        </div>
       </div>
       {stateDialog ? (
         <StateDialog
@@ -154,6 +172,64 @@ interface CanvasComponentProps {
   onHover(id: EntityId): void
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
+  independentRoot?: boolean
+}
+
+interface CanvasFrameProps extends Omit<CanvasComponentProps, 'independentRoot'> {
+  frameKind: 'page' | 'modal'
+}
+
+function CanvasFrame({
+  componentId,
+  frameKind,
+  document,
+  activeState,
+  selectedComponentId,
+  hoveredComponentId,
+  onSelect,
+  onHover,
+  locale,
+  t,
+}: CanvasFrameProps) {
+  const base = getOwnEntity(document.components, componentId)
+  if (!base) return null
+  const component = effectiveComponent(base, activeState)
+  const screenName = getOwnEntity(document.screens, component.screenId)?.name
+  const label = getComponentDisplayLabel(component, screenName, locale)
+  const hiddenInState = !component.common.visible
+
+  return (
+    <section
+      className={`${styles.frame} ${frameKind === 'page' ? styles.pageFrame : styles.modalFrame}`}
+      data-canvas-frame={frameKind}
+      data-frame-component-id={componentId}
+    >
+      <div className={styles.frameHeader} data-editor-chrome>
+        <button
+          type="button"
+          className={styles.frameLabel}
+          onClick={event => { event.stopPropagation(); onSelect(componentId) }}
+        >
+          {label}
+        </button>
+        {hiddenInState ? (
+          <span className={styles.frameStateBadge}>{t('canvas.hiddenInState')}</span>
+        ) : null}
+      </div>
+      <CanvasComponent
+        componentId={componentId}
+        document={document}
+        activeState={activeState}
+        selectedComponentId={selectedComponentId}
+        hoveredComponentId={hoveredComponentId}
+        onSelect={onSelect}
+        onHover={onHover}
+        locale={locale}
+        t={t}
+        independentRoot
+      />
+    </section>
+  )
 }
 
 function CanvasComponent({
@@ -166,6 +242,7 @@ function CanvasComponent({
   onHover,
   locale,
   t,
+  independentRoot = false,
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
   const component = base ? effectiveComponent(base, activeState) : undefined
@@ -197,7 +274,7 @@ function CanvasComponent({
   })
 
   if (!component) return null
-  if (!component.common.visible) return null
+  if (!component.common.visible && !independentRoot) return null
   const stateOverride = base && activeState
     ? getOwnEntity(activeState.componentOverrides, base.id)
     : undefined
@@ -238,8 +315,8 @@ function CanvasComponent({
         isSelected ? styles.selected : '',
         isHovered ? styles.hovered : '',
         isDragging ? styles.dragging : '',
-        component.kind === 'modal' ? styles.modalComponent : '',
         component.kind === 'button' ? styles.buttonComponent : '',
+        independentRoot && !component.common.visible ? styles.rootStateHidden : '',
         component.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}
       style={style}
@@ -251,10 +328,11 @@ function CanvasComponent({
       data-component-id={component.id}
       data-editor-hovered={isHovered || undefined}
       data-editor-selected={isSelected || undefined}
+      data-component-visible={component.common.visible}
     >
-      <div className={styles.componentChrome} data-editor-chrome>
-        <span className={styles.componentLabel}>{displayName}</span>
-        {!isRoot && (
+      {!independentRoot ? (
+        <div className={styles.componentChrome} data-editor-chrome>
+          <span className={styles.componentLabel}>{displayName}</span>
           <button
             className={styles.dragHandle}
             aria-label={t('tree.dragAria', { label: displayName })}
@@ -266,8 +344,8 @@ function CanvasComponent({
           >
             ⠿
           </button>
-        )}
-      </div>
+        </div>
+      ) : null}
       <ComponentView comp={component} override={stateOverride} t={t} />
       {isContainer && (
         <SortableContext

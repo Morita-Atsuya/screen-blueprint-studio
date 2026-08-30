@@ -2,6 +2,12 @@
 .empty { color: var(--text-faint); font-size: 0.82rem; }
 .children { list-style: none; padding: 0; margin: 0; }
 .nodeWrapper { list-style: none; }
+.independentRoot { margin-top: 4px; }
+.modalRoot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
 .dropItem { list-style: none; }
 
 .node {

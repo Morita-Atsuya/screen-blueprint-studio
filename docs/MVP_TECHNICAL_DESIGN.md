@@ -163,6 +163,7 @@ interface Screen {
   name: string;
   route: string;
   rootComponentId: EntityId;
+  modalComponentIds: EntityId[];
   defaultStateId: EntityId;
   stateIds: EntityId[];
   eventIds: EntityId[];
@@ -269,7 +270,7 @@ interface ModalConfig extends ComponentLayout {
 }
 ```
 
-`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。`vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`modal`はcontainerとして扱い、defaultでは非表示、対象stateのoverrideで表示する。自由配置やdialog制御は行わない。これにより、エラー表示をmodalからinline alertへ変更する共同編集シナリオを同じモデル上で表現できる。
+`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。`vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`page`は`rootComponentId`、各`modal`は`modalComponentIds`で参照され、いずれも`parentId: null`の独立rootとなる。Modalのchildrenは通常componentと同じtree操作に対応するが、Modal root自体はPageや他のcontainerへreparentしない。CanvasではPage artboard外の独立frameとして常時編集でき、状態別のvisible overrideはframeのeditor chromeで示す。
 
 ### 5.3 バリデーション
 
@@ -364,11 +365,11 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 
 1. `Project.screenIds`が重複せず、存在するscreenだけを参照する
 2. screenの`route`がproject内で一意
-3. 各screenに`page`型のrootが1つだけ存在する
-4. rootの`parentId`は`null`
-5. root以外のcomponentには同じscreen内のparentがある
-6. parentの`childIds`とchildの`parentId`が双方向に一致する
-7. コンポーネントツリーに循環がない
+3. 各screenに`page`型rootが1つ、`modal`型rootが0個以上存在する
+4. Page／Modal rootの`parentId`は`null`で、Screenのroot ID配列から一意に参照される
+5. Page／Modal以外のcomponentには同じscreen内のparentがあり、Modalを通常treeへ入れない
+6. 各componentはPage treeまたはいずれか1つのModal treeからexactly once到達可能
+7. parentの`childIds`とchildの`parentId`が双方向に一致し、循環・重複・孤立がない
 8. leaf componentの`childIds`は空
 9. containerが受け入れ可能なkindだけを子に持つ
 10. `fieldKey`はscreen内で一意
@@ -658,11 +659,11 @@ AIによる更新toolは次を共通要件とする。
 
 `change_component_structure`は巨大な汎用編集toolではなく、component treeだけを対象にしたdiscriminated operationである。
 
-- `add`: `parentId`, `kind`, `name`, `position`
+- `add`: `parentId`, `kind`, `config`, `position`。Modalは`parentId: null`、それ以外はcontainer parentを必須とする
 - `move`: `componentId`, `newParentId`, `position`
 - `remove`: `componentId`
 
-`remove`は対象subtreeとその依存参照をまとめて削除する。root componentは削除できない。
+`remove`は対象subtreeとその依存参照をまとめて削除する。Page rootは削除できず、Modal rootはそのsubtreeごと削除できる。
 
 `change_screen_structure`もscreen管理だけを対象にする。
 

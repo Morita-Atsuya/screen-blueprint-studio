@@ -53,10 +53,10 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       const command = createAddComponentCommand(
         state.effectiveDocument,
         target.screenId,
-        target.parentId,
+        drag.kind === 'modal' ? null : target.parentId,
         drag.kind,
         locale,
-        target.position,
+        drag.kind === 'modal' ? undefined : target.position,
       )
       state.dispatch(command, `Add component: ${drag.kind}`)
       useAppStore.getState().setSelectedComponent(command.componentId)
