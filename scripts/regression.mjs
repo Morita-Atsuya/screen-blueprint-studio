@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -68,6 +68,7 @@ const screenNamingBundle = join(temp, 'screenNaming.mjs')
 const componentFactoryBundle = join(temp, 'componentFactory.mjs')
 const editorDndBundle = join(temp, 'editorDnd.mjs')
 const editorShortcutsBundle = join(temp, 'editorShortcuts.mjs')
+const componentDisplayNameBundle = join(temp, 'componentDisplayName.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -75,6 +76,7 @@ bundle('src/features/screens/screenNaming.ts', screenNamingBundle)
 bundle('src/features/palette/componentFactory.ts', componentFactoryBundle)
 bundle('src/dnd/editorDnd.ts', editorDndBundle)
 bundle('src/app/editorShortcuts.ts', editorShortcutsBundle)
+bundle('src/domain/componentDisplayName.ts', componentDisplayNameBundle)
 
 let passed = 0
 
@@ -1651,6 +1653,73 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
     resolveEditorShortcut({ key: 'z', metaKey: true, target: { tagName: 'DIV' } }) === 'undo' &&
       resolveEditorShortcut({ key: 'z', ctrlKey: true, target: { tagName: 'DIV' } }) === 'undo',
     'Cmd/Ctrl+Z shortcut was not resolved',
+  )
+})
+
+await test('component display names come from visible specification fields', async () => {
+  memoryStorage.clear()
+  const { deriveComponentDisplayName } = await import(
+    moduleUrl(componentDisplayNameBundle, 'visible-component-labels')
+  )
+  const store = await freshStore('visible-component-labels')
+  const document = store.getState().document
+
+  assert(
+    deriveComponentDisplayName(document.components['comp-edit-page'], 'Fallback screen') === 'ユーザー編集',
+    'page label did not use the page title',
+  )
+  assert(
+    deriveComponentDisplayName(document.components['comp-edit-section']) === 'ユーザー情報',
+    'section label did not use its title',
+  )
+  assert(
+    deriveComponentDisplayName(document.components['comp-name-input']) === '氏名',
+    'input label did not use its visible label',
+  )
+  assert(
+    deriveComponentDisplayName(document.components['comp-save-btn']) === '保存',
+    'button label did not use its visible label',
+  )
+  assert(
+    deriveComponentDisplayName(document.components['comp-actions']) === '操作エリア',
+    'container label did not use its kind fallback',
+  )
+
+  const pageWithoutTitle = clone(document.components['comp-edit-page'])
+  pageWithoutTitle.config.title = ' '
+  assert(
+    deriveComponentDisplayName(pageWithoutTitle, '画面管理名') === '画面管理名',
+    'page label did not fall back to the screen name',
+  )
+  const longHeading = clone(document.components['comp-list-heading'])
+  longHeading.config.text = '1234567890123456789012345678901234567890'
+  assert(
+    deriveComponentDisplayName(longHeading).endsWith('…'),
+    'long visible text was not truncated',
+  )
+})
+
+await test('editor-only drop affordances and internal names stay out of idle UI', async () => {
+  const dropZoneSource = readFileSync(
+    join(root, 'src/dnd/ComponentDropZone.tsx'),
+    'utf8',
+  )
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  assert(!dropZoneSource.includes('ここに追加'), 'idle add placeholder remains in the drop zone')
+  assert(
+    dropZoneSource.includes('validDrag && accepts'),
+    'drop affordance is not gated by an active valid drag',
+  )
+  assert(
+    !inspectorSource.includes('コンポーネント名'),
+    'internal component name remains editable in the inspector',
+  )
+  assert(
+    inspectorSource.includes('ページタイトル'),
+    'page content title is not clearly labeled in the inspector',
   )
 })
 

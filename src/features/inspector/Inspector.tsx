@@ -33,23 +33,8 @@ export function Inspector() {
     )
   }
 
-  function updateName(name: string) {
-    dispatch(
-      { type: 'updateComponentSpec', componentId: comp!.id, patch: { name } },
-      'コンポーネント名を変更',
-    )
-  }
-
   return (
     <div className={styles.root}>
-      <div className={styles.section}>
-        <label className={styles.label}>コンポーネント名</label>
-        <input
-          className={styles.input}
-          value={comp.name}
-          onChange={e => updateName(e.target.value)}
-        />
-      </div>
       <div className={styles.section}>
         <label className={styles.label}>説明</label>
         <textarea
@@ -198,8 +183,18 @@ export function Inspector() {
           </Field>
         </>
       )}
-      {(cfg.kind === 'section' || cfg.kind === 'page' || cfg.kind === 'modal') && (
-        <Field label="タイトル">
+      {cfg.kind === 'page' && (
+        <Field label="ページタイトル">
+          <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
+        </Field>
+      )}
+      {cfg.kind === 'section' && (
+        <Field label="セクションタイトル">
+          <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
+        </Field>
+      )}
+      {cfg.kind === 'modal' && (
+        <Field label="モーダルタイトル">
           <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
         </Field>
       )}

@@ -5,6 +5,7 @@ import { useAppStore } from '../../app/appStore'
 import type { EntityId, ProjectDocument } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
+import { deriveComponentDisplayName } from '../../domain/componentDisplayName'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import styles from './StructureTree.module.css'
@@ -71,6 +72,12 @@ function TreeNode({
   onRemove,
 }: TreeNodeProps) {
   const component = getOwnEntity(document.components, componentId)
+  const screenName = component
+    ? getOwnEntity(document.screens, component.screenId)?.name
+    : undefined
+  const displayName = component
+    ? deriveComponentDisplayName(component, screenName)
+    : ''
   const isRoot = component?.parentId === null
   const {
     attributes,
@@ -86,7 +93,7 @@ function TreeNode({
           type: 'component',
           componentId: component.id,
           screenId: component.screenId,
-          label: component.name,
+          label: displayName,
         }
       : undefined,
     disabled: { draggable: isRoot, droppable: true },
@@ -118,7 +125,7 @@ function TreeNode({
         {!isRoot && (
           <button
             className={styles.dragHandle}
-            aria-label={`${component.name}を並び替え`}
+            aria-label={`${displayName}を並び替え`}
             title="ドラッグして移動"
             data-drag-surface="tree"
             data-drag-component={component.id}
@@ -130,27 +137,27 @@ function TreeNode({
           </button>
         )}
         <span className={styles.kind}>{component.kind}</span>
-        <span className={styles.name}>{component.name}</span>
+        <span className={styles.name}>{displayName}</span>
         {!isRoot && (
           <div className={styles.nodeActions}>
             <button
               className={styles.iconBtn}
               title="上へ移動"
-              aria-label={`${component.name}を上へ移動`}
+              aria-label={`${displayName}を上へ移動`}
               disabled={siblingIndex <= 0}
               onClick={event => { event.stopPropagation(); onMove(component.id, -1) }}
             >↑</button>
             <button
               className={styles.iconBtn}
               title="下へ移動"
-              aria-label={`${component.name}を下へ移動`}
+              aria-label={`${displayName}を下へ移動`}
               disabled={!parent || siblingIndex < 0 || siblingIndex >= parent.childIds.length - 1}
               onClick={event => { event.stopPropagation(); onMove(component.id, 1) }}
             >↓</button>
             <button
               className={`${styles.iconBtn} ${styles.danger}`}
               title="削除"
-              aria-label={`${component.name}を削除`}
+              aria-label={`${displayName}を削除`}
               onClick={event => { event.stopPropagation(); onRemove(component.id) }}
             >×</button>
           </div>
@@ -170,7 +177,7 @@ function TreeNode({
                     parentId={component.id}
                     screenId={component.screenId}
                     position={index}
-                    label={index === 0 ? `${component.name}の先頭` : `${index + 1}番目`}
+                    label={index === 0 ? `${displayName}の先頭` : `${index + 1}番目`}
                   />
                 </li>
                 <TreeNode
@@ -190,7 +197,7 @@ function TreeNode({
                 parentId={component.id}
                 screenId={component.screenId}
                 position={component.childIds.length}
-                label={`${component.name}の末尾`}
+                label={`${displayName}の末尾`}
                 empty={component.childIds.length === 0}
               />
             </li>

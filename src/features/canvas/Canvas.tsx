@@ -5,6 +5,7 @@ import type { EntityId, ProjectDocument, ScreenComponent, ScreenState } from '..
 import { CONTAINER_KINDS } from '../../domain/model'
 import { effectiveComponent } from '../../domain/selectors'
 import { getOwnEntity } from '../../domain/entityMap'
+import { deriveComponentDisplayName } from '../../domain/componentDisplayName'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import styles from './Canvas.module.css'
@@ -70,6 +71,13 @@ function CanvasComponent({
   onSelect,
 }: CanvasComponentProps) {
   const base = getOwnEntity(document.components, componentId)
+  const component = base ? effectiveComponent(base, activeState) : undefined
+  const screenName = component
+    ? getOwnEntity(document.screens, component.screenId)?.name
+    : undefined
+  const displayName = component
+    ? deriveComponentDisplayName(component, screenName)
+    : ''
   const isRoot = base?.parentId === null
   const {
     attributes,
@@ -85,14 +93,13 @@ function CanvasComponent({
           type: 'component',
           componentId: base.id,
           screenId: base.screenId,
-          label: base.name,
+          label: displayName,
         }
       : undefined,
     disabled: { draggable: isRoot, droppable: true },
   })
 
-  if (!base) return null
-  const component = effectiveComponent(base, activeState)
+  if (!component) return null
   if (!component.common.visible) return null
   const isSelected = selectedComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
@@ -116,7 +123,7 @@ function CanvasComponent({
         {!isRoot && (
           <button
             className={styles.dragHandle}
-            aria-label={`${component.name}を並び替え`}
+            aria-label={`${displayName}を並び替え`}
             title="ドラッグして移動"
             data-drag-surface="canvas"
             data-drag-component={component.id}
@@ -141,7 +148,7 @@ function CanvasComponent({
                   parentId={component.id}
                   screenId={component.screenId}
                   position={index}
-                  label={index === 0 ? `${component.name}の先頭` : `${index + 1}番目`}
+                  label={index === 0 ? `${displayName}の先頭` : `${index + 1}番目`}
                 />
                 <CanvasComponent
                   componentId={childId}
@@ -157,7 +164,7 @@ function CanvasComponent({
               parentId={component.id}
               screenId={component.screenId}
               position={component.childIds.length}
-              label={`${component.name}の末尾`}
+              label={`${displayName}の末尾`}
               empty={component.childIds.length === 0}
             />
           </div>

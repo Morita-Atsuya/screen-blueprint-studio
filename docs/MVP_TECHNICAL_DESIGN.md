@@ -600,10 +600,10 @@ interface Diagnostic {
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの編集可能仕様
+- `Inspector`: 選択componentの編集可能仕様。内部metadataの`name`は表示せず、page titleなどkind固有の内容を編集
 - `Changes`: operation一覧とbefore/after
 
-component kindごとに専用フォームを表示し、任意JSON編集は提供しない。
+component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameとpreview内容であるpage titleは別fieldとして扱う。
 
 ### 10.5 Change set bar
 

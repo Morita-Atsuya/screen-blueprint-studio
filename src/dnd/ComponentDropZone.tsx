@@ -29,12 +29,14 @@ export function ComponentDropZone({
     label,
   }
   const accepts = !validDrag || canAcceptDrop(document, drag, target)
+  const showAffordance = validDrag && accepts
   const dropId = componentDropId(surface, parentId, position)
   const { isOver, setNodeRef } = useDroppable({
     id: dropId,
     data: target,
     disabled: validDrag && !accepts,
   })
+  const isActiveOver = isOver && showAffordance
 
   return (
     <div
@@ -42,18 +44,19 @@ export function ComponentDropZone({
       className={[
         styles.zone,
         styles[surface],
-        validDrag ? styles.active : '',
+        showAffordance ? styles.active : '',
         validDrag && !accepts ? styles.invalid : '',
-        isOver ? styles.over : '',
-        empty ? styles.empty : '',
+        isActiveOver ? styles.over : '',
+        empty && showAffordance ? styles.empty : '',
       ].join(' ')}
       aria-label={`${label}へドロップ`}
       data-drop-surface={surface}
       data-drop-parent={parentId}
       data-drop-position={position}
       data-editor-drop-id={dropId}
+      data-drop-visible={showAffordance}
     >
-      {isOver ? label : empty ? 'ここに追加' : ''}
+      {isActiveOver && empty ? 'ここにドロップ' : ''}
     </div>
   )
 }

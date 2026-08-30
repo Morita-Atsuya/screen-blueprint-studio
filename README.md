@@ -59,6 +59,7 @@ AIがchange setへ型付きoperationを追加
 - Screensタブで画面の追加、名前・route編集、Entry設定、削除
 
 root component、別screen、leaf、自分自身・子孫へのdropは拒否されます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。
+画面名は画面一覧・管理用の名称、root pageの「ページタイトル」はpreview内容です。treeとdrag表示にはtitle、label、textなど実際の画面仕様を使います。
 
 ## ローカル実行
 

@@ -3,28 +3,24 @@
   align-items: center;
   justify-content: center;
   min-height: 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+  border-top: 2px solid transparent;
   color: var(--text-faint);
   font-size: 0.7rem;
   line-height: 1.2;
-  transition: min-height 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .active {
   min-height: 8px;
-  border-color: var(--border);
-  border-style: dashed;
-  background: #f8fafc;
+  border-top-color: #c7d2fe;
 }
 
 .over {
   min-height: 8px;
-  border-color: var(--accent);
-  background: var(--bg-selected);
+  border-top-color: var(--accent);
+  background: rgba(238, 242, 255, 0.72);
   color: var(--accent);
   font-weight: 700;
-  box-shadow: 0 0 0 2px var(--bg-selected);
   overflow: visible;
   position: relative;
   z-index: 2;
@@ -37,8 +33,15 @@
 .empty {
   min-height: 34px;
   margin-top: 4px;
-  border-color: var(--border);
-  border-style: dashed;
+  border: 1px dashed #a5b4fc;
+  border-radius: 5px;
+  background: rgba(238, 242, 255, 0.5);
+}
+
+.empty.over {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  box-shadow: 0 0 0 2px var(--bg-selected);
 }
 
 .tree {
