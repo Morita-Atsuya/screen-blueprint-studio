@@ -104,11 +104,20 @@ export function Canvas() {
             </button>
           </div>
         </div>
-        {activeStateDescription ? (
-          <p id={activeStateDescriptionId} className={styles.stateDescription}>
-            {activeStateDescription}
-          </p>
-        ) : null}
+        <div
+          className={styles.stateDescriptionSlot}
+          aria-hidden={activeStateDescription ? undefined : true}
+        >
+          {activeStateDescription ? (
+            <p
+              id={activeStateDescriptionId}
+              className={styles.stateDescription}
+              title={activeStateDescription}
+            >
+              {activeStateDescription}
+            </p>
+          ) : null}
+        </div>
       </div>
       <div className={styles.wireframe}>
         <CanvasComponent

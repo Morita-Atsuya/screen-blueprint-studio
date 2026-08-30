@@ -64,14 +64,21 @@
   color: var(--accent);
 }
 
+.stateDescriptionSlot {
+  height: 18px;
+  min-width: 0;
+  flex: 0 0 18px;
+}
+
 .stateDescription {
   margin: 0;
-  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 0.75rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wireframe {

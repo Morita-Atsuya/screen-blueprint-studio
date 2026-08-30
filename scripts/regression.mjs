@@ -1946,16 +1946,23 @@ await test('active state descriptions stay in accessible editor chrome', async (
   assert(
     canvasSource.includes('activeState?.description.trim()') &&
       canvasSource.includes('aria-describedby={isActive ? activeStateDescriptionId : undefined}') &&
+      canvasSource.includes('className={styles.stateDescriptionSlot}') &&
+      canvasSource.includes('aria-hidden={activeStateDescription ? undefined : true}') &&
       canvasSource.includes('className={styles.stateDescription}') &&
+      canvasSource.includes('title={activeStateDescription}') &&
       canvasSource.indexOf('className={styles.stateDescription}') <
         canvasSource.indexOf('className={styles.wireframe}'),
-    'active state description is not conditionally linked to its pill in editor chrome',
+    'active state description is not conditionally linked inside fixed editor chrome',
   )
   assert(
+    canvasStyles.includes('.stateDescriptionSlot') &&
+      canvasStyles.includes('height: 18px') &&
+      canvasStyles.includes('flex: 0 0 18px') &&
     canvasStyles.includes('.stateDescription') &&
-      canvasStyles.includes('overflow-wrap: anywhere') &&
-      canvasStyles.includes('white-space: pre-wrap'),
-    'state description does not wrap safely at narrow widths',
+      canvasStyles.includes('overflow: hidden') &&
+      canvasStyles.includes('text-overflow: ellipsis') &&
+      canvasStyles.includes('white-space: nowrap'),
+    'state description slot does not remain fixed or truncate safely',
   )
 })
 
