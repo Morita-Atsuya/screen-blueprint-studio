@@ -74,10 +74,17 @@
 
 @media (max-width: 899px) {
   .sectionBody {
-    max-height: 140px;
+    max-height: 96px;
   }
 
   .treeSection {
-    min-height: 80px;
+    /* Guarantee the tree heading plus a practically usable body (>=120px,
+       enough for several structure rows) even when both other sections are
+       expanded; excess overflow is handled by the scrollable .left ancestor. */
+    min-height: 156px;
+  }
+
+  .treeBody {
+    min-height: 120px;
   }
 }
