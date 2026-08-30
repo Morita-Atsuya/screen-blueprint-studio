@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid'
 import type { AddComponentCommand } from '../../domain/commands'
 import type { ComponentConfig, ComponentKind, EntityId, ProjectDocument } from '../../domain/model'
+import { DEFAULT_COMPONENT_LAYOUT } from '../../domain/model'
 import type { Locale } from '../../i18n/messages'
 import { translate } from '../../i18n/messages'
 
@@ -10,9 +11,7 @@ export interface PaletteItem {
 
 export const PALETTE_ITEMS: PaletteItem[] = [
   { kind: 'section' },
-  { kind: 'stack' },
-  { kind: 'columns' },
-  { kind: 'actionArea' },
+  { kind: 'container' },
   { kind: 'heading' },
   { kind: 'text' },
   { kind: 'textInput' },
@@ -43,13 +42,9 @@ export function createDefaultComponentConfig(
 ): ComponentConfig {
   switch (kind) {
     case 'section':
-      return { kind, title: translate(locale, 'defaults.sectionTitle') }
-    case 'stack':
-      return { kind, gap: 'md' }
-    case 'columns':
-      return { kind, columns: 2 }
-    case 'actionArea':
-      return { kind, align: 'end' }
+      return { kind, title: translate(locale, 'defaults.sectionTitle'), ...DEFAULT_COMPONENT_LAYOUT }
+    case 'container':
+      return { kind, ...DEFAULT_COMPONENT_LAYOUT }
     case 'heading':
       return { kind, text: translate(locale, 'defaults.headingText'), level: 2 }
     case 'text':
@@ -87,7 +82,7 @@ export function createDefaultComponentConfig(
     case 'alert':
       return { kind, tone: 'info', message: translate(locale, 'defaults.alertMessage') }
     case 'modal':
-      return { kind, title: translate(locale, 'defaults.modalTitle') }
+      return { kind, title: translate(locale, 'defaults.modalTitle'), ...DEFAULT_COMPONENT_LAYOUT }
   }
 }
 

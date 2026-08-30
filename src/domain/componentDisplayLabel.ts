@@ -5,9 +5,7 @@ import { translate } from '../i18n/messages'
 export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], MessageKey> = {
   page: 'component.page',
   section: 'component.section',
-  stack: 'component.stack',
-  columns: 'component.columns',
-  actionArea: 'component.actionArea',
+  container: 'component.container',
   heading: 'component.heading',
   text: 'component.text',
   textInput: 'component.textInput',
@@ -49,9 +47,7 @@ export function getComponentDisplayLabel(
       return readableText(config.label, fallback)
     case 'alert':
       return readableText(config.message, fallback)
-    case 'stack':
-    case 'columns':
-    case 'actionArea':
+    case 'container':
       return fallback
   }
 }

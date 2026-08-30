@@ -1,4 +1,5 @@
 import type { ProjectDocument } from '../domain/model'
+import { DEFAULT_COMPONENT_LAYOUT } from '../domain/model'
 
 export const sampleProject: ProjectDocument = {
   schemaVersion: 1,
@@ -42,16 +43,16 @@ export const sampleProject: ProjectDocument = {
       childIds: ['comp-list-section'],
       kind: 'page',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'page', title: 'User List' },
+      config: { kind: 'page', title: 'User List', ...DEFAULT_COMPONENT_LAYOUT },
     },
     'comp-list-section': {
       id: 'comp-list-section',
       screenId: 'screen-list',
       parentId: 'comp-list-page',
-      childIds: ['comp-list-heading'],
+      childIds: ['comp-list-heading', 'comp-list-grid'],
       kind: 'section',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', title: 'Users' },
+      config: { kind: 'section', title: 'Users', ...DEFAULT_COMPONENT_LAYOUT },
     },
     'comp-list-heading': {
       id: 'comp-list-heading',
@@ -62,6 +63,39 @@ export const sampleProject: ProjectDocument = {
       common: { description: '', visible: true, enabled: true },
       config: { kind: 'heading', text: 'User List', level: 1 },
     },
+    'comp-list-grid': {
+      id: 'comp-list-grid',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: ['comp-list-active', 'comp-list-invited'],
+      kind: 'container',
+      common: { description: 'User summary', visible: true, enabled: true },
+      config: {
+        kind: 'container',
+        ...DEFAULT_COMPONENT_LAYOUT,
+        layout: 'grid',
+        columns: 2,
+        gap: 'sm',
+      },
+    },
+    'comp-list-active': {
+      id: 'comp-list-active',
+      screenId: 'screen-list',
+      parentId: 'comp-list-grid',
+      childIds: [],
+      kind: 'text',
+      common: { description: '', visible: true, enabled: true },
+      config: { kind: 'text', text: 'Active users: 24' },
+    },
+    'comp-list-invited': {
+      id: 'comp-list-invited',
+      screenId: 'screen-list',
+      parentId: 'comp-list-grid',
+      childIds: [],
+      kind: 'text',
+      common: { description: '', visible: true, enabled: true },
+      config: { kind: 'text', text: 'Pending invitations: 3' },
+    },
     // Edit user screen
     'comp-edit-page': {
       id: 'comp-edit-page',
@@ -70,7 +104,7 @@ export const sampleProject: ProjectDocument = {
       childIds: ['comp-edit-section'],
       kind: 'page',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'page', title: 'Edit User' },
+      config: { kind: 'page', title: 'Edit User', ...DEFAULT_COMPONENT_LAYOUT },
     },
     'comp-edit-section': {
       id: 'comp-edit-section',
@@ -79,7 +113,7 @@ export const sampleProject: ProjectDocument = {
       childIds: ['comp-name-input', 'comp-email-input', 'comp-status-alert', 'comp-actions'],
       kind: 'section',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', title: 'User Details' },
+      config: { kind: 'section', title: 'User Details', ...DEFAULT_COMPONENT_LAYOUT },
     },
     'comp-name-input': {
       id: 'comp-name-input',
@@ -130,9 +164,17 @@ export const sampleProject: ProjectDocument = {
       screenId: 'screen-edit',
       parentId: 'comp-edit-section',
       childIds: ['comp-cancel-btn', 'comp-save-btn'],
-      kind: 'actionArea',
+      kind: 'container',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'actionArea', align: 'end' },
+      config: {
+        kind: 'container',
+        ...DEFAULT_COMPONENT_LAYOUT,
+        layout: 'horizontal',
+        gap: 'sm',
+        justify: 'end',
+        align: 'center',
+        wrap: true,
+      },
     },
     'comp-status-alert': {
       id: 'comp-status-alert',

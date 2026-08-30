@@ -2,6 +2,7 @@ import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
 import { deleteOwnEntity, getOwnEntity, setOwnEntity } from '../../domain/entityMap'
 import type {
+  ComponentLayout,
   ComponentOverride,
   ScreenComponent,
   ScreenState,
@@ -83,32 +84,6 @@ export function Inspector() {
       {cfg.kind === 'text' && (
         <Field label={t('inspector.text')}>
           <textarea className={styles.textarea} value={cfg.text} rows={3} onChange={e => updateConfig({ text: e.target.value })} />
-        </Field>
-      )}
-      {cfg.kind === 'stack' && (
-        <Field label={t('inspector.gap')}>
-          <select className={styles.input} value={cfg.gap} onChange={e => updateConfig({ gap: e.target.value })}>
-            <option value="sm">{t('inspector.gapSmall')}</option>
-            <option value="md">{t('inspector.gapMedium')}</option>
-            <option value="lg">{t('inspector.gapLarge')}</option>
-          </select>
-        </Field>
-      )}
-      {cfg.kind === 'columns' && (
-        <Field label={t('inspector.columns')}>
-          <select className={styles.input} value={cfg.columns} onChange={e => updateConfig({ columns: Number(e.target.value) })}>
-            <option value={2}>2</option>
-            <option value={3}>3</option>
-          </select>
-        </Field>
-      )}
-      {cfg.kind === 'actionArea' && (
-        <Field label={t('inspector.alignment')}>
-          <select className={styles.input} value={cfg.align} onChange={e => updateConfig({ align: e.target.value })}>
-            <option value="start">{t('inspector.alignStart')}</option>
-            <option value="end">{t('inspector.alignEnd')}</option>
-            <option value="between">{t('inspector.alignBetween')}</option>
-          </select>
         </Field>
       )}
       {cfg.kind === 'textInput' && (
@@ -217,6 +192,12 @@ export function Inspector() {
           <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
         </Field>
       )}
+      {(cfg.kind === 'page' ||
+        cfg.kind === 'section' ||
+        cfg.kind === 'container' ||
+        cfg.kind === 'modal') && (
+        <LayoutFields layout={cfg} onUpdate={updateConfig} />
+      )}
       {activeState && activeState.kind !== 'default' ? (
         <>
           <hr className={styles.divider} />
@@ -224,6 +205,69 @@ export function Inspector() {
         </>
       ) : null}
     </div>
+  )
+}
+
+function LayoutFields({
+  layout,
+  onUpdate,
+}: {
+  layout: ComponentLayout
+  onUpdate(partial: Record<string, unknown>): void
+}) {
+  const { t } = useI18n()
+
+  return (
+    <section className={styles.layoutSection} data-layout-settings>
+      <h3>{t('inspector.layoutTitle')}</h3>
+      <Field label={t('inspector.layout')}>
+        <select className={styles.input} value={layout.layout} onChange={event => onUpdate({ layout: event.target.value })}>
+          <option value="vertical">{t('inspector.layoutVertical')}</option>
+          <option value="horizontal">{t('inspector.layoutHorizontal')}</option>
+          <option value="grid">{t('inspector.layoutGrid')}</option>
+        </select>
+      </Field>
+      <Field label={t('inspector.gap')}>
+        <select className={styles.input} value={layout.gap} onChange={event => onUpdate({ gap: event.target.value })}>
+          <option value="none">{t('inspector.gapNone')}</option>
+          <option value="sm">{t('inspector.gapSmall')}</option>
+          <option value="md">{t('inspector.gapMedium')}</option>
+          <option value="lg">{t('inspector.gapLarge')}</option>
+        </select>
+      </Field>
+      {layout.layout === 'grid' ? (
+        <Field label={t('inspector.columns')}>
+          <select className={styles.input} value={layout.columns} onChange={event => onUpdate({ columns: Number(event.target.value) })}>
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4</option>
+          </select>
+        </Field>
+      ) : null}
+      <Field label={t('inspector.justify')}>
+        <select className={styles.input} value={layout.justify} onChange={event => onUpdate({ justify: event.target.value })}>
+          <option value="start">{t('inspector.alignStart')}</option>
+          <option value="center">{t('inspector.alignCenter')}</option>
+          <option value="end">{t('inspector.alignEnd')}</option>
+          <option value="between">{t('inspector.alignBetween')}</option>
+        </select>
+      </Field>
+      <Field label={t('inspector.alignment')}>
+        <select className={styles.input} value={layout.align} onChange={event => onUpdate({ align: event.target.value })}>
+          <option value="start">{t('inspector.alignStart')}</option>
+          <option value="center">{t('inspector.alignCenter')}</option>
+          <option value="end">{t('inspector.alignEnd')}</option>
+          <option value="stretch">{t('inspector.alignStretch')}</option>
+        </select>
+      </Field>
+      {layout.layout === 'horizontal' ? (
+        <label className={styles.checkLabel}>
+          <input type="checkbox" checked={layout.wrap} onChange={event => onUpdate({ wrap: event.target.checked })} />
+          {t('inspector.wrap')}
+        </label>
+      ) : null}
+    </section>
   )
 }
 

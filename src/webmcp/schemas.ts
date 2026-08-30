@@ -2,6 +2,17 @@ const closed = { additionalProperties: false } as const
 const string = { type: 'string' } as const
 const nullableString = { type: ['string', 'null'] } as const
 
+const layoutProperties = {
+  layout: { type: 'string', enum: ['vertical', 'horizontal', 'grid'] },
+  gap: { type: 'string', enum: ['none', 'sm', 'md', 'lg'] },
+  columns: { type: 'integer', enum: [1, 2, 3, 4] },
+  justify: { type: 'string', enum: ['start', 'center', 'end', 'between'] },
+  align: { type: 'string', enum: ['start', 'center', 'end', 'stretch'] },
+  wrap: { type: 'boolean' },
+} as const
+
+const layoutRequired = ['layout', 'gap', 'columns', 'justify', 'align', 'wrap'] as const
+
 const fieldBindingSchema = {
   type: 'object',
   properties: {
@@ -64,31 +75,18 @@ const validationRuleSchema = {
 const configVariants = [
   {
     kind: 'page',
-    properties: { kind: { const: 'page' }, title: string },
-    required: ['kind', 'title'],
+    properties: { kind: { const: 'page' }, title: string, ...layoutProperties },
+    required: ['kind', 'title', ...layoutRequired],
   },
   {
     kind: 'section',
-    properties: { kind: { const: 'section' }, title: string },
-    required: ['kind', 'title'],
+    properties: { kind: { const: 'section' }, title: string, ...layoutProperties },
+    required: ['kind', 'title', ...layoutRequired],
   },
   {
-    kind: 'stack',
-    properties: { kind: { const: 'stack' }, gap: { type: 'string', enum: ['sm', 'md', 'lg'] } },
-    required: ['kind', 'gap'],
-  },
-  {
-    kind: 'columns',
-    properties: { kind: { const: 'columns' }, columns: { type: 'integer', enum: [2, 3] } },
-    required: ['kind', 'columns'],
-  },
-  {
-    kind: 'actionArea',
-    properties: {
-      kind: { const: 'actionArea' },
-      align: { type: 'string', enum: ['start', 'end', 'between'] },
-    },
-    required: ['kind', 'align'],
+    kind: 'container',
+    properties: { kind: { const: 'container' }, ...layoutProperties },
+    required: ['kind', ...layoutRequired],
   },
   {
     kind: 'heading',
@@ -172,8 +170,8 @@ const configVariants = [
   },
   {
     kind: 'modal',
-    properties: { kind: { const: 'modal' }, title: string },
-    required: ['kind', 'title'],
+    properties: { kind: { const: 'modal' }, title: string, ...layoutProperties },
+    required: ['kind', 'title', ...layoutRequired],
   },
 ] as const
 

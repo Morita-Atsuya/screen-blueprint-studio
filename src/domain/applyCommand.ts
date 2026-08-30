@@ -1,5 +1,5 @@
 import type { ProjectDocument, EntityId } from './model'
-import { CONTAINER_KINDS } from './model'
+import { CONTAINER_KINDS, DEFAULT_COMPONENT_LAYOUT } from './model'
 import type { DomainCommand } from './commands'
 import { DomainError } from './errors'
 import { validateInvariants } from './invariants'
@@ -174,7 +174,7 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         childIds: [],
         kind: 'page',
         common: { description: '', visible: true, enabled: true },
-        config: { kind: 'page', title: name },
+        config: { kind: 'page', title: name, ...DEFAULT_COMPONENT_LAYOUT },
       })
       setOwnEntity(next.screenStates, defaultStateId, {
         id: defaultStateId,

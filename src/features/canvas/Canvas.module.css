@@ -101,25 +101,46 @@
 }
 .dragHandle:active { cursor: grabbing; }
 
-.children { padding: 4px 0 0 8px; display: flex; flex-direction: column; }
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--layout-gap, 16px);
+  min-width: 0;
+  padding: 4px 0 0 8px;
+}
 .childSlot { display: flex; flex-direction: column; }
 
-.columnChildren {
+.horizontalChildren {
   flex-direction: row;
-  align-items: stretch;
-  gap: 8px;
-  min-width: 0;
   padding: 6px 5px 2px;
   overflow-x: auto;
 }
 
-.columnChildren > .childSlot {
+.horizontalChildren > .childSlot {
   position: relative;
-  flex: 0 0 var(--column-width);
-  min-width: min(180px, 70vw);
+  flex: 0 0 auto;
+  min-width: min(120px, 70vw);
 }
 
-.columnChildren > .childSlot > .comp {
+.wrapChildren {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+.gridChildren {
+  display: grid;
+  grid-template-columns: repeat(var(--layout-columns, 2), minmax(min(160px, 70vw), 1fr));
+  padding: 6px 5px 2px;
+  overflow-x: auto;
+}
+
+.gridChildren > .childSlot {
+  position: relative;
+  min-width: 0;
+}
+
+.horizontalChildren > .childSlot > .comp,
+.gridChildren > .childSlot > .comp {
   min-width: 0;
   height: 100%;
   overflow-wrap: anywhere;
@@ -139,9 +160,6 @@
 
 /* Section */
 .sectionTitle { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); padding-bottom: 4px; }
-
-/* Containers */
-.containerLabel { font-size: 0.72rem; color: var(--text-faint); font-style: italic; padding-bottom: 2px; }
 
 /* Heading */
 .heading { font-weight: 700; color: var(--text); }

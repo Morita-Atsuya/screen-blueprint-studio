@@ -7,7 +7,7 @@ import { useI18n } from '../i18n/I18nProvider'
 
 interface ComponentDropZoneProps extends Omit<ComponentDropData, 'type'> {
   surface: 'tree' | 'canvas'
-  orientation?: 'vertical' | 'horizontal'
+  orientation?: 'vertical' | 'horizontal' | 'grid'
   edge?: 'before' | 'end'
 }
 

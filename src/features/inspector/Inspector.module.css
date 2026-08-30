@@ -7,6 +7,16 @@
 .row { display: flex; gap: 16px; }
 .checkLabel { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
 .divider { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
+.layoutSection {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.layoutSection h3 {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 0.82rem;
+}
 .overrideSection {
   margin-top: 2px;
   padding: 10px;

@@ -132,9 +132,7 @@ export function validateScreenComponent(
     [
       'page',
       'section',
-      'stack',
-      'columns',
-      'actionArea',
+      'container',
       'heading',
       'text',
       'textInput',
@@ -356,20 +354,23 @@ export function validateComponentConfig(
     case 'page':
     case 'section':
     case 'modal':
-      exactKeys(config, ['kind', 'title'], [], path)
+      exactKeys(
+        config,
+        ['kind', 'title', 'layout', 'gap', 'columns', 'justify', 'align', 'wrap'],
+        [],
+        path,
+      )
       string(config.title, `${path}.title`)
+      validateComponentLayout(config, path)
       return
-    case 'stack':
-      exactKeys(config, ['kind', 'gap'], [], path)
-      enumValue(config.gap, ['sm', 'md', 'lg'], `${path}.gap`)
-      return
-    case 'columns':
-      exactKeys(config, ['kind', 'columns'], [], path)
-      enumValue(config.columns, [2, 3], `${path}.columns`)
-      return
-    case 'actionArea':
-      exactKeys(config, ['kind', 'align'], [], path)
-      enumValue(config.align, ['start', 'end', 'between'], `${path}.align`)
+    case 'container':
+      exactKeys(
+        config,
+        ['kind', 'layout', 'gap', 'columns', 'justify', 'align', 'wrap'],
+        [],
+        path,
+      )
+      validateComponentLayout(config, path)
       return
     case 'heading':
       exactKeys(config, ['kind', 'text', 'level'], [], path)
@@ -453,6 +454,15 @@ export function validateComponentConfig(
     default:
       fail(`${path}.kind`, `is not a supported component kind: ${String(config.kind)}`)
   }
+}
+
+function validateComponentLayout(config: UnknownRecord, path: string): void {
+  enumValue(config.layout, ['vertical', 'horizontal', 'grid'], `${path}.layout`)
+  enumValue(config.gap, ['none', 'sm', 'md', 'lg'], `${path}.gap`)
+  enumValue(config.columns, [1, 2, 3, 4], `${path}.columns`)
+  enumValue(config.justify, ['start', 'center', 'end', 'between'], `${path}.justify`)
+  enumValue(config.align, ['start', 'center', 'end', 'stretch'], `${path}.align`)
+  boolean(config.wrap, `${path}.wrap`)
 }
 
 export function validateComponentOverride(

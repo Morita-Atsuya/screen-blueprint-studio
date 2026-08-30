@@ -68,7 +68,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 
 ### 3.2 座標ではなく意味を保存する
 
-コンポーネントは`parentId`と`childIds`で構造化する。レイアウトは`stack`、`columns`、`actionArea`などの意味付きコンポーネントで表現する。
+コンポーネントは`parentId`と`childIds`で意味的に構造化する。配置は意味的kindと混在させず、childを持てるcomponent自身の共通layout属性で表現する。
 
 ### 3.3 すべての更新をcommandにする
 
@@ -177,9 +177,7 @@ interface Screen {
 type ComponentKind =
   | "page"
   | "section"
-  | "stack"
-  | "columns"
-  | "actionArea"
+  | "container"
   | "heading"
   | "text"
   | "textInput"
@@ -209,11 +207,9 @@ interface CommonComponentSpec {
 
 ```ts
 type ComponentConfig =
-  | { kind: "page"; title: string }
-  | { kind: "section"; title: string }
-  | { kind: "stack"; gap: "sm" | "md" | "lg" }
-  | { kind: "columns"; columns: 2 | 3 }
-  | { kind: "actionArea"; align: "start" | "end" | "between" }
+  | ({ kind: "page"; title: string } & ComponentLayout)
+  | ({ kind: "section"; title: string } & ComponentLayout)
+  | ({ kind: "container" } & ComponentLayout)
   | { kind: "heading"; text: string; level: 1 | 2 | 3 }
   | { kind: "text"; text: string }
   | TextInputConfig
@@ -221,6 +217,15 @@ type ComponentConfig =
   | ButtonConfig
   | AlertConfig
   | ModalConfig;
+
+interface ComponentLayout {
+  layout: "vertical" | "horizontal" | "grid";
+  gap: "none" | "sm" | "md" | "lg";
+  columns: 1 | 2 | 3 | 4;
+  justify: "start" | "center" | "end" | "between";
+  align: "start" | "center" | "end" | "stretch";
+  wrap: boolean;
+}
 
 interface TextInputConfig {
   kind: "textInput";
@@ -258,13 +263,13 @@ interface AlertConfig {
   message: string;
 }
 
-interface ModalConfig {
+interface ModalConfig extends ComponentLayout {
   kind: "modal";
   title: string;
 }
 ```
 
-`modal`はcontainerとして扱い、defaultでは非表示、対象stateのoverrideで表示する。自由配置やdialog制御は行わない。これにより、エラー表示をmodalからinline alertへ変更する共同編集シナリオを同じモデル上で表現できる。
+`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。`vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`modal`はcontainerとして扱い、defaultでは非表示、対象stateのoverrideで表示する。自由配置やdialog制御は行わない。これにより、エラー表示をmodalからinline alertへ変更する共同編集シナリオを同じモデル上で表現できる。
 
 ### 5.3 バリデーション
 

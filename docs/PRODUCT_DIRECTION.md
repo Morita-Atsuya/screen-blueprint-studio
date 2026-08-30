@@ -73,7 +73,8 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 
 初期コンポーネント候補:
 
-- Layout: Page、Section、Stack、Columns、Action Area
+- Container: Page、Section、Container、Modal
+- Layout properties: vertical、horizontal、grid、gap、distribution、alignment、wrap
 - Navigation: Header、Sidebar、Tabs、Breadcrumbs
 - Content: Heading、Text、Image、Card、Table
 - Form: Text Input、Textarea、Select、Checkbox、Radio、Date Input
@@ -89,7 +90,7 @@ Page
 │  ├─ TextInput: 氏名
 │  ├─ EmailInput: メールアドレス
 │  └─ Select: ロール
-└─ ActionArea
+└─ Container (horizontal, end)
    ├─ Button: キャンセル
    └─ Button: 保存
 ```
@@ -148,7 +149,7 @@ WFと仕様書を別々に同期するのではなく、**同じデータモデ�
 ### ワイヤーフレームキャンバス
 
 - コンポーネントの配置、選択、並び替え
-- セクションやカラム間の移動
+- セクションやコンテナ間の移動
 - 状態別プレビュー
 - 仕様漏れ、AI提案、変更差分のハイライト
 

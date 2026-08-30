@@ -28,9 +28,7 @@ export interface FieldBinding {
 export type ComponentKind =
   | 'page'
   | 'section'
-  | 'stack'
-  | 'columns'
-  | 'actionArea'
+  | 'container'
   | 'heading'
   | 'text'
   | 'textInput'
@@ -40,7 +38,7 @@ export type ComponentKind =
   | 'modal'
 
 export const CONTAINER_KINDS: ComponentKind[] = [
-  'page', 'section', 'stack', 'columns', 'actionArea', 'modal',
+  'page', 'section', 'container', 'modal',
 ]
 
 export const LEAF_KINDS: ComponentKind[] = [
@@ -50,12 +48,28 @@ export const LEAF_KINDS: ComponentKind[] = [
 // ============================================================
 // Component configs (discriminated union by kind)
 // ============================================================
+export interface ComponentLayout {
+  layout: 'vertical' | 'horizontal' | 'grid'
+  gap: 'none' | 'sm' | 'md' | 'lg'
+  columns: 1 | 2 | 3 | 4
+  justify: 'start' | 'center' | 'end' | 'between'
+  align: 'start' | 'center' | 'end' | 'stretch'
+  wrap: boolean
+}
+
+export const DEFAULT_COMPONENT_LAYOUT: ComponentLayout = {
+  layout: 'vertical',
+  gap: 'md',
+  columns: 2,
+  justify: 'start',
+  align: 'stretch',
+  wrap: false,
+}
+
 export type ComponentConfig =
-  | { kind: 'page'; title: string }
-  | { kind: 'section'; title: string }
-  | { kind: 'stack'; gap: 'sm' | 'md' | 'lg' }
-  | { kind: 'columns'; columns: 2 | 3 }
-  | { kind: 'actionArea'; align: 'start' | 'end' | 'between' }
+  | ({ kind: 'page'; title: string } & ComponentLayout)
+  | ({ kind: 'section'; title: string } & ComponentLayout)
+  | ({ kind: 'container' } & ComponentLayout)
   | { kind: 'heading'; text: string; level: 1 | 2 | 3 }
   | { kind: 'text'; text: string }
   | {
@@ -86,7 +100,7 @@ export type ComponentConfig =
       preventDoubleSubmit: boolean
     }
   | { kind: 'alert'; tone: 'info' | 'success' | 'warning' | 'error'; message: string }
-  | { kind: 'modal'; title: string }
+  | ({ kind: 'modal'; title: string } & ComponentLayout)
 
 // ============================================================
 // Component

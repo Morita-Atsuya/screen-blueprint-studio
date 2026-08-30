@@ -1,9 +1,17 @@
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  rectSortingStrategy,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '../../app/appStore'
 import type {
   ComponentOverride,
+  ComponentConfig,
+  ComponentLayout,
   EntityId,
   ProjectDocument,
   ScreenComponent,
@@ -165,13 +173,23 @@ function CanvasComponent({
     : undefined
   const isSelected = selectedComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
-  const columnCount = component.config.kind === 'columns'
-    ? component.config.columns
-    : null
-  const isColumns = columnCount !== null
-  const childrenStyle = columnCount
+  const layout = hasLayout(component.config) ? component.config : null
+  const dropOrientation = layout?.layout === 'horizontal'
+    ? 'horizontal'
+    : layout?.layout === 'grid'
+      ? 'grid'
+      : 'vertical'
+  const sortingStrategy = layout?.layout === 'horizontal'
+    ? horizontalListSortingStrategy
+    : layout?.layout === 'grid'
+      ? rectSortingStrategy
+      : verticalListSortingStrategy
+  const childrenStyle = layout
     ? {
-        '--column-width': `calc((100% - ${(columnCount - 1) * 8}px) / ${columnCount})`,
+        '--layout-gap': layoutGap(layout.gap),
+        '--layout-columns': layout.columns,
+        justifyContent: layout.justify === 'between' ? 'space-between' : layout.justify,
+        alignItems: layout.align,
       } as CSSProperties
     : undefined
   const style: CSSProperties = {
@@ -209,11 +227,17 @@ function CanvasComponent({
       {isContainer && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
-          strategy={verticalListSortingStrategy}
+          strategy={sortingStrategy}
         >
           <div
-            className={`${styles.children} ${isColumns ? styles.columnChildren : ''}`}
+            className={[
+              styles.children,
+              layout?.layout === 'horizontal' ? styles.horizontalChildren : '',
+              layout?.layout === 'grid' ? styles.gridChildren : '',
+              layout?.layout === 'horizontal' && layout.wrap ? styles.wrapChildren : '',
+            ].join(' ')}
             style={childrenStyle}
+            data-layout={layout?.layout}
           >
             {component.childIds.map((childId, index) => (
               <div key={childId} className={styles.childSlot}>
@@ -222,7 +246,7 @@ function CanvasComponent({
                   parentId={component.id}
                   screenId={component.screenId}
                   position={index}
-                  orientation={isColumns ? 'horizontal' : 'vertical'}
+                  orientation={dropOrientation}
                   label={index === 0
                     ? t('dnd.first', { label: displayName })
                     : t('dnd.position', { position: index + 1 })}
@@ -243,7 +267,7 @@ function CanvasComponent({
               parentId={component.id}
               screenId={component.screenId}
               position={component.childIds.length}
-              orientation={isColumns ? 'horizontal' : 'vertical'}
+              orientation={dropOrientation}
               edge="end"
               label={t('dnd.end', { label: displayName })}
             />
@@ -252,6 +276,24 @@ function CanvasComponent({
       )}
     </div>
   )
+}
+
+function hasLayout(config: ComponentConfig): config is ComponentConfig & ComponentLayout {
+  return (
+    config.kind === 'page' ||
+    config.kind === 'section' ||
+    config.kind === 'container' ||
+    config.kind === 'modal'
+  )
+}
+
+function layoutGap(gap: ComponentLayout['gap']): string {
+  switch (gap) {
+    case 'none': return '0px'
+    case 'sm': return '8px'
+    case 'md': return '16px'
+    case 'lg': return '24px'
+  }
 }
 
 function ComponentView({
@@ -269,32 +311,8 @@ function ComponentView({
       return <div className={styles.pageBadge}>{cfg.title}</div>
     case 'section':
       return <div className={styles.sectionTitle}>{cfg.title}</div>
-    case 'stack':
-      return (
-        <div className={styles.containerLabel}>
-          {t('component.stack')} ({t(
-            cfg.gap === 'sm'
-              ? 'inspector.gapSmall'
-              : cfg.gap === 'md'
-                ? 'inspector.gapMedium'
-                : 'inspector.gapLarge',
-          )})
-        </div>
-      )
-    case 'columns':
-      return <div className={styles.containerLabel}>{t('component.columns')} ({cfg.columns})</div>
-    case 'actionArea':
-      return (
-        <div className={styles.containerLabel}>
-          {t('component.actionArea')} ({t(
-            cfg.align === 'start'
-              ? 'inspector.alignStart'
-              : cfg.align === 'end'
-                ? 'inspector.alignEnd'
-                : 'inspector.alignBetween',
-          )})
-        </div>
-      )
+    case 'container':
+      return null
     case 'heading':
       return <div className={`${styles.heading} ${styles[`h${cfg.level}`]}`}>{cfg.text}</div>
     case 'text':

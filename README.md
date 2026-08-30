@@ -9,7 +9,8 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 ## 主な機能
 
 - 複数画面の管理
-- Page、Section、Stack、Columns、入力、ボタン、Alert、Modalなどの構造化コンポーネント
+- Page、Section、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント
+- Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
 - default、loading、success、error、custom状態と状態別override
@@ -55,6 +56,7 @@ AIがchange setへ型付きoperationを追加
 
 - パレット項目はクリックで選択中containerへ追加、ドラッグでtree/canvasの任意位置へ追加
 - treeとcanvasの`⠿` handleで、同一container内の並び替えまたは別containerへの移動
+- Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
 - Screensタブで画面の追加、選択、名前・route編集、削除
@@ -114,7 +116,7 @@ chrome://flags/#enable-webmcp-testing
 | Read | `get_screen_diagnostics` | 画面の軽量な構造診断を取得 |
 | Read | `get_pending_change_set` | active change setとoperationを取得 |
 | Write | `begin_change_set` | review対象のchange setを開始 |
-| Write | `change_screen_structure` | 画面の追加、更新、削除、entry変更を提案 |
+| Write | `change_screen_structure` | 画面の追加、更新、削除を提案 |
 | Write | `change_component_structure` | コンポーネントの追加、移動、削除を提案 |
 | Write | `update_component_spec` | コンポーネントの共通仕様、種類別設定を提案 |
 | Write | `upsert_screen_state` | 非default状態の作成、更新、削除を提案 |

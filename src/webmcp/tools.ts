@@ -497,7 +497,7 @@ const changeScreenStructure: ToolDefinition = {
 }
 
 const componentKinds: ComponentKind[] = [
-  'section', 'stack', 'columns', 'actionArea', 'heading', 'text',
+  'section', 'container', 'heading', 'text',
   'textInput', 'select', 'button', 'alert', 'modal',
 ]
 

@@ -1410,6 +1410,32 @@ await test('representative screen/component/state/event/API writes reach the cha
     operation: 'add',
     screenId: 'screen-list',
     parentId: 'comp-list-page',
+    kind: 'container',
+    config: {
+      kind: 'container',
+      layout: 'horizontal',
+      gap: 'sm',
+      columns: 2,
+      justify: 'center',
+      align: 'stretch',
+      wrap: true,
+    },
+  })
+  const addedContainerId = latestCommand().componentId
+  execute('update_component_spec', {
+    componentId: addedContainerId,
+    patch: { config: { layout: 'grid', columns: 3, gap: 'lg' } },
+  })
+  assert(
+    latestCommand().patch.config.layout === 'grid' &&
+      latestCommand().patch.config.columns === 3,
+    'WebMCP layout update did not reach the change set',
+  )
+
+  execute('change_component_structure', {
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: addedContainerId,
     kind: 'heading',
     config: { kind: 'heading', text: 'Agent heading', level: 2 },
   })
@@ -1424,6 +1450,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     patch: { config: { text: 'Updated heading' } },
   })
   execute('change_component_structure', { operation: 'remove', componentId: addedComponentId })
+  execute('change_component_structure', { operation: 'remove', componentId: addedContainerId })
 
   execute('upsert_screen_state', {
     operation: 'create',
@@ -1834,11 +1861,11 @@ await test('component display labels come from visible specification fields', as
     'button label did not use its visible label',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-actions']) === 'Action area',
+    getComponentDisplayLabel(document.components['comp-actions']) === 'Container',
     'container label did not use its kind fallback',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-actions'], undefined, 'ja') === '操作エリア',
+    getComponentDisplayLabel(document.components['comp-actions'], undefined, 'ja') === 'コンテナ',
     'container label did not use the selected locale',
   )
 
@@ -1883,7 +1910,7 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
   )
 })
 
-await test('column previews and palette drops use layout-specific feedback', async () => {
+await test('container layouts drive preview, DnD, and palette feedback', async () => {
   const canvasSource = readFileSync(
     join(root, 'src/features/canvas/Canvas.tsx'),
     'utf8',
@@ -1900,29 +1927,157 @@ await test('column previews and palette drops use layout-specific feedback', asy
     join(root, 'src/dnd/EditorDndContext.tsx'),
     'utf8',
   )
-  assert(
-    canvasSource.includes("component.config.kind === 'columns'") &&
-      canvasSource.includes("'--column-width'") &&
-      canvasSource.includes("orientation={isColumns ? 'horizontal' : 'vertical'}"),
-    'column children do not select a count-aware horizontal layout and drop orientation',
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
   )
   assert(
-    canvasStyles.includes('.columnChildren') &&
+    canvasSource.includes('horizontalListSortingStrategy') &&
+      canvasSource.includes('rectSortingStrategy') &&
+      canvasSource.includes('orientation={dropOrientation}') &&
+      canvasSource.includes("'--layout-columns'"),
+    'container layout does not select matching sorting, drop orientation, and column settings',
+  )
+  assert(
+    canvasStyles.includes('.horizontalChildren') &&
       canvasStyles.includes('flex-direction: row') &&
-      canvasStyles.includes('flex: 0 0 var(--column-width)') &&
+      canvasStyles.includes('.gridChildren') &&
+      canvasStyles.includes('grid-template-columns: repeat(var(--layout-columns') &&
+      canvasStyles.includes('gap: var(--layout-gap') &&
       canvasStyles.includes('overflow-x: auto'),
-    'column children are not equal-width horizontal regions with narrow-width overflow',
+    'horizontal and grid layouts are not rendered with gap and narrow-width overflow',
   )
   assert(
     dropZoneStyles.includes('.horizontal') &&
+      dropZoneStyles.includes('.grid') &&
       dropZoneStyles.includes('border-left: 2px solid transparent'),
-    'horizontal column insertion targets do not use vertical indicators',
+    'horizontal and grid insertion targets do not use layout-specific indicators',
+  )
+  assert(
+    inspectorSource.includes("cfg.kind === 'container'") &&
+      inspectorSource.includes("layout.layout === 'grid'") &&
+      inspectorSource.includes("layout.layout === 'horizontal'") &&
+      inspectorSource.includes("t('inspector.layoutTitle')"),
+    'shared layout controls are missing or not mode-sensitive',
   )
   assert(
     dndSource.includes("drag.type === 'palette'") &&
       dndSource.includes('dropAnimation={isPaletteDrag ? null : undefined}'),
     'palette add still uses the move-style overlay drop animation',
   )
+})
+
+await test('semantic containers replace legacy layout kinds across commands and persistence', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('semantic-container-layout')
+  const { createAddComponentCommand, PALETTE_ITEMS } = await import(
+    moduleUrl(componentFactoryBundle, 'semantic-container-factory')
+  )
+  const kinds = PALETTE_ITEMS.map(item => item.kind)
+  assert(kinds.includes('section') && kinds.includes('container'), 'semantic containers are missing from palette')
+  assert(kinds.length === 9, 'palette exposes an unexpected component kind')
+
+  const containerCommand = createAddComponentCommand(
+    store.getState().document,
+    'screen-list',
+    'comp-list-section',
+    'container',
+    'en',
+  )
+  assert(
+    JSON.stringify(containerCommand.config) === JSON.stringify({
+      kind: 'container',
+      layout: 'vertical',
+      gap: 'md',
+      columns: 2,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    }),
+    'container factory did not create the complete default layout',
+  )
+  store.getState().dispatch(containerCommand, 'Add semantic container')
+  store.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: containerCommand.componentId,
+    patch: {
+      config: {
+        layout: 'grid',
+        gap: 'lg',
+        columns: 4,
+        justify: 'center',
+        align: 'end',
+        wrap: false,
+      },
+    },
+  }, 'Configure semantic container')
+  let config = store.getState().document.components[containerCommand.componentId].config
+  assert(
+    config.kind === 'container' &&
+      config.layout === 'grid' &&
+      config.gap === 'lg' &&
+      config.columns === 4 &&
+      config.justify === 'center' &&
+      config.align === 'end',
+    'container layout command was not applied',
+  )
+
+  const changeSet = store.getState().beginChangeSet('Human layout adjustment')
+  store.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: containerCommand.componentId,
+    patch: { config: { layout: 'horizontal', wrap: true, justify: 'between' } },
+  }, 'Adjust layout')
+  const active = store.getState().activeChangeSet
+  assert(
+    active?.id === changeSet.id &&
+      active.operations.at(-1)?.source === 'human' &&
+      store.getState().effectiveDocument.components[containerCommand.componentId].config.layout === 'horizontal',
+    'human layout edit did not join the active change set',
+  )
+  store.getState().acceptChangeSet()
+  const reloaded = await freshStore('semantic-container-layout-reload')
+  config = reloaded.getState().document.components[containerCommand.componentId].config
+  assert(
+    config.kind === 'container' && config.layout === 'horizontal' && config.wrap === true,
+    'container layout did not survive reload',
+  )
+
+  const invalidCommands = [
+    {
+      type: 'addComponent',
+      componentId: 'unsupported-layout-kind',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      kind: 'layoutPreset',
+      config: { kind: 'layoutPreset', gap: 'md' },
+    },
+    {
+      type: 'addComponent',
+      componentId: 'incomplete-container',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      kind: 'container',
+      config: { kind: 'container', layout: 'vertical' },
+    },
+    {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-heading',
+      patch: { config: { layout: 'grid' } },
+    },
+  ]
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'layout-shape-rejection')
+  )
+  for (const command of invalidCommands) {
+    let rejected = false
+    try {
+      applyCommandWithoutRevision(reloaded.getState().document, command)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `invalid layout command was accepted: ${JSON.stringify(command)}`)
+  }
 })
 
 await test('component name metadata is rejected across document, command, and WebMCP inputs', async () => {
