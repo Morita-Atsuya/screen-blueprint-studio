@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useAppStore } from './appStore'
-import { ScreenList } from '../features/screens/ScreenList'
-import { Palette } from '../features/palette/Palette'
-import { StructureTree } from '../features/structure-tree/StructureTree'
+import { LeftPane } from './LeftPane'
 import { Canvas } from '../features/canvas/Canvas'
 import { Inspector } from '../features/inspector/Inspector'
 import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
@@ -36,7 +34,6 @@ export function App() {
   const { t, formatMessage } = useI18n()
   const {
     ui,
-    setLeftPanelTab,
     history,
     redoStack,
     undo,
@@ -229,22 +226,7 @@ export function App() {
         <div className={styles.main}>
           {/* Left panel */}
           <aside className={styles.left}>
-            <div className={styles.tabs}>
-              {(['screens', 'palette', 'structure'] as const).map(tab => (
-                <button
-                  key={tab}
-                  className={`${styles.tab} ${ui.leftPanelTab === tab ? styles.tabActive : ''}`}
-                  onClick={() => setLeftPanelTab(tab)}
-                >
-                  {t(`tabs.${tab}`)}
-                </button>
-              ))}
-            </div>
-            <div className={styles.leftContent}>
-              {ui.leftPanelTab === 'screens' && <ScreenList />}
-              {ui.leftPanelTab === 'palette' && <Palette />}
-              {ui.leftPanelTab === 'structure' && <StructureTree />}
-            </div>
+            <LeftPane />
           </aside>
 
           <main className={styles.canvas}>
