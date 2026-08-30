@@ -261,7 +261,7 @@ const eventActionSchema = {
 
 const getCurrentScreenContext: ToolDefinition = {
   name: 'get_current_screen_context',
-  description: 'Get the confirmed revision and current UI/change-set context.',
+  description: 'Get the confirmed revision and current UI and active change set context.',
   annotations: { readOnlyHint: true },
   inputSchema: { type: 'object', properties: {}, required: [], ...CLOSED_OBJECT },
   execute() {
@@ -658,7 +658,7 @@ const changeComponentStructure: ToolDefinition = {
 
 const updateComponentSpec: ToolDefinition = {
   name: 'update_component_spec',
-  description: 'Update a component common spec or kind-specific config.',
+  description: 'Update a component common spec or kind-specific config in the active change set.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -723,7 +723,7 @@ const updateComponentSpec: ToolDefinition = {
 
 const upsertScreenState: ToolDefinition = {
   name: 'upsert_screen_state',
-  description: 'Create, update, or remove a named screen state.',
+  description: 'Create, update, or remove a named screen state in the active change set.',
   inputSchema: {
     oneOf: [
       {
@@ -830,7 +830,7 @@ const upsertScreenState: ToolDefinition = {
 
 const connectBehavior: ToolDefinition = {
   name: 'connect_behavior',
-  description: 'Create/remove an event or create/remove an API operation.',
+  description: 'Create or remove an event or API operation in the active change set.',
   inputSchema: {
     oneOf: [
       {

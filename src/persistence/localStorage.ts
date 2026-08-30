@@ -197,7 +197,7 @@ export function clearStorage(): boolean {
     storage().removeItem(REJECTED_KEY)
     rejectedRecordsRemoved = true
   } catch (error) {
-    console.warn('Failed to remove rejected change-set records', error)
+    console.warn('Failed to remove rejected change set records', error)
   }
   return documentRemoved && rejectedRecordsRemoved
 }

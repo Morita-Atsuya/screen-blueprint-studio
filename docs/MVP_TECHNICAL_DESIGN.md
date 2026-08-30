@@ -20,7 +20,7 @@ MVPでは次の体験を完成させる。
 1. 人間がAIなしでも画面仕様を作成、編集できる
 2. エージェントが現在の画面、選択、未保存状態をWebMCPで取得できる
 3. エージェントの変更は直接確定せず、同じ画面上のchange setとして表示される
-4. 人間が変更案を確認、修正、承認、却下できる
+4. 人間が変更セットを確認、修正、反映、破棄できる
 5. エージェントがchange set内の人間の修正を読み、次の変更へ反映できる
 
 WebMCPは状態管理そのものではなく、アプリ内の読み取り・更新操作をエージェントへ公開する境界である。人間向けUIとWebMCPツールは、同じcommand層と検証処理を使用する。
@@ -40,7 +40,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - クリックまたは送信イベント
 - API操作と成功・失敗状態の関連付け
 - 同時に1件のAI change set
-- change setの確認、手動修正、承認、却下
+- change setの確認、手動修正、反映、破棄
 - 確定操作のUndo／Redo
 - `localStorage`への保存
 - 10個のWebMCPツール
@@ -58,7 +58,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - 本番コード生成
 - Markdown、PDF出力
 - Figma、GitHub、外部APIとの同期
-- AIによるchange setの承認・却下
+- AIによるchange setの反映・破棄
 
 ## 3. 設計原則
 
@@ -86,7 +86,7 @@ ReactコンポーネントやWebMCPツールからモデルを直接変更しな
 
 MVPではエージェントの変更を必ずchange setとして確認する。AIが確定モデルを直接更新する経路は公開しない。
 
-WebMCPには承認、却下ツールを公開しない。承認・却下は人間向けUIだけから実行する。
+WebMCPには反映、破棄ツールを公開しない。反映・破棄は人間向けUIだけから実行する。
 
 ### 3.6 派生データを保存しない
 
@@ -126,7 +126,7 @@ effectiveDocument =
     : applyCommands(activeChangeSet.baseDocument, activeChangeSet.operations);
 ```
 
-キャンバス、ツリー、インスペクターは常に`effectiveDocument`を読む。これによりAIの変更案を確定前にアプリ全体でpreviewできる。
+キャンバス、ツリー、インスペクターは常に`effectiveDocument`を読む。これによりAIの変更セットを確定前にアプリ全体でpreviewできる。
 
 ## 5. 画面仕様モデル
 
@@ -423,7 +423,7 @@ screen追加時はroot pageとdefault stateを同一commandで作成する。scr
 
 `duplicateComponent`はPage／Modal root以外の対象subtreeを1 commandでdeep copyし、全component IDをcommand内の対応表で新規IDへ置換して元component直後へ挿入する。全ScreenStateの対象overrideは新IDへ複製する一方、eventと`ApiOperation.requestBindings`は複製せず、Buttonのevent参照は外す。入力の`fieldKey`は一意なcopy suffixへ再採番する。
 
-Copyはdocumentやhistoryを変更せず、対象subtreeとコピー時点の状態overrideだけを型付きのアプリ内clipboardへ保持する。`pasteComponent`はそのsnapshot、貼り付け先、ID対応表を持つ1 commandで、duplicateと同じsubtree copy処理を使用する。container／Page／Modal選択時は子の末尾、leaf選択時は同一parent内の直後へ挿入する。同一画面ではsnapshotの状態overrideを複製し、別画面では状態間の対応を推測せずoverrideを省略して通知する。clipboardは同じproject ID内だけで有効で、sourceの後続編集・削除やchange setのAccept／Rejectを越えてsnapshotを利用できるが、reloadとsample resetでは破棄する。
+Copyはdocumentやhistoryを変更せず、対象subtreeとコピー時点の状態overrideだけを型付きのアプリ内clipboardへ保持する。`pasteComponent`はそのsnapshot、貼り付け先、ID対応表を持つ1 commandで、duplicateと同じsubtree copy処理を使用する。container／Page／Modal選択時は子の末尾、leaf選択時は同一parent内の直後へ挿入する。同一画面ではsnapshotの状態overrideを複製し、別画面では状態間の対応を推測せずoverrideを省略して通知する。clipboardは同じproject ID内だけで有効で、sourceの後続編集・削除やchange setの反映／破棄を越えてsnapshotを利用できるが、reloadとsample resetでは破棄する。
 
 ### 7.2 更新単位
 
@@ -442,7 +442,7 @@ interface UpdateComponentSpecCommand {
 
 これにより、ID、親子参照、kindなどの構造情報を仕様更新ツールから破壊できない。
 
-## 8. Change set、承認、却下、Undo／Redo
+## 8. Change set、反映、破棄、Undo／Redo
 
 ### 8.1 Change set
 
@@ -474,11 +474,11 @@ interface CollaborationState {
      active change set
        ├─ AIがcommand追加
        ├─ 人間がpreviewを修正
-       ├─ 人間が承認 ──────────> 確定モデル + history
-       └─ 人間が却下 ──────────> 確定モデル
+       ├─ 人間が反映 ──────────> 確定モデル + history
+       └─ 人間が破棄 ──────────> 確定モデル
 ```
 
-active change set中は、人間によるキャンバス・インスペクター編集もchange setへ追加する。確定モデルを裏で変更しない。UI上部に「提案を編集中」と明示する。
+active change set中は、人間によるキャンバス・インスペクター編集もchange setへ追加する。確定モデルを裏で変更しない。UI上部に「変更セットを確認中」と明示する。
 
 change setの`version`はAI・人間を問わずoperation追加ごとに1増加する。WebMCPのwrite toolは`expectedRevision`と`expectedChangeSetVersion`を受け取り、次を検証する。
 
@@ -487,9 +487,9 @@ change setの`version`はAI・人間を問わずoperation追加ごとに1増加�
 
 これにより、別タブで確定モデルが更新された場合と、tool呼び出しの間に人間がchange setを修正した場合の両方でstale writeを拒否できる。
 
-### 8.3 承認
+### 8.3 反映
 
-承認時は次を1transactionで行う。
+反映時は次を1transactionで行う。
 
 1. `baseRevision`と現在の確定モデルrevisionが一致することを確認する
 2. 全operationsをbase documentへ再適用する
@@ -498,9 +498,9 @@ change setの`version`はAI・人間を問わずoperation追加ごとに1増加�
 5. before/after snapshotをhistoryへ積む
 6. active change setを破棄する
 
-### 8.4 却下
+### 8.4 破棄
 
-却下時は確定モデルを変更せず、active change setを破棄する。修正要望はエージェント側のチャットで伝える。
+破棄時は確定モデルを変更せず、active change setを破棄する。修正要望はエージェント側のチャットで伝える。
 
 ### 8.5 Undo／Redo
 
@@ -518,10 +518,10 @@ interface HistoryEntry {
 - controlled text fieldは打鍵中にモデルを変更せずlocal draftを保持し、単一行のEnterまたはblur、複数行のblurで1command・1entryとして確定する。IME変換中のEnterは確定triggerにしない
 - active change set中のtext field確定も文字数ではなく1編集sessionにつき1件のhuman operationとする
 - 外部document更新と競合した未確定draftは上書きせず保持し、再確定またはEscape取消をユーザーが選べる。reload時はまず同期的なcommand確定を試し、validationで確定できないdraftだけをsessionStorageへ退避して同じfieldへ復元する
-- change set承認は全operationsで1entry
+- change set反映は全operationsで1entry
 - Undoは`before`を復元し、revisionを新しく採番する
 - RedoはUndoしたentryの`after`を復元し、同様にrevisionを新しく採番する
-- 通常commandまたはchange set承認で確定モデルが分岐した場合はredo stackを破棄する。change set却下は確定モデルを変えないためredo stackを維持する
+- 通常commandまたはchange set反映で確定モデルが分岐した場合はredo stackを破棄する。change set破棄は確定モデルを変えないためredo stackを維持する
 - active change set中はUndo／Redoを無効化する
 
 モデル規模が小さいMVPではsnapshot方式を採用し、逆command生成の複雑さを避ける。undo historyとredo stackはそれぞれ最大50件とし、どちらもreload後には復元しない。
@@ -577,7 +577,7 @@ interface Diagnostic {
 │ Palette / Tree   │ effectiveDocument preview    │                   │
 │ Structure        │                              │                   │
 ├──────────────────┴──────────────────────────────┴───────────────────┤
-│ Change set bar: summary / changed count / Reject / Accept           │
+│ Change set bar: summary / changed count / 破棄 / 反映               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -611,14 +611,14 @@ UI static copyは型付きJA/EN辞書へ集約し、headerで即時切替する�
 
 active change setがある場合だけ固定表示する。
 
-- 提案summary
+- change set summary
 - AI操作数、人間修正数
-- `Reject`ボタン
-- `Accept changes`ボタン
+- `破棄`ボタン
+- `反映`ボタン
 
-承認・却下は人間向けUIだけに置く。
+反映・破棄は人間向けUIだけに置く。
 
-AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIでの承認を必要とする。
+AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIでの反映を必要とする。
 
 ## 11. WebMCPツール
 
@@ -631,7 +631,7 @@ AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIで�
 | `get_current_screen_context` | project概要と現在の作業対象を取得 | project、screen一覧、active screen、revision、selected component/state、active change set |
 | `get_component` | ID指定または選択中componentの仕様を取得 | component、state override、関連event/API |
 | `get_screen_diagnostics` | fieldKeyなどの軽量な構造診断を取得 | screen ID、diagnostics |
-| `get_pending_change_set` | 未承認変更と人間修正を取得 | summary、operations、diff、base revision |
+| `get_pending_change_set` | 未反映の変更セットと人間修正を取得 | summary、operations、diff、base revision |
 
 ### 11.2 Change set開始
 
@@ -677,8 +677,8 @@ AIによる更新toolは次を共通要件とする。
 ### 11.4 公開しない操作
 
 - アプリ内clipboardのCopy／Paste（OS clipboardや外部JSONを扱わない人間向け操作）
-- change setの承認
-- change setの却下
+- change setの反映
+- change setの破棄
 - Undo／Redo
 - local dataの全消去
 - 任意JSON Patch
@@ -768,7 +768,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - 不正データの場合は自動初期化せず、復旧またはsample再読み込みを選べるエラー画面を表示
 - 確定documentが正常でactive change setだけが不正または再生不能な場合は、確定documentを通常起動し、pending change setだけを破棄して永続noticeで通知する
 - 書き込み失敗時は永続警告bannerを表示し、確定documentとpreview中のeffective documentをJSONで退避できる
-- change set却下の保存に失敗した場合は古いactive payloadを削除し、rejected IDとの照合でも再復元を防ぐ
+- change set破棄の保存に失敗した場合は古いactive payloadを削除し、rejected IDとの照合でも再復元を防ぐ
 - recovery中はJSON退避とsample初期化以外のwriteを拒否し、WebMCP readにはrecovery状態だけを公開する
 
 保存は確定transactionまたはchange set更新後に同期実行する。MVPのデータ量ではdebounceを必要としない。
@@ -798,7 +798,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - state override適用
 - validation ruleの重複・矛盾（required/email/min/maxLengthの重複、min>max、空pattern/custom description、不正な正規表現等）の拒否
 - custom validation ruleの保存と非実行
-- change set承認、却下、revision conflict
+- change set反映、破棄、revision conflict
 - Undo／Redo、revision単調増加、確定分岐時のredo破棄
 
 ### 15.2 Store integration tests
@@ -815,7 +815,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - パレットから追加し、canvasとtreeへ同時反映
 - component選択とinspector編集
 - state切り替え
-- change set差分、承認、却下
+- change set差分、反映、破棄
 
 ### 15.4 WebMCP handler tests
 
@@ -853,10 +853,10 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 1. active change setとeffective document
 2. operation差分表示
 3. change set内の人間修正
-4. 承認、却下、Undo／Redo
+4. 反映、破棄、Undo／Redo
 5. refresh後のactive change set復元
 
-完了条件: AI相当のcommand列をpreviewし、人間が修正後に一括承認または却下できる。
+完了条件: AI相当のcommand列をpreviewし、人間が修正後に一括反映または破棄できる。
 
 ### Phase 4: WebMCP
 
@@ -866,7 +866,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 4. 5 write tools
 5. WebMCP状態表示とtool handler tests
 
-完了条件: エージェントが選択中componentを読み、状態・API失敗仕様を提案し、UIへ未承認差分として表示できる。
+完了条件: エージェントが選択中componentを読み、状態・API失敗仕様を変更セットへ追加し、UIへ未反映差分として表示できる。
 
 ### Phase 5: 提出品質
 
@@ -876,7 +876,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 4. README、英語説明、ライセンス
 5. 公開URL、デモ動画
 
-完了条件: 初見ユーザーが手動編集からAI提案の承認まで迷わず完了できる。
+完了条件: 初見ユーザーが手動編集からAI変更セットの反映まで迷わず完了できる。
 
 ## 17. MVP受け入れ条件
 
@@ -885,9 +885,9 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 3. 破損した親子参照や存在しないIDを保存できない
 4. AI write toolは確定モデルを直接変更せず、screenとcomponent構造の追加・更新・移動・削除と既存stateの修正をactive change set上で行える
 5. AI変更とchange set内の人間修正を視覚的に区別できる
-6. 人間だけがchange setを承認・却下できる
+6. 人間だけがchange setを反映・破棄できる
 7. active change setに対する人間修正をエージェントがread toolで取得できる
-8. 承認したchange set全体を1回のUndoで戻し、Redoで再適用できる
+8. 反映したchange set全体を1回のUndoで戻し、Redoで再適用できる
 9. WebMCP非対応でも人間向けアプリが動作する
 10. 10個のtoolがDevToolsで確認でき、型付き入力で実行できる
 11. refresh後も確定モデルとactive change setを復元できる

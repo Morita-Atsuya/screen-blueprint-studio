@@ -96,7 +96,7 @@ export interface AppStore {
   pasteComponent(destinationComponentId: EntityId, label: string): boolean
   beginChangeSet(summary: string): ChangeSet
   dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'human' | 'agent'): void
-  acceptChangeSet(): void
+  acceptChangeSet(historyLabel?: string): void
   rejectChangeSet(): void
   undo(): void
   redo(): void
@@ -671,7 +671,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       markPersistence(persistIfAvailable(state.document, newChangeSet, nextUi.activeScreenId))
     },
 
-    acceptChangeSet() {
+    acceptChangeSet(historyLabel) {
       requireWritable()
       const state = get()
       if (!state.activeChangeSet) throw new DomainError('CHANGE_SET_NOT_ACTIVE', 'No active change set')
@@ -690,7 +690,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           buildHistory(
             state.document,
             next,
-            `Accept: ${state.activeChangeSet.summary}`,
+            historyLabel ?? `Accept change set: ${state.activeChangeSet.summary}`,
             'accepted-change-set',
             { before: selectedBefore, after: state.ui.selectedComponentId },
           ),

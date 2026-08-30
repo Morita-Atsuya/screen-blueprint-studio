@@ -832,8 +832,22 @@ function ChangesPanel({ changeSet }: { changeSet: ChangeSet }) {
       <p className={styles.changeSummary}>{changeSet.summary}</p>
       <ChangeOperationList changeSet={changeSet} />
       <div className={styles.changeActions}>
-        <button className={styles.acceptBtn} onClick={acceptChangeSet}>{t('changes.accept')}</button>
-        <button className={styles.rejectBtn} onClick={rejectChangeSet}>{t('changes.reject')}</button>
+        <button
+          className={styles.acceptBtn}
+          aria-label={t('changes.acceptAria')}
+          onClick={() => acceptChangeSet(t('changes.acceptHistory', {
+            summary: changeSet.summary,
+          }))}
+        >
+          {t('changes.accept')}
+        </button>
+        <button
+          className={styles.rejectBtn}
+          aria-label={t('changes.rejectAria')}
+          onClick={rejectChangeSet}
+        >
+          {t('changes.reject')}
+        </button>
       </div>
     </div>
   )

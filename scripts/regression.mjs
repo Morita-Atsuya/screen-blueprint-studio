@@ -199,7 +199,7 @@ await test('broken pending change sets never block or mutate confirmed data', as
   seedStore.getState().dispatch({
     type: 'updateScreen',
     screenId: 'screen-list',
-    name: 'Confirmed before broken proposal',
+    name: 'Confirmed before broken change set',
   })
   const confirmed = clone(seedStore.getState().document)
   const activeScreenId = 'screen-edit'
@@ -256,7 +256,7 @@ await test('broken pending change sets never block or mutate confirmed data', as
     assert(state.ui.rightPanelTab === 'inspector', `${testCase.name} opened Changes review`)
     assert(
       state.startupNotice?.key === 'app.invalidChangeSetDiscarded',
-      `${testCase.name} did not surface the discarded proposal`,
+      `${testCase.name} did not surface the discarded change set`,
     )
 
     const sanitized = JSON.parse(memoryStorage.getItem(storageKey))
@@ -273,7 +273,7 @@ await test('broken pending change sets never block or mutate confirmed data', as
   }
 })
 
-await test('failed broken-change-set cleanup stays non-blocking and explicit', async () => {
+await test('failed broken change set cleanup stays non-blocking and explicit', async () => {
   memoryStorage.clear()
   const seedStore = await freshStore('broken-cleanup-seed')
   seedStore.getState().dispatch({
@@ -292,7 +292,7 @@ await test('failed broken-change-set cleanup stays non-blocking and explicit', a
   const store = await freshStore('broken-cleanup-write-failure')
   const state = store.getState()
   assert(state.recoveryState === null, 'cleanup write failure entered full recovery')
-  assert(state.activeChangeSet === null, 'cleanup write failure restored the broken proposal')
+  assert(state.activeChangeSet === null, 'cleanup write failure restored the broken change set')
   assert(
     JSON.stringify(state.document) === JSON.stringify(confirmed),
     'cleanup write failure changed confirmed data',
@@ -300,21 +300,21 @@ await test('failed broken-change-set cleanup stays non-blocking and explicit', a
   assert(state.persistenceUnavailable, 'cleanup write failure did not expose persistence failure')
   assert(
     state.startupNotice?.key === 'app.invalidChangeSetDiscardFailed',
-    'cleanup write failure did not explain that the proposal remains in storage',
+    'cleanup write failure did not explain that the change set remains in storage',
   )
   assert(memoryStorage.getItem(storageKey) === raw, 'cleanup write failure altered the stored payload')
 
   memoryStorage.throwOnSetKeys.delete(storageKey)
   const retryStore = await freshStore('broken-cleanup-write-retry')
   assert(retryStore.getState().recoveryState === null, 'cleanup retry entered recovery')
-  assert(retryStore.getState().activeChangeSet === null, 'cleanup retry restored the broken proposal')
+  assert(retryStore.getState().activeChangeSet === null, 'cleanup retry restored the broken change set')
   assert(
     retryStore.getState().startupNotice?.key === 'app.invalidChangeSetDiscarded',
     'cleanup retry did not report successful discard',
   )
   assert(
     !('activeChangeSet' in JSON.parse(memoryStorage.getItem(storageKey))),
-    'cleanup retry left the broken proposal in storage',
+    'cleanup retry left the broken change set in storage',
   )
 })
 
@@ -400,7 +400,7 @@ await test('malformed rejected history is ignored and cannot block rejection', a
     'history save failure did not set an error toast',
   )
   const reloadedStore = await freshStore('rejected-write-failure-reload')
-  assert(reloadedStore.getState().activeChangeSet === null, 'failed history save restored rejected proposal')
+  assert(reloadedStore.getState().activeChangeSet === null, 'failed history save restored rejected change set')
 })
 
 await test('failed rejection persistence cannot restore a rejected change set', async () => {
@@ -423,7 +423,7 @@ await test('failed rejection persistence cannot restore a rejected change set', 
   assert(removeSuccessStore.getState().activeChangeSet === null, 'rejection did not clear active state')
   assert(removeSuccessStore.getState().persistenceUnavailable, 'failed rejection save was not surfaced')
   const afterRemovalReload = await freshStore('reject-stale-remove-success-reload')
-  assert(afterRemovalReload.getState().activeChangeSet === null, 'removed stale proposal was restored')
+  assert(afterRemovalReload.getState().activeChangeSet === null, 'removed stale change set was restored')
   assert(
     afterRemovalReload.getState().document.screens['screen-list'].name === 'Confirmed user edit',
     'last confirmed user edit was lost when rejection history saved',
@@ -443,7 +443,7 @@ await test('failed rejection persistence cannot restore a rejected change set', 
   memoryStorage.throwOnSetKeys.delete(storageKey)
   memoryStorage.throwOnRemove = false
   const guardedReload = await freshStore('reject-stale-id-guard-reload')
-  assert(guardedReload.getState().activeChangeSet === null, 'rejected ID guard restored stale proposal')
+  assert(guardedReload.getState().activeChangeSet === null, 'rejected ID guard restored stale change set')
   assert(
     guardedReload.getState().effectiveDocument.screens['screen-list'].name !== 'Rejected stale preview',
     'rejected preview became effective after reload',
@@ -462,7 +462,7 @@ await test('failed rejection persistence cannot restore a rejected change set', 
   bothWritesFailStore.getState().rejectChangeSet()
   memoryStorage.throwOnSetKeys.delete(storageKey)
   memoryStorage.throwOnSetKeys.delete(rejectedKey)
-  assert(memoryStorage.getItem(storageKey) === null, 'stale proposal survived both rejection write failures')
+  assert(memoryStorage.getItem(storageKey) === null, 'stale change set survived both rejection write failures')
   assert(bothWritesFailStore.getState().activeChangeSet === null, 'both write failures restored active state')
   assert(bothWritesFailStore.getState().persistenceUnavailable, 'both write failures were not surfaced')
   assert(typeof bothWritesFailStore.getState().exportCurrentData === 'function', 'confirmed JSON cannot be exported')
@@ -532,7 +532,7 @@ await test('persisted preview reloads separately and reject permanently clears i
   localStorage.clear()
   const firstStore = await freshStore('reload-first')
   const confirmedName = firstStore.getState().document.screens['screen-list'].name
-  const changeSet = firstStore.getState().beginChangeSet('Reload proposal')
+  const changeSet = firstStore.getState().beginChangeSet('Reload change set')
   firstStore.getState().dispatchToChangeSet(changeSet.id, {
     type: 'updateScreen',
     screenId: 'screen-list',
@@ -1057,7 +1057,7 @@ await test('component duplication preserves selection through history and change
       presentation.navigation.componentId === previewRootId &&
       presentation.impact.includes('3 components') &&
       [...markers.statuses.values()].filter(status => status === 'added').length === 3,
-    `change-set duplication was not a single reviewable operation with added subtree markers: ${JSON.stringify({
+    `change set duplication was not a single reviewable operation with added subtree markers: ${JSON.stringify({
       commandType: operation?.command.type,
       operationCount: changeSet?.operations.length,
       previewRootId,
@@ -1315,7 +1315,7 @@ await test('pasteComponent remains reviewable and selection-safe in active chang
   store.getState().beginChangeSet('Paste subtree')
   assert(
     store.getState().pasteComponent('comp-edit-section', 'Paste component'),
-    'active change-set paste failed',
+    'active change set paste failed',
   )
   const changeSet = store.getState().activeChangeSet
   const command = changeSet?.operations[0]?.command
@@ -2424,7 +2424,7 @@ await test('representative screen/component/state/event/API writes reach the cha
   })
   assert(
     !invalidNestedModal.ok && pending().operations.length === version,
-    'WebMCP accepted a nested modal or changed the proposal after rejection',
+    'WebMCP accepted a nested modal or changed the change set after rejection',
   )
   execute('change_component_structure', { operation: 'remove', componentId: addedModalId })
 
@@ -2923,28 +2923,28 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
 
 await test('human moves join active change sets and screen management reconciles selection', async () => {
   memoryStorage.clear()
-  const proposalStore = await freshStore('direct-edit-change-set')
-  const beforeOrder = proposalStore.getState().document.components['comp-actions'].childIds.join(',')
-  proposalStore.getState().beginChangeSet('Human direct manipulation')
-  proposalStore.getState().dispatch({
+  const changeSetStore = await freshStore('direct-edit-change-set')
+  const beforeOrder = changeSetStore.getState().document.components['comp-actions'].childIds.join(',')
+  changeSetStore.getState().beginChangeSet('Human direct manipulation')
+  changeSetStore.getState().dispatch({
     type: 'moveComponent',
     componentId: 'comp-cancel-btn',
     newParentId: 'comp-actions',
     position: 1,
   }, 'Human drag')
-  const proposal = proposalStore.getState().activeChangeSet
+  const changeSet = changeSetStore.getState().activeChangeSet
   assert(
-    proposal?.operations.at(-1)?.source === 'human' &&
-      proposal.operations.at(-1)?.command.type === 'moveComponent',
+    changeSet?.operations.at(-1)?.source === 'human' &&
+      changeSet.operations.at(-1)?.command.type === 'moveComponent',
     'human drag did not join the active change set',
   )
   assert(
-    proposalStore.getState().document.components['comp-actions'].childIds.join(',') === beforeOrder,
+    changeSetStore.getState().document.components['comp-actions'].childIds.join(',') === beforeOrder,
     'human drag mutated the confirmed document during review',
   )
   assert(
-    proposalStore.getState().effectiveDocument.components['comp-actions'].childIds.join(',') !== beforeOrder,
-    'human drag did not update the proposal preview',
+    changeSetStore.getState().effectiveDocument.components['comp-actions'].childIds.join(',') !== beforeOrder,
+    'human drag did not update the change set preview',
   )
 
   memoryStorage.clear()
@@ -3069,14 +3069,14 @@ await test('human moves join active change sets and screen management reconciles
       'state edits were not persisted',
     )
 
-    reloaded.getState().beginChangeSet('Human state proposal edit')
+    reloaded.getState().beginChangeSet('Human state change set edit')
     const confirmedDescription =
       reloaded.getState().document.screenStates['state-human-error'].description
     reloaded.getState().dispatch({
       type: 'updateScreenState',
       stateId: 'state-human-error',
       description: 'Edited during review',
-    }, 'Edit state in proposal')
+    }, 'Edit state in change set')
     assert(
       reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'human' &&
         reloaded.getState().document.screenStates['state-human-error'].description ===
@@ -3657,7 +3657,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
     store.getState().activeChangeSet?.operations.length === 0 &&
       store.getState().effectiveDocument.components['comp-edit-title'] &&
       store.getState().history.length === 0,
-    'delete Undo did not safely remove the latest human change-set operation',
+    'delete Undo did not safely remove the latest human change set operation',
   )
 
   store.getState().requestHumanDelete(
@@ -3676,7 +3676,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
       !store.getState().effectiveDocument.components['comp-edit-title'] &&
       store.getState().effectiveDocument.screens['screen-edit'].name === 'Later preview edit' &&
       store.getState().toast?.message.key === 'delete.undoUnavailable',
-    'stale change-set delete Undo removed a later preview operation',
+    'stale change set delete Undo removed a later preview operation',
   )
 
   const humanDeleteSources = [
@@ -3851,39 +3851,39 @@ await test('component add menu resolves valid positions and preserves atomic edi
   )
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('component-add-menu-change-set')
-  proposalStore.getState().beginChangeSet('Add from component menu')
+  const changeSetStore = await freshStore('component-add-menu-change-set')
+  changeSetStore.getState().beginChangeSet('Add from component menu')
   const insideTarget = resolveComponentInsertTargets(
-    proposalStore.getState().effectiveDocument,
+    changeSetStore.getState().effectiveDocument,
     'comp-list-section',
   ).find(target => target.placement === 'inside')
   assert(insideTarget, 'inside insertion target was unavailable')
   const proposed = createAddComponentCommand(
-    proposalStore.getState().effectiveDocument,
+    changeSetStore.getState().effectiveDocument,
     insideTarget.screenId,
     insideTarget.parentId,
     'text',
     'en',
     insideTarget.position,
   )
-  proposalStore.getState().dispatch(proposed, 'Add Text')
+  changeSetStore.getState().dispatch(proposed, 'Add Text')
   assert(
-    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
-      proposalStore.getState().activeChangeSet?.operations[0].source === 'human' &&
-      proposalStore.getState().document.components[proposed.componentId] === undefined &&
-      proposalStore.getState().effectiveDocument.components[proposed.componentId] !== undefined,
-    'context menu add bypassed active change-set human routing',
+    changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetStore.getState().activeChangeSet?.operations[0].source === 'human' &&
+      changeSetStore.getState().document.components[proposed.componentId] === undefined &&
+      changeSetStore.getState().effectiveDocument.components[proposed.componentId] !== undefined,
+    'context menu add bypassed active change set human routing',
   )
-  proposalStore.getState().rejectChangeSet()
+  changeSetStore.getState().rejectChangeSet()
   assert(
-    proposalStore.getState().effectiveDocument.components[proposed.componentId] === undefined,
+    changeSetStore.getState().effectiveDocument.components[proposed.componentId] === undefined,
     'Reject retained the context-menu component',
   )
-  proposalStore.getState().beginChangeSet('Accept component menu add')
-  proposalStore.getState().dispatch(proposed, 'Add Text')
-  proposalStore.getState().acceptChangeSet()
+  changeSetStore.getState().beginChangeSet('Accept component menu add')
+  changeSetStore.getState().dispatch(proposed, 'Add Text')
+  changeSetStore.getState().acceptChangeSet()
   assert(
-    proposalStore.getState().document.components[proposed.componentId] !== undefined,
+    changeSetStore.getState().document.components[proposed.componentId] !== undefined,
     'Accept did not confirm the context-menu component',
   )
 
@@ -4040,46 +4040,46 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
   )
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('inspector-selection-change-set')
-  proposalStore.getState().setActiveScreen('screen-edit')
-  proposalStore.getState().beginChangeSet('Inspector selection reconcile')
+  const changeSetStore = await freshStore('inspector-selection-change-set')
+  changeSetStore.getState().setActiveScreen('screen-edit')
+  changeSetStore.getState().beginChangeSet('Inspector selection reconcile')
   const proposed = createAddComponentCommand(
-    proposalStore.getState().effectiveDocument,
+    changeSetStore.getState().effectiveDocument,
     'screen-edit',
     'comp-edit-section',
     'button',
     'en',
   )
-  proposalStore.getState().dispatch(proposed, 'Add Button')
-  proposalStore.getState().setSelectedComponent(proposed.componentId)
+  changeSetStore.getState().dispatch(proposed, 'Add Button')
+  changeSetStore.getState().setSelectedComponent(proposed.componentId)
   assert(
-    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
-      proposalStore.getState().activeChangeSet?.operations[0].source === 'human',
-    'selection changed active change-set operations',
+    changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetStore.getState().activeChangeSet?.operations[0].source === 'human',
+    'selection changed active change set operations',
   )
-  proposalStore.getState().rejectChangeSet()
+  changeSetStore.getState().rejectChangeSet()
   assert(
-    proposalStore.getState().ui.selectedComponentId === null,
+    changeSetStore.getState().ui.selectedComponentId === null,
     'Reject left a selection pointing at a rejected component',
   )
-  proposalStore.getState().beginChangeSet('Inspector selection accept')
-  proposalStore.getState().dispatch(proposed, 'Add Button')
-  proposalStore.getState().setSelectedComponent(proposed.componentId)
-  proposalStore.getState().acceptChangeSet()
+  changeSetStore.getState().beginChangeSet('Inspector selection accept')
+  changeSetStore.getState().dispatch(proposed, 'Add Button')
+  changeSetStore.getState().setSelectedComponent(proposed.componentId)
+  changeSetStore.getState().acceptChangeSet()
   assert(
-    proposalStore.getState().ui.selectedComponentId === proposed.componentId,
+    changeSetStore.getState().ui.selectedComponentId === proposed.componentId,
     'Accept discarded the valid selected component',
   )
-  proposalStore.getState().undo()
+  changeSetStore.getState().undo()
   assert(
-    proposalStore.getState().ui.selectedComponentId === null,
+    changeSetStore.getState().ui.selectedComponentId === null,
     'Undo left a selection pointing at the removed accepted component',
   )
-  proposalStore.getState().redo()
-  proposalStore.getState().setSelectedComponent(proposed.componentId)
-  proposalStore.getState().setActiveScreen('screen-list')
+  changeSetStore.getState().redo()
+  changeSetStore.getState().setSelectedComponent(proposed.componentId)
+  changeSetStore.getState().setActiveScreen('screen-list')
   assert(
-    proposalStore.getState().ui.selectedComponentId === null,
+    changeSetStore.getState().ui.selectedComponentId === null,
     'screen switching retained a selection from another screen',
   )
 
@@ -4197,53 +4197,53 @@ await test('Tree state presentation uses effective values and atomic override re
   )
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('tree-reset-change-set')
-  proposalStore.getState().setActiveScreen('screen-edit')
-  proposalStore.getState().setActiveState(success.id)
-  proposalStore.getState().beginChangeSet('Reset state override')
-  const proposalReset = createResetComponentOverrideCommand(
-    proposalStore.getState().effectiveDocument.screenStates[success.id],
+  const changeSetStore = await freshStore('tree-reset-change-set')
+  changeSetStore.getState().setActiveScreen('screen-edit')
+  changeSetStore.getState().setActiveState(success.id)
+  changeSetStore.getState().beginChangeSet('Reset state override')
+  const changeSetReset = createResetComponentOverrideCommand(
+    changeSetStore.getState().effectiveDocument.screenStates[success.id],
     'comp-role-select',
   )
-  proposalStore.getState().dispatch(proposalReset, 'Reset Role override')
+  changeSetStore.getState().dispatch(changeSetReset, 'Reset Role override')
   assert(
-    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
-      proposalStore.getState().activeChangeSet?.operations[0].source === 'human' &&
-      proposalStore.getState().document.screenStates[success.id]
+    changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetStore.getState().activeChangeSet?.operations[0].source === 'human' &&
+      changeSetStore.getState().document.screenStates[success.id]
         .componentOverrides['comp-role-select'].value === 'admin' &&
-      !proposalStore.getState().effectiveDocument.screenStates[success.id]
+      !changeSetStore.getState().effectiveDocument.screenStates[success.id]
         .componentOverrides['comp-role-select'],
-    'reset bypassed active change-set human preview routing',
+    'reset bypassed active change set human preview routing',
   )
-  proposalStore.getState().rejectChangeSet()
+  changeSetStore.getState().rejectChangeSet()
   assert(
-    proposalStore.getState().effectiveDocument.screenStates[success.id]
+    changeSetStore.getState().effectiveDocument.screenStates[success.id]
       .componentOverrides['comp-role-select'].value === 'admin',
     'Reject did not restore the effective override',
   )
-  proposalStore.getState().beginChangeSet('Accept state override reset')
+  changeSetStore.getState().beginChangeSet('Accept state override reset')
   const acceptedReset = createResetComponentOverrideCommand(
-    proposalStore.getState().effectiveDocument.screenStates[success.id],
+    changeSetStore.getState().effectiveDocument.screenStates[success.id],
     'comp-role-select',
   )
-  proposalStore.getState().dispatch(acceptedReset, 'Reset Role override')
-  proposalStore.getState().acceptChangeSet()
+  changeSetStore.getState().dispatch(acceptedReset, 'Reset Role override')
+  changeSetStore.getState().acceptChangeSet()
   assert(
-    !proposalStore.getState().document.screenStates[success.id]
+    !changeSetStore.getState().document.screenStates[success.id]
       .componentOverrides['comp-role-select'],
     'Accept did not persist the override reset',
   )
-  proposalStore.getState().dispatch({
+  changeSetStore.getState().dispatch({
     type: 'removeScreenState',
     stateId: success.id,
   }, 'Remove Success state')
   assert(
-    proposalStore.getState().ui.activeStateId === 'state-edit-default',
+    changeSetStore.getState().ui.activeStateId === 'state-edit-default',
     'state deletion left the removed state active in Tree',
   )
   assert(
     createResetComponentOverrideCommand(
-      proposalStore.getState().effectiveDocument.screenStates['state-edit-default'],
+      changeSetStore.getState().effectiveDocument.screenStates['state-edit-default'],
       'comp-role-select',
     ) === null,
     'default state exposed a reset command without an override',
@@ -4377,42 +4377,42 @@ await test('Inspector keeps base values separate from field-level state override
   )
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('inspector-field-override-change-set')
-  proposalStore.getState().setActiveScreen('screen-edit')
-  proposalStore.getState().setActiveState('state-edit-success')
-  proposalStore.getState().beginChangeSet('Edit one override field')
-  const proposal = createSetComponentOverrideFieldCommand(
-    proposalStore.getState().effectiveDocument.screenStates['state-edit-success'],
+  const changeSetStore = await freshStore('inspector-field-override-change-set')
+  changeSetStore.getState().setActiveScreen('screen-edit')
+  changeSetStore.getState().setActiveState('state-edit-success')
+  changeSetStore.getState().beginChangeSet('Edit one override field')
+  const changeSet = createSetComponentOverrideFieldCommand(
+    changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
     'comp-status-alert',
     'message',
     'Preview-only message',
   )
-  proposalStore.getState().dispatch(proposal, 'Override Alert message')
+  changeSetStore.getState().dispatch(changeSet, 'Override Alert message')
   assert(
-    proposalStore.getState().activeChangeSet?.operations.length === 1 &&
-      proposalStore.getState().document.screenStates['state-edit-success']
+    changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetStore.getState().document.screenStates['state-edit-success']
         .componentOverrides['comp-status-alert'].message === 'User saved successfully.' &&
-      proposalStore.getState().effectiveDocument.screenStates['state-edit-success']
+      changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
         .componentOverrides['comp-status-alert'].message === 'Preview-only message',
-    'field override bypassed active change-set preview routing',
+    'field override bypassed active change set preview routing',
   )
-  proposalStore.getState().rejectChangeSet()
+  changeSetStore.getState().rejectChangeSet()
   assert(
-    proposalStore.getState().effectiveDocument.screenStates['state-edit-success']
+    changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
       .componentOverrides['comp-status-alert'].message === 'User saved successfully.',
     'Reject did not restore the prior field override',
   )
-  proposalStore.getState().beginChangeSet('Accept one override field')
+  changeSetStore.getState().beginChangeSet('Accept one override field')
   const accepted = createSetComponentOverrideFieldCommand(
-    proposalStore.getState().effectiveDocument.screenStates['state-edit-success'],
+    changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
     'comp-status-alert',
     'message',
     'Accepted message',
   )
-  proposalStore.getState().dispatch(accepted, 'Override Alert message')
-  proposalStore.getState().acceptChangeSet()
+  changeSetStore.getState().dispatch(accepted, 'Override Alert message')
+  changeSetStore.getState().acceptChangeSet()
   assert(
-    proposalStore.getState().document.screenStates['state-edit-success']
+    changeSetStore.getState().document.screenStates['state-edit-success']
       .componentOverrides['comp-status-alert'].message === 'Accepted message',
     'Accept did not persist the field override',
   )
@@ -4443,7 +4443,7 @@ await test('Inspector keeps base values separate from field-level state override
   )
 })
 
-await test('change-set review presents sequential diffs for every command type', async () => {
+await test('change set review presents sequential diffs for every command type', async () => {
   memoryStorage.clear()
   const { presentChangeSetOperations } = await import(
     moduleUrl(changeSetPresentationBundle, 'change-set-presenter')
@@ -4722,7 +4722,7 @@ await test('change-set review presents sequential diffs for every command type',
   ]
   assert(
     new Set(allRows.map(row => row.commandType)).size === 16,
-    'change-set presenter does not cover all DomainCommand variants',
+    'change set presenter does not cover all DomainCommand variants',
   )
 
   let invalidRaised = false
@@ -4737,7 +4737,7 @@ await test('change-set review presents sequential diffs for every command type',
   } catch {
     invalidRaised = true
   }
-  assert(invalidRaised, 'invalid change-set operation was silently presented')
+  assert(invalidRaised, 'invalid change set operation was silently presented')
 
   const listSource = readFileSync(
     join(root, 'src/features/change-review/ChangeOperationList.tsx'),
@@ -4755,7 +4755,7 @@ await test('change-set review presents sequential diffs for every command type',
   )
 })
 
-await test('active change-set component markers reflect final net effects', async () => {
+await test('active change set component markers reflect final net effects', async () => {
   memoryStorage.clear()
   const {
     compareComponentChanges,
@@ -5881,12 +5881,41 @@ await test('structural components reject content titles across every write path'
 })
 
 await test('typed localization resolves and persists JA and EN safely', async () => {
-  const { translate } = await import(moduleUrl(messagesBundle, 'typed-translations'))
+  const {
+    changeSetOperationCountMessage,
+    translate,
+  } = await import(moduleUrl(messagesBundle, 'typed-translations'))
   const { LOCALE_STORAGE_KEY, persistLocale, resolveInitialLocale } = await import(
     moduleUrl(localeBundle, 'locale-storage')
   )
   assert(translate('en', 'tabs.screens') === 'Screens', 'English catalog did not resolve')
   assert(translate('ja', 'tabs.screens') === '画面', 'Japanese catalog did not resolve')
+  const formatChangeCount = (locale, count) => {
+    const message = changeSetOperationCountMessage(count)
+    return translate(locale, message.key, message.params)
+  }
+  assert(
+    translate('en', 'changes.reviewing') === 'Reviewing change set:' &&
+      translate('en', 'changeMarker.review') === 'View change set →' &&
+      translate('en', 'review.operationsLabel') === 'Change set operations' &&
+      translate('en', 'changes.accept') === 'Accept' &&
+      translate('en', 'changes.reject') === 'Reject' &&
+      formatChangeCount('en', 0) === '0 changes' &&
+      formatChangeCount('en', 1) === '1 change' &&
+      formatChangeCount('en', 2) === '2 changes',
+    'English change set terminology or operation count is inconsistent',
+  )
+  assert(
+    translate('ja', 'tabs.changes') === '変更セット' &&
+      translate('ja', 'changes.reviewing') === '変更セットを確認中:' &&
+      translate('ja', 'changeMarker.review') === '変更セットを見る →' &&
+      translate('ja', 'review.operationsLabel') === '変更セットの操作' &&
+      translate('ja', 'changes.accept') === '反映' &&
+      translate('ja', 'changes.reject') === '破棄' &&
+      formatChangeCount('ja', 0) === '0件の変更' &&
+      formatChangeCount('ja', 1) === '1件の変更',
+    'Japanese change set terminology or operation count is inconsistent',
+  )
   assert(
     resolveInitialLocale(undefined, 'ja-JP') === 'ja' &&
       resolveInitialLocale(undefined, 'en-US') === 'en',
@@ -6361,27 +6390,27 @@ await test('text drafts commit as one human operation', async () => {
   )
 
   reloaded.getState().beginChangeSet('Atomic human text edit')
-  let proposalDraft = ''
-  for (let index = 0; index < 50; index += 1) proposalDraft += String.fromCharCode(65 + (index % 26))
-  const proposalResult = reloaded.getState().dispatch({
+  let changeSetDraft = ''
+  for (let index = 0; index < 50; index += 1) changeSetDraft += String.fromCharCode(65 + (index % 26))
+  const changeSetResult = reloaded.getState().dispatch({
     type: 'updateComponentSpec',
     componentId: 'comp-list-title',
-    patch: { config: { text: proposalDraft } },
+    patch: { config: { text: changeSetDraft } },
   }, 'Update text text: comp-list-title')
-  const proposal = reloaded.getState().activeChangeSet
+  const changeSet = reloaded.getState().activeChangeSet
   assert(
-    proposalResult &&
-      proposal?.operations.length === 1 &&
-      proposal.operations[0].source === 'human',
-    '50-character draft did not create exactly one human change-set operation',
+    changeSetResult &&
+      changeSet?.operations.length === 1 &&
+      changeSet.operations[0].source === 'human',
+    '50-character draft did not create exactly one human change set operation',
   )
-  const invalidProposalRoute = reloaded.getState().dispatch({
+  const invalidChangeSetRoute = reloaded.getState().dispatch({
     type: 'updateScreen',
     screenId: 'screen-edit',
     route: '/users',
   }, 'Update screen route: Edit User')
   assert(
-    !invalidProposalRoute && reloaded.getState().activeChangeSet?.operations.length === 1,
+    !invalidChangeSetRoute && reloaded.getState().activeChangeSet?.operations.length === 1,
     'invalid route was added to the active change set',
   )
 
@@ -6429,7 +6458,7 @@ await test('text drafts commit as one human operation', async () => {
   )
 })
 
-await test('AI writes expose only the change-set review flow', async () => {
+await test('AI writes expose only the change set review flow', async () => {
   memoryStorage.clear()
   const store = await freshStore('review-only-contract')
   assert(
@@ -6496,7 +6525,7 @@ await test('AI writes expose only the change-set review flow', async () => {
     !designSource.toLowerCase().includes(obsoleteMode) &&
       !designSource.includes(obsoleteEntryDisplay) &&
       !designSource.includes(obsoleteEntrySelection) &&
-      readmeSource.includes('承認・却下は人間向けUIからのみ行います'),
+      readmeSource.includes('反映・破棄は人間向けUIからのみ行います'),
     'documentation still describes a deleted collaboration or entry concept',
   )
 })
@@ -6723,9 +6752,9 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   )
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('component-behavior-proposal')
-  proposalStore.getState().beginChangeSet('Propose behavior')
-  proposalStore.getState().dispatch({
+  const changeSetStore = await freshStore('component-behavior-change-set')
+  changeSetStore.getState().beginChangeSet('Edit behavior in change set')
+  changeSetStore.getState().dispatch({
     type: 'bindApiOperation',
     operationId: 'api-proposed',
     screenId: 'screen-edit',
@@ -6736,40 +6765,40 @@ await test('Inspector behavior projection resolves events APIs and validation', 
     successStateId: 'state-edit-success',
     errorStateId: 'state-edit-error',
   })
-  proposalStore.getState().dispatch({
+  changeSetStore.getState().dispatch({
     type: 'connectEvent',
     eventId: 'event-proposed',
     screenId: 'screen-edit',
-    name: 'Cancel proposal event',
+    name: 'Cancel change set event',
     trigger: { type: 'click', componentId: 'comp-cancel-btn' },
     actions: [{ type: 'callApi', apiOperationId: 'api-proposed' }],
   })
   assert(
     !getComponentBehavior(
-      proposalStore.getState().document,
+      changeSetStore.getState().document,
       'comp-role-select',
       'en',
     ).apiBindings.some(binding => binding.operation.id === 'api-proposed') &&
       getComponentBehavior(
-        proposalStore.getState().effectiveDocument,
+        changeSetStore.getState().effectiveDocument,
         'comp-role-select',
         'en',
       ).apiBindings.some(binding => binding.operation.id === 'api-proposed') &&
       getComponentBehavior(
-        proposalStore.getState().effectiveDocument,
+        changeSetStore.getState().effectiveDocument,
         'comp-cancel-btn',
         'en',
       ).events.some(event => event.id === 'event-proposed'),
-    'active change-set behavior was not isolated to the effective document',
+    'active change set behavior was not isolated to the effective document',
   )
-  const reloaded = await freshStore('component-behavior-proposal-reload')
+  const reloaded = await freshStore('component-behavior-change-set-reload')
   assert(
     getComponentBehavior(
       reloaded.getState().effectiveDocument,
       'comp-cancel-btn',
       'en',
     ).events.some(event => event.id === 'event-proposed'),
-    'effective behavior projection did not survive active change-set reload',
+    'effective behavior projection did not survive active change set reload',
   )
 
   const inspectorSource = readFileSync(
@@ -6894,40 +6923,40 @@ await test('Event editor saves validated ordered actions as one human operation'
   }
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('event-editor-proposal')
-  proposalStore.getState().beginChangeSet('Edit event')
+  const changeSetStore = await freshStore('event-editor-change-set')
+  changeSetStore.getState().beginChangeSet('Edit event')
   assert(
-    proposalStore.getState().dispatch(updateCommand, 'Edit save event'),
+    changeSetStore.getState().dispatch(updateCommand, 'Edit save event'),
     'human event edit failed in active change set',
   )
   assert(
-    proposalStore.getState().activeChangeSet.operations.length === 1 &&
-      proposalStore.getState().activeChangeSet.operations[0].source === 'human' &&
-      proposalStore.getState().activeChangeSet.operations[0].command.type === 'updateEvent' &&
-      proposalStore.getState().document.events['event-submit'].name === original.name &&
-      proposalStore.getState().effectiveDocument.events['event-submit'].name ===
+    changeSetStore.getState().activeChangeSet.operations.length === 1 &&
+      changeSetStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet.operations[0].command.type === 'updateEvent' &&
+      changeSetStore.getState().document.events['event-submit'].name === original.name &&
+      changeSetStore.getState().effectiveDocument.events['event-submit'].name ===
         'Save and return',
-    'human event edit did not remain one effective-only change-set operation',
+    'human event edit did not remain one effective-only change set operation',
   )
-  const proposalReload = await freshStore('event-editor-proposal-reload')
+  const changeSetReload = await freshStore('event-editor-change-set-reload')
   assert(
-    proposalReload.getState().activeChangeSet?.operations.length === 1 &&
-      proposalReload.getState().effectiveDocument.events['event-submit'].name ===
+    changeSetReload.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetReload.getState().effectiveDocument.events['event-submit'].name ===
         'Save and return',
-    'event edit did not survive active change-set reload',
+    'event edit did not survive active change set reload',
   )
-  proposalReload.getState().rejectChangeSet()
+  changeSetReload.getState().rejectChangeSet()
   assert(
-    proposalReload.getState().document.events['event-submit'].name === original.name,
+    changeSetReload.getState().document.events['event-submit'].name === original.name,
     'Reject did not discard the human event edit',
   )
 
-  proposalReload.getState().beginChangeSet('Accept event edit')
-  proposalReload.getState().dispatch(updateCommand, 'Edit save event')
-  proposalReload.getState().acceptChangeSet()
+  changeSetReload.getState().beginChangeSet('Accept event edit')
+  changeSetReload.getState().dispatch(updateCommand, 'Edit save event')
+  changeSetReload.getState().acceptChangeSet()
   assert(
-    proposalReload.getState().activeChangeSet === null &&
-      proposalReload.getState().document.events['event-submit'].name === 'Save and return',
+    changeSetReload.getState().activeChangeSet === null &&
+      changeSetReload.getState().document.events['event-submit'].name === 'Save and return',
     'Accept did not confirm the human event edit',
   )
 
@@ -7111,42 +7140,42 @@ await test('API editor commands preserve references and enforce canonical bindin
   assert(unknownFieldRejected, 'unknown API update command field was accepted')
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('api-editor-proposal')
-  proposalStore.getState().beginChangeSet('Edit API')
+  const changeSetStore = await freshStore('api-editor-change-set')
+  changeSetStore.getState().beginChangeSet('Edit API')
   assert(
-    proposalStore.getState().dispatch(updateCommand, 'Edit save API'),
+    changeSetStore.getState().dispatch(updateCommand, 'Edit save API'),
     'human API edit failed in active change set',
   )
   assert(
-    proposalStore.getState().activeChangeSet.operations.length === 1 &&
-      proposalStore.getState().activeChangeSet.operations[0].source === 'human' &&
-      proposalStore.getState().activeChangeSet.operations[0].command.type ===
+    changeSetStore.getState().activeChangeSet.operations.length === 1 &&
+      changeSetStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet.operations[0].command.type ===
         'updateApiOperation' &&
-      proposalStore.getState().document.apiOperations['api-save-user'].name ===
+      changeSetStore.getState().document.apiOperations['api-save-user'].name ===
         original.name &&
-      proposalStore.getState().effectiveDocument.apiOperations['api-save-user'].name ===
+      changeSetStore.getState().effectiveDocument.apiOperations['api-save-user'].name ===
         'Save user profile',
-    'human API edit did not remain one effective-only change-set operation',
+    'human API edit did not remain one effective-only change set operation',
   )
-  const proposalReload = await freshStore('api-editor-proposal-reload')
+  const changeSetReload = await freshStore('api-editor-change-set-reload')
   assert(
-    proposalReload.getState().activeChangeSet?.operations.length === 1 &&
-      proposalReload.getState().effectiveDocument.apiOperations['api-save-user'].name ===
+    changeSetReload.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetReload.getState().effectiveDocument.apiOperations['api-save-user'].name ===
         'Save user profile',
-    'API edit did not survive active change-set reload',
+    'API edit did not survive active change set reload',
   )
-  proposalReload.getState().rejectChangeSet()
+  changeSetReload.getState().rejectChangeSet()
   assert(
-    proposalReload.getState().document.apiOperations['api-save-user'].name ===
+    changeSetReload.getState().document.apiOperations['api-save-user'].name ===
       original.name,
     'Reject did not discard the human API edit',
   )
-  proposalReload.getState().beginChangeSet('Accept API edit')
-  proposalReload.getState().dispatch(updateCommand, 'Edit save API')
-  proposalReload.getState().acceptChangeSet()
+  changeSetReload.getState().beginChangeSet('Accept API edit')
+  changeSetReload.getState().dispatch(updateCommand, 'Edit save API')
+  changeSetReload.getState().acceptChangeSet()
   assert(
-    proposalReload.getState().activeChangeSet === null &&
-      proposalReload.getState().document.apiOperations['api-save-user'].name ===
+    changeSetReload.getState().activeChangeSet === null &&
+      changeSetReload.getState().document.apiOperations['api-save-user'].name ===
         'Save user profile',
     'Accept did not confirm the human API edit',
   )
@@ -7376,42 +7405,42 @@ await test('Validation rules editor enforces invariants and commits as one human
   )
 
   memoryStorage.clear()
-  const proposalStore = await freshStore('validation-rules-proposal')
-  proposalStore.getState().beginChangeSet('Edit validation rules')
+  const changeSetStore = await freshStore('validation-rules-change-set')
+  changeSetStore.getState().beginChangeSet('Edit validation rules')
   assert(
-    proposalStore.getState().dispatch(updateCommand, 'Edit validation rules'),
+    changeSetStore.getState().dispatch(updateCommand, 'Edit validation rules'),
     'human validation rules edit failed in active change set',
   )
   assert(
-    proposalStore.getState().activeChangeSet.operations.length === 1 &&
-      proposalStore.getState().activeChangeSet.operations[0].source === 'human' &&
-      proposalStore.getState().activeChangeSet.operations[0].command.type ===
+    changeSetStore.getState().activeChangeSet.operations.length === 1 &&
+      changeSetStore.getState().activeChangeSet.operations[0].source === 'human' &&
+      changeSetStore.getState().activeChangeSet.operations[0].command.type ===
         'updateComponentSpec' &&
-      proposalStore.getState().document.components['comp-name-input'].config.validationRules
+      changeSetStore.getState().document.components['comp-name-input'].config.validationRules
         .length === original.length &&
-      proposalStore.getState().effectiveDocument.components['comp-name-input'].config
+      changeSetStore.getState().effectiveDocument.components['comp-name-input'].config
         .validationRules.length === 3,
-    'human validation rules edit did not remain one effective-only change-set operation',
+    'human validation rules edit did not remain one effective-only change set operation',
   )
-  const proposalReload = await freshStore('validation-rules-proposal-reload')
+  const changeSetReload = await freshStore('validation-rules-change-set-reload')
   assert(
-    proposalReload.getState().activeChangeSet?.operations.length === 1 &&
-      proposalReload.getState().effectiveDocument.components['comp-name-input'].config
+    changeSetReload.getState().activeChangeSet?.operations.length === 1 &&
+      changeSetReload.getState().effectiveDocument.components['comp-name-input'].config
         .validationRules.length === 3,
-    'validation rules edit did not survive active change-set reload',
+    'validation rules edit did not survive active change set reload',
   )
-  proposalReload.getState().rejectChangeSet()
+  changeSetReload.getState().rejectChangeSet()
   assert(
-    proposalReload.getState().document.components['comp-name-input'].config.validationRules
+    changeSetReload.getState().document.components['comp-name-input'].config.validationRules
       .length === original.length,
     'Reject did not discard the human validation rules edit',
   )
-  proposalReload.getState().beginChangeSet('Accept validation rules edit')
-  proposalReload.getState().dispatch(updateCommand, 'Edit validation rules')
-  proposalReload.getState().acceptChangeSet()
+  changeSetReload.getState().beginChangeSet('Accept validation rules edit')
+  changeSetReload.getState().dispatch(updateCommand, 'Edit validation rules')
+  changeSetReload.getState().acceptChangeSet()
   assert(
-    proposalReload.getState().activeChangeSet === null &&
-      proposalReload.getState().document.components['comp-name-input'].config.validationRules
+    changeSetReload.getState().activeChangeSet === null &&
+      changeSetReload.getState().document.components['comp-name-input'].config.validationRules
         .length === 3,
     'Accept did not confirm the human validation rules edit',
   )
