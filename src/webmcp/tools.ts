@@ -286,7 +286,6 @@ const getCurrentScreenContext: ToolDefinition = {
       activeStateId: state.ui.activeStateId,
       selectedComponentId: state.ui.selectedComponentId,
       revision: state.document.revision,
-      agentWritePolicy: state.agentWritePolicy,
       activeChangeSet: state.activeChangeSet,
       rejectedRecords: state.rejectedRecords,
       screen,

@@ -61,19 +61,6 @@
   border: 0;
 }
 
-.policyLabel {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-}
-
-.policySelect {
-  padding: 3px 6px;
-  font-size: 0.82rem;
-}
-
 .undoBtn {
   padding: 4px 10px;
   font-size: 0.82rem;

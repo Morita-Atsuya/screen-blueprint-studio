@@ -3572,6 +3572,78 @@ await test('text drafts commit as one human operation', async () => {
   )
 })
 
+await test('AI writes expose only the change-set review flow', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('review-only-contract')
+  assert(
+    !Object.hasOwn(store.getState(), ['agent', 'Write', 'Policy'].join('')),
+    'store still exposes the removed constant write policy',
+  )
+  store.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Confirmed human edit',
+  })
+  store.getState().beginChangeSet('Reviewed AI edit')
+  store.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Human adjustment in review',
+  })
+  store.getState().acceptChangeSet()
+  assert(
+    store.getState().history.map(entry => entry.source).join(',') ===
+      'human,accepted-change-set',
+    'history generated a source outside direct human edits and accepted change sets',
+  )
+
+  memoryStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'review-only-context'))
+  const context = module.WEBMCP_TOOLS
+    .find(tool => tool.name === 'get_current_screen_context')
+    .execute({})
+  assert(context.ok, 'screen context failed')
+  assert(
+    Object.keys(context.data).sort().join(',') === [
+      'activeChangeSet',
+      'activeScreenId',
+      'activeStateId',
+      'project',
+      'rejectedRecords',
+      'revision',
+      'screen',
+      'screens',
+      'selectedComponentId',
+    ].sort().join(','),
+    'screen context retained a constant policy field or lost a current field',
+  )
+
+  const appStoreSource = readFileSync(join(root, 'src/app/appStore.ts'), 'utf8')
+  const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
+  const toolsSource = readFileSync(join(root, 'src/webmcp/tools.ts'), 'utf8')
+  const designSource = readFileSync(join(root, 'docs/MVP_TECHNICAL_DESIGN.md'), 'utf8')
+  const readmeSource = readFileSync(join(root, 'README.md'), 'utf8')
+  const obsoleteMode = ['auto', '-apply'].join('')
+  const obsoletePolicy = ['agent', 'Write', 'Policy'].join('')
+  const obsoleteEntryDisplay = ['entry', '表示'].join('')
+  const obsoleteEntrySelection = ['entry', '指定'].join('')
+  assert(
+    !appStoreSource.includes(obsoleteMode) &&
+      !appStoreSource.includes(obsoletePolicy) &&
+      !toolsSource.includes(obsoletePolicy) &&
+      !appStyles.includes(['policy', 'Label'].join('')) &&
+      !appStyles.includes(['policy', 'Select'].join('')),
+    'runtime source still contains removed write-policy code',
+  )
+  assert(
+    !designSource.toLowerCase().includes(obsoleteMode) &&
+      !designSource.includes(obsoleteEntryDisplay) &&
+      !designSource.includes(obsoleteEntrySelection) &&
+      readmeSource.includes('承認・却下は人間向けUIからのみ行います'),
+    'documentation still describes a deleted collaboration or entry concept',
+  )
+})
+
 await test('Recovery actions use light-theme tokens with AA contrast', async () => {
   const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')

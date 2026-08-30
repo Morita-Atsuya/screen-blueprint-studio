@@ -28,13 +28,10 @@ import {
 export interface HistoryEntry {
   id: EntityId
   label: string
-  source: 'human' | 'accepted-change-set' | 'auto-applied-agent'
+  source: 'human' | 'accepted-change-set'
   before: ProjectDocument
   after: ProjectDocument
 }
-
-// Review mode only - autoApply removed from MVP (would bypass change set review invariant)
-export type AgentWritePolicy = 'review'
 
 export interface UiState {
   activeScreenId: EntityId | null
@@ -56,7 +53,6 @@ export interface AppStore {
   activeChangeSet: ChangeSet | null
   rejectedRecords: RejectedChangeSetRecord[]
   history: HistoryEntry[]
-  agentWritePolicy: AgentWritePolicy
   ui: UiState
   recoveryState: RecoveryState | null
   startupNotice: UiMessage | null
@@ -268,7 +264,6 @@ export const useAppStore = create<AppStore>((set, get) => {
     activeChangeSet,
     rejectedRecords,
     history: [],
-    agentWritePolicy: 'review',
     ui,
     recoveryState,
     startupNotice,

@@ -77,7 +77,7 @@ ReactコンポーネントやWebMCPツールからモデルを直接変更しな
 ### 3.4 人間操作とAI操作で確定方法だけを変える
 
 - 通常時の人間操作: commandを直ちに確定モデルへ適用する
-- AI操作（review mode）: commandをactive change setへ追加する
+- AI操作: WebMCPで開始したactive change setへcommandを追加する
 - change set表示中の人間操作: change setのpreviewへ追加する
 
 同じcommandと検証処理を使い、更新ロジックを二重実装しない。
@@ -115,11 +115,7 @@ interface AppState {
   history: HistoryState;
   ui: UiState;
 }
-
-type AgentWritePolicy = "review";
 ```
-
-`AgentWritePolicy`は`get_current_screen_context`でも返す。
 
 `document`とchange setを適用した表示用モデルを区別する。
 
@@ -398,11 +394,10 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 ### 7.1 共通形式
 
 ```ts
-interface CommandEnvelope<T extends DomainCommand = DomainCommand> {
+interface ChangeSetOperation<T extends DomainCommand = DomainCommand> {
   id: EntityId;
   source: "human" | "agent";
   issuedAt: string;
-  baseRevision: number;
   command: T;
 }
 
@@ -451,13 +446,11 @@ MVPでは同時に1件だけactive change setを持つ。
 interface ChangeSet {
   id: EntityId;
   summary: string;
-  status: "active";
   baseRevision: number;
   version: number;
   baseDocument: ProjectDocument;
-  operations: CommandEnvelope[];
+  operations: ChangeSetOperation[];
   createdAt: string;
-  updatedAt: string;
 }
 
 interface CollaborationState {
@@ -509,7 +502,7 @@ change setの`version`はAI・人間を問わずoperation追加ごとに1増加�
 interface HistoryEntry {
   id: EntityId;
   label: string;
-  source: "human" | "accepted-change-set" | "auto-applied-agent";
+  source: "human" | "accepted-change-set";
   before: ProjectDocument;
   after: ProjectDocument;
 }
@@ -520,7 +513,6 @@ interface HistoryEntry {
 - active change set中のtext field確定も文字数ではなく1編集sessionにつき1件のhuman operationとする
 - 外部document更新と競合した未確定draftは上書きせず保持し、再確定またはEscape取消をユーザーが選べる。reload時はまず同期的なcommand確定を試し、validationで確定できないdraftだけをsessionStorageへ退避して同じfieldへ復元する
 - change set承認は全operationsで1entry
-- auto-apply modeのAI commandは1操作につき1entry
 - Undoは`before`を復元し、revisionを新しく採番する
 - active change set中はUndoを無効化する
 - RedoはMVP対象外
@@ -572,7 +564,6 @@ interface Diagnostic {
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Project / Screen       State selector       WebMCP status / Undo   │
-│ Agent changes: Review                                                │
 ├──────────────────┬──────────────────────────────┬───────────────────┤
 │ Screens          │ Wireframe canvas             │ Inspector         │
 │                  │                              │ Change set        │
@@ -585,7 +576,7 @@ interface Diagnostic {
 
 ### 10.2 左ペイン
 
-- `Screens`: 画面一覧、entry表示、作成、選択、名称変更、削除
+- `Screens`: 画面一覧、作成、選択、名称・route変更、削除
 - `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
 - `Structure`: component tree。leafはlabel／text等から、構造componentはlocalized kindまたはScreen内のframe順からeditor-only表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
 - `Canvas`: idle時はartboardと仕様上の表示内容だけを描画し、componentのsemantic labelとoutlineはhover／選択／focus時だけflow外のeditor overlayとして表示する。Page／Modal root以外のcomponent面全体をpointerまたはkeyboardで掴み、treeと同じcommandで並び替え・親変更する。pointerは5px移動後にdrag開始し、click selectionと誤dragを分離する。drop中だけ挿入lineまたはoutlineを表示する
@@ -620,7 +611,7 @@ active change setがある場合だけ固定表示する。
 
 承認・却下は人間向けUIだけに置く。
 
-MVPではエージェント変更を常に`Review`として扱う。
+AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIでの承認を必要とする。
 
 ## 11. WebMCPツール
 
@@ -630,7 +621,7 @@ MVPではエージェント変更を常に`Review`として扱う。
 
 | Tool | 目的 | 主な返却値 |
 | --- | --- | --- |
-| `get_current_screen_context` | project概要と現在の作業対象を取得 | project、screen一覧、active screen、revision、agent write policy、selected component/state、active change set |
+| `get_current_screen_context` | project概要と現在の作業対象を取得 | project、screen一覧、active screen、revision、selected component/state、active change set |
 | `get_component` | ID指定または選択中componentの仕様を取得 | component、state override、関連event/API |
 | `get_screen_diagnostics` | fieldKeyなどの軽量な構造診断を取得 | screen ID、diagnostics |
 | `get_pending_change_set` | 未承認変更と人間修正を取得 | summary、operations、diff、base revision |
@@ -642,13 +633,12 @@ MVPではエージェント変更を常に`Review`として扱う。
 | `begin_change_set` | AI変更をまとめる作業単位を開始 | `summary` |
 
 active change setがすでに存在する場合は新規作成せず、既存IDを含む明示的エラーを返す。
-auto-apply modeの場合はchange setを開始せず、現在のmodeを含む明示的エラーを返す。
 
 ### 11.3 更新
 
 | Tool | 目的 | 主な入力 |
 | --- | --- | --- |
-| `change_screen_structure` | screenの追加、更新、削除、entry指定 | `changeSetId`, `operation`, operation別のtyped fields |
+| `change_screen_structure` | screenの追加、更新、削除 | `changeSetId`, `operation`, operation別のtyped fields |
 | `change_component_structure` | componentの追加、移動、subtree削除 | `changeSetId`, `operation`, operation別のtyped fields |
 | `update_component_spec` | componentの編集可能仕様を更新 | `changeSetId`, `componentId`, typed `patch` |
 | `upsert_screen_state` | 状態の追加、更新、削除 | `changeSetId`, `operation`, state fields |
@@ -803,8 +793,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 ### 15.2 Store integration tests
 
 - 人間commandは即時確定される
-- review modeのAI commandは確定モデルを変えずpreviewだけを変える
-- auto-apply modeのAI commandは即時確定され、historyへ積まれる
+- AI commandはactive change set内で確定モデルを変えずpreviewだけを変える
 - active change set中の人間編集はpreviewへ入る
 - acceptで1transactionとして確定される
 - rejectで確定モデルが変わらない
@@ -823,8 +812,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 
 - schemaに対応した引数処理
 - read-only toolの返却
-- review modeでのchange set必須
-- auto-apply modeでの即時確定
+- AI writeでのactive change set必須
 - stale revision拒否
 - tool実行後のstoreとUI相当状態
 
@@ -884,7 +872,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 1. AIなしで複数screenの作成・選択、component追加・移動・削除・仕様編集、状態の作成・編集・削除、component overrideと状態previewができる
 2. canvas、tree、inspectorが同じモデルを表示する
 3. 破損した親子参照や存在しないIDを保存できない
-4. review modeのAI write toolは確定モデルを直接変更せず、screenとcomponent構造の追加・更新・移動・削除と既存stateの修正をchange set上で行える
+4. AI write toolは確定モデルを直接変更せず、screenとcomponent構造の追加・更新・移動・削除と既存stateの修正をactive change set上で行える
 5. AI変更とchange set内の人間修正を視覚的に区別できる
 6. 人間だけがchange setを承認・却下できる
 7. active change setに対する人間修正をエージェントがread toolで取得できる
