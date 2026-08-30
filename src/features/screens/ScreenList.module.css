@@ -6,13 +6,29 @@
   width: 100%;
   padding: 6px 10px;
   font-size: 0.82rem;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: transparent;
+  background: var(--bg-surface);
   color: var(--text-muted);
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.addBtn:hover { background: var(--bg-hover); color: var(--text); }
+.addBtn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.addBtn:focus-visible {
+  border-color: var(--border-focus);
+  color: var(--accent);
+}
+
+.addBtn:active {
+  background: var(--bg-selected);
+  border-color: var(--accent-hover);
+  color: var(--accent-hover);
+}
 
 .list { display: flex; flex-direction: column; gap: 2px; }
 

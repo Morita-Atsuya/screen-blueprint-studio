@@ -120,5 +120,5 @@
 .alertError { background: #fef2f2; border-color: #fecaca; color: var(--danger); }
 
 /* Modal */
-.modal { border: 2px dashed var(--border); border-radius: 8px; padding: 12px; background: var(--bg-surface); }
+.modal { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-surface); }
 .modalTitle { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); }
