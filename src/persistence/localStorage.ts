@@ -161,17 +161,33 @@ export function clearStorage(): boolean {
 
 function isRejectedRecord(value: unknown): value is RejectedChangeSetRecord {
   if (!isRecord(value)) return false
+  const expectedKeys = [
+    'changeSetId',
+    'summary',
+    'baseRevision',
+    'rejectedAt',
+    'operationCount',
+    'operationSummaries',
+  ]
+  if (
+    Object.keys(value).length !== expectedKeys.length ||
+    expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(value, key))
+  ) {
+    return false
+  }
   return (
     typeof value.changeSetId === 'string' &&
     value.changeSetId.length > 0 &&
     typeof value.summary === 'string' &&
     Number.isInteger(value.baseRevision) &&
     (value.baseRevision as number) >= 0 &&
-    typeof value.reason === 'string' &&
     typeof value.rejectedAt === 'string' &&
     value.rejectedAt.length > 0 &&
     Number.isInteger(value.operationCount) &&
-    (value.operationCount as number) >= 0
+    (value.operationCount as number) >= 0 &&
+    Array.isArray(value.operationSummaries) &&
+    value.operationSummaries.length === value.operationCount &&
+    value.operationSummaries.every(summary => typeof summary === 'string')
   )
 }
 

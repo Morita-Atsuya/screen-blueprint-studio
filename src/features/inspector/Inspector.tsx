@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
 import { getOwnEntity } from '../../domain/entityMap'
@@ -159,23 +158,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ChangesPanel() {
   const { activeChangeSet, acceptChangeSet, rejectChangeSet } = useAppStore()
-  const [reason, setReason] = useState('')
-  if (!activeChangeSet) return <p style={{ color: 'var(--text-faint)', fontSize: '0.82rem' }}>変更案はありません</p>
+  if (!activeChangeSet) return <p className={styles.empty}>変更案はありません</p>
 
   return (
-    <div>
-      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8 }}>{activeChangeSet.summary}</p>
-      <ul style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div className={styles.changes}>
+      <p className={styles.changeSummary}>{activeChangeSet.summary}</p>
+      <ul className={styles.changeList}>
         {activeChangeSet.operations.map(op => (
-          <li key={op.id} style={{ fontSize: '0.78rem', color: op.source === 'agent' ? 'var(--accent)' : 'var(--text-muted)', padding: '4px 8px', background: 'var(--bg-hover)', borderRadius: 6 }}>
+          <li
+            key={op.id}
+            className={`${styles.changeItem} ${op.source === 'agent' ? styles.agentChange : ''}`}
+          >
             [{op.source}] {op.command.type}
           </li>
         ))}
       </ul>
-      <input value={reason} onChange={e => setReason(e.target.value)} placeholder="却下理由" style={{ width: '100%', marginTop: 10, marginBottom: 10 }} />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button onClick={acceptChangeSet} style={{ flex: 1, padding: '7px', background: 'var(--accent)', color: '#07131a', border: 0, borderRadius: 6, fontWeight: 700, cursor: 'pointer' }}>承認</button>
-        <button onClick={() => rejectChangeSet(reason)} style={{ flex: 1, padding: '7px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer' }}>却下</button>
+      <div className={styles.changeActions}>
+        <button className={styles.acceptBtn} onClick={acceptChangeSet}>承認</button>
+        <button className={styles.rejectBtn} onClick={rejectChangeSet}>却下</button>
       </div>
     </div>
   )

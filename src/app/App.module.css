@@ -13,13 +13,14 @@
   height: 44px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   flex-shrink: 0;
 }
 
 .logo {
   font-weight: 700;
   font-size: 0.9rem;
-  color: var(--accent);
+  color: #3730a3;
   letter-spacing: 0.02em;
 }
 
@@ -73,23 +74,24 @@
   justify-content: center;
   gap: 16px;
   padding: 8px 16px;
-  background: #5b2d0a;
-  color: #fff3df;
+  background: #fff7ed;
+  color: #9a3412;
+  border-bottom: 1px solid #fed7aa;
   font-size: 0.82rem;
   flex-shrink: 0;
 }
 
 .exportBtn {
   padding: 4px 10px;
-  border: 1px solid #ffc36b;
+  border: 1px solid #c2410c;
   border-radius: 6px;
   background: transparent;
-  color: #fff3df;
+  color: #9a3412;
   white-space: nowrap;
 }
 
 .exportBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #ffedd5;
 }
 
 .left {
@@ -153,7 +155,7 @@
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--danger);
+  background: #991b1b;
   color: white;
   padding: 10px 20px;
   border-radius: 8px;
@@ -162,7 +164,8 @@
   cursor: pointer;
   max-width: 500px;
   text-align: center;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  border: 1px solid #7f1d1d;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22);
 }
 
 .recovery {
@@ -175,6 +178,10 @@
   color: var(--text);
   padding: 40px;
   text-align: center;
+}
+
+.recovery h1 {
+  color: #991b1b;
 }
 
 .recoveryActions {

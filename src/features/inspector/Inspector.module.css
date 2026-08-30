@@ -7,3 +7,30 @@
 .row { display: flex; gap: 16px; }
 .checkLabel { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
 .divider { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
+.changes { display: flex; flex-direction: column; gap: 10px; }
+.changeSummary { font-size: 0.85rem; color: var(--text-muted); }
+.changeList { display: flex; flex-direction: column; gap: 4px; }
+.changeItem {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.agentChange {
+  border-left: 3px solid var(--agent-accent);
+  background: var(--agent-change);
+  color: var(--agent-accent);
+}
+.changeActions { display: flex; gap: 8px; margin-top: 2px; }
+.acceptBtn,
+.rejectBtn {
+  flex: 1;
+  padding: 7px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+.acceptBtn { border: 0; background: var(--accent); color: white; }
+.acceptBtn:hover { background: var(--accent-hover); }
+.rejectBtn { border: 1px solid var(--border); background: white; color: var(--text-muted); }
+.rejectBtn:hover { border-color: var(--danger); color: var(--danger); background: #fff5f5; }

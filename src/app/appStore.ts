@@ -66,7 +66,7 @@ export interface AppStore {
   beginChangeSet(summary: string): ChangeSet
   dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'human' | 'agent'): void
   acceptChangeSet(): void
-  rejectChangeSet(reason?: string): void
+  rejectChangeSet(): void
   undo(): void
 
   setActiveScreen(screenId: EntityId): void
@@ -325,7 +325,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
-    rejectChangeSet(reason) {
+    rejectChangeSet() {
       requireWritable()
       const state = get()
       if (!state.activeChangeSet) return
@@ -334,9 +334,11 @@ export const useAppStore = create<AppStore>((set, get) => {
         changeSetId: state.activeChangeSet.id,
         summary: state.activeChangeSet.summary,
         baseRevision: state.activeChangeSet.baseRevision,
-        reason: reason ?? '',
         rejectedAt: new Date().toISOString(),
         operationCount: state.activeChangeSet.operations.length,
+        operationSummaries: state.activeChangeSet.operations.map(
+          operation => `[${operation.source}] ${operation.command.type}`,
+        ),
       }
       // Clear activeChangeSet, restore confirmed document as effectiveDocument
       const rejectedRecords = Array.isArray(state.rejectedRecords)

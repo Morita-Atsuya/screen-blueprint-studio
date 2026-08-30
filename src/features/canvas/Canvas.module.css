@@ -25,7 +25,8 @@
 .wireframe {
   flex: 1;
   overflow: auto;
-  padding: 24px;
+  padding: 32px;
+  background: var(--bg);
 }
 
 /* Component container */
@@ -36,6 +37,7 @@
   margin: 4px 0;
   cursor: pointer;
   transition: border-color 0.1s;
+  background: white;
 }
 .comp:hover { border-color: var(--text-faint); }
 .selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--agent-change-border); }
@@ -43,7 +45,15 @@
 .children { padding: 4px 0 0 8px; display: flex; flex-direction: column; gap: 4px; }
 
 /* Page */
-.kindPage { background: var(--bg-surface); }
+.wireframe > .comp {
+  width: min(100%, 920px);
+  min-height: 560px;
+  margin: 0 auto;
+  padding: 22px;
+  background: white;
+  border-color: #cbd5e1;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
 .pageBadge { font-size: 0.72rem; color: var(--text-faint); padding-bottom: 4px; }
 
 /* Section */
@@ -70,16 +80,16 @@
 /* Button */
 .btn { padding: 7px 16px; border: 0; border-radius: 6px; font-size: 0.85rem; opacity: 0.8; cursor: default; }
 
-.btnPrimary { background: var(--accent); color: #07131a; }
+.btnPrimary { background: var(--accent); color: white; }
 .btnSecondary { background: var(--bg-hover); color: var(--text-muted); border: 1px solid var(--border); }
 .btnDanger { background: var(--danger); color: white; }
 
 /* Alert */
 .alert { padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; border: 1px solid; }
-.alertInfo { background: rgba(124, 180, 230, 0.1); border-color: rgba(124, 180, 230, 0.3); color: #7cb4e6; }
-.alertSuccess { background: rgba(124, 230, 210, 0.1); border-color: var(--agent-change-border); color: var(--accent); }
-.alertWarning { background: rgba(255, 176, 125, 0.1); border-color: rgba(255, 176, 125, 0.3); color: var(--warning); }
-.alertError { background: rgba(255, 107, 107, 0.1); border-color: rgba(255, 107, 107, 0.3); color: var(--danger); }
+.alertInfo { background: #eff6ff; border-color: #bfdbfe; color: var(--info); }
+.alertSuccess { background: #ecfdf5; border-color: #a7f3d0; color: var(--success); }
+.alertWarning { background: #fffbeb; border-color: #fde68a; color: var(--warning); }
+.alertError { background: #fef2f2; border-color: #fecaca; color: var(--danger); }
 
 /* Modal */
 .modal { border: 2px dashed var(--border); border-radius: 8px; padding: 12px; background: var(--bg-surface); }

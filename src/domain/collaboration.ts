@@ -22,7 +22,7 @@ export interface RejectedChangeSetRecord {
   changeSetId: EntityId
   summary: string
   baseRevision: number
-  reason: string
   rejectedAt: string
   operationCount: number
+  operationSummaries: string[]
 }

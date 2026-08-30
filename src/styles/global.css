@@ -1,20 +1,23 @@
 :root {
-  color-scheme: dark;
-  --bg: #0c1020;
-  --bg-surface: #141a2e;
-  --bg-hover: #1c2440;
-  --bg-selected: #1e2d52;
-  --border: #252d49;
-  --border-focus: #7ce6d2;
-  --text: #f6f7fb;
-  --text-muted: #b8bfd4;
-  --text-faint: #7f89a8;
-  --accent: #7ce6d2;
-  --accent-hover: #a3f2e3;
-  --danger: #ff6b6b;
-  --warning: #ffb07d;
-  --agent-change: rgba(124, 230, 210, 0.12);
-  --agent-change-border: rgba(124, 230, 210, 0.4);
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --bg-surface: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-selected: #e8efff;
+  --border: #d8dee9;
+  --border-focus: #4f46e5;
+  --text: #1e293b;
+  --text-muted: #475569;
+  --text-faint: #64748b;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --danger: #b42318;
+  --warning: #b45309;
+  --success: #047857;
+  --info: #1d4ed8;
+  --agent-accent: #7c3aed;
+  --agent-change: rgba(124, 58, 237, 0.08);
+  --agent-change-border: rgba(124, 58, 237, 0.3);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.5;
@@ -47,7 +50,17 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px rgba(124, 230, 210, 0.15);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+}
+
+input:disabled, select:disabled, textarea:disabled {
+  background: #f8fafc;
+  color: var(--text-muted);
+}
+
+button:focus-visible {
+  outline: 3px solid rgba(79, 70, 229, 0.22);
+  outline-offset: 2px;
 }
 
 h1, h2, h3, h4, h5, h6 { margin: 0; }

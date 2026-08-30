@@ -159,7 +159,7 @@ await test('malformed rejected history is ignored and cannot block rejection', a
     7,
     null,
     [{ changeSetId: 'missing-fields' }],
-    [null, 4, { reason: 'invalid' }],
+    [null, 4, { invalid: true }],
   ]
 
   for (const [index, seed] of invalidSeeds.entries()) {
@@ -169,19 +169,32 @@ await test('malformed rejected history is ignored and cannot block rejection', a
     assert(Array.isArray(store.getState().rejectedRecords), 'rejectedRecords is not an array')
     assert(store.getState().rejectedRecords.length === 0, 'invalid rejected record was retained')
     const changeSet = store.getState().beginChangeSet('Reject malformed history')
-    store.getState().rejectChangeSet('No')
+    store.getState().rejectChangeSet()
     assert(store.getState().activeChangeSet === null, 'malformed history blocked rejection')
     assert(
       store.getState().rejectedRecords[0]?.changeSetId === changeSet.id,
       'valid in-memory rejection was not retained',
     )
+    const record = store.getState().rejectedRecords[0]
+    assert(
+      Object.keys(record).sort().join(',') === [
+        'baseRevision',
+        'changeSetId',
+        'operationCount',
+        'operationSummaries',
+        'rejectedAt',
+        'summary',
+      ].join(','),
+      'rejection history metadata has an unexpected shape',
+    )
+    assert(Array.isArray(record.operationSummaries), 'operation summaries were not retained')
   }
 
   memoryStorage.clear()
   const writeFailureStore = await freshStore('rejected-write-failure')
   writeFailureStore.getState().beginChangeSet('Rejected history write failure')
   memoryStorage.throwOnSetKeys.add(rejectedKey)
-  writeFailureStore.getState().rejectChangeSet('No')
+  writeFailureStore.getState().rejectChangeSet()
   memoryStorage.throwOnSetKeys.delete(rejectedKey)
   assert(writeFailureStore.getState().activeChangeSet === null, 'history save failure blocked rejection')
   assert(writeFailureStore.getState().errorMessage !== null, 'history save failure did not set a warning')
@@ -204,7 +217,7 @@ await test('failed rejection persistence cannot restore a rejected change set', 
     name: 'Rejected preview',
   })
   memoryStorage.throwOnSetKeys.add(storageKey)
-  removeSuccessStore.getState().rejectChangeSet('No')
+  removeSuccessStore.getState().rejectChangeSet()
   memoryStorage.throwOnSetKeys.delete(storageKey)
   assert(removeSuccessStore.getState().activeChangeSet === null, 'rejection did not clear active state')
   assert(removeSuccessStore.getState().persistenceUnavailable, 'failed rejection save was not surfaced')
@@ -225,7 +238,7 @@ await test('failed rejection persistence cannot restore a rejected change set', 
   })
   memoryStorage.throwOnSetKeys.add(storageKey)
   memoryStorage.throwOnRemove = true
-  rejectedIdGuardStore.getState().rejectChangeSet('No')
+  rejectedIdGuardStore.getState().rejectChangeSet()
   memoryStorage.throwOnSetKeys.delete(storageKey)
   memoryStorage.throwOnRemove = false
   const guardedReload = await freshStore('reject-stale-id-guard-reload')
@@ -245,7 +258,7 @@ await test('failed rejection persistence cannot restore a rejected change set', 
   })
   memoryStorage.throwOnSetKeys.add(storageKey)
   memoryStorage.throwOnSetKeys.add(rejectedKey)
-  bothWritesFailStore.getState().rejectChangeSet('No')
+  bothWritesFailStore.getState().rejectChangeSet()
   memoryStorage.throwOnSetKeys.delete(storageKey)
   memoryStorage.throwOnSetKeys.delete(rejectedKey)
   assert(memoryStorage.getItem(storageKey) === null, 'stale proposal survived both rejection write failures')
@@ -334,7 +347,7 @@ await test('persisted preview reloads separately and reject permanently clears i
     'reload did not reconstruct the preview',
   )
 
-  reloadedStore.getState().rejectChangeSet('Not accepted')
+  reloadedStore.getState().rejectChangeSet()
   assert(reloadedStore.getState().activeChangeSet === null, 'reject did not clear the active change set')
   assert(
     reloadedStore.getState().effectiveDocument.screens['screen-list'].name === confirmedName,
