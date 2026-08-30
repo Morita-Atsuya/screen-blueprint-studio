@@ -102,6 +102,7 @@ const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
 const screenFlowBundle = join(temp, 'screenFlow.mjs')
 const renderInspectorBundle = join(temp, 'renderInspector.mjs')
 const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
+const mountDeleteDialogBundle = join(temp, 'mountDeleteDialog.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -149,6 +150,14 @@ bundle(
     "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   ],
 )
+bundle(
+  'scripts/fixtures/mountDeleteDialog.tsx',
+  mountDeleteDialogBundle,
+  [
+    '--jsx=automatic',
+    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  ],
+)
 
 let passed = 0
 
@@ -165,6 +174,56 @@ async function test(name, callback) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+function installInteractiveDom() {
+  const { document, window } = parseHTML('<html><body></body></html>')
+  let activeElement = document.body
+  Object.defineProperty(document, 'activeElement', {
+    configurable: true,
+    get: () => activeElement,
+  })
+  Object.defineProperty(document, 'simulateDisabledFocusLoss', {
+    configurable: true,
+    value: () => {
+      activeElement = document.body
+    },
+  })
+  window.HTMLElement.prototype.focus = function focus() {
+    const previous = activeElement
+    if (previous && previous !== this) {
+      const focusOut = new window.Event('focusout', { bubbles: true })
+      Object.defineProperty(focusOut, 'relatedTarget', { value: this })
+      previous.dispatchEvent(focusOut)
+    }
+    activeElement = this
+    const focusIn = new window.Event('focusin', { bubbles: true })
+    Object.defineProperty(focusIn, 'relatedTarget', { value: previous })
+    this.dispatchEvent(focusIn)
+  }
+  window.HTMLElement.prototype.getClientRects = () => [{}]
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: new URL('http://localhost/'),
+  })
+  Object.defineProperties(globalThis, {
+    document: { configurable: true, value: document },
+    window: { configurable: true, value: window },
+    navigator: { configurable: true, value: window.navigator },
+    Node: { configurable: true, value: window.Node },
+    Element: { configurable: true, value: window.Element },
+    HTMLElement: { configurable: true, value: window.HTMLElement },
+    Event: { configurable: true, value: window.Event },
+    requestAnimationFrame: {
+      configurable: true,
+      value: callback => {
+        callback(performance.now())
+        return 1
+      },
+    },
+    cancelAnimationFrame: { configurable: true, value: () => {} },
+  })
+  return document
 }
 
 function clone(value) {
@@ -9100,55 +9159,127 @@ await test('Inspector select controls use unique IDs and visible accessible labe
   )
 })
 
+await test('delete confirmation enforces dialog focus and stale-impact behavior', async () => {
+  memoryStorage.clear()
+  memoryStorage.setItem('screen-blueprint-studio:locale:v1', 'en')
+  let document = installInteractiveDom()
+  const { mountDeleteDialog } = await import(
+    moduleUrl(mountDeleteDialogBundle, 'delete-dialog-behavior')
+  )
+
+  let harness = mountDeleteDialog()
+  harness.open()
+  let dialog = document.querySelector('[role="dialog"]')
+  const impactItems = [...dialog.querySelectorAll('ul li')]
+    .map(item => item.textContent.trim())
+  assert(
+    dialog?.getAttribute('aria-modal') === 'true' &&
+      document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent.trim() ===
+        'Confirm deletion' &&
+      document.getElementById(dialog.getAttribute('aria-describedby'))?.textContent.includes(
+        'Delete',
+      ) &&
+      JSON.stringify(impactItems) === JSON.stringify([
+        'Components removed: 3',
+        'Events removed: 1',
+        'Event actions removed: 2',
+        'State overrides removed: 3',
+      ]),
+    'delete dialog has no accessible name, description, or impact details',
+  )
+  let cancel = [...dialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'Cancel')
+  let deleteButton = [...dialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'Delete')
+  assert(
+    document.activeElement === cancel && !cancel.disabled && !deleteButton.disabled,
+    'delete dialog did not focus its safe default action',
+  )
+  deleteButton.focus()
+  harness.keyDown(deleteButton, 'Tab')
+  assert(document.activeElement === cancel, 'Tab escaped past the last delete dialog control')
+  harness.keyDown(cancel, 'Tab', true)
+  assert(document.activeElement === deleteButton, 'Shift+Tab escaped before the first control')
+  harness.keyDown(deleteButton, 'Escape')
+  assert(
+    !document.querySelector('[role="dialog"]') &&
+      !harness.state().pending &&
+      harness.state().targetExists &&
+      document.activeElement?.hasAttribute('data-delete-opener'),
+    'Escape did not cancel deletion and restore opener focus',
+  )
+  harness.unmount()
+
+  document = installInteractiveDom()
+  harness = mountDeleteDialog()
+  harness.open()
+  dialog = document.querySelector('[role="dialog"]')
+  deleteButton = [...dialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'Delete')
+  harness.changeDocument()
+  deleteButton.focus()
+  harness.click(deleteButton)
+  const reviewButton = [...dialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'I reviewed the updated impact')
+  cancel = [...dialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'Cancel')
+  assert(
+    reviewButton &&
+      deleteButton.disabled &&
+      document.activeElement === cancel &&
+      dialog.querySelector('[role="alert"]'),
+    'stale delete impact did not require review or return focus to Cancel ' +
+      `(review: ${Boolean(reviewButton)}, disabled: ${deleteButton.disabled}, ` +
+      `focus: ${document.activeElement?.textContent?.trim()}, ` +
+      `alert: ${Boolean(dialog.querySelector('[role="alert"]'))})`,
+  )
+  harness.click(reviewButton)
+  assert(!deleteButton.disabled && document.activeElement === cancel, 'impact review did not re-enable delete safely')
+  harness.click(deleteButton)
+  assert(
+    !harness.state().pending &&
+      !harness.state().targetExists &&
+      harness.state().historyLength === 2 &&
+      harness.state().hasUndoAction &&
+      document.activeElement?.hasAttribute('data-delete-opener'),
+    'reviewed deletion did not close, restore focus, or create one actionable delete history entry',
+  )
+  harness.unmount()
+
+  document = installInteractiveDom()
+  harness = mountDeleteDialog()
+  harness.open()
+  dialog = document.querySelector('[role="dialog"]')
+  deleteButton = [...dialog.querySelectorAll('button')]
+    .find(button => button.textContent.trim() === 'Delete')
+  harness.beginReview()
+  assert(
+    deleteButton.disabled &&
+      dialog.querySelector('[role="status"]') &&
+      harness.state().pending &&
+      harness.state().targetExists,
+    'review lock left pending deletion executable or hid its reason',
+  )
+  harness.click(deleteButton)
+  assert(
+    harness.state().pending && harness.state().targetExists,
+    'disabled pending delete mutated the document during review',
+  )
+  harness.removeOpener()
+  harness.keyDown(dialog, 'Escape')
+  assert(
+    !harness.state().pending &&
+      document.activeElement?.hasAttribute('data-delete-focus-fallback'),
+    'delete dialog did not use its focus fallback when the opener disappeared',
+  )
+  harness.rejectReview()
+  harness.unmount()
+})
+
 await test('review lock disables every dialog draft control without discarding it', async () => {
   memoryStorage.clear()
   function installDialogDom() {
-    const { document, window } = parseHTML('<html><body></body></html>')
-    let activeElement = document.body
-    Object.defineProperty(document, 'activeElement', {
-      configurable: true,
-      get: () => activeElement,
-    })
-    Object.defineProperty(document, 'simulateDisabledFocusLoss', {
-      configurable: true,
-      value: () => {
-        activeElement = document.body
-      },
-    })
-    window.HTMLElement.prototype.focus = function focus() {
-      const previous = activeElement
-      if (previous && previous !== this) {
-        const focusOut = new window.Event('focusout', { bubbles: true })
-        Object.defineProperty(focusOut, 'relatedTarget', { value: this })
-        previous.dispatchEvent(focusOut)
-      }
-      activeElement = this
-      const focusIn = new window.Event('focusin', { bubbles: true })
-      Object.defineProperty(focusIn, 'relatedTarget', { value: previous })
-      this.dispatchEvent(focusIn)
-    }
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: new URL('http://localhost/'),
-    })
-    Object.defineProperties(globalThis, {
-      document: { configurable: true, value: document },
-      window: { configurable: true, value: window },
-      navigator: { configurable: true, value: window.navigator },
-      Node: { configurable: true, value: window.Node },
-      Element: { configurable: true, value: window.Element },
-      HTMLElement: { configurable: true, value: window.HTMLElement },
-      Event: { configurable: true, value: window.Event },
-      requestAnimationFrame: {
-        configurable: true,
-        value: callback => {
-          callback(performance.now())
-          return 1
-        },
-      },
-      cancelAnimationFrame: { configurable: true, value: () => {} },
-    })
-    return document
+    return installInteractiveDom()
   }
 
   let document = installDialogDom()
