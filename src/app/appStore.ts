@@ -15,6 +15,11 @@ import { getOwnEntity, hasOwnEntity } from '../domain/entityMap'
 import type { UiMessage } from '../i18n/messages'
 import { domainErrorMessage } from '../i18n/messages'
 import type { ToastInput, ToastState } from './toastModel'
+import {
+  analyzeDeleteImpact,
+  type DeleteCommand,
+  type DeleteImpactAnalysis,
+} from '../domain/deleteImpact'
 import { sampleProject } from '../sample/sampleProject'
 import {
   clearStorage,
@@ -48,6 +53,17 @@ export interface RecoveryState {
   error: string
 }
 
+export interface PendingDeleteRequest {
+  id: EntityId
+  command: DeleteCommand
+  analysis: DeleteImpactAnalysis
+  historyLabel: string
+  routingKey: string
+  notice: UiMessage | null
+  needsReviewAcknowledgement: boolean
+  onDeleted?: () => void
+}
+
 export interface AppStore {
   // Confirmed document (never preview)
   document: ProjectDocument
@@ -59,6 +75,7 @@ export interface AppStore {
   recoveryState: RecoveryState | null
   startupNotice: UiMessage | null
   toast: ToastState | null
+  pendingDelete: PendingDeleteRequest | null
   persistenceUnavailable: boolean
   // effectiveDocument = computeEffective(document, activeChangeSet)
   effectiveDocument: ProjectDocument
@@ -82,6 +99,14 @@ export interface AppStore {
   showToast(input: ToastInput): EntityId
   dismissToast(toastId?: EntityId): void
   runToastAction(toastId: EntityId): boolean
+  requestHumanDelete(
+    command: DeleteCommand,
+    historyLabel: string,
+    onDeleted?: () => void,
+  ): 'executed' | 'pending' | 'failed'
+  confirmPendingDelete(): void
+  acknowledgePendingDeleteImpact(): void
+  cancelPendingDelete(): void
   resetToSample(): void
 }
 
@@ -189,6 +214,10 @@ function createErrorToast(message: UiMessage): ToastState {
   return createToast({ severity: 'error', message })
 }
 
+type DeleteUndoToken =
+  | { kind: 'history'; historyEntryId: EntityId }
+  | { kind: 'change-set'; changeSetId: EntityId; operationId: EntityId }
+
 export const useAppStore = create<AppStore>((set, get) => {
   const loadResult = loadFromStorage()
   const rejectedRecords = loadRejectedRecords()
@@ -266,6 +295,102 @@ export const useAppStore = create<AppStore>((set, get) => {
     return persist(document, changeSet, activeScreenId)
   }
 
+  function deleteRoutingKey(state: AppStore): string {
+    return state.activeChangeSet
+      ? `change-set:${state.activeChangeSet.id}:${state.activeChangeSet.version}`
+      : `document:${state.document.revision}`
+  }
+
+  function showDeleteUndoToast(token: DeleteUndoToken): void {
+    get().showToast({
+      severity: 'success',
+      message: { key: 'delete.deleted' },
+      action: {
+        label: { key: 'app.undo' },
+        callback: () => undoDelete(token),
+      },
+    })
+  }
+
+  function undoDelete(token: DeleteUndoToken): void {
+    const state = get()
+    if (token.kind === 'history') {
+      const currentEntry = state.history[state.history.length - 1]
+      if (state.activeChangeSet || currentEntry?.id !== token.historyEntryId) {
+        state.showToast({ severity: 'error', message: { key: 'delete.undoUnavailable' } })
+        return
+      }
+      state.undo()
+      return
+    }
+
+    const changeSet = state.activeChangeSet
+    const lastOperation = changeSet?.operations[changeSet.operations.length - 1]
+    if (
+      !changeSet ||
+      changeSet.id !== token.changeSetId ||
+      lastOperation?.id !== token.operationId
+    ) {
+      state.showToast({ severity: 'error', message: { key: 'delete.undoUnavailable' } })
+      return
+    }
+
+    const nextChangeSet: ChangeSet = {
+      ...changeSet,
+      version: changeSet.version + 1,
+      operations: changeSet.operations.slice(0, -1),
+    }
+    const effective = computeEffective(state.document, nextChangeSet)
+    const nextUi = reconcileUiState(effective, state.ui)
+    set({ activeChangeSet: nextChangeSet, effectiveDocument: effective, ui: nextUi })
+    markPersistence(persistIfAvailable(state.document, nextChangeSet, nextUi.activeScreenId))
+  }
+
+  function executeHumanDelete(
+    command: DeleteCommand,
+    historyLabel: string,
+    onDeleted?: () => void,
+  ): boolean {
+    const before = get()
+    const previousChangeSetId = before.activeChangeSet?.id
+    const previousOperationCount = before.activeChangeSet?.operations.length ?? 0
+    if (!before.dispatch(command, historyLabel)) return false
+
+    const after = get()
+    let token: DeleteUndoToken
+    if (previousChangeSetId) {
+      const operation = after.activeChangeSet?.operations[previousOperationCount]
+      if (
+        after.activeChangeSet?.id !== previousChangeSetId ||
+        !operation ||
+        operation.command !== command
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          'The delete operation was not appended to the active change set',
+        )
+      }
+      token = {
+        kind: 'change-set',
+        changeSetId: previousChangeSetId,
+        operationId: operation.id,
+      }
+    } else {
+      const historyEntry = after.history[after.history.length - 1]
+      if (!historyEntry || historyEntry.before !== before.document) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          'The delete operation did not create a history entry',
+        )
+      }
+      token = { kind: 'history', historyEntryId: historyEntry.id }
+    }
+
+    onDeleted?.()
+    showDeleteUndoToast(token)
+    return true
+  }
+
   return {
     document: confirmedDocument,
     activeChangeSet,
@@ -276,6 +401,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     recoveryState,
     startupNotice,
     toast: null,
+    pendingDelete: null,
     persistenceUnavailable,
     effectiveDocument: effectiveDoc,
 
@@ -577,6 +703,85 @@ export const useAppStore = create<AppStore>((set, get) => {
       return true
     },
 
+    requestHumanDelete(command, historyLabel, onDeleted) {
+      const state = get()
+      if (state.pendingDelete) {
+        state.showToast({ severity: 'error', message: { key: 'delete.requestPending' } })
+        return 'failed'
+      }
+      try {
+        const analysis = analyzeDeleteImpact(state.effectiveDocument, command)
+        if (!analysis.requiresConfirmation) {
+          return executeHumanDelete(command, historyLabel, onDeleted) ? 'executed' : 'failed'
+        }
+        set({
+          pendingDelete: {
+            id: nanoid(),
+            command,
+            analysis,
+            historyLabel,
+            routingKey: deleteRoutingKey(state),
+            notice: null,
+            needsReviewAcknowledgement: false,
+            onDeleted,
+          },
+        })
+        return 'pending'
+      } catch (error) {
+        set({ toast: createErrorToast(toUiMessage(error)) })
+        return 'failed'
+      }
+    },
+
+    confirmPendingDelete() {
+      const state = get()
+      const request = state.pendingDelete
+      if (!request) return
+      if (request.needsReviewAcknowledgement) return
+      try {
+        const analysis = analyzeDeleteImpact(state.effectiveDocument, request.command)
+        const routingKey = deleteRoutingKey(state)
+        if (
+          routingKey !== request.routingKey ||
+          analysis.fingerprint !== request.analysis.fingerprint
+        ) {
+          set({
+            pendingDelete: {
+              ...request,
+              analysis,
+              routingKey,
+              notice: { key: 'delete.impactChanged' },
+              needsReviewAcknowledgement: true,
+            },
+          })
+          return
+        }
+        set({ pendingDelete: null })
+        executeHumanDelete(request.command, request.historyLabel, request.onDeleted)
+      } catch (error) {
+        const message = toUiMessage(error)
+        set({
+          pendingDelete: { ...request, notice: message },
+          toast: createErrorToast(message),
+        })
+      }
+    },
+
+    acknowledgePendingDeleteImpact() {
+      set(state => state.pendingDelete
+        ? {
+            pendingDelete: {
+              ...state.pendingDelete,
+              needsReviewAcknowledgement: false,
+            },
+          }
+        : {})
+    },
+
+    cancelPendingDelete() {
+      set({ pendingDelete: null })
+    },
+
     resetToSample() {
       const nextUi = initialUiState(sampleProject)
       set({
@@ -589,6 +794,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         effectiveDocument: sampleProject,
         startupNotice: null,
         toast: null,
+        pendingDelete: null,
       })
       const cleared = clearStorage()
       markPersistence(cleared && persistIfAvailable(sampleProject, null, nextUi.activeScreenId))

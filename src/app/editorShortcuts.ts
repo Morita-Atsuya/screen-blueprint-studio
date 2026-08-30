@@ -43,9 +43,27 @@ export function resolveEditorShortcut(input: KeyboardInput): EditorShortcut {
   if (isEditableTarget(input.target)) return null
   const key = input.key.toLowerCase()
   if (key === 'escape') return 'clear-selection'
-  if (key === 'delete' || key === 'backspace') return 'delete-selection'
+  if (key === 'delete' || key === 'backspace') {
+    if (
+      input.metaKey ||
+      input.ctrlKey ||
+      input.altKey ||
+      input.repeat ||
+      input.isComposing ||
+      input.keyCode === 229 ||
+      input.dragActive ||
+      isBlockedDeleteTarget(input.target)
+    ) {
+      return null
+    }
+    return 'delete-selection'
+  }
   if (key === 'z' && (input.metaKey || input.ctrlKey)) {
     return input.shiftKey ? 'redo' : 'undo'
+  }
+
+  function isBlockedDeleteTarget(target: unknown): boolean {
+    return Boolean(asClosestTarget(target)?.closest?.('[role="dialog"], [role="menu"]'))
   }
   if (key === 'y' && input.ctrlKey && !input.metaKey) return 'redo'
   return null

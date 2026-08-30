@@ -140,6 +140,7 @@ export function StructureTree() {
     setSelectedComponent,
     setRightPanelTab,
     dispatch,
+    requestHumanDelete,
   } = useAppStore()
   const { activeScreenId, selectedComponentId } = ui
   const [treePreferences, setTreePreferences] = useState<StructureTreePreferences>(() =>
@@ -178,7 +179,7 @@ export function StructureTree() {
   }
 
   function remove(id: EntityId) {
-    dispatch({ type: 'removeComponent', componentId: id }, 'Delete component')
+    requestHumanDelete({ type: 'removeComponent', componentId: id }, 'Delete component')
   }
 
   function resetOverride(id: EntityId) {

@@ -32,7 +32,7 @@ export function EventDialog({
   onClose,
 }: EventDialogProps) {
   const { t } = useI18n()
-  const dispatch = useAppStore(state => state.dispatch)
+  const { dispatch, requestHumanDelete } = useAppStore()
   const dialogRef = useRef<HTMLElement>(null)
   const titleId = useId()
   const [name, setName] = useState(event?.name ?? t('behavior.newEventName'))
@@ -42,7 +42,6 @@ export function EventDialog({
   const [actions, setActions] = useState<DraftAction[]>(() =>
     (event?.actions ?? []).map(value => ({ key: nanoid(), value: { ...value } })),
   )
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const persistedEventId = event?.id ?? eventId
   const eventAvailable = (
     mode === 'create' ||
@@ -82,11 +81,11 @@ export function EventDialog({
 
   function remove() {
     if (!persistedEventId) return
-    const removed = dispatch(
+    requestHumanDelete(
       { type: 'removeEvent', eventId: persistedEventId },
       `${t('behavior.deleteEvent')}: ${name.trim()}`,
+      () => onClose('deleted'),
     )
-    if (removed) onClose('deleted')
   }
 
   function updateAction(index: number, value: EventAction) {
@@ -268,44 +267,25 @@ export function EventDialog({
             </p>
           ) : null}
 
-          {confirmingDelete && mode === 'edit' ? (
-            <div className={styles.confirm} role="alert">
-              <p>{t('behavior.deleteConfirm', { name: name.trim() })}</p>
-              <p>{t('behavior.deleteCleanup')}</p>
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.secondary}
-                  onClick={() => setConfirmingDelete(false)}
-                >
-                  {t('common.cancel')}
-                </button>
-                <button type="button" className={styles.danger} onClick={remove}>
-                  {t('behavior.deleteEvent')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.actions}>
-              {mode === 'edit' ? (
-                <button
-                  type="button"
-                  className={styles.dangerOutline}
-                  onClick={() => setConfirmingDelete(true)}
-                  data-event-delete
-                >
-                  {t('behavior.deleteEvent')}
-                </button>
-              ) : null}
-              <span className={styles.spacer} />
-              <button type="button" className={styles.secondary} onClick={close}>
-                {t('common.cancel')}
+          <div className={styles.actions}>
+            {mode === 'edit' ? (
+              <button
+                type="button"
+                className={styles.dangerOutline}
+                onClick={remove}
+                data-event-delete
+              >
+                {t('behavior.deleteEvent')}
               </button>
-              <button type="submit" className={styles.primary} disabled={!canSubmit}>
-                {t(mode === 'create' ? 'behavior.addEvent' : 'common.save')}
-              </button>
-            </div>
-          )}
+            ) : null}
+            <span className={styles.spacer} />
+            <button type="button" className={styles.secondary} onClick={close}>
+              {t('common.cancel')}
+            </button>
+            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+              {t(mode === 'create' ? 'behavior.addEvent' : 'common.save')}
+            </button>
+          </div>
         </form>
       </section>
     </div>

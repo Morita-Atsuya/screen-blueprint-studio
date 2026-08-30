@@ -82,6 +82,8 @@ const stateOverridesBundle = join(temp, 'stateOverrides.mjs')
 const changeSetPresentationBundle = join(temp, 'changeSetPresentation.mjs')
 const changeSetComponentChangesBundle = join(temp, 'changeSetComponentChanges.mjs')
 const structureTreeKeyboardBundle = join(temp, 'structureTreeKeyboard.mjs')
+const deleteImpactBundle = join(temp, 'deleteImpact.mjs')
+const sampleProjectBundle = join(temp, 'sampleProject.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -103,6 +105,8 @@ bundle('src/domain/stateOverrides.ts', stateOverridesBundle)
 bundle('src/domain/changeSetPresentation.ts', changeSetPresentationBundle)
 bundle('src/domain/changeSetComponentChanges.ts', changeSetComponentChangesBundle)
 bundle('src/features/structure-tree/structureTreeKeyboard.ts', structureTreeKeyboardBundle)
+bundle('src/domain/deleteImpact.ts', deleteImpactBundle)
+bundle('src/sample/sampleProject.ts', sampleProjectBundle)
 
 let passed = 0
 
@@ -2488,6 +2492,20 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
     resolveEditorShortcut({ key: 'Delete', target: { tagName: 'DIV' } }) === 'delete-selection',
     'Delete shortcut was not resolved',
   )
+  const blockedDeleteTarget = {
+    tagName: 'BUTTON',
+    closest(selector) {
+      return selector === '[role="dialog"], [role="menu"]' ? this : null
+    },
+  }
+  assert(
+    resolveEditorShortcut({ key: 'Delete', repeat: true, target: { tagName: 'DIV' } }) === null &&
+      resolveEditorShortcut({ key: 'Delete', isComposing: true, target: { tagName: 'DIV' } }) === null &&
+      resolveEditorShortcut({ key: 'Delete', dragActive: true, target: { tagName: 'DIV' } }) === null &&
+      resolveEditorShortcut({ key: 'Delete', ctrlKey: true, target: { tagName: 'DIV' } }) === null &&
+      resolveEditorShortcut({ key: 'Delete', target: blockedDeleteTarget }) === null,
+    'Delete shortcut was not guarded during repeat, IME, DnD, modifiers, or dialogs',
+  )
   assert(
     resolveEditorShortcut({ key: 'Escape', target: { tagName: 'DIV' } }) === 'clear-selection',
     'Escape shortcut was not resolved',
@@ -2727,6 +2745,256 @@ await test('Toast severity, replacement, and action APIs are token safe', async 
       appSource.includes('dismissToast(toast.id)') &&
       toastStyles.includes('@media (max-width: 640px)'),
     'Toast live region, timer pause, focus return, Escape, or narrow layout wiring was lost',
+  )
+})
+
+await test('delete impact analysis follows command cleanup and confirmation thresholds', async () => {
+  const { analyzeDeleteImpact } = await import(moduleUrl(deleteImpactBundle, 'delete-impact'))
+  const { sampleProject } = await import(moduleUrl(sampleProjectBundle, 'delete-impact-sample'))
+
+  const leaf = analyzeDeleteImpact(sampleProject, {
+    type: 'removeComponent',
+    componentId: 'comp-edit-title',
+  })
+  assert(
+    leaf.counts.components === 1 &&
+      leaf.counts.stateOverrides === 0 &&
+      leaf.requiresConfirmation === false,
+    'a clean component leaf was not classified as an immediate deletion',
+  )
+
+  const subtree = analyzeDeleteImpact(sampleProject, {
+    type: 'removeComponent',
+    componentId: 'comp-actions',
+  })
+  assert(
+    subtree.counts.components === 3 &&
+      subtree.counts.events === 1 &&
+      subtree.counts.eventActions === 2 &&
+      subtree.counts.stateOverrides === 3 &&
+      subtree.requiresConfirmation,
+    'component subtree cleanup impact did not match removeComponent',
+  )
+
+  const state = analyzeDeleteImpact(sampleProject, {
+    type: 'removeScreenState',
+    stateId: 'state-edit-saving',
+  })
+  assert(
+    state.counts.states === 1 &&
+      state.counts.stateOverrides === 2 &&
+      state.counts.eventActions === 1 &&
+      state.requiresConfirmation,
+    'state override and setState cleanup impact was incomplete',
+  )
+
+  const event = analyzeDeleteImpact(sampleProject, {
+    type: 'removeEvent',
+    eventId: 'event-submit',
+  })
+  assert(
+    event.counts.events === 1 &&
+      event.counts.eventActions === 2 &&
+      event.counts.buttonEventConnections === 1 &&
+      event.requiresConfirmation,
+    'event action and Button connection impact was incomplete',
+  )
+
+  const api = analyzeDeleteImpact(sampleProject, {
+    type: 'removeApiOperation',
+    operationId: 'api-save-user',
+  })
+  assert(
+    api.counts.apiOperations === 1 &&
+      api.counts.apiBindings === 3 &&
+      api.counts.eventActions === 1 &&
+      api.counts.apiStateConnections === 2 &&
+      api.requiresConfirmation,
+    'API binding and callApi cleanup impact was incomplete',
+  )
+
+  const screen = analyzeDeleteImpact(sampleProject, {
+    type: 'removeScreen',
+    screenId: 'screen-list',
+  })
+  assert(
+    screen.counts.components === 6 &&
+      screen.counts.states === 2 &&
+      screen.counts.stateOverrides === 1 &&
+      screen.requiresConfirmation,
+    'screen-owned entity impact was incomplete',
+  )
+
+  const emptyEventDocument = clone(sampleProject)
+  emptyEventDocument.events['event-empty'] = {
+    id: 'event-empty',
+    screenId: 'screen-list',
+    name: 'Empty event',
+    trigger: { type: 'click', componentId: 'comp-list-title' },
+    actions: [],
+  }
+  emptyEventDocument.screens['screen-list'].eventIds.push('event-empty')
+  const emptyEvent = analyzeDeleteImpact(emptyEventDocument, {
+    type: 'removeEvent',
+    eventId: 'event-empty',
+  })
+  assert(
+    emptyEvent.counts.events === 1 && emptyEvent.requiresConfirmation === false,
+    'an unreferenced empty event was forced through blanket confirmation',
+  )
+})
+
+await test('human delete flow confirms impact and only undoes the current deletion', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('impact-aware-human-delete')
+
+  assert(
+    store.getState().requestHumanDelete(
+      { type: 'removeComponent', componentId: 'comp-edit-title' },
+      'Delete component',
+    ) === 'executed' &&
+      !store.getState().effectiveDocument.components['comp-edit-title'] &&
+      store.getState().history.length === 1 &&
+      store.getState().toast?.action,
+    'clean leaf deletion was not immediate or actionable',
+  )
+  const undoToastId = store.getState().toast.id
+  store.getState().runToastAction(undoToastId)
+  assert(
+    store.getState().document.components['comp-edit-title'] &&
+      store.getState().history.length === 0 &&
+      store.getState().redoStack.length === 1,
+    'delete Toast action did not perform one normal history Undo',
+  )
+
+  store.getState().resetToSample()
+  assert(
+    store.getState().requestHumanDelete(
+      { type: 'removeComponent', componentId: 'comp-actions' },
+      'Delete component',
+    ) === 'pending' &&
+      store.getState().pendingDelete?.analysis.counts.components === 3 &&
+      store.getState().history.length === 0,
+    'impactful subtree deletion did not wait for confirmation',
+  )
+  store.getState().cancelPendingDelete()
+  assert(
+    store.getState().pendingDelete === null &&
+      store.getState().document.components['comp-actions'],
+    'cancelling deletion changed the document',
+  )
+
+  store.getState().requestHumanDelete(
+    { type: 'removeComponent', componentId: 'comp-actions' },
+    'Delete component',
+  )
+  store.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-edit',
+    name: 'Changed while confirming',
+  })
+  store.getState().confirmPendingDelete()
+  assert(
+    store.getState().pendingDelete?.notice?.key === 'delete.impactChanged' &&
+      store.getState().pendingDelete?.needsReviewAcknowledgement &&
+      store.getState().document.components['comp-actions'],
+    'stale confirmation deleted without requiring updated impact review',
+  )
+  store.getState().confirmPendingDelete()
+  assert(
+    store.getState().pendingDelete !== null &&
+      store.getState().document.components['comp-actions'],
+    'repeat activation bypassed updated impact review',
+  )
+  store.getState().acknowledgePendingDeleteImpact()
+  store.getState().confirmPendingDelete()
+  assert(
+    store.getState().pendingDelete === null &&
+      !store.getState().document.components['comp-actions'] &&
+      store.getState().toast?.action,
+    'reconfirmed current impact did not execute the deletion',
+  )
+
+  store.getState().resetToSample()
+  store.getState().requestHumanDelete(
+    { type: 'removeComponent', componentId: 'comp-edit-title' },
+    'Delete component',
+  )
+  const staleUndoId = store.getState().toast.id
+  store.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-edit',
+    name: 'Later edit',
+  })
+  store.getState().runToastAction(staleUndoId)
+  assert(
+    !store.getState().document.components['comp-edit-title'] &&
+      store.getState().document.screens['screen-edit'].name === 'Later edit' &&
+      store.getState().history.length === 2 &&
+      store.getState().toast?.message.key === 'delete.undoUnavailable',
+    'stale delete Undo rewound a later human edit',
+  )
+
+  store.getState().resetToSample()
+  store.getState().beginChangeSet('Human delete preview')
+  store.getState().requestHumanDelete(
+    { type: 'removeComponent', componentId: 'comp-edit-title' },
+    'Delete component',
+  )
+  const changeSetUndoId = store.getState().toast.id
+  assert(
+    store.getState().activeChangeSet?.operations.length === 1 &&
+      !store.getState().effectiveDocument.components['comp-edit-title'],
+    'active change set human deletion was not routed to preview',
+  )
+  store.getState().runToastAction(changeSetUndoId)
+  assert(
+    store.getState().activeChangeSet?.operations.length === 0 &&
+      store.getState().effectiveDocument.components['comp-edit-title'] &&
+      store.getState().history.length === 0,
+    'delete Undo did not safely remove the latest human change-set operation',
+  )
+
+  store.getState().requestHumanDelete(
+    { type: 'removeComponent', componentId: 'comp-edit-title' },
+    'Delete component',
+  )
+  const staleChangeSetUndoId = store.getState().toast.id
+  store.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-edit',
+    name: 'Later preview edit',
+  })
+  store.getState().runToastAction(staleChangeSetUndoId)
+  assert(
+    store.getState().activeChangeSet?.operations.length === 2 &&
+      !store.getState().effectiveDocument.components['comp-edit-title'] &&
+      store.getState().effectiveDocument.screens['screen-edit'].name === 'Later preview edit' &&
+      store.getState().toast?.message.key === 'delete.undoUnavailable',
+    'stale change-set delete Undo removed a later preview operation',
+  )
+
+  const humanDeleteSources = [
+    'src/features/screens/ScreenList.tsx',
+    'src/features/structure-tree/StructureTree.tsx',
+    'src/app/EditorKeyboardShortcuts.tsx',
+    'src/features/canvas/StateDialog.tsx',
+    'src/features/inspector/EventDialog.tsx',
+    'src/features/inspector/ApiOperationDialog.tsx',
+  ].map(path => readFileSync(join(root, path), 'utf8'))
+  const webMcpSource = readFileSync(join(root, 'src/webmcp/tools.ts'), 'utf8')
+  const confirmationSource = readFileSync(
+    join(root, 'src/app/DeleteConfirmationDialog.tsx'),
+    'utf8',
+  )
+  assert(
+    humanDeleteSources.every(source => source.includes('requestHumanDelete')) &&
+      !webMcpSource.includes('requestHumanDelete') &&
+      confirmationSource.includes('trapDialogFocus') &&
+      confirmationSource.includes('data-delete-confirmation') &&
+      confirmationSource.includes("event.key === 'Escape'") &&
+      confirmationSource.includes('cancelRef.current?.focus()'),
+    'human entry points, agent bypass, or accessible confirmation wiring was incomplete',
   )
 })
 

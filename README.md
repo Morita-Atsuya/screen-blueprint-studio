@@ -20,6 +20,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
 - API operationと画面項目、成功／失敗状態の関連付け
 - 人間による通常編集、確定操作のUndo／Redo
+- 子孫・状態override・event／API参照などへ影響する削除だけを件数付きで確認し、削除直後はToastから安全にUndo
 - `localStorage`への保存、破損データのrecovery UI、保存不能時のJSON退避
 - runtime invariant validationとprototype-chain ID対策
 - 10個の型付きWebMCPツール

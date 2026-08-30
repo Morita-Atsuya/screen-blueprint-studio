@@ -10,7 +10,18 @@ import {
 export function EditorKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      const shortcut = resolveEditorShortcut(event)
+      const shortcut = resolveEditorShortcut({
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        repeat: event.repeat,
+        isComposing: event.isComposing,
+        keyCode: event.keyCode,
+        target: event.target,
+        dragActive: Boolean(document.querySelector('[data-drag-overlay]')),
+      })
       if (!shortcut) return
 
       const state = useAppStore.getState()
@@ -53,7 +64,7 @@ export function EditorKeyboardShortcuts() {
         })
         return
       }
-      state.dispatch(
+      state.requestHumanDelete(
         { type: 'removeComponent', componentId: selectedId },
         'Delete component',
       )

@@ -1,5 +1,6 @@
 import type { ChangeSet, ChangeSetOperation } from './collaboration'
 import { getChangeSetOperationSnapshots } from './changeSetReplay'
+import { isDeleteCommand, summarizeDeleteImpact } from './deleteImpact'
 import type { DomainCommand } from './commands'
 import {
   COMPONENT_KIND_MESSAGE_KEYS,
@@ -409,42 +410,27 @@ function entityImpact(
   command: DomainCommand,
   locale: Locale,
 ): string | null {
+  if (!isDeleteCommand(command)) return null
+  const analysis = summarizeDeleteImpact(before, after, command)
   const removed = {
     components: Math.max(
       0,
-      Object.keys(before.components).filter(id => !getOwnEntity(after.components, id)).length -
-        (command.type === 'removeComponent' ? 1 : 0),
+      analysis.counts.components - (command.type === 'removeComponent' ? 1 : 0),
     ),
     states: Math.max(
       0,
-      Object.keys(before.screenStates).filter(id => !getOwnEntity(after.screenStates, id)).length -
-        (command.type === 'removeScreenState' ? 1 : 0),
+      analysis.counts.states - (command.type === 'removeScreenState' ? 1 : 0),
     ),
     events: Math.max(
       0,
-      Object.keys(before.events).filter(id => !getOwnEntity(after.events, id)).length -
-        (command.type === 'removeEvent' ? 1 : 0),
+      analysis.counts.events - (command.type === 'removeEvent' ? 1 : 0),
     ),
     api: Math.max(
       0,
-      Object.keys(before.apiOperations).filter(id => !getOwnEntity(after.apiOperations, id)).length -
-        (command.type === 'removeApiOperation' ? 1 : 0),
+      analysis.counts.apiOperations - (command.type === 'removeApiOperation' ? 1 : 0),
     ),
   }
-  function changedEntities<T>(
-    beforeMap: Record<EntityId, T>,
-    afterMap: Record<EntityId, T>,
-  ): number {
-    return Object.keys(beforeMap).filter(id =>
-      getOwnEntity(afterMap, id) &&
-      !valuesEqual(getOwnEntity(beforeMap, id), getOwnEntity(afterMap, id))
-    ).length
-  }
-  const changedReferences =
-    changedEntities(before.components, after.components) +
-    changedEntities(before.screenStates, after.screenStates) +
-    changedEntities(before.events, after.events) +
-    changedEntities(before.apiOperations, after.apiOperations)
+  const changedReferences = analysis.changedReferenceEntities
   if (
     removed.components === 0 &&
     removed.states === 0 &&

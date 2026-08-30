@@ -36,11 +36,9 @@ export function ApiOperationDialog({
   onClose,
 }: ApiOperationDialogProps) {
   const { t } = useI18n()
-  const dispatch = useAppStore(state => state.dispatch)
+  const { dispatch, requestHumanDelete } = useAppStore()
   const dialogRef = useRef<HTMLElement>(null)
   const addBindingRef = useRef<HTMLButtonElement>(null)
-  const deleteButtonRef = useRef<HTMLButtonElement>(null)
-  const deleteCancelRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   const operation = editorOperation?.operation
   const persistedOperationId = operation?.id ?? operationId
@@ -55,7 +53,6 @@ export function ApiOperationDialog({
       value: { ...value },
     })),
   )
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const operationAvailable = (
     mode === 'create' ||
     context.operations.some(candidate => candidate.operation.id === persistedOperationId)
@@ -78,11 +75,6 @@ export function ApiOperationDialog({
     new Set(targetPaths).size === targetPaths.length
   )
   const canAddBinding = new Set(componentIds).size < context.inputComponents.length
-  const referenceCount = editorOperation?.eventReferences.reduce(
-    (count, reference) => count + reference.actionCount,
-    0,
-  ) ?? 0
-
   function save() {
     if (!canSubmit || (mode === 'edit' && !persistedOperationId)) return
     const requestBindings = bindings.map(binding => ({
@@ -122,11 +114,11 @@ export function ApiOperationDialog({
 
   function remove() {
     if (!persistedOperationId) return
-    const removed = dispatch(
+    requestHumanDelete(
       { type: 'removeApiOperation', operationId: persistedOperationId },
       `${t('behavior.deleteApiOperation')}: ${name.trim()}`,
+      () => onClose('deleted'),
     )
-    if (removed) onClose('deleted')
   }
 
   function updateBinding(index: number, value: FieldBinding) {
@@ -166,16 +158,6 @@ export function ApiOperationDialog({
         ?? addBindingRef.current
       target?.focus()
     })
-  }
-
-  function showDeleteConfirmation() {
-    setConfirmingDelete(true)
-    requestAnimationFrame(() => deleteCancelRef.current?.focus())
-  }
-
-  function hideDeleteConfirmation() {
-    setConfirmingDelete(false)
-    requestAnimationFrame(() => deleteButtonRef.current?.focus())
   }
 
   return (
@@ -381,59 +363,29 @@ export function ApiOperationDialog({
             </p>
           ) : null}
 
-          {confirmingDelete && mode === 'edit' ? (
-            <div className={styles.confirm} role="alert">
-              <p>{t('behavior.deleteApiConfirm', { name: name.trim() })}</p>
-              <p>{t('behavior.deleteApiCleanup', { count: referenceCount })}</p>
-              {editorOperation && editorOperation.eventReferences.length > 0 ? (
-                <ul className={styles.impactList}>
-                  {editorOperation.eventReferences.map(reference => (
-                    <li key={reference.event.id}>
-                      {reference.event.label ?? reference.event.id} ({reference.actionCount})
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className={styles.actions}>
-                <button
-                  ref={deleteCancelRef}
-                  type="button"
-                  className={styles.secondary}
-                  onClick={hideDeleteConfirmation}
-                >
-                  {t('common.cancel')}
-                </button>
-                <button type="button" className={styles.danger} onClick={remove}>
-                  {t('behavior.deleteApiOperation')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.actions}>
-              {mode === 'edit' ? (
-                <button
-                  ref={deleteButtonRef}
-                  type="button"
-                  className={styles.dangerOutline}
-                  onClick={showDeleteConfirmation}
-                  data-api-delete
-                >
-                  {t('behavior.deleteApiOperation')}
-                </button>
-              ) : null}
-              <span className={styles.spacer} />
+          <div className={styles.actions}>
+            {mode === 'edit' ? (
               <button
                 type="button"
-                className={styles.secondary}
-                onClick={() => onClose('cancelled')}
+                className={styles.dangerOutline}
+                onClick={remove}
+                data-api-delete
               >
-                {t('common.cancel')}
+                {t('behavior.deleteApiOperation')}
               </button>
-              <button type="submit" className={styles.primary} disabled={!canSubmit}>
-                {t(mode === 'create' ? 'behavior.addApiOperation' : 'common.save')}
-              </button>
-            </div>
-          )}
+            ) : null}
+            <span className={styles.spacer} />
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => onClose('cancelled')}
+            >
+              {t('common.cancel')}
+            </button>
+            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+              {t(mode === 'create' ? 'behavior.addApiOperation' : 'common.save')}
+            </button>
+          </div>
         </form>
       </section>
     </div>

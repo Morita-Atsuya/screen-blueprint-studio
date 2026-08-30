@@ -8,7 +8,13 @@ import styles from './ScreenList.module.css'
 
 export function ScreenList() {
   const { locale, t } = useI18n()
-  const { effectiveDocument, ui, dispatch, setActiveScreen } = useAppStore()
+  const {
+    effectiveDocument,
+    ui,
+    dispatch,
+    requestHumanDelete,
+    setActiveScreen,
+  } = useAppStore()
   const { project, screens } = effectiveDocument
   const activeScreen = ui.activeScreenId
     ? getOwnEntity(screens, ui.activeScreenId)
@@ -35,7 +41,7 @@ export function ScreenList() {
 
   function removeActiveScreen() {
     if (!activeScreen || project.screenIds.length <= 1) return
-    dispatch(
+    requestHumanDelete(
       {
         type: 'removeScreen',
         screenId: activeScreen.id,

@@ -91,23 +91,10 @@
 
 .secondary:hover { background: var(--bg-hover); color: var(--text); }
 
-.danger,
 .dangerOutline {
   border: 1px solid var(--danger);
   color: var(--danger);
 }
 
-.danger { background: var(--danger); color: white; }
 .dangerOutline { background: var(--bg-surface); }
 .dangerOutline:hover { background: #fff5f5; }
-
-.confirm {
-  padding: 10px;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fff5f5;
-  color: var(--danger);
-  font-size: 0.82rem;
-}
-
-.confirm .actions { justify-content: flex-end; margin-top: 10px; }

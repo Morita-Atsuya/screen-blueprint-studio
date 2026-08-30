@@ -15,12 +15,11 @@ interface StateDialogProps {
 
 export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps) {
   const { t } = useI18n()
-  const { dispatch, effectiveDocument, setActiveState } = useAppStore()
+  const { dispatch, effectiveDocument, requestHumanDelete, setActiveState } = useAppStore()
   const screen = getOwnEntity(effectiveDocument.screens, screenId)
   const isDefault = state?.id === screen?.defaultStateId
   const [name, setName] = useState(state?.name ?? t('states.newName'))
   const [description, setDescription] = useState(state?.description ?? '')
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const titleId = `state-dialog-title-${state?.id ?? 'new'}`
   const canSubmit = name.trim().length > 0
 
@@ -50,8 +49,11 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
 
   function remove() {
     if (!state || isDefault) return
-    dispatch({ type: 'removeScreenState', stateId: state.id }, 'Delete screen state')
-    onClose()
+    requestHumanDelete(
+      { type: 'removeScreenState', stateId: state.id },
+      'Delete screen state',
+      onClose,
+    )
   }
 
   return (
@@ -111,38 +113,25 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
             />
           </label>
 
-          {confirmingDelete && state ? (
-            <div className={styles.confirm} role="alert">
-              <p>{t('states.deleteConfirm', { name: state.name })}</p>
-              <div className={styles.actions}>
-                <button type="button" className={styles.secondary} onClick={() => setConfirmingDelete(false)}>
-                  {t('common.cancel')}
-                </button>
-                <button type="button" className={styles.danger} onClick={remove}>
-                  {t('states.delete')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.actions}>
-              {mode === 'edit' ? (
-                <button
-                  type="button"
-                  className={styles.dangerOutline}
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  {t('states.delete')}
-                </button>
-              ) : null}
-              <span className={styles.spacer} />
-              <button type="button" className={styles.secondary} onClick={onClose}>
-                {t('common.cancel')}
+          <div className={styles.actions}>
+            {mode === 'edit' ? (
+              <button
+                type="button"
+                className={styles.dangerOutline}
+                onClick={remove}
+                data-state-delete
+              >
+                {t('states.delete')}
               </button>
-              <button type="submit" className={styles.primary} disabled={!canSubmit}>
-                {t(mode === 'create' ? 'states.create' : 'common.save')}
-              </button>
-            </div>
-          )}
+            ) : null}
+            <span className={styles.spacer} />
+            <button type="button" className={styles.secondary} onClick={onClose}>
+              {t('common.cancel')}
+            </button>
+            <button type="submit" className={styles.primary} disabled={!canSubmit}>
+              {t(mode === 'create' ? 'states.create' : 'common.save')}
+            </button>
+          </div>
         </form>
       </section>
     </div>

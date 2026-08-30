@@ -8,6 +8,7 @@ import { ChangeSetBar } from '../features/change-review/ChangeSetBar'
 import { EditorDndProvider } from '../dnd/EditorDndContext'
 import { EditorKeyboardShortcuts } from './EditorKeyboardShortcuts'
 import { Toast } from './Toast'
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { useI18n } from '../i18n/I18nProvider'
 import { getOwnEntity } from '../domain/entityMap'
 import {
@@ -211,8 +212,9 @@ export function App() {
         )}
 
         <Toast toast={toast} dismiss={dismissToast} runAction={runToastAction} />
+        <DeleteConfirmationDialog />
 
-        <div className={styles.main}>
+        <div className={styles.main} data-delete-focus-fallback tabIndex={-1}>
           {/* Left panel */}
           <aside className={styles.left}>
             <LeftPane />
