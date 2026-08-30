@@ -3,6 +3,7 @@ import type {
   EntityId,
   ProjectDocument,
 } from './model'
+import { assertNever } from './assertNever'
 import { CONTAINER_KINDS, DEFAULT_COMPONENT_LAYOUT } from './model'
 import type { ComponentConfig } from './model'
 import type { ComponentSubtreeSnapshot, DomainCommand } from './commands'
@@ -181,6 +182,8 @@ function duplicateComponentConfig(
     case 'alert':
     case 'modal':
       return copied
+    default:
+      return assertNever(copied, 'duplicated component config')
   }
 }
 

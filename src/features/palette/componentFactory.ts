@@ -1,24 +1,22 @@
 import { nanoid } from 'nanoid'
 import type { AddComponentCommand } from '../../domain/commands'
-import type { ComponentConfig, ComponentKind, EntityId, ProjectDocument } from '../../domain/model'
-import { DEFAULT_COMPONENT_LAYOUT } from '../../domain/model'
+import type {
+  ComponentConfig,
+  EntityId,
+  PaletteComponentKind,
+  ProjectDocument,
+} from '../../domain/model'
+import { DEFAULT_COMPONENT_LAYOUT, PALETTE_COMPONENT_KINDS } from '../../domain/model'
 import type { Locale } from '../../i18n/messages'
 import { translate } from '../../i18n/messages'
+import { assertNever } from '../../domain/assertNever'
 
 export interface PaletteItem {
-  kind: Exclude<ComponentKind, 'page'>
+  kind: PaletteComponentKind
 }
 
-export const PALETTE_ITEMS: PaletteItem[] = [
-  { kind: 'section' },
-  { kind: 'container' },
-  { kind: 'text' },
-  { kind: 'textInput' },
-  { kind: 'select' },
-  { kind: 'button' },
-  { kind: 'alert' },
-  { kind: 'modal' },
-]
+export const PALETTE_ITEMS: readonly PaletteItem[] =
+  PALETTE_COMPONENT_KINDS.map(kind => ({ kind }))
 
 function generateUniqueFieldKey(doc: ProjectDocument): string {
   const usedKeys = new Set<string>()
@@ -78,6 +76,8 @@ export function createDefaultComponentConfig(
       return { kind, tone: 'info', message: translate(locale, 'defaults.alertMessage') }
     case 'modal':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
+    default:
+      return assertNever(kind, 'Palette component kind')
   }
 }
 

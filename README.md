@@ -27,6 +27,8 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - runtime invariant validationとprototype-chain ID対策
 - 10個の型付きWebMCPツール
 
+初期sample projectは`COMPONENT_KIND_CATALOG`に定義された全component kindを最低1件含みます。regressionはsample、Palette、runtime validation、Canvas、Tree、Inspector、複製・Copy/Paste、削除・追加、WebMCP schemaのkind集合を正準catalogと照合し、kind追加時の横展開漏れを検出します。
+
 ## 人間とAIの共同編集
 
 AIによる書き込みは確定モデルへ直接反映されません。WebMCPの`begin_change_set`だけがactive change setを開始し、その中へoperationを追加します。通常時の人間操作は直接確定し、active change set中の修正だけが同じchange setへ入ります。変更は同じキャンバスへpreviewされ、反映・破棄は人間向けUIからのみ行います。

@@ -1,3 +1,6 @@
+import type { ComponentKind } from '../domain/model'
+import { assertCompleteComponentKindCoverage } from '../domain/model'
+
 const closed = { additionalProperties: false } as const
 const string = { type: 'string' } as const
 const nonEmptyString = { type: 'string', minLength: 1 } as const
@@ -161,7 +164,12 @@ const configVariants = [
     properties: { kind: { const: 'modal' }, ...layoutProperties },
     required: ['kind', ...layoutRequired],
   },
-] as const
+] as const satisfies readonly { kind: ComponentKind; properties: object; required: readonly string[] }[]
+
+assertCompleteComponentKindCoverage(
+  'WebMCP component config schema',
+  configVariants.map(variant => variant.kind),
+)
 
 export const componentConfigSchema = {
   oneOf: configVariants.map(variant => ({

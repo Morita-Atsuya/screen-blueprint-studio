@@ -85,6 +85,11 @@ const structureTreeKeyboardBundle = join(temp, 'structureTreeKeyboard.mjs')
 const deleteImpactBundle = join(temp, 'deleteImpact.mjs')
 const sampleProjectBundle = join(temp, 'sampleProject.mjs')
 const componentDuplicationBundle = join(temp, 'componentDuplication.mjs')
+const modelBundle = join(temp, 'model.mjs')
+const runtimeValidationBundle = join(temp, 'runtimeValidation.mjs')
+const invariantsBundle = join(temp, 'invariants.mjs')
+const componentPlacementBundle = join(temp, 'componentPlacement.mjs')
+const componentPreviewBundle = join(temp, 'componentPreview.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -109,6 +114,11 @@ bundle('src/features/structure-tree/structureTreeKeyboard.ts', structureTreeKeyb
 bundle('src/domain/deleteImpact.ts', deleteImpactBundle)
 bundle('src/sample/sampleProject.ts', sampleProjectBundle)
 bundle('src/domain/componentDuplication.ts', componentDuplicationBundle)
+bundle('src/domain/model.ts', modelBundle)
+bundle('src/domain/runtimeValidation.ts', runtimeValidationBundle)
+bundle('src/domain/invariants.ts', invariantsBundle)
+bundle('src/domain/componentPlacement.ts', componentPlacementBundle)
+bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
 
 let passed = 0
 
@@ -2526,6 +2536,279 @@ await test('palette factory and component drops use validated commands', async (
   )
 })
 
+await test('sample and component surfaces cover every canonical component kind', async () => {
+  memoryStorage.clear()
+  const {
+    CHILD_COMPONENT_KINDS,
+    COMPONENT_KIND_CATALOG,
+    COMPONENT_KINDS,
+    PALETTE_COMPONENT_KINDS,
+    assertCompleteComponentKindCoverage,
+  } = await import(moduleUrl(modelBundle, 'all-component-kinds-model'))
+  const { sampleProject } = await import(
+    moduleUrl(sampleProjectBundle, 'all-component-kinds-sample')
+  )
+  const {
+    validateComponentConfig,
+    validateScreenComponent,
+  } = await import(moduleUrl(runtimeValidationBundle, 'all-component-kinds-validation'))
+  const { validateInvariants } = await import(
+    moduleUrl(invariantsBundle, 'all-component-kinds-invariants')
+  )
+  const {
+    COMPONENT_KIND_MESSAGE_KEYS,
+    getComponentSelectionContext,
+    getComponentTreeLabel,
+  } = await import(moduleUrl(componentDisplayLabelBundle, 'all-component-kinds-labels'))
+  const {
+    PALETTE_ITEMS,
+    createAddComponentCommand,
+  } = await import(moduleUrl(componentFactoryBundle, 'all-component-kinds-factory'))
+  const {
+    canDuplicateComponent,
+    createComponentSubtreeSnapshot,
+    createDuplicateComponentCommand,
+    createPasteComponentCommand,
+  } = await import(moduleUrl(componentDuplicationBundle, 'all-component-kinds-copy'))
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'all-component-kinds-commands')
+  )
+  const { classifyComponentAdd } = await import(
+    moduleUrl(componentPlacementBundle, 'all-component-kinds-placement')
+  )
+  const { WEBMCP_TOOLS } = await import(moduleUrl(toolsBundle, 'all-component-kinds-tools'))
+  const { createCanvasComponentPreview } = await import(
+    moduleUrl(componentPreviewBundle, 'all-component-kinds-preview')
+  )
+
+  validateInvariants(sampleProject)
+  const components = Object.values(sampleProject.components)
+  const sampleKinds = [...new Set(components.map(component => component.kind))]
+  assertCompleteComponentKindCoverage('sample project', sampleKinds)
+  components.forEach(component => validateScreenComponent(component))
+  assertCompleteComponentKindCoverage(
+    'component labels',
+    Object.keys(COMPONENT_KIND_MESSAGE_KEYS),
+  )
+
+  const representativeByKind = new Map()
+  for (const kind of COMPONENT_KINDS) {
+    const candidates = components.filter(component => component.kind === kind)
+    const representative = kind === 'button'
+      ? candidates.find(component =>
+          component.config.kind === 'button' && component.config.eventId !== null)
+      : candidates[0]
+    assert(representative, `sample has no representative ${kind} component`)
+    representativeByKind.set(kind, representative)
+    const preview = createCanvasComponentPreview(representative.config)
+    const definition = COMPONENT_KIND_CATALOG.find(candidate => candidate.kind === kind)
+    assert(
+      preview.kind === kind &&
+        preview.rendersContent === definition?.canvasContent,
+      `Canvas preview is unavailable or misclassified for ${kind}`,
+    )
+    assert(
+      getComponentTreeLabel(representative, 'en').length > 0 &&
+        getComponentTreeLabel(representative, 'ja').length > 0,
+      `Tree label is unavailable for ${kind}`,
+    )
+    const selection = getComponentSelectionContext(
+      sampleProject,
+      representative.id,
+      'en',
+    )
+    assert(
+      selection?.hierarchy.at(-1)?.componentId === representative.id,
+      `Inspector selection context is unavailable for ${kind}`,
+    )
+  }
+
+  const modal = representativeByKind.get('modal')
+  assert(
+    modal.parentId === null &&
+      sampleProject.screens[modal.screenId].modalComponentIds.includes(modal.id) &&
+      modal.childIds.length > 0,
+    'sample Modal is not a populated independent root',
+  )
+  const select = representativeByKind.get('select').config
+  assert(
+    select.kind === 'select' &&
+      select.options.length >= 2 &&
+      select.options.some(option => option.value === select.defaultValue) &&
+      Object.values(sampleProject.screenStates).some(state =>
+        state.componentOverrides[representativeByKind.get('select').id]?.value !== undefined),
+    'sample Select does not demonstrate options, default, and state override',
+  )
+  const textInput = representativeByKind.get('textInput').config
+  assert(
+    textInput.kind === 'textInput' &&
+      textInput.validationRules.some(rule => rule.type === 'required') &&
+      textInput.validationRules.some(rule => rule.type === 'maxLength'),
+    'sample TextInput does not demonstrate validation rules',
+  )
+  const button = representativeByKind.get('button')
+  assert(
+    button.config.kind === 'button' &&
+      button.config.eventId !== null &&
+      sampleProject.events[button.config.eventId]?.trigger.componentId === button.id,
+    'sample Button does not demonstrate an Event reference',
+  )
+  assert(
+    Object.values(sampleProject.apiOperations).some(operation =>
+      operation.requestBindings.some(binding =>
+        binding.componentId === representativeByKind.get('textInput').id ||
+        binding.componentId === representativeByKind.get('select').id)),
+    'sample inputs do not demonstrate API request bindings',
+  )
+
+  assert(
+    PALETTE_ITEMS.map(item => item.kind).join(',') === PALETTE_COMPONENT_KINDS.join(','),
+    'Palette kinds diverged from the canonical component catalog',
+  )
+  for (const definition of COMPONENT_KIND_CATALOG) {
+    const { kind, placement: catalogPlacement } = definition
+    const expected = catalogPlacement === 'screen-root'
+      ? { status: 'invalid', reason: 'componentConstraint' }
+      : { status: 'moved' }
+    const placement = classifyComponentAdd(
+      sampleProject,
+      'screen-list',
+      catalogPlacement === 'child' ? 'comp-list-page' : null,
+      kind,
+    )
+    assert(
+      placement.status === expected.status &&
+        (expected.reason === undefined || placement.reason === expected.reason),
+      `add availability is incorrect for ${kind}`,
+    )
+    if (catalogPlacement !== 'screen-root') {
+      const command = createAddComponentCommand(
+        sampleProject,
+        'screen-list',
+        catalogPlacement === 'child' ? 'comp-list-page' : null,
+        kind,
+        'en',
+      )
+      validateComponentConfig(command.config, kind)
+    }
+  }
+
+  let generatedId = 0
+  const createId = () => `coverage-component-${generatedId += 1}`
+  for (const kind of COMPONENT_KINDS) {
+    const source = representativeByKind.get(kind)
+    const independentRoot = source.parentId === null
+    assert(
+      canDuplicateComponent(sampleProject, source.id) === !independentRoot,
+      `duplicate availability is incorrect for ${kind}`,
+    )
+    if (independentRoot) {
+      assert(
+        createComponentSubtreeSnapshot(sampleProject, source.id) === null,
+        `independent ${kind} root was copyable`,
+      )
+      let deletion
+      let deletionError
+      try {
+        deletion = applyCommandWithoutRevision(clone(sampleProject), {
+          type: 'removeComponent',
+          componentId: source.id,
+        })
+      } catch (error) {
+        deletionError = error
+      }
+      assert(
+        kind === 'page'
+          ? deletionError !== undefined
+          : deletion?.components[source.id] === undefined &&
+            !deletion?.screens[source.screenId].modalComponentIds.includes(source.id),
+        `delete availability is incorrect for independent ${kind} root`,
+      )
+      continue
+    }
+
+    const duplicate = createDuplicateComponentCommand(sampleProject, source.id, createId)
+    assert(duplicate, `duplicate command is unavailable for ${kind}`)
+    const duplicated = applyCommandWithoutRevision(clone(sampleProject), duplicate)
+    assert(
+      duplicated.components[duplicate.componentIdMap[source.id]]?.kind === kind,
+      `duplicate did not preserve ${kind}`,
+    )
+
+    const snapshot = createComponentSubtreeSnapshot(sampleProject, source.id)
+    assert(snapshot, `copy snapshot is unavailable for ${kind}`)
+    const destination = sampleProject.screens[source.screenId].rootComponentId
+    const paste = createPasteComponentCommand(sampleProject, snapshot, destination, createId)
+    assert(paste, `paste command is unavailable for ${kind}`)
+    const pasted = applyCommandWithoutRevision(clone(sampleProject), paste)
+    assert(
+      pasted.components[paste.componentIdMap[source.id]]?.kind === kind,
+      `paste did not preserve ${kind}`,
+    )
+
+    const deleted = applyCommandWithoutRevision(clone(sampleProject), {
+      type: 'removeComponent',
+      componentId: source.id,
+    })
+    assert(!deleted.components[source.id], `delete did not remove ${kind}`)
+  }
+
+  const structureTool = WEBMCP_TOOLS.find(tool => tool.name === 'change_component_structure')
+  const updateTool = WEBMCP_TOOLS.find(tool => tool.name === 'update_component_spec')
+  const addChildSchema = structureTool?.inputSchema.oneOf?.[0]
+  const addModalSchema = structureTool?.inputSchema.oneOf?.[1]
+  const webMcpConfigKinds = addChildSchema?.properties.config.oneOf
+    ?.map(variant => variant.properties.kind.const)
+  const webMcpAddKinds = [
+    ...(addChildSchema?.properties.kind.enum ?? []),
+    addModalSchema?.properties.kind.const,
+  ].filter(Boolean)
+  assert(
+    addChildSchema?.properties.kind.enum.join(',') === CHILD_COMPONENT_KINDS.join(',') &&
+      webMcpAddKinds.join(',') === PALETTE_COMPONENT_KINDS.join(','),
+    'WebMCP component add kinds diverged from the canonical component catalog',
+  )
+  assertCompleteComponentKindCoverage('WebMCP add config schema', webMcpConfigKinds ?? [])
+  assertCompleteComponentKindCoverage(
+    'WebMCP update config schema',
+    updateTool?.inputSchema.properties.patch.properties.config.anyOf
+      ?.map(variant => variant.properties.kind.const) ?? [],
+  )
+
+  const treeSource = readFileSync(
+    join(root, 'src/features/structure-tree/StructureTree.tsx'),
+    'utf8',
+  )
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  assert(
+    treeSource.includes('getComponentTreeLabel(component, locale)') &&
+      inspectorSource.includes('getComponentSelectionContext('),
+    'Tree or Inspector bypassed the exhaustive component label and selection path',
+  )
+
+  memoryStorage.clear()
+  const persistenceSourceStore = await freshStore('all-component-kinds-persistence-source')
+  persistenceSourceStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'User List coverage',
+  }, 'Persist all component kinds')
+  const persistedComponents = clone(persistenceSourceStore.getState().document.components)
+  const persistenceReload = await freshStore('all-component-kinds-persistence-reload')
+  assert(
+    JSON.stringify(persistenceReload.getState().document.components) ===
+      JSON.stringify(persistedComponents),
+    'all-kind sample components did not survive persistence round-trip',
+  )
+  assertCompleteComponentKindCoverage(
+    'persisted sample project',
+    [...new Set(Object.values(persistedComponents).map(component => component.kind))],
+  )
+})
+
 await test('modal roots own independent trees and clean references on removal', async () => {
   memoryStorage.clear()
   const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'modal-root-domain'))
@@ -3775,7 +4058,7 @@ await test('component add menu resolves valid positions and preserves atomic edi
     isComponentMenuKey,
     resolveComponentInsertTargets,
   } = await import(moduleUrl(componentAddMenuModelBundle, 'component-add-menu-model'))
-  const { createAddComponentCommand } = await import(
+  const { createAddComponentCommand, PALETTE_ITEMS } = await import(
     moduleUrl(componentFactoryBundle, 'component-add-menu-factory')
   )
   const store = await freshStore('component-add-menu-history')
@@ -3796,7 +4079,7 @@ await test('component add menu resolves valid positions and preserves atomic edi
   assert(placements('missing') === '', 'missing component exposed insertion positions')
   assert(
     contextMenuPaletteItems().map(item => item.kind).join(',') ===
-      'section,container,text,textInput,select,button,alert',
+      PALETTE_ITEMS.filter(item => item.kind !== 'modal').map(item => item.kind).join(','),
     'context menu types diverged from Palette constraints',
   )
   assert(isComponentMenuKey('ContextMenu', false), 'Context Menu key was not recognized')
@@ -3990,6 +4273,8 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
     moduleUrl(componentFactoryBundle, 'inspector-component-hierarchy-factory')
   )
   const store = await freshStore('inspector-component-hierarchy')
+  const modalNumber =
+    store.getState().effectiveDocument.screens['screen-edit'].modalComponentIds.length + 1
   const modalCommand = createAddComponentCommand(
     store.getState().effectiveDocument,
     'screen-edit',
@@ -4013,7 +4298,8 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
   )
   assert(
     modalContext?.screenName === 'Edit User' &&
-      modalContext.hierarchy.map(item => item.label).join(' > ') === 'Modal 1 > Message',
+      modalContext.hierarchy.map(item => item.label).join(' > ') ===
+        `Modal ${modalNumber} > Message`,
     'modal breadcrumb mixed the page tree into its independent hierarchy',
   )
 
@@ -5455,9 +5741,15 @@ await test('semantic containers replace legacy layout kinds across commands and 
   const { createAddComponentCommand, PALETTE_ITEMS } = await import(
     moduleUrl(componentFactoryBundle, 'semantic-container-factory')
   )
+  const { PALETTE_COMPONENT_KINDS } = await import(
+    moduleUrl(modelBundle, 'semantic-container-kinds')
+  )
   const kinds = PALETTE_ITEMS.map(item => item.kind)
   assert(kinds.includes('section') && kinds.includes('container'), 'semantic containers are missing from palette')
-  assert(kinds.length === 8, 'palette exposes an unexpected component kind')
+  assert(
+    kinds.join(',') === PALETTE_COMPONENT_KINDS.join(','),
+    'palette diverged from the canonical component catalog',
+  )
 
   const containerCommand = createAddComponentCommand(
     store.getState().document,
@@ -5681,16 +5973,24 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
     'rejected Heading changed pending operations',
   )
 
-  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const { createCanvasComponentPreview } = await import(
+    moduleUrl(componentPreviewBundle, 'text-style-preview')
+  )
   const canvasStyles = readFileSync(join(root, 'src/features/canvas/Canvas.module.css'), 'utf8')
   const inspectorSource = readFileSync(join(root, 'src/features/inspector/Inspector.tsx'), 'utf8')
+  const textElements = Object.fromEntries(styles.map(style => [
+    style,
+    createCanvasComponentPreview({ kind: 'text', text: 'Preview', style }).element,
+  ]))
   assert(
-    styles.every(style => canvasSource.includes(`'${style}'`) || canvasStyles.includes(`.${style}`)) &&
-      canvasSource.includes("? 'h1'") &&
-      canvasSource.includes("? 'h2'") &&
-      canvasSource.includes("? 'h3'") &&
-      canvasSource.includes("? 'small'") &&
-      canvasSource.includes(": 'p'"),
+    styles.every(style => canvasStyles.includes(`.${style}`)) &&
+      JSON.stringify(textElements) === JSON.stringify({
+        heading1: 'h1',
+        heading2: 'h2',
+        heading3: 'h3',
+        body: 'p',
+        caption: 'small',
+      }),
     'Canvas does not map all Text styles to visual and semantic output',
   )
   assert(
@@ -6285,7 +6585,9 @@ await test('Select state values share one validated effective path', async () =>
     'WebMCP Select schemas do not expose the required default value',
   )
 
-  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const { createCanvasComponentPreview } = await import(
+    moduleUrl(componentPreviewBundle, 'select-state-preview')
+  )
   const treeSource = readFileSync(
     join(root, 'src/features/structure-tree/StructureTree.tsx'),
     'utf8',
@@ -6295,10 +6597,11 @@ await test('Select state values share one validated effective path', async () =>
     'utf8',
   )
   const toolsSource = readFileSync(join(root, 'src/webmcp/tools.ts'), 'utf8')
+  const effectiveSelectPreview = createCanvasComponentPreview(effectiveSuccessSelect.config)
   assert(
-    canvasSource.includes('value={cfg.defaultValue}') &&
-      !canvasSource.includes('override?.value') &&
-      !canvasSource.includes('stateOverride'),
+    effectiveSelectPreview.kind === 'select' &&
+      effectiveSelectPreview.value === 'admin' &&
+      baseSelect.config.defaultValue === 'member',
     'Canvas still bypasses the effective Select config',
   )
   assert(

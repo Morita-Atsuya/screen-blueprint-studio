@@ -3,6 +3,7 @@ import type { EntityId, ProjectDocument, ScreenComponent, ScreenState } from './
 import { effectiveComponent } from './selectors'
 import type { Locale, MessageKey } from '../i18n/messages'
 import { translate } from '../i18n/messages'
+import { assertNever } from './assertNever'
 
 export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], MessageKey> = {
   page: 'component.page',
@@ -46,6 +47,8 @@ export function getComponentDisplayLabel(
       return readableText(config.label, fallback)
     case 'alert':
       return readableText(config.message, fallback)
+    default:
+      return assertNever(config, 'component display label config')
   }
 }
 

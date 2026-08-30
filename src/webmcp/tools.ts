@@ -11,6 +11,7 @@ import type {
   FieldBinding,
   HttpMethod,
 } from '../domain/model'
+import { CHILD_COMPONENT_KINDS } from '../domain/model'
 import { DomainError } from '../domain/errors'
 import { getOwnEntity } from '../domain/entityMap'
 import { getComponentDisplayLabel } from '../domain/componentDisplayLabel'
@@ -507,11 +508,6 @@ const changeScreenStructure: ToolDefinition = {
   },
 }
 
-const nonModalComponentKinds: ComponentKind[] = [
-  'section', 'container', 'text',
-  'textInput', 'select', 'button', 'alert',
-]
-
 const changeComponentStructure: ToolDefinition = {
   name: 'change_component_structure',
   description: 'Add, move, duplicate, or remove a component or independent modal root in the active change set.',
@@ -524,7 +520,7 @@ const changeComponentStructure: ToolDefinition = {
           operation: { const: 'add' },
           screenId: { type: 'string', minLength: 1 },
           parentId: { type: 'string', minLength: 1 },
-          kind: { type: 'string', enum: nonModalComponentKinds },
+          kind: { type: 'string', enum: CHILD_COMPONENT_KINDS },
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },

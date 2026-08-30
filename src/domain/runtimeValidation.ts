@@ -15,6 +15,7 @@ import type {
   ScreenState,
   ValidationRule,
 } from './model'
+import { COMPONENT_KINDS } from './model'
 import { DomainError } from './errors'
 import { isSafeEntityId } from './entityMap'
 
@@ -128,21 +129,7 @@ export function validateScreenComponent(
   entityId(component.screenId, `${path}.screenId`)
   if (component.parentId !== null) entityId(component.parentId, `${path}.parentId`)
   entityIdArray(component.childIds, `${path}.childIds`)
-  enumValue(
-    component.kind,
-    [
-      'page',
-      'section',
-      'container',
-      'text',
-      'textInput',
-      'select',
-      'button',
-      'alert',
-      'modal',
-    ],
-    `${path}.kind`,
-  )
+  enumValue(component.kind, COMPONENT_KINDS, `${path}.kind`)
   validateCommonComponentSpec(component.common, `${path}.common`)
   validateComponentConfig(component.config, component.kind, `${path}.config`)
 }

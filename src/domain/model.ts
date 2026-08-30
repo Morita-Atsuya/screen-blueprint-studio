@@ -25,24 +25,81 @@ export interface FieldBinding {
 // ============================================================
 // Component kinds
 // ============================================================
-export type ComponentKind =
-  | 'page'
-  | 'section'
-  | 'container'
-  | 'text'
-  | 'textInput'
-  | 'select'
-  | 'button'
-  | 'alert'
-  | 'modal'
+export const COMPONENT_KIND_CATALOG = [
+  {
+    kind: 'page',
+    canContainChildren: true,
+    placement: 'screen-root',
+    canvasContent: false,
+  },
+  {
+    kind: 'section',
+    canContainChildren: true,
+    placement: 'child',
+    canvasContent: false,
+  },
+  {
+    kind: 'container',
+    canContainChildren: true,
+    placement: 'child',
+    canvasContent: false,
+  },
+  { kind: 'text', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'textInput', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'select', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'button', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'alert', canContainChildren: false, placement: 'child', canvasContent: true },
+  {
+    kind: 'modal',
+    canContainChildren: true,
+    placement: 'modal-root',
+    canvasContent: false,
+  },
+] as const
 
-export const CONTAINER_KINDS: ComponentKind[] = [
-  'page', 'section', 'container', 'modal',
-]
+type ComponentKindDefinition = (typeof COMPONENT_KIND_CATALOG)[number]
+type ContainerKindDefinition = Extract<ComponentKindDefinition, { canContainChildren: true }>
+type LeafKindDefinition = Extract<ComponentKindDefinition, { canContainChildren: false }>
+type PaletteKindDefinition = Exclude<ComponentKindDefinition, { placement: 'screen-root' }>
+type ChildKindDefinition = Extract<ComponentKindDefinition, { placement: 'child' }>
 
-export const LEAF_KINDS: ComponentKind[] = [
-  'text', 'textInput', 'select', 'button', 'alert',
-]
+export type ComponentKind = ComponentKindDefinition['kind']
+export type PaletteComponentKind = PaletteKindDefinition['kind']
+export type ChildComponentKind = ChildKindDefinition['kind']
+
+export const COMPONENT_KINDS: readonly ComponentKind[] =
+  COMPONENT_KIND_CATALOG.map(definition => definition.kind)
+export const CONTAINER_KINDS: readonly ComponentKind[] = COMPONENT_KIND_CATALOG
+  .filter((definition): definition is ContainerKindDefinition => definition.canContainChildren)
+  .map(definition => definition.kind)
+export const LEAF_KINDS: readonly ComponentKind[] = COMPONENT_KIND_CATALOG
+  .filter((definition): definition is LeafKindDefinition => !definition.canContainChildren)
+  .map(definition => definition.kind)
+export const PALETTE_COMPONENT_KINDS: readonly PaletteComponentKind[] = COMPONENT_KIND_CATALOG
+  .filter((definition): definition is PaletteKindDefinition =>
+    definition.placement !== 'screen-root')
+  .map(definition => definition.kind)
+export const CHILD_COMPONENT_KINDS: readonly ChildComponentKind[] = COMPONENT_KIND_CATALOG
+  .filter((definition): definition is ChildKindDefinition => definition.placement === 'child')
+  .map(definition => definition.kind)
+
+export function assertCompleteComponentKindCoverage(
+  surface: string,
+  kinds: readonly string[],
+): void {
+  const knownKinds = new Set<string>(COMPONENT_KINDS)
+  const duplicates = kinds.filter((kind, index) => kinds.indexOf(kind) !== index)
+  const missing = COMPONENT_KINDS.filter(kind => !kinds.includes(kind))
+  const unexpected = kinds.filter(kind => !knownKinds.has(kind))
+  if (duplicates.length > 0 || missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `${surface} component kind coverage is invalid`
+      + ` (missing: ${missing.join(', ') || 'none'};`
+      + ` unexpected: ${unexpected.join(', ') || 'none'};`
+      + ` duplicates: ${[...new Set(duplicates)].join(', ') || 'none'})`,
+    )
+  }
+}
 
 // ============================================================
 // Component configs (discriminated union by kind)

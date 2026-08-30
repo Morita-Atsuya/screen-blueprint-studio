@@ -29,6 +29,7 @@ import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import { StateDialog } from './StateDialog'
 import { useCanvasViewport } from './useCanvasViewport'
+import { createCanvasComponentPreview } from './componentPreview'
 import type { CanvasViewportControls } from './useCanvasViewport'
 import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
@@ -633,36 +634,28 @@ function ComponentView({
   comp: ScreenComponent
   t: ReturnType<typeof useI18n>['t']
 }) {
-  const cfg = comp.config
-  switch (cfg.kind) {
+  const preview = createCanvasComponentPreview(comp.config)
+  switch (preview.kind) {
     case 'page':
     case 'section':
     case 'container':
       return null
     case 'text': {
-      const TextElement = cfg.style === 'heading1'
-        ? 'h1'
-        : cfg.style === 'heading2'
-          ? 'h2'
-          : cfg.style === 'heading3'
-            ? 'h3'
-            : cfg.style === 'caption'
-              ? 'small'
-              : 'p'
+      const TextElement = preview.element
       return (
-        <TextElement className={`${styles.textComp} ${styles[cfg.style]}`}>
-          {cfg.text}
+        <TextElement className={`${styles.textComp} ${styles[preview.style]}`}>
+          {preview.text}
         </TextElement>
       )
     }
     case 'textInput':
       return (
         <div className={styles.field}>
-          <label className={styles.fieldLabel}>{cfg.label}{cfg.required && <span className={styles.required}>*</span>}</label>
+          <label className={styles.fieldLabel}>{preview.label}{preview.required && <span className={styles.required}>*</span>}</label>
           <input
-            type={cfg.inputType}
-            placeholder={cfg.placeholder}
-            value={cfg.defaultValue}
+            type={preview.inputType}
+            placeholder={preview.placeholder}
+            value={preview.value}
             disabled
             readOnly
             className={`${styles.fieldInput} ${styles.previewControl}`}
@@ -672,14 +665,14 @@ function ComponentView({
     case 'select':
       return (
         <div className={styles.field}>
-          <label className={styles.fieldLabel}>{cfg.label}{cfg.required && <span className={styles.required}>*</span>}</label>
+          <label className={styles.fieldLabel}>{preview.label}{preview.required && <span className={styles.required}>*</span>}</label>
           <select
             disabled
-            value={cfg.defaultValue}
+            value={preview.value}
             className={`${styles.fieldInput} ${styles.previewControl}`}
           >
             <option value="">{t('canvas.selectPlaceholder')}</option>
-            {cfg.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            {preview.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
       )
@@ -687,13 +680,13 @@ function ComponentView({
       return (
         <button
           disabled
-          className={`${styles.btn} ${styles.previewControl} ${cfg.variant === 'primary' ? styles.btnPrimary : cfg.variant === 'danger' ? styles.btnDanger : styles.btnSecondary}`}
+          className={`${styles.btn} ${styles.previewControl} ${preview.variant === 'primary' ? styles.btnPrimary : preview.variant === 'danger' ? styles.btnDanger : styles.btnSecondary}`}
         >
-          {cfg.label}
+          {preview.label}
         </button>
       )
     case 'alert':
-      return <div className={`${styles.alert} ${cfg.tone === 'info' ? styles.alertInfo : cfg.tone === 'success' ? styles.alertSuccess : cfg.tone === 'warning' ? styles.alertWarning : styles.alertError}`}>{cfg.message}</div>
+      return <div className={`${styles.alert} ${preview.tone === 'info' ? styles.alertInfo : preview.tone === 'success' ? styles.alertSuccess : preview.tone === 'warning' ? styles.alertWarning : styles.alertError}`}>{preview.message}</div>
     case 'modal':
       return null
   }
