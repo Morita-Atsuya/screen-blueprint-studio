@@ -107,6 +107,7 @@ npm run preview
 `npm run build`を実行してください。回帰テストにはChromeまたはChromiumが必要です。
 標準の場所にない場合は、実行ファイルの絶対pathを`CHROME_PATH`へ設定します。CIも
 同じ順序でbuild後に、固定した`CHROME_PATH`のbrowser versionを確認してから実行します。
+browser回帰のprocess-tree cleanupはmacOS/Linux向けで、Windowsは未対応です。
 
 ## WebMCPをChromeで確認する
 

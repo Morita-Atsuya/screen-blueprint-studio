@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 10
     env:
       CHROME_PATH: /usr/bin/google-chrome
+      FOCUS_RING_STRESS_RUNS: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

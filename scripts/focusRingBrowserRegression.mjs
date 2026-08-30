@@ -28,6 +28,12 @@ function injectFailure(stage) {
 }
 
 function chromeExecutable() {
+  if (process.platform === 'win32') {
+    throw new Error(
+      'The focus-ring browser regression supports macOS and Linux; ' +
+        'Windows process-tree cleanup is not implemented safely.',
+    )
+  }
   const candidates = [
     process.env.CHROME_PATH,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -56,10 +62,11 @@ async function freePort() {
   return address.port
 }
 
-async function waitForJson(url, timeoutMs = 8_000) {
+async function waitForJson(url, timeoutMs = 8_000, abortError) {
   const deadline = Date.now() + timeoutMs
   let lastError
   while (Date.now() < deadline) {
+    if (abortError?.()) throw abortError()
     try {
       const response = await fetch(url)
       if (response.ok) return response.json()
@@ -180,19 +187,95 @@ async function startStaticServer(port) {
   return server
 }
 
+function chromeProcessGroupPids(processGroupId) {
+  const rows = execFileSync('ps', ['-axo', 'pid=,pgid='], {
+    encoding: 'utf8',
+  })
+  return rows
+    .trim()
+    .split('\n')
+    .map(row => row.trim().split(/\s+/).map(Number))
+    .filter(([, groupId]) => groupId === processGroupId)
+    .map(([pid]) => pid)
+}
+
+function chromeProcessGroupExists(processGroupId) {
+  return chromeProcessGroupPids(processGroupId).length > 0
+}
+
+function signalChromeProcessGroup(processGroupId, signal) {
+  try {
+    process.kill(-processGroupId, signal)
+    return
+  } catch (error) {
+    if (error.code === 'ESRCH') return
+    if (error.code !== 'EPERM') throw error
+  }
+  for (const pid of chromeProcessGroupPids(processGroupId)) {
+    try {
+      process.kill(pid, signal)
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+    }
+  }
+}
+
 async function stopChrome(chrome) {
-  const exited = () => chrome.exitCode !== null || chrome.signalCode !== null
+  if (!chrome.pid) return
   for (const signal of ['SIGTERM', 'SIGKILL']) {
-    if (exited()) return
-    chrome.kill(signal)
+    if (!chromeProcessGroupExists(chrome.pid)) return
+    signalChromeProcessGroup(chrome.pid, signal)
     const deadline = Date.now() + 1_000
-    while (!exited() && Date.now() < deadline) {
+    while (chromeProcessGroupExists(chrome.pid) && Date.now() < deadline) {
       await new Promise(resolveWait => setTimeout(resolveWait, 25))
     }
   }
-  if (!exited()) {
-    throw new Error('Chrome did not exit after SIGTERM and SIGKILL')
+  if (chromeProcessGroupExists(chrome.pid)) {
+    throw new Error('Chrome process group did not exit after SIGTERM and SIGKILL')
   }
+}
+
+async function removeProfile(profile, options = {}) {
+  const remove = options.remove ?? rmSync
+  const exists = options.exists ?? existsSync
+  const wait = options.wait ?? (
+    milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds))
+  )
+  const maxAttempts = options.maxAttempts ?? 40
+  const requiredAbsentChecks = options.requiredAbsentChecks ?? 4
+  let lastError
+  let consecutiveAbsentChecks = 0
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      remove(profile, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 50,
+      })
+    } catch (error) {
+      lastError = error
+    }
+    await wait(100)
+    if (exists(profile)) {
+      consecutiveAbsentChecks = 0
+    } else {
+      consecutiveAbsentChecks += 1
+      if (consecutiveAbsentChecks === requiredAbsentChecks) return
+    }
+  }
+  throw lastError ?? new Error(`temporary browser profile still exists: ${profile}`)
+}
+
+function throwCleanupErrors(primaryError, cleanupErrors) {
+  if (cleanupErrors.length === 0) return
+  if (primaryError) {
+    throw new AggregateError(
+      [primaryError, ...cleanupErrors],
+      `browser regression failed and cleanup also failed: ${primaryError.message}`,
+    )
+  }
+  throw new AggregateError(cleanupErrors, 'focus-ring browser regression cleanup failed')
 }
 
 async function run() {
@@ -201,6 +284,31 @@ async function run() {
   let chrome
   let cdp
   let primaryError
+  let interruptedError
+  const handleSignal = signal => {
+    interruptedError ??= new Error(`focus-ring browser regression interrupted by ${signal}`)
+    try {
+      cdp?.close()
+    } catch {
+      // The bounded cleanup below remains authoritative.
+    }
+    if (chrome?.pid) {
+      try {
+        if (chromeProcessGroupExists(chrome.pid)) {
+          signalChromeProcessGroup(chrome.pid, 'SIGTERM')
+        }
+      } catch {
+        // The bounded cleanup below retries with TERM and KILL.
+      }
+    }
+  }
+  const signalHandlers = new Map(
+    ['SIGINT', 'SIGTERM'].map(signal => [
+      signal,
+      () => handleSignal(signal),
+    ]),
+  )
+  for (const [signal, handler] of signalHandlers) process.once(signal, handler)
 
   try {
     const tempRoot = process.env.FOCUS_RING_TEMP_ROOT ?? tmpdir()
@@ -250,7 +358,10 @@ async function run() {
       `--user-data-dir=${profile}`,
       `--remote-debugging-port=${debuggingPort}`,
       appUrl,
-    ], { stdio: 'ignore' })
+    ], {
+      detached: true,
+      stdio: 'ignore',
+    })
     if (process.env.FOCUS_RING_PID_FILE && chrome.pid) {
       writeFileSync(process.env.FOCUS_RING_PID_FILE, String(chrome.pid))
     }
@@ -258,9 +369,19 @@ async function run() {
       chrome.once('error', resolveFailure)
     })
     injectFailure('after-chrome')
+    if (process.env.FOCUS_RING_FAILURE_STAGE === 'signal') {
+      while (!interruptedError) {
+        await new Promise(resolveWait => setTimeout(resolveWait, 25))
+      }
+      throw interruptedError
+    }
 
     const targets = await Promise.race([
-      waitForJson(`http://127.0.0.1:${debuggingPort}/json`),
+      waitForJson(
+        `http://127.0.0.1:${debuggingPort}/json`,
+        8_000,
+        () => interruptedError,
+      ),
       spawnFailure.then(error => {
         throw new Error(`Chrome failed to launch: ${error.message}`)
       }),
@@ -275,6 +396,7 @@ async function run() {
     const waitForExpression = async (expression, failureMessage) => {
       const deadline = Date.now() + 20_000
       while (Date.now() < deadline) {
+        if (interruptedError) throw interruptedError
         try {
           const result = await cdp.call('Runtime.evaluate', {
             expression,
@@ -590,8 +712,8 @@ async function run() {
       'forced-colors mode does not retain an internal system-color focus perimeter',
     )
   } catch (error) {
-    primaryError = error
-    throw error
+    primaryError = interruptedError ?? error
+    throw primaryError
   } finally {
     const cleanupErrors = []
     try {
@@ -599,7 +721,7 @@ async function run() {
     } catch (error) {
       cleanupErrors.push(error)
     }
-    if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
+    if (chrome?.pid) {
       try {
         await stopChrome(chrome)
       } catch (error) {
@@ -617,21 +739,17 @@ async function run() {
     }
     if (profile) {
       try {
-        rmSync(profile, { recursive: true, force: true })
+        await removeProfile(profile)
       } catch (error) {
         cleanupErrors.push(error)
       }
     }
-    if (cleanupErrors.length > 0) {
-      if (primaryError) {
-        console.error(
-          `Cleanup after "${primaryError.message}" also failed:`,
-          new AggregateError(cleanupErrors),
-        )
-      } else {
-        throw new AggregateError(cleanupErrors, 'focus-ring browser regression cleanup failed')
-      }
+    for (const [signal, handler] of signalHandlers) {
+      process.removeListener(signal, handler)
     }
+    primaryError ??= interruptedError
+    if (primaryError && cleanupErrors.length === 0) throw primaryError
+    throwCleanupErrors(primaryError, cleanupErrors)
   }
 }
 
@@ -657,15 +775,9 @@ function verifyEarlyFailureCleanup() {
       assert(result.status !== 0, `${stage} cleanup injection did not fail`)
       if (stage === 'after-chrome') {
         const chromePid = Number(readFileSync(pidFile, 'utf8'))
-        let chromeAlive = true
-        try {
-          process.kill(chromePid, 0)
-        } catch (error) {
-          if (error.code === 'ESRCH') chromeAlive = false
-          else throw error
-        }
+        const chromeAlive = chromeProcessGroupExists(chromePid)
         unlinkSync(pidFile)
-        assert(!chromeAlive, 'after-chrome cleanup left the browser process alive')
+        assert(!chromeAlive, 'after-chrome cleanup left the browser process group alive')
       }
       assert(
         readdirSync(testRoot).length === 0,
@@ -677,10 +789,151 @@ function verifyEarlyFailureCleanup() {
   }
 }
 
-if (process.env.FOCUS_RING_FAILURE_STAGE) {
+async function verifySignalCleanup() {
+  const testRoot = mkdtempSync(join(tmpdir(), 'screen-blueprint-focus-signal-'))
+  const pidFile = join(testRoot, 'chrome.pid')
+  let chromePid
+  let primaryError
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+    cwd: root,
+    env: {
+      ...process.env,
+      FOCUS_RING_FAILURE_STAGE: 'signal',
+      FOCUS_RING_PID_FILE: pidFile,
+      FOCUS_RING_TEMP_ROOT: testRoot,
+    },
+    stdio: 'ignore',
+  })
+  try {
+    const pidDeadline = Date.now() + 8_000
+    while (!existsSync(pidFile) && Date.now() < pidDeadline) {
+      await new Promise(resolveWait => setTimeout(resolveWait, 25))
+    }
+    assert(existsSync(pidFile), 'signal cleanup test did not start Chrome')
+    chromePid = Number(readFileSync(pidFile, 'utf8'))
+    child.kill('SIGTERM')
+    const exitDeadline = Date.now() + 10_000
+    while (child.exitCode === null && child.signalCode === null && Date.now() < exitDeadline) {
+      await new Promise(resolveWait => setTimeout(resolveWait, 25))
+    }
+    assert(
+      child.exitCode !== null || child.signalCode !== null,
+      'signal cleanup test process did not exit',
+    )
+    assert(
+      !chromeProcessGroupExists(chromePid),
+      'signal cleanup left the Chrome process group alive',
+    )
+    unlinkSync(pidFile)
+    assert(readdirSync(testRoot).length === 0, 'signal cleanup left a browser profile')
+  } catch (error) {
+    primaryError = error
+    throw error
+  } finally {
+    const cleanupErrors = []
+    if (child.exitCode === null && child.signalCode === null) {
+      try {
+        child.kill('SIGKILL')
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
+    }
+    if (chromePid) {
+      try {
+        await stopChrome({ pid: chromePid })
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
+    }
+    try {
+      await removeProfile(testRoot)
+    } catch (error) {
+      cleanupErrors.push(error)
+    }
+    throwCleanupErrors(primaryError, cleanupErrors)
+  }
+}
+
+async function verifyProfileCleanupSemantics() {
+  let transientAttempts = 0
+  let transientProfileExists = true
+  await removeProfile('/injected/transient-profile', {
+    exists: () => transientProfileExists,
+    maxAttempts: 6,
+    requiredAbsentChecks: 2,
+    remove: () => {
+      transientAttempts += 1
+      if (transientAttempts === 1) {
+        const error = new Error('injected ENOTEMPTY')
+        error.code = 'ENOTEMPTY'
+        throw error
+      }
+      transientProfileExists = false
+    },
+    wait: async () => {},
+  })
+  assert(
+    transientAttempts >= 3 && !transientProfileExists,
+    'transient ENOTEMPTY cleanup did not retry through stable profile removal',
+  )
+
+  const permanentCleanupError = new Error('injected permanent ENOTEMPTY')
+  permanentCleanupError.code = 'ENOTEMPTY'
+  let reportedCleanupError
+  try {
+    await removeProfile('/injected/permanent-profile', {
+      exists: () => true,
+      maxAttempts: 2,
+      requiredAbsentChecks: 1,
+      remove: () => {
+        throw permanentCleanupError
+      },
+      wait: async () => {},
+    })
+  } catch (error) {
+    reportedCleanupError = error
+  }
+  assert(
+    reportedCleanupError === permanentCleanupError,
+    'permanent profile cleanup failure was not reported',
+  )
+
+  const primaryError = new Error('injected browser assertion failure')
+  let aggregate
+  try {
+    throwCleanupErrors(primaryError, [permanentCleanupError])
+  } catch (error) {
+    aggregate = error
+  }
+  assert(
+    aggregate instanceof AggregateError &&
+      aggregate.errors[0] === primaryError &&
+      aggregate.errors[1] === permanentCleanupError,
+    'cleanup AggregateError did not preserve both primary and cleanup failures',
+  )
+}
+
+if (process.platform === 'win32') {
+  throw new Error(
+    'The focus-ring browser regression supports macOS and Linux; ' +
+      'Windows process-tree cleanup is not implemented safely.',
+  )
+} else if (process.env.FOCUS_RING_FAILURE_STAGE) {
   await run()
 } else {
+  await verifyProfileCleanupSemantics()
   verifyEarlyFailureCleanup()
-  await run()
-  console.log('PASS edge focus rings stay visible in real browser clipping layouts')
+  await verifySignalCleanup()
+  const stressRuns = Number.parseInt(process.env.FOCUS_RING_STRESS_RUNS ?? '1', 10)
+  assert(
+    Number.isInteger(stressRuns) && stressRuns >= 1 && stressRuns <= 50,
+    'FOCUS_RING_STRESS_RUNS must be an integer between 1 and 50',
+  )
+  for (let runIndex = 0; runIndex < stressRuns; runIndex += 1) {
+    await run()
+  }
+  console.log(
+    `PASS edge focus rings stay visible in real browser clipping layouts (${stressRuns} run` +
+      `${stressRuns === 1 ? '' : 's'})`,
+  )
 }
