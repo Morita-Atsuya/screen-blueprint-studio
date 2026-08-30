@@ -366,6 +366,11 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
 
     // ──────────── State commands ────────────
     case 'createScreenState': {
+      requireExactKeys(
+        command,
+        ['type', 'stateId', 'screenId', 'name', 'kind', 'description', 'overrides'],
+        'createScreenState command',
+      )
       const { stateId, screenId, name, kind, description, overrides } = command
       const screen = getOwnEntity(next.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
@@ -385,18 +390,31 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
     }
 
     case 'updateScreenState': {
+      requireExactKeys(
+        command,
+        ['type', 'stateId', 'name', 'kind', 'description', 'overrides'],
+        'updateScreenState command',
+      )
       const state = getOwnEntity(next.screenStates, command.stateId)
       if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
-      if (state.kind === 'default' && command.overrides !== undefined) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Default state overrides cannot be changed')
+      if (
+        state.kind === 'default' &&
+        (command.kind !== undefined || command.overrides !== undefined)
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          'Default state kind and overrides cannot be changed',
+        )
       }
       if (command.name !== undefined) state.name = command.name
+      if (command.kind !== undefined) state.kind = command.kind
       if (command.description !== undefined) state.description = command.description
       if (command.overrides !== undefined) state.componentOverrides = command.overrides
       break
     }
 
     case 'removeScreenState': {
+      requireExactKeys(command, ['type', 'stateId'], 'removeScreenState command')
       const state = getOwnEntity(next.screenStates, command.stateId)
       if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
       if (state.kind === 'default') throw new DomainError('INVARIANT_VIOLATION', 'Cannot remove the default state')

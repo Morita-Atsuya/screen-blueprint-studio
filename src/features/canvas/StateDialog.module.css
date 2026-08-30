@@ -1,0 +1,114 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.dialog {
+  width: min(420px, 100%);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.title {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 1.25rem;
+}
+
+.close:hover { background: var(--bg-hover); color: var(--text); }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.field input,
+.field select,
+.field textarea { width: 100%; }
+
+.field textarea { resize: vertical; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.actions button {
+  padding: 7px 12px;
+  border-radius: 6px;
+}
+
+.spacer { flex: 1; }
+
+.primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.primary:disabled { opacity: 0.5; cursor: default; }
+
+.secondary {
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+.secondary:hover { background: var(--bg-hover); color: var(--text); }
+
+.danger,
+.dangerOutline {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.danger { background: var(--danger); color: white; }
+.dangerOutline { background: var(--bg-surface); }
+.dangerOutline:hover { background: #fff5f5; }
+
+.confirm {
+  padding: 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
+.confirm .actions { justify-content: flex-end; margin-top: 10px; }

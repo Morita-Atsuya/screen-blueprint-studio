@@ -7,6 +7,23 @@
 .row { display: flex; gap: 16px; }
 .checkLabel { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
 .divider { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
+.overrideSection {
+  margin-top: 2px;
+  padding: 10px;
+  border: 1px solid var(--agent-change-border);
+  border-radius: 8px;
+  background: var(--agent-change);
+}
+.overrideHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.overrideHeading h3 { color: var(--agent-accent); font-size: 0.82rem; }
+.overrideHeading span { color: var(--text-faint); font-size: 0.72rem; }
+.overrideValue { display: flex; flex-direction: column; gap: 6px; }
 .changes { display: flex; flex-direction: column; gap: 10px; }
 .changeSummary { font-size: 0.85rem; color: var(--text-muted); }
 .changeList { display: flex; flex-direction: column; gap: 4px; }

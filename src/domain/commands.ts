@@ -106,6 +106,7 @@ export interface UpdateScreenStateCommand {
   type: 'updateScreenState'
   stateId: EntityId
   name?: string
+  kind?: 'loading' | 'success' | 'error' | 'custom'
   description?: string
   overrides?: Record<EntityId, ComponentOverride>
 }

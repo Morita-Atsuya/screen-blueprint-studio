@@ -216,6 +216,11 @@ export const componentOverridesSchema = {
       },
       {
         type: 'object',
+        properties: { ...commonOverrideProperties, message: string },
+        ...closed,
+      },
+      {
+        type: 'object',
         properties: { ...commonOverrideProperties, value: string },
         ...closed,
       },

@@ -58,6 +58,8 @@ AIがchange setへ型付きoperationを追加
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
 - Screensタブで画面の追加、選択、名前・route編集、削除
+- canvas上部の`+`から状態を追加し、選択中の非default状態は`⋯`から編集・削除
+- 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 root component、別screen、leaf、自分自身・子孫へのdropは拒否されます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。

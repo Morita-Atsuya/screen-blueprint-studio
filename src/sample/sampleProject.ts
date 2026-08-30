@@ -24,7 +24,12 @@ export const sampleProject: ProjectDocument = {
       route: '/users/:id/edit',
       rootComponentId: 'comp-edit-page',
       defaultStateId: 'state-edit-default',
-      stateIds: ['state-edit-default', 'state-edit-saving'],
+      stateIds: [
+        'state-edit-default',
+        'state-edit-saving',
+        'state-edit-success',
+        'state-edit-error',
+      ],
       eventIds: ['event-submit'],
     },
   },
@@ -71,7 +76,7 @@ export const sampleProject: ProjectDocument = {
       id: 'comp-edit-section',
       screenId: 'screen-edit',
       parentId: 'comp-edit-page',
-      childIds: ['comp-name-input', 'comp-email-input', 'comp-actions'],
+      childIds: ['comp-name-input', 'comp-email-input', 'comp-status-alert', 'comp-actions'],
       kind: 'section',
       common: { description: '', visible: true, enabled: true },
       config: { kind: 'section', title: 'User Details' },
@@ -129,6 +134,19 @@ export const sampleProject: ProjectDocument = {
       common: { description: '', visible: true, enabled: true },
       config: { kind: 'actionArea', align: 'end' },
     },
+    'comp-status-alert': {
+      id: 'comp-status-alert',
+      screenId: 'screen-edit',
+      parentId: 'comp-edit-section',
+      childIds: [],
+      kind: 'alert',
+      common: { description: 'Save result', visible: false, enabled: true },
+      config: {
+        kind: 'alert',
+        tone: 'success',
+        message: 'User saved successfully.',
+      },
+    },
     'comp-cancel-btn': {
       id: 'comp-cancel-btn',
       screenId: 'screen-edit',
@@ -177,7 +195,9 @@ export const sampleProject: ProjectDocument = {
       name: 'Loading',
       kind: 'loading',
       description: 'Loading the user list',
-      componentOverrides: {},
+      componentOverrides: {
+        'comp-list-heading': { text: 'Loading users...', enabled: false },
+      },
     },
     'state-edit-default': {
       id: 'state-edit-default',
@@ -196,6 +216,27 @@ export const sampleProject: ProjectDocument = {
       componentOverrides: {
         'comp-save-btn': { enabled: false },
         'comp-cancel-btn': { enabled: false },
+      },
+    },
+    'state-edit-success': {
+      id: 'state-edit-success',
+      screenId: 'screen-edit',
+      name: 'Success',
+      kind: 'success',
+      description: 'The user was saved',
+      componentOverrides: {
+        'comp-status-alert': { visible: true, message: 'User saved successfully.' },
+        'comp-actions': { visible: false },
+      },
+    },
+    'state-edit-error': {
+      id: 'state-edit-error',
+      screenId: 'screen-edit',
+      name: 'Error',
+      kind: 'error',
+      description: 'The save request failed',
+      componentOverrides: {
+        'comp-status-alert': { visible: true, message: 'Could not save the user.' },
       },
     },
   },

@@ -1,7 +1,14 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useAppStore } from '../../app/appStore'
-import type { EntityId, ProjectDocument, ScreenComponent, ScreenState } from '../../domain/model'
+import type {
+  ComponentOverride,
+  EntityId,
+  ProjectDocument,
+  ScreenComponent,
+  ScreenState,
+} from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
 import { effectiveComponent } from '../../domain/selectors'
 import { getOwnEntity } from '../../domain/entityMap'
@@ -12,12 +19,14 @@ import {
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
+import { StateDialog } from './StateDialog'
 import styles from './Canvas.module.css'
 
 export function Canvas() {
   const { locale, t } = useI18n()
   const { effectiveDocument, ui, setSelectedComponent, setActiveState } = useAppStore()
   const { activeScreenId, activeStateId, selectedComponentId } = ui
+  const [stateDialog, setStateDialog] = useState<'create' | 'edit' | null>(null)
 
   if (!activeScreenId) {
     return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
@@ -32,20 +41,51 @@ export function Canvas() {
   return (
     <div className={styles.root} onClick={() => setSelectedComponent(null)}>
       <div className={styles.stateBar}>
-        {screen.stateIds.map(stateId => {
-          const state = getOwnEntity(effectiveDocument.screenStates, stateId)
-          if (!state) return null
-          return (
+        <div className={styles.stateTabs}>
+          {screen.stateIds.map(stateId => {
+            const state = getOwnEntity(effectiveDocument.screenStates, stateId)
+            if (!state) return null
+            return (
+              <button
+                key={stateId}
+                className={`${styles.stateBtn} ${activeStateId === stateId ? styles.stateBtnActive : ''}`}
+                onClick={event => { event.stopPropagation(); setActiveState(stateId) }}
+                aria-pressed={activeStateId === stateId}
+                title={state.kind === 'default' ? t('states.defaultLocked') : undefined}
+              >
+                {state.name}
+              </button>
+            )
+          })}
+        </div>
+        <div className={styles.stateActions}>
+          {activeState && activeState.kind !== 'default' ? (
             <button
-              key={stateId}
-              className={`${styles.stateBtn} ${activeStateId === stateId ? styles.stateBtnActive : ''}`}
-              onClick={event => { event.stopPropagation(); setActiveState(stateId) }}
-              aria-pressed={activeStateId === stateId}
+              type="button"
+              className={styles.stateIconBtn}
+              onClick={event => {
+                event.stopPropagation()
+                setStateDialog('edit')
+              }}
+              title={t('states.manage')}
+              aria-label={t('states.manageAria', { name: activeState?.name ?? '' })}
             >
-              {state.name}
+              ⋯
             </button>
-          )
-        })}
+          ) : null}
+          <button
+            type="button"
+            className={styles.stateIconBtn}
+            onClick={event => {
+              event.stopPropagation()
+              setStateDialog('create')
+            }}
+            title={t('states.add')}
+            aria-label={t('states.add')}
+          >
+            +
+          </button>
+        </div>
       </div>
       <div className={styles.wireframe}>
         <CanvasComponent
@@ -58,6 +98,14 @@ export function Canvas() {
           t={t}
         />
       </div>
+      {stateDialog ? (
+        <StateDialog
+          mode={stateDialog}
+          screenId={screen.id}
+          state={stateDialog === 'edit' ? activeState : undefined}
+          onClose={() => setStateDialog(null)}
+        />
+      ) : null}
     </div>
   )
 }
@@ -112,6 +160,9 @@ function CanvasComponent({
 
   if (!component) return null
   if (!component.common.visible) return null
+  const stateOverride = base && activeState
+    ? getOwnEntity(activeState.componentOverrides, base.id)
+    : undefined
   const isSelected = selectedComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
   const style: CSSProperties = {
@@ -124,7 +175,7 @@ function CanvasComponent({
   return (
     <div
       ref={setNodeRef}
-      className={`${styles.comp} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
+      className={`${styles.comp} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''} ${component.common.enabled ? '' : styles.componentDisabled}`}
       style={style}
       onClick={event => { event.stopPropagation(); onSelect(component.id) }}
       data-component-id={component.id}
@@ -145,7 +196,7 @@ function CanvasComponent({
           </button>
         )}
       </div>
-      <ComponentView comp={component} t={t} />
+      <ComponentView comp={component} override={stateOverride} t={t} />
       {isContainer && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
@@ -190,9 +241,11 @@ function CanvasComponent({
 
 function ComponentView({
   comp,
+  override,
   t,
 }: {
   comp: ScreenComponent
+  override?: ComponentOverride
   t: ReturnType<typeof useI18n>['t']
 }) {
   const cfg = comp.config
@@ -249,9 +302,13 @@ function ComponentView({
       return (
         <div className={styles.field}>
           <label className={styles.fieldLabel}>{cfg.label}{cfg.required && <span className={styles.required}>*</span>}</label>
-          <select disabled className={`${styles.fieldInput} ${styles.previewControl}`}>
-            <option>{t('canvas.selectPlaceholder')}</option>
-            {cfg.options.map(option => <option key={option.value}>{option.label}</option>)}
+          <select
+            disabled
+            value={override?.value ?? ''}
+            className={`${styles.fieldInput} ${styles.previewControl}`}
+          >
+            <option value="">{t('canvas.selectPlaceholder')}</option>
+            {cfg.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
       )

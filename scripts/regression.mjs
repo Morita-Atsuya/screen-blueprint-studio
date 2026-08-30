@@ -69,6 +69,7 @@ const componentFactoryBundle = join(temp, 'componentFactory.mjs')
 const editorDndBundle = join(temp, 'editorDnd.mjs')
 const editorShortcutsBundle = join(temp, 'editorShortcuts.mjs')
 const componentDisplayLabelBundle = join(temp, 'componentDisplayLabel.mjs')
+const selectorsBundle = join(temp, 'selectors.mjs')
 const messagesBundle = join(temp, 'messages.mjs')
 const localeBundle = join(temp, 'locale.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
@@ -79,6 +80,7 @@ bundle('src/features/palette/componentFactory.ts', componentFactoryBundle)
 bundle('src/dnd/editorDnd.ts', editorDndBundle)
 bundle('src/app/editorShortcuts.ts', editorShortcutsBundle)
 bundle('src/domain/componentDisplayLabel.ts', componentDisplayLabelBundle)
+bundle('src/domain/selectors.ts', selectorsBundle)
 bundle('src/i18n/messages.ts', messagesBundle)
 bundle('src/i18n/locale.ts', localeBundle)
 
@@ -1433,7 +1435,11 @@ await test('representative screen/component/state/event/API writes reach the cha
   execute('upsert_screen_state', {
     operation: 'update',
     stateId: addedStateId,
+    kind: 'error',
     description: 'Updated',
+    overrides: {
+      'comp-list-heading': { text: 'Could not load users.' },
+    },
   })
 
   execute('connect_behavior', {
@@ -1629,6 +1635,144 @@ await test('human moves join active change sets and screen management reconciles
     screenId: 'screen-edit',
     name: 'Account editor',
     route: '/accounts/:id',
+  })
+
+  await test('human state editing persists overrides and protects the default state', async () => {
+    memoryStorage.clear()
+    const store = await freshStore('human-state-editing')
+    const initialRevision = store.getState().document.revision
+
+    store.getState().dispatch({
+      type: 'createScreenState',
+      stateId: 'state-human-error',
+      screenId: 'screen-list',
+      name: 'Request failed',
+      kind: 'error',
+      description: 'Created in the human UI',
+    }, 'Create state')
+    store.getState().setActiveState('state-human-error')
+    assert(
+      store.getState().ui.activeStateId === 'state-human-error' &&
+        store.getState().document.screens['screen-list'].stateIds.includes('state-human-error'),
+      'created state was not selected or listed',
+    )
+
+    store.getState().dispatch({
+      type: 'updateScreenState',
+      stateId: 'state-human-error',
+      name: 'Request complete',
+      kind: 'success',
+      description: 'Updated in the human UI',
+      overrides: {
+        'comp-list-heading': {
+          visible: true,
+          enabled: false,
+          text: 'Users loaded.',
+        },
+      },
+    }, 'Update state')
+    const updated = store.getState().document.screenStates['state-human-error']
+    assert(
+      updated.kind === 'success' &&
+        updated.componentOverrides['comp-list-heading'].text === 'Users loaded.',
+      'state metadata or overrides were not updated',
+    )
+
+    const { effectiveComponent } = await import(moduleUrl(selectorsBundle, 'state-override-preview'))
+    const effectiveHeading = effectiveComponent(
+      store.getState().document.components['comp-list-heading'],
+      updated,
+    )
+    assert(
+      effectiveHeading.config.text === 'Users loaded.' &&
+        effectiveHeading.common.enabled === false,
+      'state override was not reflected in the effective component',
+    )
+    const successAlert = effectiveComponent(
+      store.getState().document.components['comp-status-alert'],
+      store.getState().document.screenStates['state-edit-success'],
+    )
+    assert(
+      successAlert.common.visible === true &&
+        successAlert.config.message === 'User saved successfully.',
+      'alert visibility or message override was not reflected in the preview',
+    )
+    const savingState = store.getState().document.screenStates['state-edit-saving']
+    store.getState().dispatch({
+      type: 'updateScreenState',
+      stateId: savingState.id,
+      overrides: {
+        ...savingState.componentOverrides,
+        'comp-name-input': { value: 'Alex Morgan' },
+      },
+    }, 'Set state field value')
+    const effectiveInput = effectiveComponent(
+      store.getState().document.components['comp-name-input'],
+      store.getState().document.screenStates['state-edit-saving'],
+    )
+    assert(
+      effectiveInput.config.defaultValue === 'Alex Morgan',
+      'field value override was not reflected in the preview',
+    )
+
+    store.getState().dispatch({
+      type: 'updateScreenState',
+      stateId: 'state-human-error',
+      overrides: {},
+    }, 'Clear state overrides')
+    assert(
+      Object.keys(
+        store.getState().document.screenStates['state-human-error'].componentOverrides,
+      ).length === 0,
+      'cleared state overrides left an empty component entry',
+    )
+
+    const beforeDefaultEdit = store.getState().document.revision
+    store.getState().dispatch({
+      type: 'updateScreenState',
+      stateId: 'state-list-default',
+      kind: 'custom',
+    }, 'Invalid default state edit')
+    assert(
+      store.getState().document.revision === beforeDefaultEdit &&
+        store.getState().document.screenStates['state-list-default'].kind === 'default',
+      'default state kind was changed',
+    )
+
+    const reloaded = await freshStore('human-state-editing-reload')
+    assert(
+      reloaded.getState().document.screenStates['state-human-error'].name === 'Request complete' &&
+        reloaded.getState().document.revision > initialRevision,
+      'state edits were not persisted',
+    )
+
+    reloaded.getState().beginChangeSet('Human state proposal edit')
+    const confirmedDescription =
+      reloaded.getState().document.screenStates['state-human-error'].description
+    reloaded.getState().dispatch({
+      type: 'updateScreenState',
+      stateId: 'state-human-error',
+      description: 'Edited during review',
+    }, 'Edit state in proposal')
+    assert(
+      reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'human' &&
+        reloaded.getState().document.screenStates['state-human-error'].description ===
+          confirmedDescription &&
+        reloaded.getState().effectiveDocument.screenStates['state-human-error'].description ===
+          'Edited during review',
+      'human state edit did not stay inside the active change set',
+    )
+    reloaded.getState().rejectChangeSet()
+    reloaded.getState().setActiveState('state-human-error')
+    reloaded.getState().dispatch({
+      type: 'removeScreenState',
+      stateId: 'state-human-error',
+    }, 'Delete state')
+    assert(
+      reloaded.getState().document.screenStates['state-human-error'] === undefined &&
+        reloaded.getState().ui.activeStateId === 'state-list-default',
+      'state delete did not remove the state or reconcile the active state',
+    )
   })
   screenStore.getState().dispatch({
     type: 'removeScreen',

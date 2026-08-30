@@ -463,11 +463,13 @@ export function validateComponentOverride(
   const override = record(value, path)
   const optionalKeys = ['visible', 'enabled']
   if (component.kind === 'heading' || component.kind === 'text') optionalKeys.push('text')
+  if (component.kind === 'alert') optionalKeys.push('message')
   if (component.kind === 'textInput' || component.kind === 'select') optionalKeys.push('value')
   exactKeys(override, [], optionalKeys, path)
 
   if (override.visible !== undefined) boolean(override.visible, `${path}.visible`)
   if (override.enabled !== undefined) boolean(override.enabled, `${path}.enabled`)
   if (override.text !== undefined) string(override.text, `${path}.text`)
+  if (override.message !== undefined) string(override.message, `${path}.message`)
   if (override.value !== undefined) string(override.value, `${path}.value`)
 }

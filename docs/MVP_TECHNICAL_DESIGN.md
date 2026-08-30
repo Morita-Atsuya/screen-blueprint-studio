@@ -302,11 +302,12 @@ interface ComponentOverride {
   visible?: boolean;
   enabled?: boolean;
   text?: string;
+  message?: string;
   value?: string;
 }
 ```
 
-default状態にはoverrideを持たせず、コンポーネント本体の値を使用する。default以外では指定された値のみ上書きする。
+default状態にはoverrideを持たせず、コンポーネント本体の値を使用する。default以外では指定された値のみ上書きする。人間はcanvas上部のstate barから非default状態を追加・選択・編集・削除でき、選択componentのInspectorでkindに許可されたoverrideを設定または基本設定へ戻せる。
 
 ### 5.5 イベント
 
@@ -593,7 +594,7 @@ interface Diagnostic {
 
 ### 10.4 右ペイン
 
-- `Inspector`: 選択componentの共通仕様とpage titleなどkind固有の内容を編集
+- `Inspector`: 選択componentの共通仕様とpage titleなどkind固有の内容を編集。非default状態では基本仕様と分離した状態別設定を表示
 - `Changes`: operation一覧とbefore/after
 
 component kindごとに専用フォームを表示し、任意JSON編集は提供しない。画面管理上のscreen nameとpreview内容であるpage titleは別fieldとして扱う。
@@ -871,7 +872,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 
 ## 17. MVP受け入れ条件
 
-1. AIなしで複数screenの作成・選択・関連付けと、component追加、移動、削除、仕様編集、状態previewができる
+1. AIなしで複数screenの作成・選択、component追加・移動・削除・仕様編集、状態の作成・編集・削除、component overrideと状態previewができる
 2. canvas、tree、inspectorが同じモデルを表示する
 3. 破損した親子参照や存在しないIDを保存できない
 4. review modeのAI write toolは確定モデルを直接変更せず、screenとcomponent構造の追加・更新・移動・削除と既存stateの修正をchange set上で行える

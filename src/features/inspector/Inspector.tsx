@@ -1,7 +1,13 @@
 import { useAppStore } from '../../app/appStore'
 import styles from './Inspector.module.css'
-import { getOwnEntity } from '../../domain/entityMap'
+import { deleteOwnEntity, getOwnEntity, setOwnEntity } from '../../domain/entityMap'
+import type {
+  ComponentOverride,
+  ScreenComponent,
+  ScreenState,
+} from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
+import type { MessageKey } from '../../i18n/messages'
 import { commandMessageKey } from '../../i18n/messages'
 
 export function Inspector() {
@@ -19,6 +25,9 @@ export function Inspector() {
 
   const comp = getOwnEntity(effectiveDocument.components, selectedComponentId)
   if (!comp) return null
+  const activeState = ui.activeStateId
+    ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
+    : undefined
 
   const cfg = comp.config
 
@@ -208,8 +217,142 @@ export function Inspector() {
           <input className={styles.input} value={cfg.title} onChange={e => updateConfig({ title: e.target.value })} />
         </Field>
       )}
+      {activeState && activeState.kind !== 'default' ? (
+        <>
+          <hr className={styles.divider} />
+          <StateOverrides component={comp} state={activeState} />
+        </>
+      ) : null}
     </div>
   )
+}
+
+function StateOverrides({
+  component,
+  state,
+}: {
+  component: ScreenComponent
+  state: ScreenState
+}) {
+  const { t } = useI18n()
+  const dispatch = useAppStore(current => current.dispatch)
+  const override = getOwnEntity(state.componentOverrides, component.id) ?? {}
+
+  function updateOverride<Key extends keyof ComponentOverride>(
+    key: Key,
+    value: ComponentOverride[Key] | undefined,
+  ) {
+    const overrides = Object.assign(
+      Object.create(null),
+      state.componentOverrides,
+    ) as Record<string, ComponentOverride>
+    const componentOverride = { ...(getOwnEntity(overrides, component.id) ?? {}) }
+
+    if (value === undefined) {
+      delete componentOverride[key]
+    } else {
+      componentOverride[key] = value
+    }
+
+    if (Object.keys(componentOverride).length === 0) {
+      deleteOwnEntity(overrides, component.id)
+    } else {
+      setOwnEntity(overrides, component.id, componentOverride)
+    }
+
+    dispatch({
+      type: 'updateScreenState',
+      stateId: state.id,
+      overrides,
+    }, `Update state overrides: ${state.name}`)
+  }
+
+  const content = overrideContent(component)
+
+  return (
+    <section className={styles.overrideSection} data-state-overrides>
+      <div className={styles.overrideHeading}>
+        <h3>{t('overrides.title')}</h3>
+        <span>{t('overrides.forState', { name: state.name })}</span>
+      </div>
+      <Field label={t('inspector.visible')}>
+        <select
+          className={styles.input}
+          value={override.visible === undefined ? 'inherit' : String(override.visible)}
+          onChange={event => updateOverride(
+            'visible',
+            event.target.value === 'inherit' ? undefined : event.target.value === 'true',
+          )}
+        >
+          <option value="inherit">
+            {t('overrides.inherit')} ({t(component.common.visible ? 'overrides.visible' : 'overrides.hidden')})
+          </option>
+          <option value="true">{t('overrides.visible')}</option>
+          <option value="false">{t('overrides.hidden')}</option>
+        </select>
+      </Field>
+      <Field label={t('inspector.enabled')}>
+        <select
+          className={styles.input}
+          value={override.enabled === undefined ? 'inherit' : String(override.enabled)}
+          onChange={event => updateOverride(
+            'enabled',
+            event.target.value === 'inherit' ? undefined : event.target.value === 'true',
+          )}
+        >
+          <option value="inherit">
+            {t('overrides.inherit')} ({t(component.common.enabled ? 'overrides.enabled' : 'overrides.disabled')})
+          </option>
+          <option value="true">{t('overrides.enabled')}</option>
+          <option value="false">{t('overrides.disabled')}</option>
+        </select>
+      </Field>
+      {content ? (
+        <div className={styles.overrideValue}>
+          <label className={styles.checkLabel}>
+            <input
+              type="checkbox"
+              checked={override[content.key] !== undefined}
+              onChange={event => updateOverride(
+                content.key,
+                event.target.checked ? content.baseValue : undefined,
+              )}
+            />
+            {t('overrides.useValue')}
+          </label>
+          <Field label={t(content.labelKey)}>
+            <input
+              className={styles.input}
+              disabled={override[content.key] === undefined}
+              value={override[content.key] ?? content.baseValue}
+              onChange={event => updateOverride(content.key, event.target.value)}
+            />
+          </Field>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function overrideContent(component: ScreenComponent): {
+  key: 'text' | 'message' | 'value'
+  labelKey: MessageKey
+  baseValue: string
+} | null {
+  const config = component.config
+  if (config.kind === 'heading' || config.kind === 'text') {
+    return { key: 'text', labelKey: 'overrides.text', baseValue: config.text }
+  }
+  if (config.kind === 'alert') {
+    return { key: 'message', labelKey: 'overrides.message', baseValue: config.message }
+  }
+  if (config.kind === 'textInput') {
+    return { key: 'value', labelKey: 'overrides.value', baseValue: config.defaultValue }
+  }
+  if (config.kind === 'select') {
+    return { key: 'value', labelKey: 'overrides.value', baseValue: '' }
+  }
+  return null
 }
 
 function formatSelectOptions(options: Array<{ value: string; label: string }>): string {

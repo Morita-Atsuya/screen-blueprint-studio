@@ -694,6 +694,7 @@ const upsertScreenState: ToolDefinition = {
           operation: { const: 'update' },
           stateId: { type: 'string', minLength: 1 },
           name: { type: 'string' },
+          kind: { type: 'string', enum: ['loading', 'success', 'error', 'custom'] },
           description: { type: 'string' },
           overrides: componentOverridesSchema,
         },
@@ -717,6 +718,19 @@ const upsertScreenState: ToolDefinition = {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
       if (operation === 'create') {
+        requireExactKeys(
+          input,
+          [
+            ...Object.keys(writeBaseProperties),
+            'operation',
+            'screenId',
+            'name',
+            'kind',
+            'description',
+            'overrides',
+          ],
+          'upsert_screen_state create input',
+        )
         command = {
           type: 'createScreenState',
           stateId: nanoid(),
@@ -729,16 +743,40 @@ const upsertScreenState: ToolDefinition = {
             : undefined,
         }
       } else if (operation === 'update') {
+        requireExactKeys(
+          input,
+          [
+            ...Object.keys(writeBaseProperties),
+            'operation',
+            'stateId',
+            'name',
+            'kind',
+            'description',
+            'overrides',
+          ],
+          'upsert_screen_state update input',
+        )
         command = {
           type: 'updateScreenState',
           stateId: requiredString(input, 'stateId'),
           name: optionalString(input, 'name'),
+          kind: optionalString(input, 'kind') as
+            | 'loading'
+            | 'success'
+            | 'error'
+            | 'custom'
+            | undefined,
           description: optionalString(input, 'description'),
           overrides: isRecord(input.overrides)
             ? input.overrides as Record<string, ComponentOverride>
             : undefined,
         }
       } else if (operation === 'remove') {
+        requireExactKeys(
+          input,
+          [...Object.keys(writeBaseProperties), 'operation', 'stateId'],
+          'upsert_screen_state remove input',
+        )
         command = { type: 'removeScreenState', stateId: requiredString(input, 'stateId') }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported state operation: ${operation}`)

@@ -116,6 +116,7 @@ export interface ComponentOverride {
   visible?: boolean
   enabled?: boolean
   text?: string
+  message?: string
   value?: string
 }
 
