@@ -89,10 +89,9 @@ function validateFieldBinding(value: unknown, path: string): asserts value is Fi
 
 export function validateProject(value: unknown, path = 'project'): asserts value is Project {
   const project = record(value, path)
-  exactKeys(project, ['id', 'name', 'entryScreenId', 'screenIds'], [], path)
+  exactKeys(project, ['id', 'name', 'screenIds'], [], path)
   entityId(project.id, `${path}.id`)
   string(project.name, `${path}.name`)
-  entityId(project.entryScreenId, `${path}.entryScreenId`)
   entityIdArray(project.screenIds, `${path}.screenIds`)
 }
 

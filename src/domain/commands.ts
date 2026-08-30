@@ -15,7 +15,6 @@ export type DomainCommand =
   | AddScreenCommand
   | UpdateScreenCommand
   | RemoveScreenCommand
-  | SetEntryScreenCommand
   // Component commands
   | AddComponentCommand
   | MoveComponentCommand
@@ -42,7 +41,6 @@ export interface AddScreenCommand {
   defaultStateId: EntityId
   name: string
   route: string
-  makeEntry?: boolean
 }
 
 export interface UpdateScreenCommand {
@@ -54,12 +52,6 @@ export interface UpdateScreenCommand {
 
 export interface RemoveScreenCommand {
   type: 'removeScreen'
-  screenId: EntityId
-  nextEntryScreenId?: EntityId
-}
-
-export interface SetEntryScreenCommand {
-  type: 'setEntryScreen'
   screenId: EntityId
 }
 

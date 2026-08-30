@@ -145,7 +145,12 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
   switch (command.type) {
     // ──────────── Screen commands ────────────
     case 'addScreen': {
-      const { screenId, rootComponentId, defaultStateId, name, route, makeEntry } = command
+      requireExactKeys(
+        command,
+        ['type', 'screenId', 'rootComponentId', 'defaultStateId', 'name', 'route'],
+        'addScreen command',
+      )
+      const { screenId, rootComponentId, defaultStateId, name, route } = command
       if (
         hasOwnEntity(next.screens, screenId) ||
         hasOwnEntity(next.components, rootComponentId) ||
@@ -180,11 +185,11 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
         componentOverrides: {},
       })
       next.project.screenIds.push(screenId)
-      if (makeEntry) next.project.entryScreenId = screenId
       break
     }
 
     case 'updateScreen': {
+      requireExactKeys(command, ['type', 'screenId', 'name', 'route'], 'updateScreen command')
       const screen = getOwnEntity(next.screens, command.screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
       if (command.name !== undefined) screen.name = command.name
@@ -193,7 +198,8 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
     }
 
     case 'removeScreen': {
-      const { screenId, nextEntryScreenId } = command
+      requireExactKeys(command, ['type', 'screenId'], 'removeScreen command')
+      const { screenId } = command
       const screen = getOwnEntity(next.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
       if (next.project.screenIds.length <= 1) throw new DomainError('CANNOT_REMOVE_LAST_SCREEN', 'Cannot remove the last screen')
@@ -205,16 +211,6 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
           if (action.type === 'navigate' && action.destinationScreenId === screenId) {
             throw new DomainError('SCREEN_REFERENCED_BY_NAVIGATE', `Screen ${screenId} is referenced by a navigate action`)
           }
-        }
-      }
-
-      // Handle entry screen reassignment
-      if (next.project.entryScreenId === screenId) {
-        if (nextEntryScreenId) {
-          next.project.entryScreenId = nextEntryScreenId
-        } else {
-          const remaining = next.project.screenIds.filter(id => id !== screenId)
-          next.project.entryScreenId = remaining[0]!
         }
       }
 
@@ -239,14 +235,6 @@ export function applyCommandWithoutRevision(doc: ProjectDocument, command: Domai
       // Remove screen itself
       deleteOwnEntity(next.screens, screenId)
       next.project.screenIds = next.project.screenIds.filter(id => id !== screenId)
-      break
-    }
-
-    case 'setEntryScreen': {
-      if (!hasOwnEntity(next.screens, command.screenId)) {
-        throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
-      }
-      next.project.entryScreenId = command.screenId
       break
     }
 

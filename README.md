@@ -8,7 +8,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 
 ## 主な機能
 
-- 複数画面とentry screenの管理
+- 複数画面の管理
 - Page、Section、Stack、Columns、入力、ボタン、Alert、Modalなどの構造化コンポーネント
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
@@ -57,7 +57,7 @@ AIがchange setへ型付きoperationを追加
 - treeとcanvasの`⠿` handleで、同一container内の並び替えまたは別containerへの移動
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
 - 入力欄外で`Cmd+Z`/`Ctrl+Z`を押すと確定操作をUndo
-- Screensタブで画面の追加、名前・route編集、Entry設定、削除
+- Screensタブで画面の追加、選択、名前・route編集、削除
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 root component、別screen、leaf、自分自身・子孫へのdropは拒否されます。active change set中のdragや編集は、人間によるoperationとしてproposalへ追加されます。

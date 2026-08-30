@@ -21,7 +21,6 @@ const COMMAND_TYPES = new Set([
   'addScreen',
   'updateScreen',
   'removeScreen',
-  'setEntryScreen',
   'addComponent',
   'moveComponent',
   'removeComponent',

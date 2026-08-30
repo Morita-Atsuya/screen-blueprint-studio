@@ -1388,12 +1388,20 @@ await test('representative screen/component/state/event/API writes reach the cha
   }
   const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
   const latestCommand = () => pending().operations.at(-1).command
+  assert(
+    byName('change_screen_structure').inputSchema.oneOf.length === 3,
+    'screen structure tool does not expose exactly add, update, and remove',
+  )
+  const context = byName('get_current_screen_context').execute({})
+  assert(
+    context.ok &&
+      Object.keys(context.data.project).sort().join(',') === 'id,name,screenIds',
+    'screen context project metadata has an unexpected shape',
+  )
 
   execute('change_screen_structure', { operation: 'add', name: 'Agent screen', route: '/agent' })
   const addedScreenId = latestCommand().screenId
   execute('change_screen_structure', { operation: 'update', screenId: addedScreenId, name: 'Updated agent screen' })
-  execute('change_screen_structure', { operation: 'setEntry', screenId: addedScreenId })
-  execute('change_screen_structure', { operation: 'setEntry', screenId: 'screen-list' })
   execute('change_screen_structure', { operation: 'remove', screenId: addedScreenId })
 
   execute('change_component_structure', {
@@ -1588,7 +1596,7 @@ await test('component reorder and reparent reject invalid targets', async () => 
   }
 })
 
-await test('human moves join active change sets and screen management stays transactional', async () => {
+await test('human moves join active change sets and screen management reconciles selection', async () => {
   memoryStorage.clear()
   const proposalStore = await freshStore('direct-edit-change-set')
   const beforeOrder = proposalStore.getState().document.components['comp-actions'].childIds.join(',')
@@ -1622,17 +1630,15 @@ await test('human moves join active change sets and screen management stays tran
     name: 'Account editor',
     route: '/accounts/:id',
   })
-  screenStore.getState().dispatch({ type: 'setEntryScreen', screenId: 'screen-edit' })
   screenStore.getState().dispatch({
     type: 'removeScreen',
     screenId: 'screen-list',
-    nextEntryScreenId: 'screen-edit',
   })
   assert(
-    screenStore.getState().document.project.entryScreenId === 'screen-edit' &&
-      screenStore.getState().document.screens['screen-edit'].name === 'Account editor' &&
-      screenStore.getState().document.screens['screen-list'] === undefined,
-    'screen edit, entry, or delete command failed',
+    screenStore.getState().document.screens['screen-edit'].name === 'Account editor' &&
+      screenStore.getState().document.screens['screen-list'] === undefined &&
+      screenStore.getState().ui.activeScreenId === 'screen-edit',
+    'screen edit, delete, or active-screen reconciliation failed',
   )
 })
 

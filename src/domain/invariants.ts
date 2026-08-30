@@ -22,12 +22,7 @@ export function validateInvariants(doc: ProjectDocument): void {
     }
   }
 
-  // 2. entryScreenId references a screen in screenIds
-  if (!screenIdSet.has(project.entryScreenId)) {
-    throw new DomainError('INVARIANT_VIOLATION', `entryScreenId ${project.entryScreenId} not in screenIds`)
-  }
-
-  // 16. at least one screen
+  // 2. at least one screen
   if (project.screenIds.length === 0) {
     throw new DomainError('INVARIANT_VIOLATION', 'Project must have at least one screen')
   }

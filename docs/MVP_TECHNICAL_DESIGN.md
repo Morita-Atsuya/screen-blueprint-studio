@@ -155,7 +155,6 @@ interface ProjectDocument {
 interface Project {
   id: EntityId;
   name: string;
-  entryScreenId: EntityId;
   screenIds: EntityId[];
 }
 
@@ -361,31 +360,30 @@ MVPではAPI仕様を記述するが、ネットワークリクエストは実�
 すべてのcommand適用前後で次を検証する。
 
 1. `Project.screenIds`が重複せず、存在するscreenだけを参照する
-2. `entryScreenId`が`screenIds`内のscreenを参照する
-3. screenの`route`がproject内で一意
-4. 各screenに`page`型のrootが1つだけ存在する
-5. rootの`parentId`は`null`
-6. root以外のcomponentには同じscreen内のparentがある
-7. parentの`childIds`とchildの`parentId`が双方向に一致する
-8. コンポーネントツリーに循環がない
-9. leaf componentの`childIds`は空
-10. containerが受け入れ可能なkindだけを子に持つ
-11. `fieldKey`はscreen内で一意
-12. component、state、event、APIの参照先が存在する。`navigate`だけは別screenを参照できる
-13. default stateは1つだけで、`defaultStateId`がそのstateを参照し、`stateIds`にも含まれる
-14. 削除対象を参照するstate override、event、bindingも同一transactionで除去する
-15. container削除は配下のsubtree全体を削除し、依存参照も同一transactionで除去する
-16. projectには常に1画面以上存在する
-17. component configはkindごとの必須field、型、enumだけを持ち、未知fieldを許可しない
-18. state overrideは対象component kindで有効なfieldだけを持ち、値型を検証する
-19. default stateのcomponent overridesは常に空とする
-20. textInput/selectのrequest bindingは存在する同一screen内componentだけを参照する
-21. component common spec、event trigger/action、API operationは種類ごとの正確なruntime shapeを持ち、未知fieldを持たない
-22. UIのactive screen/state/selectionはeffective documentに存在し、同じscreenへ所属する
-23. schema versionは`1`、revisionは非負のsafe integerとし、上限を越える更新を拒否する
-24. project、screen、component、state、event、API metadataはexact shapeを持ち、ID配列の重複とrecord key/entity ID不一致を許可しない
-25. entity IDはprototype chain上の名前を許可せず、全map参照・追加・削除をown-property helper経由で行う
-26. component、state、event、APIはowning screenに実在かつ所属し、screen rootも同一screenへ所属する
+2. screenの`route`がproject内で一意
+3. 各screenに`page`型のrootが1つだけ存在する
+4. rootの`parentId`は`null`
+5. root以外のcomponentには同じscreen内のparentがある
+6. parentの`childIds`とchildの`parentId`が双方向に一致する
+7. コンポーネントツリーに循環がない
+8. leaf componentの`childIds`は空
+9. containerが受け入れ可能なkindだけを子に持つ
+10. `fieldKey`はscreen内で一意
+11. component、state、event、APIの参照先が存在する。`navigate`だけは別screenを参照できる
+12. default stateは1つだけで、`defaultStateId`がそのstateを参照し、`stateIds`にも含まれる
+13. 削除対象を参照するstate override、event、bindingも同一transactionで除去する
+14. container削除は配下のsubtree全体を削除し、依存参照も同一transactionで除去する
+15. projectには常に1画面以上存在する
+16. component configはkindごとの必須field、型、enumだけを持ち、未知fieldを許可しない
+17. state overrideは対象component kindで有効なfieldだけを持ち、値型を検証する
+18. default stateのcomponent overridesは常に空とする
+19. textInput/selectのrequest bindingは存在する同一screen内componentだけを参照する
+20. component common spec、event trigger/action、API operationは種類ごとの正確なruntime shapeを持ち、未知fieldを持たない
+21. UIのactive screen/state/selectionはeffective documentに存在し、同じscreenへ所属する
+22. schema versionは`1`、revisionは非負のsafe integerとし、上限を越える更新を拒否する
+23. project、screen、component、state、event、API metadataはexact shapeを持ち、ID配列の重複とrecord key/entity ID不一致を許可しない
+24. entity IDはprototype chain上の名前を許可せず、全map参照・追加・削除をown-property helper経由で行う
+25. component、state、event、APIはowning screenに実在かつ所属し、screen rootも同一screenへ所属する
 
 不変条件違反はUIとWebMCPの両方で同じ`DomainError`として返す。無視、部分適用、暗黙補正は行わない。
 
@@ -406,7 +404,6 @@ type DomainCommand =
   | AddScreenCommand
   | UpdateScreenCommand
   | RemoveScreenCommand
-  | SetEntryScreenCommand
   | AddComponentCommand
   | MoveComponentCommand
   | RemoveComponentCommand
@@ -419,7 +416,7 @@ type DomainCommand =
 
 commandは成功時に全体適用、失敗時に無変更とする。
 
-screen追加時はroot pageとdefault stateを同一commandで作成する。screen削除時は配下のcomponent、state、event、APIをまとめて削除する。他screenの`navigate`から参照されているscreenは、参照を外すまで削除できない。entry screenを削除する場合は、同一transactionで別のentry screenを指定する。
+screen追加時はroot pageとdefault stateを同一commandで作成する。screen削除時は配下のcomponent、state、event、APIをまとめて削除する。他screenの`navigate`から参照されているscreenは、参照を外すまで削除できない。選択中screenを削除したUIは、残った先頭screenへ選択をreconcileする。
 
 ### 7.2 更新単位
 
@@ -666,10 +663,9 @@ AIによる更新toolは次を共通要件とする。
 
 `change_screen_structure`もscreen管理だけを対象にする。
 
-- `add`: `name`, `route`, optional `makeEntry`
+- `add`: `name`, `route`
 - `update`: `screenId`, optional `name`, optional `route`
-- `remove`: `screenId`, optional `nextEntryScreenId`
-- `setEntry`: `screenId`
+- `remove`: `screenId`
 
 ### 11.4 公開しない操作
 
@@ -785,7 +781,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 ### 15.1 Domain unit tests
 
 - 全commandの正常系、異常系
-- screen追加・削除とentry screen制約
+- screen追加・削除、最後の1画面の削除拒否、選択screenのreconcile
 - 別screenへのnavigate参照と参照中screenの削除拒否
 - component treeの循環・不整合防止
 - subtree削除時の参照cleanup

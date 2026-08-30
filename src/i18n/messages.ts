@@ -21,9 +21,6 @@ const en = {
   'screens.selected': 'Selected screen',
   'screens.name': 'Name',
   'screens.route': 'Route',
-  'screens.entry': 'Entry screen',
-  'screens.entryBadge': 'Entry',
-  'screens.setEntry': 'Set as entry',
   'screens.delete': 'Delete screen',
   'screens.lastCannotDelete': 'The last screen cannot be deleted.',
   'screens.defaultName': 'Screen {number}',
@@ -91,7 +88,6 @@ const en = {
   'command.addScreen': 'Add screen',
   'command.updateScreen': 'Update screen',
   'command.removeScreen': 'Delete screen',
-  'command.setEntryScreen': 'Set entry screen',
   'command.addComponent': 'Add component',
   'command.moveComponent': 'Move component',
   'command.removeComponent': 'Delete component',
@@ -150,7 +146,6 @@ const en = {
   'errors.domain.CANNOT_REMOVE_ROOT': 'The root component cannot be deleted.',
   'errors.domain.CANNOT_REMOVE_LAST_SCREEN': 'The last screen cannot be deleted.',
   'errors.domain.SCREEN_REFERENCED_BY_NAVIGATE': 'This screen is used by a navigation action.',
-  'errors.domain.ENTRY_SCREEN_REQUIRED': 'An entry screen is required.',
   'errors.domain.RECOVERY_REQUIRED': 'Recover or reset the saved data before editing.',
 } as const
 
@@ -173,9 +168,6 @@ const ja: Record<MessageKey, string> = {
   'screens.selected': '選択中の画面',
   'screens.name': '名前',
   'screens.route': 'Route',
-  'screens.entry': 'Entry画面',
-  'screens.entryBadge': 'Entry',
-  'screens.setEntry': 'Entryに設定',
   'screens.delete': '画面を削除',
   'screens.lastCannotDelete': '最後の1画面は削除できません。',
   'screens.defaultName': '画面 {number}',
@@ -243,7 +235,6 @@ const ja: Record<MessageKey, string> = {
   'command.addScreen': '画面を追加',
   'command.updateScreen': '画面を更新',
   'command.removeScreen': '画面を削除',
-  'command.setEntryScreen': 'Entry画面を設定',
   'command.addComponent': 'コンポーネントを追加',
   'command.moveComponent': 'コンポーネントを移動',
   'command.removeComponent': 'コンポーネントを削除',
@@ -302,7 +293,6 @@ const ja: Record<MessageKey, string> = {
   'errors.domain.CANNOT_REMOVE_ROOT': 'ルートコンポーネントは削除できません。',
   'errors.domain.CANNOT_REMOVE_LAST_SCREEN': '最後の1画面は削除できません。',
   'errors.domain.SCREEN_REFERENCED_BY_NAVIGATE': 'この画面は遷移先として参照されています。',
-  'errors.domain.ENTRY_SCREEN_REQUIRED': 'Entry画面が必要です。',
   'errors.domain.RECOVERY_REQUIRED': '編集前に保存データを復旧または初期化してください。',
 }
 
@@ -335,7 +325,6 @@ const domainErrorKeys: Record<DomainErrorCode, MessageKey> = {
   CANNOT_REMOVE_ROOT: 'errors.domain.CANNOT_REMOVE_ROOT',
   CANNOT_REMOVE_LAST_SCREEN: 'errors.domain.CANNOT_REMOVE_LAST_SCREEN',
   SCREEN_REFERENCED_BY_NAVIGATE: 'errors.domain.SCREEN_REFERENCED_BY_NAVIGATE',
-  ENTRY_SCREEN_REQUIRED: 'errors.domain.ENTRY_SCREEN_REQUIRED',
   RECOVERY_REQUIRED: 'errors.domain.RECOVERY_REQUIRED',
 }
 
@@ -347,7 +336,6 @@ const commandKeys: Record<DomainCommand['type'], MessageKey> = {
   addScreen: 'command.addScreen',
   updateScreen: 'command.updateScreen',
   removeScreen: 'command.removeScreen',
-  setEntryScreen: 'command.setEntryScreen',
   addComponent: 'command.addComponent',
   moveComponent: 'command.moveComponent',
   removeComponent: 'command.removeComponent',

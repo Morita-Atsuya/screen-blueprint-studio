@@ -184,7 +184,6 @@ export interface Screen {
 export interface Project {
   id: EntityId
   name: string
-  entryScreenId: EntityId
   screenIds: EntityId[]
 }
 

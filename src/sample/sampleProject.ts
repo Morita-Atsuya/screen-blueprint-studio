@@ -6,7 +6,6 @@ export const sampleProject: ProjectDocument = {
   project: {
     id: 'proj-1',
     name: 'User Management',
-    entryScreenId: 'screen-list',
     screenIds: ['screen-list', 'screen-edit'],
   },
   screens: {

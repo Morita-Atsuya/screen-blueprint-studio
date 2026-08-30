@@ -34,12 +34,10 @@ export function ScreenList() {
 
   function removeActiveScreen() {
     if (!activeScreen || project.screenIds.length <= 1) return
-    const nextEntryScreenId = project.screenIds.find(id => id !== activeScreen.id)
     dispatch(
       {
         type: 'removeScreen',
         screenId: activeScreen.id,
-        nextEntryScreenId,
       },
       `Delete screen: ${activeScreen.name}`,
     )
@@ -55,7 +53,6 @@ export function ScreenList() {
           const screen = getOwnEntity(screens, id)
           if (!screen) return null
           const isActive = ui.activeScreenId === id
-          const isEntry = project.entryScreenId === id
           return (
             <li key={id}>
               <button
@@ -63,7 +60,6 @@ export function ScreenList() {
                 onClick={() => setActiveScreen(id)}
               >
                 <span className={styles.name}>{screen.name}</span>
-                {isEntry && <span className={styles.entry}>{t('screens.entryBadge')}</span>}
               </button>
             </li>
           )
@@ -97,16 +93,6 @@ export function ScreenList() {
             />
           </label>
           <div className={styles.manageActions}>
-            <button
-              className={styles.entryBtn}
-              disabled={project.entryScreenId === activeScreen.id}
-              onClick={() => dispatch({
-                type: 'setEntryScreen',
-                screenId: activeScreen.id,
-              }, 'Set entry screen')}
-            >
-              {project.entryScreenId === activeScreen.id ? t('screens.entry') : t('screens.setEntry')}
-            </button>
             <button
               className={styles.deleteBtn}
               disabled={project.screenIds.length <= 1}

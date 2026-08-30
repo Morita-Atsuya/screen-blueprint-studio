@@ -410,7 +410,7 @@ const beginChangeSet: ToolDefinition = {
 
 const changeScreenStructure: ToolDefinition = {
   name: 'change_screen_structure',
-  description: 'Add, update, remove, or set the entry screen in the active change set.',
+  description: 'Add, update, or remove a screen in the active change set.',
   inputSchema: {
     oneOf: [
       {
@@ -420,7 +420,6 @@ const changeScreenStructure: ToolDefinition = {
           operation: { const: 'add' },
           name: { type: 'string', minLength: 1 },
           route: { type: 'string', minLength: 1 },
-          makeEntry: { type: 'boolean' },
         },
         required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'name', 'route'],
         ...CLOSED_OBJECT,
@@ -443,17 +442,6 @@ const changeScreenStructure: ToolDefinition = {
           ...writeBaseProperties,
           operation: { const: 'remove' },
           screenId: { type: 'string', minLength: 1 },
-          nextEntryScreenId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'setEntry' },
-          screenId: { type: 'string', minLength: 1 },
         },
         required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId'],
         ...CLOSED_OBJECT,
@@ -465,6 +453,11 @@ const changeScreenStructure: ToolDefinition = {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
       if (operation === 'add') {
+        requireExactKeys(
+          input,
+          [...Object.keys(writeBaseProperties), 'operation', 'name', 'route'],
+          'change_screen_structure add input',
+        )
         command = {
           type: 'addScreen',
           screenId: nanoid(),
@@ -472,9 +465,13 @@ const changeScreenStructure: ToolDefinition = {
           defaultStateId: nanoid(),
           name: requiredString(input, 'name'),
           route: requiredString(input, 'route'),
-          makeEntry: input.makeEntry === true,
         }
       } else if (operation === 'update') {
+        requireExactKeys(
+          input,
+          [...Object.keys(writeBaseProperties), 'operation', 'screenId', 'name', 'route'],
+          'change_screen_structure update input',
+        )
         command = {
           type: 'updateScreen',
           screenId: requiredString(input, 'screenId'),
@@ -482,13 +479,15 @@ const changeScreenStructure: ToolDefinition = {
           route: optionalString(input, 'route'),
         }
       } else if (operation === 'remove') {
+        requireExactKeys(
+          input,
+          [...Object.keys(writeBaseProperties), 'operation', 'screenId'],
+          'change_screen_structure remove input',
+        )
         command = {
           type: 'removeScreen',
           screenId: requiredString(input, 'screenId'),
-          nextEntryScreenId: optionalString(input, 'nextEntryScreenId'),
         }
-      } else if (operation === 'setEntry') {
-        command = { type: 'setEntryScreen', screenId: requiredString(input, 'screenId') }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported screen operation: ${operation}`)
       }
