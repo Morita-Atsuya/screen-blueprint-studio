@@ -20,10 +20,7 @@ import type {
 import { CONTAINER_KINDS } from '../../domain/model'
 import { effectiveComponent } from '../../domain/selectors'
 import { getOwnEntity } from '../../domain/entityMap'
-import {
-  COMPONENT_KIND_MESSAGE_KEYS,
-  getComponentDisplayLabel,
-} from '../../domain/componentDisplayLabel'
+import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
@@ -35,6 +32,7 @@ export function Canvas() {
   const { effectiveDocument, ui, setSelectedComponent, setActiveState } = useAppStore()
   const { activeScreenId, activeStateId, selectedComponentId } = ui
   const [stateDialog, setStateDialog] = useState<'create' | 'edit' | null>(null)
+  const [hoveredComponentId, setHoveredComponentId] = useState<EntityId | null>(null)
 
   if (!activeScreenId) {
     return <div className={styles.empty}>{t('canvas.selectScreen')}</div>
@@ -51,7 +49,11 @@ export function Canvas() {
     : undefined
 
   return (
-    <div className={styles.root} onClick={() => setSelectedComponent(null)}>
+    <div
+      className={styles.root}
+      onClick={() => setSelectedComponent(null)}
+      onPointerLeave={() => setHoveredComponentId(null)}
+    >
       <div className={styles.stateBar}>
         <div className={styles.stateToolbar}>
           <div className={styles.stateTabs}>
@@ -114,7 +116,9 @@ export function Canvas() {
           document={effectiveDocument}
           activeState={activeState}
           selectedComponentId={selectedComponentId}
+          hoveredComponentId={hoveredComponentId}
           onSelect={setSelectedComponent}
+          onHover={setHoveredComponentId}
           locale={locale}
           t={t}
         />
@@ -136,7 +140,9 @@ interface CanvasComponentProps {
   document: ProjectDocument
   activeState?: ScreenState
   selectedComponentId: EntityId | null
+  hoveredComponentId: EntityId | null
   onSelect(id: EntityId): void
+  onHover(id: EntityId): void
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
 }
@@ -146,7 +152,9 @@ function CanvasComponent({
   document,
   activeState,
   selectedComponentId,
+  hoveredComponentId,
   onSelect,
+  onHover,
   locale,
   t,
 }: CanvasComponentProps) {
@@ -185,6 +193,7 @@ function CanvasComponent({
     ? getOwnEntity(activeState.componentOverrides, base.id)
     : undefined
   const isSelected = selectedComponentId === component.id
+  const isHovered = hoveredComponentId === component.id
   const isContainer = CONTAINER_KINDS.includes(component.kind)
   const layout = hasLayout(component.config) ? component.config : null
   const dropOrientation = layout?.layout === 'horizontal'
@@ -215,13 +224,27 @@ function CanvasComponent({
   return (
     <div
       ref={setNodeRef}
-      className={`${styles.comp} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''} ${component.common.enabled ? '' : styles.componentDisabled}`}
+      className={[
+        styles.comp,
+        isSelected ? styles.selected : '',
+        isHovered ? styles.hovered : '',
+        isDragging ? styles.dragging : '',
+        component.kind === 'modal' ? styles.modalComponent : '',
+        component.kind === 'button' ? styles.buttonComponent : '',
+        component.common.enabled ? '' : styles.componentDisabled,
+      ].join(' ')}
       style={style}
       onClick={event => { event.stopPropagation(); onSelect(component.id) }}
+      onPointerMove={event => {
+        event.stopPropagation()
+        if (!isHovered) onHover(component.id)
+      }}
       data-component-id={component.id}
+      data-editor-hovered={isHovered || undefined}
+      data-editor-selected={isSelected || undefined}
     >
-      <div className={styles.componentChrome}>
-        <span className={styles.componentKind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
+      <div className={styles.componentChrome} data-editor-chrome>
+        <span className={styles.componentLabel}>{displayName}</span>
         {!isRoot && (
           <button
             className={styles.dragHandle}
@@ -269,7 +292,9 @@ function CanvasComponent({
                   document={document}
                   activeState={activeState}
                   selectedComponentId={selectedComponentId}
+                  hoveredComponentId={hoveredComponentId}
                   onSelect={onSelect}
+                  onHover={onHover}
                   locale={locale}
                   t={t}
                 />
@@ -321,7 +346,7 @@ function ComponentView({
   const cfg = comp.config
   switch (cfg.kind) {
     case 'page':
-      return <div className={styles.pageBadge}>{cfg.title}</div>
+      return <div className={styles.pageTitle}>{cfg.title}</div>
     case 'section':
       return <div className={styles.sectionTitle}>{cfg.title}</div>
     case 'container':
@@ -370,10 +395,6 @@ function ComponentView({
     case 'alert':
       return <div className={`${styles.alert} ${cfg.tone === 'info' ? styles.alertInfo : cfg.tone === 'success' ? styles.alertSuccess : cfg.tone === 'warning' ? styles.alertWarning : styles.alertError}`}>{cfg.message}</div>
     case 'modal':
-      return (
-        <div className={styles.modal}>
-          <div className={styles.modalTitle}>{cfg.title}</div>
-        </div>
-      )
+      return <div className={styles.modalTitle}>{cfg.title}</div>
   }
 }

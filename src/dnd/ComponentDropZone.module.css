@@ -35,14 +35,25 @@
 }
 
 .canvas {
+  position: absolute;
+  z-index: 3;
+  inset: -5px 0 auto;
   width: 100%;
+  height: 10px;
+  min-height: 0;
+  border-top: 2px solid transparent;
 }
+
+.canvas.active { border-top-color: #c7d2fe; }
+.canvas.over { border-top-color: var(--accent); }
+.canvas.end { inset: auto 0 -5px; }
 
 .horizontal {
   position: absolute;
   inset: 0 auto 0 -5px;
   z-index: 2;
   width: 10px;
+  height: auto;
   min-height: 0;
   border-top: 0;
   border-left: 2px solid transparent;
@@ -52,11 +63,11 @@
 .horizontal.over { border-left-color: var(--accent); }
 
 .horizontal.end {
-  position: relative;
-  inset: auto;
-  flex: 0 0 10px;
-  align-self: stretch;
-  margin-left: -8px;
+  position: absolute;
+  inset: 0 -5px 0 auto;
+  width: 10px;
+  height: auto;
+  margin: 0;
 }
 
 .grid {
@@ -73,11 +84,11 @@
 .grid.over { border-left-color: var(--accent); }
 
 .grid.end {
-  position: relative;
-  inset: auto;
-  grid-column: 1 / -1;
-  width: 100%;
-  min-height: 8px;
+  position: absolute;
+  inset: auto 0 -5px;
+  width: auto;
+  height: 10px;
+  min-height: 0;
   border-top: 2px solid transparent;
   border-left: 0;
 }

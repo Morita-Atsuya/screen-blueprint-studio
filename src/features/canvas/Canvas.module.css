@@ -84,55 +84,111 @@
 /* Component container */
 .comp {
   position: relative;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px;
-  margin: 4px 0;
+  min-width: 0;
   cursor: pointer;
-  transition: border-color 0.1s;
-  background: white;
 }
-.comp:hover { border-color: var(--text-faint); }
-.selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--agent-change-border); }
+
+.comp::after {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.hovered::after {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.selected::after {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.comp:focus-within::after {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.selected:focus-within::after {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .dragging { opacity: 0.3; }
 .componentDisabled { opacity: 0.55; }
 
 .componentChrome {
+  position: absolute;
+  z-index: 5;
+  top: -22px;
+  left: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 20px;
-  margin: -4px -2px 4px;
+  max-width: 100%;
+  height: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 80ms ease;
 }
 
-.componentKind {
-  color: var(--text-faint);
+.hovered > .componentChrome,
+.selected > .componentChrome,
+.componentChrome:focus-within {
+  opacity: 1;
+}
+
+.hovered > .componentChrome,
+.selected > .componentChrome {
+  pointer-events: auto;
+}
+
+.componentLabel {
+  max-width: min(220px, 70vw);
+  padding: 2px 6px;
+  overflow: hidden;
+  border-radius: 4px 0 0 4px;
+  background: var(--accent);
+  color: white;
   font-size: 0.65rem;
-  text-transform: uppercase;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.componentLabel:last-child {
+  border-radius: 4px;
 }
 
 .dragHandle {
-  padding: 0 4px;
+  width: 22px;
+  height: 20px;
+  padding: 0;
   border: 0;
-  background: transparent;
-  color: var(--text-faint);
+  border-radius: 0 4px 4px 0;
+  background: #3730a3;
+  color: white;
   cursor: grab;
   touch-action: none;
 }
 .dragHandle:active { cursor: grabbing; }
+.dragHandle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .children {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--layout-gap, 16px);
   min-width: 0;
-  padding: 4px 0 0 8px;
 }
-.childSlot { display: flex; flex-direction: column; }
+.childSlot {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
 
 .horizontalChildren {
   flex-direction: row;
-  padding: 6px 5px 2px;
   overflow-x: auto;
 }
 
@@ -150,7 +206,6 @@
 .gridChildren {
   display: grid;
   grid-template-columns: repeat(var(--layout-columns, 2), minmax(min(160px, 70vw), 1fr));
-  padding: 6px 5px 2px;
   overflow-x: auto;
 }
 
@@ -173,10 +228,11 @@
   margin: 0 auto;
   padding: 22px;
   background: white;
-  border-color: #cbd5e1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
-.pageBadge { font-size: 0.72rem; color: var(--text-faint); padding-bottom: 4px; }
+.pageTitle { padding-bottom: 12px; color: var(--text); font-size: 1.1rem; font-weight: 700; }
 
 /* Section */
 .sectionTitle { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); padding-bottom: 4px; }
@@ -212,5 +268,6 @@
 .alertError { background: #fef2f2; border-color: #fecaca; color: var(--danger); }
 
 /* Modal */
-.modal { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-surface); }
+.modalComponent { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); }
 .modalTitle { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); }
+.buttonComponent { width: fit-content; max-width: 100%; }

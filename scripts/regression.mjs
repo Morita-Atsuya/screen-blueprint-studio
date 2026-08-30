@@ -1959,6 +1959,57 @@ await test('active state descriptions stay in accessible editor chrome', async (
   )
 })
 
+await test('Canvas component chrome stays outside the idle preview flow', async () => {
+  const canvasSource = readFileSync(
+    join(root, 'src/features/canvas/Canvas.tsx'),
+    'utf8',
+  )
+  const canvasStyles = readFileSync(
+    join(root, 'src/features/canvas/Canvas.module.css'),
+    'utf8',
+  )
+  const dropZoneStyles = readFileSync(
+    join(root, 'src/dnd/ComponentDropZone.module.css'),
+    'utf8',
+  )
+  const idleComponentRule = canvasStyles.match(/\.comp \{([^}]*)\}/)?.[1] ?? ''
+
+  assert(
+    !canvasSource.includes('COMPONENT_KIND_MESSAGE_KEYS') &&
+      !canvasSource.includes('styles.componentKind') &&
+      canvasSource.includes('<span className={styles.componentLabel}>{displayName}</span>'),
+    'Canvas still renders kind labels instead of semantic floating labels',
+  )
+  assert(
+    !idleComponentRule.includes('border:') &&
+      !idleComponentRule.includes('background:') &&
+      !idleComponentRule.includes('padding:') &&
+      !idleComponentRule.includes('margin:'),
+    'idle Canvas component wrappers still add visible chrome or spacing',
+  )
+  assert(
+    canvasStyles.includes('.componentChrome') &&
+      canvasStyles.includes('position: absolute') &&
+      canvasStyles.includes('opacity: 0') &&
+      canvasStyles.includes('.hovered > .componentChrome') &&
+      canvasStyles.includes('.selected > .componentChrome') &&
+      canvasStyles.includes('.comp:focus-within::after'),
+    'floating Canvas chrome is not gated by hover, selection, or focus',
+  )
+  assert(
+    canvasSource.includes('hoveredComponentId === component.id') &&
+      canvasSource.includes('event.stopPropagation()') &&
+      canvasSource.includes('data-editor-hovered={isHovered || undefined}'),
+    'Canvas does not enforce one most-specific hovered component',
+  )
+  assert(
+    dropZoneStyles.includes('.canvas {') &&
+      dropZoneStyles.includes('position: absolute') &&
+      dropZoneStyles.includes('.canvas.end { inset: auto 0 -5px; }'),
+    'Canvas insertion targets still consume preview layout space',
+  )
+})
+
 await test('container layouts drive preview, DnD, and palette feedback', async () => {
   const canvasSource = readFileSync(
     join(root, 'src/features/canvas/Canvas.tsx'),

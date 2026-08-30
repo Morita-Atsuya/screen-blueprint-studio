@@ -582,7 +582,7 @@ interface Diagnostic {
 - `Screens`: 画面一覧、entry表示、作成、選択、名称変更、削除
 - `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
 - `Structure`: component tree。title、label、text等から表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
-- `Canvas`: preview上のhandleからtreeと同じcommandで並び替え・親変更。drop中だけ挿入lineまたはoutlineを表示し、説明placeholderは描画しない
+- `Canvas`: idle時はartboardと仕様上の表示内容だけを描画し、componentのsemantic label、outline、drag handleはhover／選択／focus時だけflow外のeditor overlayとして表示する。overlay上のhandleからtreeと同じcommandで並び替え・親変更し、drop中だけ挿入lineまたはoutlineを表示する
 - 追加不可の場合は無効理由を表示
 
 ### 10.3 中央ペイン
