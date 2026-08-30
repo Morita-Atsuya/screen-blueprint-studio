@@ -45,6 +45,7 @@ import type { InspectorSectionId } from './inspectorSections'
 
 export function Inspector() {
   const { locale, t } = useI18n()
+  const descriptionInputId = useId()
   const {
     effectiveDocument,
     ui,
@@ -368,11 +369,13 @@ export function Inspector() {
           <p>{t('inspector.baseSettingsDescription')}</p>
         </div>
         <div className={styles.section}>
-          <label className={styles.label}>{t('inspector.description')}</label>
+          <label className={styles.label} htmlFor={descriptionInputId}>
+            {t('inspector.description')}
+          </label>
           <DraftTextField
+            id={descriptionInputId}
             key={`${comp.id}:description`}
             draftId={`component:${comp.id}:common.description`}
-            ariaLabel={t('inspector.description')}
             className={styles.textarea}
             value={comp.common.description}
             onCommit={description => updateCommon({ description }, 'description')}

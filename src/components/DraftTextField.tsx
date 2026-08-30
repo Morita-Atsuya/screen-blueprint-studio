@@ -82,7 +82,7 @@ interface DraftTextFieldProps {
   onCommit(value: string): boolean
   validate?(value: string): string | null
   className?: string
-  ariaLabel: string
+  ariaLabel?: string
   multiline?: boolean
   rows?: number
   placeholder?: string

@@ -229,6 +229,11 @@ function installInteractiveDom() {
     Object.defineProperty(focusIn, 'relatedTarget', { value: previous })
     this.dispatchEvent(focusIn)
   }
+  document.addEventListener('click', event => {
+    const label = event.target.closest?.('label[for]')
+    if (!label || event.defaultPrevented) return
+    document.getElementById(label.getAttribute('for'))?.focus()
+  })
   window.HTMLElement.prototype.getClientRects = () => [{}]
   window.HTMLElement.prototype.getBoundingClientRect = () => ({
     x: 0,
@@ -242,6 +247,8 @@ function installInteractiveDom() {
     toJSON: () => ({}),
   })
   window.HTMLElement.prototype.scrollIntoView = () => {}
+  window.HTMLElement.prototype.attachEvent = () => {}
+  window.HTMLElement.prototype.detachEvent = () => {}
   window.HTMLElement.prototype.setPointerCapture = () => {}
   window.HTMLElement.prototype.releasePointerCapture = () => {}
   window.HTMLElement.prototype.hasPointerCapture = () => false
@@ -4441,6 +4448,47 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     `UI-only review interactions changed protected document state: ${changedProtectedKeys.join(', ')}`,
   )
   harness.unmount()
+})
+
+await test('visible Screen and Inspector labels focus their draft controls', async () => {
+  for (const locale of ['en', 'ja']) {
+    memoryStorage.clear()
+    installStorage(memoryStorage)
+    const document = installInteractiveDom()
+    const { mountReviewLockApp } = await import(
+      moduleUrl(renderAppBundle, `visible-field-labels-${locale}`)
+    )
+    const harness = mountReviewLockApp(locale)
+    const fields = [
+      ['screen:screen-edit:name', 'Screen Name'],
+      ['screen:screen-edit:route', 'Screen Route'],
+      ['component:comp-name-input:common.description', 'Inspector Description'],
+    ]
+    const ids = []
+
+    for (const [draftId, labelName] of fields) {
+      const control = document.querySelector(
+        `[data-draft-id="${draftId}"] > input, [data-draft-id="${draftId}"] > textarea`,
+      )
+      assert(control?.id, `${labelName} control has no stable id in ${locale}`)
+      ids.push(control.id)
+      const label = document.querySelector(`label[for="${control.id}"]`)
+      assert(label, `${labelName} visible label is not associated in ${locale}`)
+      assert(
+        !control.hasAttribute('aria-label'),
+        `${labelName} retained a redundant aria-label in ${locale}`,
+      )
+      document.body.focus()
+      harness.click(label)
+      assert(
+        document.activeElement === control,
+        `${labelName} visible label did not focus its control in ${locale}`,
+      )
+    }
+
+    assert(new Set(ids).size === ids.length, `visible field ids collide in ${locale}`)
+    harness.unmount()
+  }
 })
 
 await test('editor shortcuts ignore form controls and resolve standard keys', async () => {

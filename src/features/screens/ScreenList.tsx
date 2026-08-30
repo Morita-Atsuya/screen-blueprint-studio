@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid'
+import { useId } from 'react'
 import { useAppStore } from '../../app/appStore'
 import { findAvailableScreenDefaults } from './screenNaming'
 import { getOwnEntity } from '../../domain/entityMap'
@@ -8,6 +9,8 @@ import styles from './ScreenList.module.css'
 
 export function ScreenList() {
   const { locale, t } = useI18n()
+  const screenNameInputId = useId()
+  const screenRouteInputId = useId()
   const {
     effectiveDocument,
     ui,
@@ -92,12 +95,12 @@ export function ScreenList() {
       {activeScreen && (
         <div className={styles.editor}>
           <h3 className={styles.editorTitle}>{t('screens.selected')}</h3>
-          <div className={styles.label}>
+          <label className={styles.label} htmlFor={screenNameInputId}>
             <span>{t('screens.name')}</span>
             <DraftTextField
+              id={screenNameInputId}
               key={`${activeScreen.id}:name`}
               draftId={`screen:${activeScreen.id}:name`}
-              ariaLabel={t('screens.name')}
               className={styles.input}
               value={activeScreen.name}
               disabled={Boolean(activeChangeSet)}
@@ -107,13 +110,13 @@ export function ScreenList() {
                 name,
               }, `Update screen name: ${activeScreen.name}`)}
             />
-          </div>
-          <div className={styles.label}>
+          </label>
+          <label className={styles.label} htmlFor={screenRouteInputId}>
             <span>{t('screens.route')}</span>
             <DraftTextField
+              id={screenRouteInputId}
               key={`${activeScreen.id}:route`}
               draftId={`screen:${activeScreen.id}:route`}
-              ariaLabel={t('screens.route')}
               className={styles.input}
               value={activeScreen.route}
               disabled={Boolean(activeChangeSet)}
@@ -128,7 +131,7 @@ export function ScreenList() {
                 route,
               }, `Update screen route: ${activeScreen.name}`)}
             />
-          </div>
+          </label>
           <div className={styles.manageActions}>
             <button
               className={styles.deleteBtn}
