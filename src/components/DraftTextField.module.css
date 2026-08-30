@@ -1,0 +1,10 @@
+.root {
+  width: 100%;
+}
+
+.error {
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}

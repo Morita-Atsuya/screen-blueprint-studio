@@ -516,6 +516,9 @@ interface HistoryEntry {
 ```
 
 - 人間の通常commandは1操作につき1entry
+- controlled text fieldは打鍵中にモデルを変更せずlocal draftを保持し、単一行のEnterまたはblur、複数行のblurで1command・1entryとして確定する。IME変換中のEnterは確定triggerにしない
+- active change set中のtext field確定も文字数ではなく1編集sessionにつき1件のhuman operationとする
+- 外部document更新と競合した未確定draftは上書きせず保持し、再確定またはEscape取消をユーザーが選べる。reload時はまず同期的なcommand確定を試し、validationで確定できないdraftだけをsessionStorageへ退避して同じfieldへ復元する
 - change set承認は全operationsで1entry
 - auto-apply modeのAI commandは1操作につき1entry
 - Undoは`before`を復元し、revisionを新しく採番する

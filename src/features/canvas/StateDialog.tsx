@@ -26,25 +26,26 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
 
   function save() {
     if (!canSubmit) return
+    let saved = false
     if (mode === 'create') {
       const stateId = nanoid()
-      dispatch({
+      saved = dispatch({
         type: 'createScreenState',
         stateId,
         screenId,
         name: name.trim(),
         description,
       }, 'Create screen state')
-      setActiveState(stateId)
+      if (saved) setActiveState(stateId)
     } else if (state && !isDefault) {
-      dispatch({
+      saved = dispatch({
         type: 'updateScreenState',
         stateId: state.id,
         name: name.trim(),
         description,
       }, 'Update screen state')
     }
-    onClose()
+    if (saved) onClose()
   }
 
   function remove() {

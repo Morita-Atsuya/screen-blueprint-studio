@@ -11,6 +11,7 @@ import type { ChangeSet } from '../../domain/collaboration'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { commandMessageKey } from '../../i18n/messages'
+import { DraftTextField } from '../../components/DraftTextField'
 
 export function Inspector() {
   const { t } = useI18n()
@@ -34,17 +35,20 @@ export function Inspector() {
 
   const cfg = comp.config
 
-  function updateConfig(partial: Record<string, unknown>) {
-    dispatch(
+  function updateConfig(partial: Record<string, unknown>, field = 'settings'): boolean {
+    return dispatch(
       { type: 'updateComponentSpec', componentId: comp!.id, patch: { config: partial as never } },
-      'Update component specification',
+      `Update ${comp!.kind} ${field}: ${comp!.id}`,
     )
   }
 
-  function updateCommon(partial: { description?: string; visible?: boolean; enabled?: boolean }) {
-    dispatch(
+  function updateCommon(
+    partial: { description?: string; visible?: boolean; enabled?: boolean },
+    field = 'settings',
+  ): boolean {
+    return dispatch(
       { type: 'updateComponentSpec', componentId: comp!.id, patch: { common: partial } },
-      'Update component specification',
+      `Update ${comp!.kind} ${field}: ${comp!.id}`,
     )
   }
 
@@ -52,11 +56,15 @@ export function Inspector() {
     <div className={styles.root}>
       <div className={styles.section}>
         <label className={styles.label}>{t('inspector.description')}</label>
-        <textarea
+        <DraftTextField
+          key={`${comp.id}:description`}
+          draftId={`component:${comp.id}:common.description`}
+          ariaLabel={t('inspector.description')}
           className={styles.textarea}
           value={comp.common.description}
+          onCommit={description => updateCommon({ description }, 'description')}
+          multiline
           rows={2}
-          onChange={e => updateCommon({ description: e.target.value })}
         />
       </div>
       <div className={styles.row}>
@@ -74,7 +82,16 @@ export function Inspector() {
       {cfg.kind === 'text' && (
         <>
           <Field label={t('inspector.text')}>
-            <textarea className={styles.textarea} value={cfg.text} rows={3} onChange={e => updateConfig({ text: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:text`}
+              draftId={`component:${comp.id}:config.text`}
+              ariaLabel={t('inspector.text')}
+              className={styles.textarea}
+              value={cfg.text}
+              onCommit={text => updateConfig({ text }, 'text')}
+              multiline
+              rows={3}
+            />
           </Field>
           <Field label={t('inspector.textStyle')}>
             <select className={styles.input} value={cfg.style} onChange={e => updateConfig({ style: e.target.value })}>
@@ -90,16 +107,44 @@ export function Inspector() {
       {cfg.kind === 'textInput' && (
         <>
           <Field label={t('inspector.fieldKey')}>
-            <input className={styles.input} value={cfg.fieldKey} onChange={e => updateConfig({ fieldKey: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:fieldKey`}
+              draftId={`component:${comp.id}:config.fieldKey`}
+              ariaLabel={t('inspector.fieldKey')}
+              className={styles.input}
+              value={cfg.fieldKey}
+              onCommit={fieldKey => updateConfig({ fieldKey }, 'field key')}
+            />
           </Field>
           <Field label={t('inspector.label')}>
-            <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:label`}
+              draftId={`component:${comp.id}:config.label`}
+              ariaLabel={t('inspector.label')}
+              className={styles.input}
+              value={cfg.label}
+              onCommit={label => updateConfig({ label }, 'label')}
+            />
           </Field>
           <Field label={t('inspector.placeholder')}>
-            <input className={styles.input} value={cfg.placeholder} onChange={e => updateConfig({ placeholder: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:placeholder`}
+              draftId={`component:${comp.id}:config.placeholder`}
+              ariaLabel={t('inspector.placeholder')}
+              className={styles.input}
+              value={cfg.placeholder}
+              onCommit={placeholder => updateConfig({ placeholder }, 'placeholder')}
+            />
           </Field>
           <Field label={t('inspector.defaultValue')}>
-            <input className={styles.input} value={cfg.defaultValue} onChange={e => updateConfig({ defaultValue: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:defaultValue`}
+              draftId={`component:${comp.id}:config.defaultValue`}
+              ariaLabel={t('inspector.defaultValue')}
+              className={styles.input}
+              value={cfg.defaultValue}
+              onCommit={defaultValue => updateConfig({ defaultValue }, 'default value')}
+            />
           </Field>
           <Field label={t('inspector.inputType')}>
             <select className={styles.input} value={cfg.inputType} onChange={e => updateConfig({ inputType: e.target.value })}>
@@ -117,18 +162,36 @@ export function Inspector() {
       {cfg.kind === 'select' && (
         <>
           <Field label={t('inspector.fieldKey')}>
-            <input className={styles.input} value={cfg.fieldKey} onChange={e => updateConfig({ fieldKey: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:fieldKey`}
+              draftId={`component:${comp.id}:config.fieldKey`}
+              ariaLabel={t('inspector.fieldKey')}
+              className={styles.input}
+              value={cfg.fieldKey}
+              onCommit={fieldKey => updateConfig({ fieldKey }, 'field key')}
+            />
           </Field>
           <Field label={t('inspector.label')}>
-            <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:label`}
+              draftId={`component:${comp.id}:config.label`}
+              ariaLabel={t('inspector.label')}
+              className={styles.input}
+              value={cfg.label}
+              onCommit={label => updateConfig({ label }, 'label')}
+            />
           </Field>
           <Field label={t('inspector.options')}>
-            <textarea
+            <DraftTextField
+              key={`${comp.id}:options`}
+              draftId={`component:${comp.id}:config.options`}
+              ariaLabel={t('inspector.options')}
               className={styles.textarea}
-              rows={4}
               value={formatSelectOptions(cfg.options)}
+              onCommit={value => updateConfig({ options: parseSelectOptions(value) }, 'options')}
+              multiline
+              rows={4}
               placeholder={t('inspector.optionsPlaceholder')}
-              onChange={e => updateConfig({ options: parseSelectOptions(e.target.value) })}
             />
           </Field>
           <Field label={t('inspector.defaultValue')}>
@@ -152,7 +215,14 @@ export function Inspector() {
       {cfg.kind === 'button' && (
         <>
           <Field label={t('inspector.label')}>
-            <input className={styles.input} value={cfg.label} onChange={e => updateConfig({ label: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:label`}
+              draftId={`component:${comp.id}:config.label`}
+              ariaLabel={t('inspector.label')}
+              className={styles.input}
+              value={cfg.label}
+              onCommit={label => updateConfig({ label }, 'label')}
+            />
           </Field>
           <Field label={t('inspector.variant')}>
             <select className={styles.input} value={cfg.variant} onChange={e => updateConfig({ variant: e.target.value })}>
@@ -162,11 +232,17 @@ export function Inspector() {
             </select>
           </Field>
           <Field label={t('inspector.confirmationMessage')}>
-            <input
+            <DraftTextField
+              key={`${comp.id}:confirmationMessage`}
+              draftId={`component:${comp.id}:config.confirmationMessage`}
+              ariaLabel={t('inspector.confirmationMessage')}
               className={styles.input}
               value={cfg.confirmationMessage ?? ''}
               placeholder={t('inspector.noConfirmation')}
-              onChange={e => updateConfig({ confirmationMessage: e.target.value || null })}
+              onCommit={confirmationMessage => updateConfig(
+                { confirmationMessage: confirmationMessage || null },
+                'confirmation message',
+              )}
             />
           </Field>
           <label className={styles.checkLabel}>
@@ -186,7 +262,14 @@ export function Inspector() {
             </select>
           </Field>
           <Field label={t('inspector.message')}>
-            <input className={styles.input} value={cfg.message} onChange={e => updateConfig({ message: e.target.value })} />
+            <DraftTextField
+              key={`${comp.id}:message`}
+              draftId={`component:${comp.id}:config.message`}
+              ariaLabel={t('inspector.message')}
+              className={styles.input}
+              value={cfg.message}
+              onCommit={message => updateConfig({ message }, 'message')}
+            />
           </Field>
         </>
       )}
@@ -283,7 +366,7 @@ function StateOverrides({
   function updateOverride<Key extends keyof ComponentOverride>(
     key: Key,
     value: ComponentOverride[Key] | undefined,
-  ) {
+  ): boolean {
     const overrides = Object.assign(
       Object.create(null),
       state.componentOverrides,
@@ -302,11 +385,11 @@ function StateOverrides({
       setOwnEntity(overrides, component.id, componentOverride)
     }
 
-    dispatch({
+    return dispatch({
       type: 'updateScreenState',
       stateId: state.id,
       overrides,
-    }, `Update state overrides: ${state.name}`)
+    }, `Update ${state.name} ${key} override: ${component.id}`)
   }
 
   const content = overrideContent(component)
@@ -383,11 +466,14 @@ function StateOverrides({
                 ))}
               </select>
             ) : (
-              <input
+              <DraftTextField
+                key={`${state.id}:${component.id}:${content.key}`}
+                draftId={`state:${state.id}:component:${component.id}:${content.key}`}
+                ariaLabel={t(content.labelKey)}
                 className={styles.input}
                 disabled={override[content.key] === undefined}
                 value={override[content.key] ?? content.baseValue}
-                onChange={event => updateOverride(content.key, event.target.value)}
+                onCommit={value => updateOverride(content.key, value)}
               />
             )}
           </Field>

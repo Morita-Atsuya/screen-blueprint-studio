@@ -65,7 +65,7 @@ export interface AppStore {
   // effectiveDocument = computeEffective(document, activeChangeSet)
   effectiveDocument: ProjectDocument
 
-  dispatch(command: DomainCommand, label?: string): void
+  dispatch(command: DomainCommand, label?: string): boolean
   beginChangeSet(summary: string): ChangeSet
   dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'human' | 'agent'): void
   acceptChangeSet(): void
@@ -285,8 +285,9 @@ export const useAppStore = create<AppStore>((set, get) => {
           state.dispatchToChangeSet(state.activeChangeSet.id, command, 'human')
         } catch (e) {
           set({ errorMessage: toUiMessage(e) })
+          return false
         }
-        return
+        return true
       }
       try {
         const next = applyCommand(state.document, command)
@@ -297,8 +298,10 @@ export const useAppStore = create<AppStore>((set, get) => {
         const newUi = reconcileUiState(next, state.ui)
         set({ document: next, history: newHistory, effectiveDocument: next, ui: newUi, errorMessage: null })
         markPersistence(persistIfAvailable(next, null, newUi.activeScreenId))
+        return true
       } catch (e) {
         set({ errorMessage: toUiMessage(e) })
+        return false
       }
     },
 

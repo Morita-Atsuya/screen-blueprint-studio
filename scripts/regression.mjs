@@ -73,6 +73,7 @@ const selectorsBundle = join(temp, 'selectors.mjs')
 const messagesBundle = join(temp, 'messages.mjs')
 const localeBundle = join(temp, 'locale.mjs')
 const rightPaneWidthBundle = join(temp, 'rightPaneWidth.mjs')
+const textDraftBundle = join(temp, 'textDraft.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -85,6 +86,7 @@ bundle('src/domain/selectors.ts', selectorsBundle)
 bundle('src/i18n/messages.ts', messagesBundle)
 bundle('src/i18n/locale.ts', localeBundle)
 bundle('src/app/rightPaneWidth.ts', rightPaneWidthBundle)
+bundle('src/components/textDraft.ts', textDraftBundle)
 
 let passed = 0
 
@@ -3424,6 +3426,149 @@ await test('Select state values share one validated effective path', async () =>
       inspectorSource.includes("override[content.key] === undefined && content.baseValue === ''") &&
       inspectorSource.includes('disabled={content.options?.length === 0}'),
     'Inspector Select overrides are not constrained to configured options',
+  )
+})
+
+await test('text drafts commit as one human operation', async () => {
+  memoryStorage.clear()
+  const { shouldCommitTextKey } = await import(moduleUrl(textDraftBundle, 'text-draft-keys'))
+  assert(shouldCommitTextKey('Enter', false, false), 'single-line Enter did not commit')
+  assert(!shouldCommitTextKey('Enter', true, false), 'multiline Enter did not remain a newline')
+  assert(!shouldCommitTextKey('Enter', false, true), 'IME composition Enter committed early')
+  assert(!shouldCommitTextKey('Escape', false, false), 'Escape was treated as a commit')
+
+  const store = await freshStore('text-draft-history')
+  const originalText = store.getState().document.components['comp-list-title'].config.text
+  const moveResult = store.getState().dispatch({
+    type: 'moveComponent',
+    componentId: 'comp-list-grid',
+    newParentId: 'comp-list-section',
+    position: 0,
+  }, 'Move summary before text editing')
+  assert(moveResult && store.getState().history.length === 1, 'structural history seed failed')
+
+  let fiftyCharacterDraft = ''
+  for (let index = 0; index < 50; index += 1) fiftyCharacterDraft += String(index % 10)
+  assert(
+    store.getState().history.length === 1,
+    'local typing changed history before the draft was committed',
+  )
+  const textResult = store.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: 'comp-list-title',
+    patch: { config: { text: fiftyCharacterDraft } },
+  }, 'Update text text: comp-list-title')
+  assert(textResult, 'committed text draft failed')
+  assert(
+    store.getState().history.length === 2 &&
+      store.getState().history[0].label === 'Move summary before text editing' &&
+      store.getState().history[1].label.includes('comp-list-title'),
+    '50-character draft did not create exactly one targeted history entry',
+  )
+
+  store.getState().undo()
+  const afterUndo = store.getState()
+  const restoredText = afterUndo.document.components['comp-list-title'].config
+  assert(
+    restoredText.kind === 'text' &&
+      restoredText.text === originalText &&
+      afterUndo.document.components['comp-list-section'].childIds[0] === 'comp-list-grid' &&
+      afterUndo.history.length === 1,
+    'one Undo did not restore the whole text edit while retaining structural history',
+  )
+
+  const nameResult = store.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Persisted screen name',
+  }, 'Update screen name: User List')
+  assert(nameResult, 'screen name draft commit failed')
+  const reloaded = await freshStore('text-draft-reload')
+  assert(
+    reloaded.getState().document.screens['screen-list'].name === 'Persisted screen name',
+    'committed text draft did not survive reload',
+  )
+
+  const historyBeforeInvalidRoute = reloaded.getState().history.length
+  const duplicateRoute = reloaded.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-edit',
+    route: '/users',
+  }, 'Update screen route: Edit User')
+  assert(
+    !duplicateRoute &&
+      reloaded.getState().document.screens['screen-edit'].route === '/users/:id/edit' &&
+      reloaded.getState().history.length === historyBeforeInvalidRoute &&
+      reloaded.getState().errorMessage !== null,
+    'duplicate route was reported as a successful text commit',
+  )
+
+  reloaded.getState().beginChangeSet('Atomic human text edit')
+  let proposalDraft = ''
+  for (let index = 0; index < 50; index += 1) proposalDraft += String.fromCharCode(65 + (index % 26))
+  const proposalResult = reloaded.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: 'comp-list-title',
+    patch: { config: { text: proposalDraft } },
+  }, 'Update text text: comp-list-title')
+  const proposal = reloaded.getState().activeChangeSet
+  assert(
+    proposalResult &&
+      proposal?.operations.length === 1 &&
+      proposal.operations[0].source === 'human',
+    '50-character draft did not create exactly one human change-set operation',
+  )
+  const invalidProposalRoute = reloaded.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-edit',
+    route: '/users',
+  }, 'Update screen route: Edit User')
+  assert(
+    !invalidProposalRoute && reloaded.getState().activeChangeSet?.operations.length === 1,
+    'invalid route was added to the active change set',
+  )
+
+  const draftSource = readFileSync(
+    join(root, 'src/components/DraftTextField.tsx'),
+    'utf8',
+  )
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/inspector/Inspector.tsx'),
+    'utf8',
+  )
+  const screenSource = readFileSync(
+    join(root, 'src/features/screens/ScreenList.tsx'),
+    'utf8',
+  )
+  const stateDialogSource = readFileSync(
+    join(root, 'src/features/canvas/StateDialog.tsx'),
+    'utf8',
+  )
+  assert(
+    draftSource.includes('onChange: updateDraft') &&
+      draftSource.includes('onBlur: commitDraft') &&
+      draftSource.includes("window.addEventListener('beforeunload', flush)") &&
+      draftSource.includes("window.addEventListener('pagehide', flush)") &&
+      draftSource.includes('window.sessionStorage.setItem(storageKey(draftId)') &&
+      draftSource.includes('onCompositionStart: handleCompositionStart') &&
+      draftSource.includes('draftCache.set(draftId'),
+    'draft field does not preserve and flush local edits safely',
+  )
+  assert(
+    (inspectorSource.match(/<DraftTextField/g) ?? []).length >= 11 &&
+      !inspectorSource.includes('onChange={e => updateConfig({ text:'),
+    'Inspector text controls still dispatch per keystroke',
+  )
+  assert(
+    screenSource.includes('errors.screenRouteDuplicate') &&
+      screenSource.includes('<DraftTextField') &&
+      !screenSource.includes("onChange={event => dispatch({\n                type: 'updateScreen'"),
+    'Screen text controls still dispatch per keystroke or omit route feedback',
+  )
+  assert(
+    stateDialogSource.includes('onChange={event => setName(event.target.value)}') &&
+      stateDialogSource.includes('if (saved) onClose()'),
+    'State dialog does not preserve its submitted local draft on failure',
   )
 })
 

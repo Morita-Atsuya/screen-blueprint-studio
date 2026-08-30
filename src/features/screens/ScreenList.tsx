@@ -3,6 +3,7 @@ import { useAppStore } from '../../app/appStore'
 import { findAvailableScreenDefaults } from './screenNaming'
 import { getOwnEntity } from '../../domain/entityMap'
 import { useI18n } from '../../i18n/I18nProvider'
+import { DraftTextField } from '../../components/DraftTextField'
 import styles from './ScreenList.module.css'
 
 export function ScreenList() {
@@ -68,30 +69,41 @@ export function ScreenList() {
       {activeScreen && (
         <div className={styles.editor}>
           <h3 className={styles.editorTitle}>{t('screens.selected')}</h3>
-          <label className={styles.label}>
-            {t('screens.name')}
-            <input
+          <div className={styles.label}>
+            <span>{t('screens.name')}</span>
+            <DraftTextField
+              key={`${activeScreen.id}:name`}
+              draftId={`screen:${activeScreen.id}:name`}
+              ariaLabel={t('screens.name')}
               className={styles.input}
               value={activeScreen.name}
-              onChange={event => dispatch({
+              onCommit={name => dispatch({
                 type: 'updateScreen',
                 screenId: activeScreen.id,
-                name: event.target.value,
-              }, 'Update screen name')}
+                name,
+              }, `Update screen name: ${activeScreen.name}`)}
             />
-          </label>
-          <label className={styles.label}>
-            {t('screens.route')}
-            <input
+          </div>
+          <div className={styles.label}>
+            <span>{t('screens.route')}</span>
+            <DraftTextField
+              key={`${activeScreen.id}:route`}
+              draftId={`screen:${activeScreen.id}:route`}
+              ariaLabel={t('screens.route')}
               className={styles.input}
               value={activeScreen.route}
-              onChange={event => dispatch({
+              validate={route => Object.values(screens).some(
+                screen => screen.id !== activeScreen.id && screen.route === route,
+              )
+                ? t('errors.screenRouteDuplicate')
+                : null}
+              onCommit={route => dispatch({
                 type: 'updateScreen',
                 screenId: activeScreen.id,
-                route: event.target.value,
-              }, 'Update screen route')}
+                route,
+              }, `Update screen route: ${activeScreen.name}`)}
             />
-          </label>
+          </div>
           <div className={styles.manageActions}>
             <button
               className={styles.deleteBtn}
