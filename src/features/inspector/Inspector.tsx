@@ -296,11 +296,7 @@ export function Inspector() {
         expanded={sectionExpanded('basic')}
         badges={sectionBadges('basic')}
         onToggle={() => toggleSection('basic')}
-      >
-        <div className={styles.settingsHeading} data-base-settings>
-          <p>{t('inspector.baseSettingsDescription')}</p>
-        </div>
-        {canCopy || canPaste || canDelete ? (
+        actions={canCopy || canPaste || canDelete ? (
           <div className={styles.componentActions}>
             {canCopy ? (
               <>
@@ -319,7 +315,9 @@ export function Inspector() {
                   className={styles.componentActionButton}
                   title={t('inspector.duplicateTitle')}
                   aria-label={t('inspector.duplicateTitle')}
+                  aria-describedby={activeChangeSet ? 'inspector-review-lock' : undefined}
                   data-component-duplicate-inspector
+                  disabled={Boolean(activeChangeSet)}
                   onClick={() => duplicateComponent(
                     comp.id,
                     t('componentMenu.duplicateHistory'),
@@ -335,7 +333,9 @@ export function Inspector() {
                 className={styles.componentActionButton}
                 title={t('inspector.pasteTitle')}
                 aria-label={t('inspector.pasteTitle')}
+                aria-describedby={activeChangeSet ? 'inspector-review-lock' : undefined}
                 data-component-paste-inspector
+                disabled={Boolean(activeChangeSet)}
                 onClick={() => pasteComponent(
                   comp.id,
                   t('componentMenu.pasteHistory'),
@@ -350,7 +350,9 @@ export function Inspector() {
                 className={`${styles.componentActionButton} ${styles.componentDeleteButton}`}
                 title={t('inspector.deleteTitle')}
                 aria-label={t('inspector.deleteTitle')}
+                aria-describedby={activeChangeSet ? 'inspector-review-lock' : undefined}
                 data-component-delete-inspector
+                disabled={Boolean(activeChangeSet)}
                 onClick={() => requestHumanDelete(
                   { type: 'removeComponent', componentId: comp.id },
                   'Delete component',
@@ -361,6 +363,10 @@ export function Inspector() {
             ) : null}
           </div>
         ) : null}
+      >
+        <div className={styles.settingsHeading} data-base-settings>
+          <p>{t('inspector.baseSettingsDescription')}</p>
+        </div>
         <div className={styles.section}>
           <label className={styles.label}>{t('inspector.description')}</label>
           <DraftTextField

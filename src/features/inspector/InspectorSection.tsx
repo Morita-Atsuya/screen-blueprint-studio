@@ -18,6 +18,7 @@ export function InspectorSection({
   expanded,
   badges = [],
   onToggle,
+  actions,
   children,
 }: {
   sectionId: string
@@ -25,6 +26,7 @@ export function InspectorSection({
   expanded: boolean
   badges?: InspectorSectionBadge[]
   onToggle(): void
+  actions?: React.ReactNode
   children: React.ReactNode
 }) {
   const contentId = useId()
@@ -97,6 +99,7 @@ export function InspectorSection({
         aria-label={title}
         hidden={!expanded}
       >
+        {actions}
         <fieldset
           className={styles.inspectorSectionFields}
           disabled={reviewLocked}

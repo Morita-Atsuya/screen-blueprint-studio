@@ -189,6 +189,23 @@ function assert(condition, message) {
 function installInteractiveDom() {
   const { document, window } = parseHTML('<html><body></body></html>')
   let activeElement = document.body
+  class TestKeyboardEvent extends window.Event {
+    constructor(type, init = {}) {
+      super(type, { bubbles: init.bubbles, cancelable: init.cancelable })
+      Object.defineProperties(
+        this,
+        Object.fromEntries(Object.entries(init).map(([key, value]) => [
+          key,
+          { configurable: true, value },
+        ])),
+      )
+    }
+  }
+  class TestResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
   Object.defineProperty(document, 'activeElement', {
     configurable: true,
     get: () => activeElement,
@@ -213,6 +230,44 @@ function installInteractiveDom() {
     this.dispatchEvent(focusIn)
   }
   window.HTMLElement.prototype.getClientRects = () => [{}]
+  window.HTMLElement.prototype.getBoundingClientRect = () => ({
+    x: 0,
+    y: 0,
+    top: 0,
+    right: 800,
+    bottom: 600,
+    left: 0,
+    width: 800,
+    height: 600,
+    toJSON: () => ({}),
+  })
+  window.HTMLElement.prototype.scrollIntoView = () => {}
+  window.HTMLElement.prototype.setPointerCapture = () => {}
+  window.HTMLElement.prototype.releasePointerCapture = () => {}
+  window.HTMLElement.prototype.hasPointerCapture = () => false
+  const getComputedStyle = () => ({
+    overflow: 'visible',
+    overflowX: 'visible',
+    overflowY: 'visible',
+    position: 'static',
+    transform: 'none',
+    transformOrigin: '0 0',
+  })
+  Object.defineProperty(window, 'getComputedStyle', {
+    configurable: true,
+    value: getComputedStyle,
+  })
+  document.elementsFromPoint = () => []
+  let selectionClearCount = 0
+  document.getSelection = () => ({
+    removeAllRanges() {
+      selectionClearCount += 1
+    },
+  })
+  Object.defineProperty(document, 'selectionClearCount', {
+    configurable: true,
+    get: () => selectionClearCount,
+  })
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: new URL('http://localhost/'),
@@ -225,6 +280,32 @@ function installInteractiveDom() {
     Element: { configurable: true, value: window.Element },
     HTMLElement: { configurable: true, value: window.HTMLElement },
     Event: { configurable: true, value: window.Event },
+    KeyboardEvent: { configurable: true, value: TestKeyboardEvent },
+    ResizeObserver: { configurable: true, value: TestResizeObserver },
+    MutationObserver: { configurable: true, value: window.MutationObserver },
+    getComputedStyle: { configurable: true, value: getComputedStyle },
+    addEventListener: {
+      configurable: true,
+      value: window.addEventListener.bind(window),
+    },
+    removeEventListener: {
+      configurable: true,
+      value: window.removeEventListener.bind(window),
+    },
+    dispatchEvent: {
+      configurable: true,
+      value: window.dispatchEvent.bind(window),
+    },
+    innerWidth: { configurable: true, value: 1280 },
+    innerHeight: { configurable: true, value: 900 },
+    CSS: {
+      configurable: true,
+      value: {
+        escape(value) {
+          return String(value).replaceAll('"', '\\"')
+        },
+      },
+    },
     requestAnimationFrame: {
       configurable: true,
       value: callback => {
@@ -4048,61 +4129,17 @@ await test('review lock blocks human document mutations and screen management re
   )
 })
 
-await test('review lock wiring covers every human mutation surface and keeps review controls visible', async () => {
+await test('review lock static coverage is limited to non-DOM draft recovery wiring', async () => {
+  // These recovery paths depend on persisted revision metadata and preview-removed entities.
+  // Interactive controls and DnD are covered by the mounted App behavior test below.
   const sources = Object.fromEntries([
     'src/app/App.tsx',
-    'src/app/EditorKeyboardShortcuts.tsx',
-    'src/app/DeleteConfirmationDialog.tsx',
-    'src/features/change-review/ChangeSetBar.tsx',
-    'src/features/change-review/DialogReviewActions.tsx',
     'src/features/screens/ScreenList.tsx',
-    'src/features/palette/Palette.tsx',
-    'src/features/component-add-menu/ComponentAddMenu.tsx',
-    'src/features/structure-tree/StructureTree.tsx',
-    'src/features/canvas/Canvas.tsx',
     'src/features/inspector/Inspector.tsx',
-    'src/features/inspector/InspectorSection.tsx',
-    'src/features/inspector/EventDialog.tsx',
-    'src/features/inspector/ApiOperationDialog.tsx',
-    'src/features/inspector/ValidationRulesDialog.tsx',
-    'src/features/canvas/StateDialog.tsx',
-    'src/dnd/EditorDndContext.tsx',
     'src/components/DraftTextField.tsx',
   ].map(path => [path, readFileSync(join(root, path), 'utf8')]))
-  const dialogPaths = [
-    'src/features/inspector/EventDialog.tsx',
-    'src/features/inspector/ApiOperationDialog.tsx',
-    'src/features/inspector/ValidationRulesDialog.tsx',
-    'src/features/canvas/StateDialog.tsx',
-  ]
   assert(
     !sources['src/app/App.tsx'].includes("key={activeChangeSet?.id ?? 'editable'}") &&
-      sources['src/app/EditorKeyboardShortcuts.tsx'].includes('state.notifyReviewLock()') &&
-      sources['src/dnd/EditorDndContext.tsx'].includes('if (state.activeChangeSet)') &&
-      sources['src/dnd/EditorDndContext.tsx'].includes("completedDrop.current = { status: 'cancelled' }") &&
-      sources['src/dnd/EditorDndContext.tsx'].includes("code: 'Escape'") &&
-      sources['src/features/screens/ScreenList.tsx'].includes('disabled={Boolean(activeChangeSet)}') &&
-      sources['src/features/palette/Palette.tsx'].includes('disabled={!activeScreenId || reviewLocked}') &&
-      sources['src/features/component-add-menu/ComponentAddMenu.tsx'].includes(
-        'const canDuplicate = canCopy && !reviewLocked',
-      ) &&
-      sources['src/features/structure-tree/StructureTree.tsx'].includes(
-        'disabled: { draggable: isIndependentRoot || reviewLocked',
-      ) &&
-      sources['src/features/canvas/Canvas.tsx'].includes(
-        'disabled: { draggable: isRoot || reviewLocked',
-      ),
-    'Canvas, Tree, Palette, menu, DnD, Screen, or shortcut review locks are incomplete',
-  )
-  assert(
-    sources['src/features/inspector/Inspector.tsx'].includes('id="inspector-review-lock"') &&
-      sources['src/features/inspector/InspectorSection.tsx'].includes('<fieldset') &&
-      sources['src/features/inspector/InspectorSection.tsx'].includes('disabled={reviewLocked}') &&
-      dialogPaths.every(path =>
-        sources[path].includes('useDialogReviewLock()') &&
-        sources[path].includes('reviewLocked || staleAfterReview') &&
-        sources[path].includes('<DialogReviewActions />')
-      ) &&
       sources['src/components/DraftTextField.tsx'].includes(
         'revision !== baselineRevision',
       ) &&
@@ -4119,26 +4156,291 @@ await test('review lock wiring covers every human mutation surface and keeps rev
       ) &&
       sources['src/features/screens/ScreenList.tsx'].includes(
         'reviewDraftDocument.screens',
-      ) &&
-      sources['src/app/DeleteConfirmationDialog.tsx'].includes(
-        'disabled={Boolean(activeChangeSet) || pendingDelete.needsReviewAcknowledgement}',
       ),
-    'Inspector, dialog draft, or pending delete review locks are incomplete',
+    'non-DOM draft recovery wiring is incomplete',
+  )
+})
+
+await test('mounted App review lock blocks mutations while preserving UI-only interaction', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  let nextAnimationFrameId = 1
+  const deferAnimationFrame = () => nextAnimationFrameId++
+  Object.defineProperties(globalThis, {
+    requestAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: deferAnimationFrame,
+    },
+    cancelAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    },
+  })
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppBundle, 'review-lock-surfaces')
+  )
+  const harness = mountReviewLockApp('en')
+  harness.prepareHistory()
+
+  const unlockedTreeHandle = document.querySelector(
+    '[data-drag-surface="tree"][data-drag-component="comp-name-input"]',
+  )
+  assert(unlockedTreeHandle && !unlockedTreeHandle.disabled, 'Tree drag did not begin unlocked')
+  harness.pointer(unlockedTreeHandle, 'pointerdown', { clientX: 400, clientY: 300 })
+  harness.pointer(
+    document,
+    'pointermove',
+    { clientX: 412, clientY: 312 },
   )
   assert(
-    sources['src/features/change-review/ChangeSetBar.tsx'].includes(
-      "t('changes.editLockedStatus')",
-    ) &&
-      sources['src/features/change-review/ChangeSetBar.tsx'].includes("role=\"status\""),
-    'review mode does not expose a visible accessible lock status beside Accept and Reject',
+    document.selectionClearCount > 0,
+    `pointer Tree DnD did not activate its sensor ` +
+      `(selection clears: ${document.selectionClearCount})`,
+  )
+
+  let reviewCancelEvents = 0
+  document.addEventListener('keydown', event => {
+    if (event.code === 'Escape') reviewCancelEvents += 1
+  })
+  harness.beginReview()
+  await Promise.resolve()
+  assert(
+    reviewCancelEvents === 1,
+    'starting a change set did not cancel in-flight pointer DnD',
+  )
+  const lockedSnapshot = harness.protectedSnapshot()
+  const expectProtected = (label, action) => {
+    action()
+    assert(
+      harness.protectedSnapshot() === lockedSnapshot,
+      `${label} changed document, base, operations, version, history, or persisted data`,
+    )
+  }
+
+  const lockStatus = [...document.querySelectorAll('[role="status"]')]
+    .find(node => node.textContent.includes('Editing is locked'))
+  assert(lockStatus, 'mounted App does not expose its review lock status')
+
+  const screensRegion = document.querySelector('[role="region"][aria-label="Screens"]')
+  const screenInputs = [...screensRegion.querySelectorAll('input')]
+  const screenButtons = [...screensRegion.querySelectorAll('button')]
+  const addScreen = screenButtons.find(button => button.textContent.includes('Add screen'))
+  const deleteScreen = screenButtons.find(button => button.textContent.includes('Delete screen'))
+  assert(
+    screenInputs.length === 2 &&
+      screenInputs.every(input => input.disabled) &&
+      addScreen?.disabled &&
+      deleteScreen?.disabled,
+    'Screen mutation controls remain enabled during review',
+  )
+  expectProtected('disabled Screen add', () => harness.click(addScreen))
+  expectProtected('disabled Screen delete', () => harness.click(deleteScreen))
+
+  const paletteButtons = [...document.querySelectorAll('[data-palette-kind]')]
+  assert(
+    paletteButtons.length > 0 && paletteButtons.every(button => button.disabled),
+    'Palette drag controls remain enabled during review',
+  )
+  expectProtected('locked Palette pointer drag', () => {
+    harness.pointer(paletteButtons[0], 'pointerdown')
+    harness.pointer(window, 'pointermove', { clientX: 160, clientY: 160 })
+    harness.pointer(window, 'pointerup', { clientX: 160, clientY: 160 })
+  })
+
+  const tree = document.querySelector('[role="tree"]')
+  const treeHandles = [...tree.querySelectorAll('[data-drag-surface="tree"]')]
+  assert(
+    treeHandles.length > 0 && treeHandles.every(button => button.disabled),
+    'Tree drag controls remain enabled during review',
+  )
+  const treeNode = tree.querySelector('[data-tree-component-id="comp-name-input"]')
+  const treeItem = treeNode.closest('[role="treeitem"]')
+  const treeMutationButtons = [...treeItem.querySelectorAll('button')]
+    .filter(button => (
+      button.getAttribute('aria-label')?.startsWith('Move') ||
+      button.getAttribute('aria-label')?.startsWith('Delete')
+    ))
+  assert(
+    treeMutationButtons.length >= 2 && treeMutationButtons.every(button => button.disabled),
+    'Tree move or delete controls remain enabled during review',
+  )
+  for (const button of treeMutationButtons) {
+    expectProtected(`locked Tree action ${button.getAttribute('aria-label')}`, () => {
+      harness.click(button)
+    })
+  }
+  expectProtected('locked Tree keyboard drag', () => {
+    harness.keyDown(treeHandles[0], ' ', { code: 'Space' })
+  })
+  assert(!document.querySelector('[data-drag-overlay]'), 'locked Tree keyboard DnD started')
+
+  const canvasComponent = document.querySelector('[data-component-id="comp-name-input"]')
+  assert(
+    canvasComponent &&
+      !canvasComponent.hasAttribute('data-canvas-draggable') &&
+      !canvasComponent.hasAttribute('data-drag-surface'),
+    'Canvas component remains draggable during review',
+  )
+  expectProtected('locked Canvas pointer drag', () => {
+    harness.pointer(canvasComponent, 'pointerdown')
+    harness.pointer(window, 'pointermove', { clientX: 180, clientY: 180 })
+    harness.pointer(window, 'pointerup', { clientX: 180, clientY: 180 })
+  })
+
+  const stateMutationButtons = [
+    document.querySelector('button[aria-label="Add state"]'),
+    document.querySelector('button[aria-label="Edit Success"]'),
+  ]
+  assert(
+    stateMutationButtons.every(button => button?.disabled),
+    'State mutation controls remain enabled during review',
+  )
+  for (const button of stateMutationButtons) {
+    expectProtected(`locked State action ${button.getAttribute('aria-label')}`, () => {
+      harness.click(button)
+    })
+  }
+  const canvasSelectionTarget = document.querySelector('[data-component-id="comp-email-input"]')
+  harness.click(canvasSelectionTarget)
+  assert(
+    harness.state().selectedComponentId === 'comp-email-input',
+    'review lock incorrectly blocked Canvas selection',
+  )
+  const rightPanelTabs = document.querySelector(
+    'aside[aria-label="Details"] [role="group"][aria-label="Details view"]',
+  )
+  harness.click(rightPanelTabs.querySelectorAll('button')[0])
+  assert(
+    harness.state().rightPanelTab === 'inspector',
+    'review lock incorrectly blocked Inspector/Changes navigation',
+  )
+  const inspector = document.querySelector('aside[aria-label="Details"]')
+  const inspectorFieldsets = [...inspector.querySelectorAll('fieldset')]
+  assert(
+    inspectorFieldsets.length > 0 &&
+      inspectorFieldsets.every(fieldset => fieldset.hasAttribute('disabled')),
+    'Inspector left a mutation fieldset enabled',
+  )
+  const inspectorCopy = inspector.querySelector('[data-component-copy-inspector]')
+  const inspectorDuplicate = inspector.querySelector('[data-component-duplicate-inspector]')
+  const inspectorDelete = inspector.querySelector('[data-component-delete-inspector]')
+  assert(
+    inspectorCopy && !inspectorCopy.hasAttribute('disabled'),
+    'Inspector disabled the non-mutating Copy action',
   )
   assert(
-    sources['src/features/change-review/DialogReviewActions.tsx'].includes(
-      'activeElement?.isConnected',
-    ) &&
-      sources['src/features/change-review/DialogReviewActions.tsx'].includes('?.focus()'),
-    'dialog review resolution does not restore focus after its active button unmounts',
+    inspectorDuplicate?.hasAttribute('disabled') &&
+      inspectorDelete?.hasAttribute('disabled'),
+    'Inspector mutation actions were not explicitly disabled',
   )
+  harness.click(inspectorCopy)
+  assert(
+    harness.state().clipboardRootComponentId === 'comp-email-input',
+    'Inspector Copy stopped working during review',
+  )
+  const inspectorPaste = inspector.querySelector('[data-component-paste-inspector]')
+  assert(
+    inspectorPaste?.hasAttribute('disabled'),
+    'Inspector Paste stayed enabled after Copy during review',
+  )
+  harness.click(inspectorDuplicate)
+  harness.click(inspectorPaste)
+  harness.click(inspectorDelete)
+
+  harness.contextMenu(treeNode)
+  const lockedMenu = document.querySelector('[data-component-add-menu]')
+  assert(
+    lockedMenu?.querySelector('[role="note"]') &&
+      lockedMenu.querySelector('[data-component-copy]') &&
+      !lockedMenu.querySelector('[data-component-duplicate]') &&
+      !lockedMenu.querySelector('[data-component-paste]') &&
+      !lockedMenu.querySelector('[data-insert-placement]'),
+    'locked context menu exposes mutation actions or hides Copy',
+  )
+  expectProtected('context menu Copy', () => {
+    harness.click(lockedMenu.querySelector('[data-component-copy]'))
+  })
+  assert(
+    harness.state().clipboardRootComponentId === 'comp-name-input',
+    'review lock incorrectly blocked context-menu Copy',
+  )
+
+  const shortcutTarget = document.querySelector('[data-hierarchy-shortcut-scope="canvas"]')
+  for (const [label, key, init] of [
+    ['Delete shortcut', 'Delete', { code: 'Delete' }],
+    ['Duplicate shortcut', 'd', { code: 'KeyD', metaKey: true }],
+    ['Paste shortcut', 'v', { code: 'KeyV', metaKey: true }],
+    ['Undo shortcut', 'z', { code: 'KeyZ', metaKey: true }],
+  ]) {
+    expectProtected(label, () => {
+      const event = harness.keyDown(shortcutTarget, key, init)
+      assert(event.defaultPrevented, `${label} was not handled as a locked mutation`)
+    })
+  }
+  assert(
+    !harness.state().pendingDelete &&
+      harness.state().toastKey === 'changes.editLocked' &&
+      harness.state().operationCount === 0 &&
+      harness.state().changeSetVersion === 0,
+    'locked shortcuts created deletion state, operations, or version changes',
+  )
+
+  const sectionTreeNode = tree.querySelector('[data-tree-component-id="comp-edit-section"]')
+  const disclosure = sectionTreeNode.closest('[role="treeitem"]').querySelector(
+    'button[aria-expanded]',
+  )
+  const expandedBefore = disclosure.getAttribute('aria-expanded')
+  harness.click(disclosure)
+  assert(
+    disclosure.getAttribute('aria-expanded') !== expandedBefore,
+    'review lock incorrectly blocked Tree collapse',
+  )
+
+  const zoomIn = document.querySelector('button[title="Zoom in"]')
+  const zoomGroup = zoomIn.closest('[role="group"]')
+  const zoomBefore = zoomGroup.textContent
+  harness.click(zoomIn)
+  assert(zoomGroup.textContent !== zoomBefore, 'review lock incorrectly blocked Canvas zoom')
+
+  harness.keyDown(shortcutTarget, ' ', { code: 'Space' })
+  const panViewport = document.querySelector('[data-pan-ready]')
+  assert(panViewport, 'review lock incorrectly blocked Space pan mode')
+  const surface = panViewport.firstElementChild
+  const transformBefore = surface.getAttribute('style')
+  harness.pointer(panViewport, 'pointerdown', { clientX: 100, clientY: 100 })
+  assert(panViewport.hasAttribute('data-panning'), 'review lock blocked Canvas pan start')
+  harness.pointer(window, 'pointermove', { clientX: 140, clientY: 135 })
+  assert(surface.getAttribute('style') !== transformBefore, 'review lock blocked Canvas pan move')
+  harness.pointer(window, 'pointerup', { clientX: 140, clientY: 135 })
+  harness.keyUp(shortcutTarget, ' ', { code: 'Space' })
+
+  const viewSwitch = document.querySelector('[data-editor-view-switch]')
+  harness.click(viewSwitch.querySelectorAll('button')[1])
+  assert(
+    document.querySelector('[data-editor-view="screen"]').hidden &&
+      !document.querySelector('[data-editor-view="flow"]').hidden,
+    'review lock incorrectly blocked Flow view switching',
+  )
+
+  const otherScreen = screenButtons.find(button => button.textContent.trim() === 'User List')
+  harness.click(otherScreen)
+  assert(
+    harness.state().activeScreenId === 'screen-list',
+    'review lock incorrectly blocked Screen selection',
+  )
+  const finalProtectedSnapshot = harness.protectedSnapshot()
+  const protectedBefore = JSON.parse(lockedSnapshot)
+  const protectedAfter = JSON.parse(finalProtectedSnapshot)
+  const changedProtectedKeys = Object.keys(protectedBefore)
+    .filter(key => JSON.stringify(protectedBefore[key]) !== JSON.stringify(protectedAfter[key]))
+  assert(
+    finalProtectedSnapshot === lockedSnapshot,
+    `UI-only review interactions changed protected document state: ${changedProtectedKeys.join(', ')}`,
+  )
+  harness.unmount()
 })
 
 await test('editor shortcuts ignore form controls and resolve standard keys', async () => {
