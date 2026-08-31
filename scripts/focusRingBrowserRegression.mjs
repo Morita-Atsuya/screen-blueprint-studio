@@ -810,10 +810,19 @@ async function run() {
           const rightPane = document.querySelector('aside[aria-label="Details"]')
           const main = leftPane.parentElement
           const headers = [...leftPane.querySelectorAll('h2 > button[aria-expanded]')]
+          const sectionBodies = headers.map(header =>
+            document.getElementById(header.getAttribute('aria-controls'))
+          )
+          const tree = leftPane.querySelector('[role="tree"]')
+          const treeBody = tree?.parentElement
+          const treeSection = treeBody?.closest('section')
           const tabs = [...rightPane.querySelectorAll('[role="group"] > button[aria-pressed]')]
           const snapshots = []
-          leftPane.style.height = '180px'
-          leftPane.style.maxHeight = '180px'
+          const productionLeftPane = {
+            height: leftPane.getBoundingClientRect().height,
+            maxHeight: getComputedStyle(leftPane).maxHeight,
+            mainHeight: main.getBoundingClientRect().height,
+          }
 
           function opaqueBackground(element) {
             for (let current = element; current; current = current.parentElement) {
@@ -877,8 +886,41 @@ async function run() {
           leftPane.scrollTop = 0
           snapshot(headers[0], 'header-0-scroll-top')
           leftPane.scrollTop = middleLeftScroll
-          snapshot(headers[1], 'header-1-scroll-middle')
           const actualMiddleLeftScroll = leftPane.scrollTop
+          headers[1].scrollIntoView({ block: 'nearest' })
+          snapshot(headers[1], 'header-1-after-middle-scroll')
+          const internalScrollOwners = [
+            ...sectionBodies,
+            treeSection,
+            treeBody,
+          ].map(element => {
+            const style = getComputedStyle(element)
+            return {
+              overflowY: style.overflowY,
+              maxHeight: style.maxHeight,
+              scrollRange: element.scrollHeight - element.clientHeight,
+            }
+          })
+          leftPane.scrollTop = 0
+          const treeItems = [...tree.querySelectorAll('[role="treeitem"]')]
+          treeItems[0]?.focus()
+          treeItems[0]?.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'End',
+            bubbles: true,
+            cancelable: true,
+          }))
+          const focusedTreeItem = document.activeElement
+          const focusedTreeRect = focusedTreeItem?.getBoundingClientRect()
+          const leftPaneRect = leftPane.getBoundingClientRect()
+          const keyboardTreeReach = {
+            focusedLastItem: focusedTreeItem === treeItems.at(-1),
+            outerScrollTop: leftPane.scrollTop,
+            visibleInOuterPane: Boolean(
+              focusedTreeRect &&
+              focusedTreeRect.top >= leftPaneRect.top - 0.5 &&
+              focusedTreeRect.bottom <= leftPaneRect.bottom + 0.5
+            ),
+          }
           rightPane.scrollIntoView({ block: 'nearest' })
           tabs.forEach((tab, index) => {
             snapshot(tab, 'tab-' + index)
@@ -919,6 +961,10 @@ async function run() {
             maxLeftScroll,
             middleLeftScroll,
             actualMiddleLeftScroll,
+            internalScrollOwners,
+            outerOverflowY: getComputedStyle(leftPane).overflowY,
+            productionLeftPane,
+            keyboardTreeReach,
             rightPaneWidth: rightPane.getBoundingClientRect().width,
             responsiveContainerWidth: rightPane.parentElement.clientWidth,
             viewportWidth: document.documentElement.clientWidth,
@@ -952,6 +998,33 @@ async function run() {
           measurement.middleLeftScroll > 0 &&
           Math.abs(measurement.actualMiddleLeftScroll - measurement.middleLeftScroll) < 1,
         `${width}px did not preserve a real middle left-pane scroll position`,
+      )
+      assert(
+        measurement.outerOverflowY === 'auto' &&
+          measurement.internalScrollOwners.length === 4 &&
+          measurement.internalScrollOwners.every(owner =>
+            owner.overflowY === 'visible' &&
+            owner.maxHeight === 'none' &&
+            owner.scrollRange <= 1
+          ),
+        `${width}px left pane retained a nested section or Tree scroll owner`,
+      )
+      assert(
+        width < 900
+          ? measurement.productionLeftPane.maxHeight === '320px' &&
+            measurement.productionLeftPane.height <= 320
+          : measurement.productionLeftPane.maxHeight === 'none' &&
+            Math.abs(
+              measurement.productionLeftPane.height -
+              measurement.productionLeftPane.mainHeight
+            ) < 1,
+        `${width}px left pane production bounds were not preserved`,
+      )
+      assert(
+        measurement.keyboardTreeReach.focusedLastItem &&
+          measurement.keyboardTreeReach.outerScrollTop > 0 &&
+          measurement.keyboardTreeReach.visibleInOuterPane,
+        `${width}px keyboard navigation did not reveal the last Tree item through outer scrolling`,
       )
       for (const control of measurement.controls) {
         assert(control.focusVisible, `${width}px ${control.label} did not match :focus-visible`)

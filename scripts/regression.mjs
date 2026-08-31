@@ -9693,6 +9693,21 @@ await test('focus indicators and compact metadata meet light-theme contrast thre
 
   const focusRule = globalStyles.match(/button:focus-visible\s*\{([^}]*)\}/)?.[1] ?? ''
   const focusRing = token('focus-ring')
+  const leftSectionBodyRule =
+    leftPaneStyles.match(/[.]sectionBody\s*\{([^}]*)\}/)?.[1] ?? ''
+  const leftTreeSectionRule =
+    leftPaneStyles.match(/[.]treeSection\s*\{([^}]*)\}/)?.[1] ?? ''
+  const leftTreeBodyRule =
+    leftPaneStyles.match(/[.]treeBody\s*\{([^}]*)\}/)?.[1] ?? ''
+  const outerLeftRule = appStyles.match(/[.]left\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert(
+    outerLeftRule.includes('overflow-y: auto') &&
+      !leftSectionBodyRule.includes('max-height') &&
+      !leftSectionBodyRule.includes('overflow') &&
+      !leftTreeSectionRule.includes('overflow') &&
+      !leftTreeBodyRule.includes('overflow'),
+    'left pane scroll ownership is not isolated to the outer aside',
+  )
   assert(
     focusRule.includes('outline: 3px solid var(--focus-ring)') &&
       focusRule.includes('outline-offset: 2px'),
