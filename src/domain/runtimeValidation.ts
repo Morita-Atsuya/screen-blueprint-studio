@@ -1,10 +1,16 @@
-import { CURRENT_SCHEMA_VERSION, COMPONENT_KINDS } from './model'
+import {
+  CURRENT_SCHEMA_VERSION,
+  COMPONENT_KINDS,
+  PLACEMENT_ANCHORS,
+  PLACEMENT_INSET_TOKENS,
+} from './model'
 import type {
   ApiOperation,
   CommonComponentSpec,
   ComponentConfig,
   ComponentKind,
   ComponentOverride,
+  ComponentPlacement,
   EventAction,
   EventTrigger,
   FieldBinding,
@@ -122,7 +128,7 @@ export function validateScreenComponent(
   const component = record(value, path)
   exactKeys(
     component,
-    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'common', 'config'],
+    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'placement', 'common', 'config'],
     [],
     path,
   )
@@ -131,8 +137,49 @@ export function validateScreenComponent(
   if (component.parentId !== null) entityId(component.parentId, `${path}.parentId`)
   entityIdArray(component.childIds, `${path}.childIds`)
   enumValue(component.kind, COMPONENT_KINDS, `${path}.kind`)
+  validateComponentPlacement(component.placement, `${path}.placement`)
   validateCommonComponentSpec(component.common, `${path}.common`)
   validateComponentConfig(component.config, component.kind, `${path}.config`)
+}
+
+export function validateComponentPlacement(
+  value: unknown,
+  path = 'component.placement',
+): asserts value is ComponentPlacement {
+  const placement = record(value, path)
+  string(placement.mode, `${path}.mode`)
+  switch (placement.mode) {
+    case 'flow':
+      exactKeys(placement, ['mode'], [], path)
+      return
+    case 'sticky':
+      exactKeys(placement, ['mode', 'edge', 'inset'], [], path)
+      enumValue(placement.edge, ['top', 'bottom'], `${path}.edge`)
+      enumValue(placement.inset, PLACEMENT_INSET_TOKENS, `${path}.inset`)
+      return
+    case 'overlay':
+    case 'viewport': {
+      exactKeys(placement, ['mode', 'anchor', 'insetX', 'insetY'], [], path)
+      enumValue(placement.anchor, PLACEMENT_ANCHORS, `${path}.anchor`)
+      enumValue(placement.insetX, PLACEMENT_INSET_TOKENS, `${path}.insetX`)
+      enumValue(placement.insetY, PLACEMENT_INSET_TOKENS, `${path}.insetY`)
+      const horizontallyCentered = placement.anchor === 'topCenter' ||
+        placement.anchor === 'center' ||
+        placement.anchor === 'bottomCenter'
+      const verticallyCentered = placement.anchor === 'centerLeft' ||
+        placement.anchor === 'center' ||
+        placement.anchor === 'centerRight'
+      if (horizontallyCentered && placement.insetX !== 'none') {
+        fail(`${path}.insetX`, 'must be none for a horizontally centered anchor')
+      }
+      if (verticallyCentered && placement.insetY !== 'none') {
+        fail(`${path}.insetY`, 'must be none for a vertically centered anchor')
+      }
+      return
+    }
+    default:
+      fail(`${path}.mode`, 'is invalid')
+  }
 }
 
 export function validateScreenState(

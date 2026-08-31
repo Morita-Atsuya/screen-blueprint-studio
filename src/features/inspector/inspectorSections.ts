@@ -11,6 +11,7 @@ export type InspectorSectionId =
   | 'basic'
   | 'content'
   | 'layout'
+  | 'placement'
   | 'behavior'
   | 'validation'
   | 'stateOverrides'
@@ -192,6 +193,7 @@ export function defaultInspectorSectionOpen(
     case 'content':
       return true
     case 'layout':
+    case 'placement':
       return false
     case 'behavior':
       return signals.hasBehavior
@@ -216,6 +218,7 @@ export function inspectorSectionChangeCounts(
     basic: 0,
     content: 0,
     layout: 0,
+    placement: 0,
     behavior: 0,
     validation: 0,
     stateOverrides: 0,
@@ -247,6 +250,7 @@ export function inspectorSectionChangeCounts(
     layoutValues(before?.config),
     layoutValues(after.config),
   )
+  empty.placement = stableValue(before?.placement) === stableValue(after.placement) ? 0 : 1
   empty.validation = stableValue(validationRules(before?.config)) ===
     stableValue(validationRules(after.config))
     ? 0

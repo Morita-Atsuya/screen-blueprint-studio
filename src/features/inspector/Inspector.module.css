@@ -206,6 +206,9 @@
 .layoutSection {
   min-width: 0;
 }
+.layoutSection[data-placement-settings] {
+  min-height: 250px;
+}
 .overrideSection {
   min-width: 0;
   padding: 8px;

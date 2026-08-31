@@ -11,7 +11,9 @@ import { useAppStore } from '../../app/appStore'
 import type {
   ComponentConfig,
   ComponentLayout,
+  ComponentPlacement,
   EntityId,
+  PlacementInset,
   ProjectDocument,
   ScreenComponent,
   ScreenState,
@@ -359,6 +361,7 @@ function CanvasFrame({
   const base = getOwnEntity(document.components, componentId)
   if (!base) return null
   const component = effectiveComponent(base, activeState)
+  const projected = collectFrameProjections(document, componentId, activeState)
   const screenName = getOwnEntity(document.screens, component.screenId)?.name
   const label = frameKind === 'page'
     ? screenName ?? t('component.page')
@@ -385,24 +388,197 @@ function CanvasFrame({
           </span>
         ) : null}
       </div>
-      <CanvasComponent
-        componentId={componentId}
-        document={document}
-        activeState={activeState}
-        selectedComponentId={selectedComponentId}
-        hoveredComponentId={hoveredComponentId}
-        onSelect={onSelect}
-        onHover={onHover}
-        locale={locale}
-        t={t}
-        viewportScale={viewportScale}
-        spacePanActive={spacePanActive}
-        consumeSuppressedClick={consumeSuppressedClick}
-        addMenu={addMenu}
-        componentStatuses={componentStatuses}
-        independentRoot
-      />
+      <div
+        className={styles.framePreviewShell}
+        data-owning-frame-id={componentId}
+        data-owning-frame-kind={frameKind}
+        data-frame-hidden={!component.common.visible || undefined}
+      >
+        <div className={styles.screenScrollport} data-frame-scrollport>
+          <CanvasComponent
+            componentId={componentId}
+            document={document}
+            activeState={activeState}
+            selectedComponentId={selectedComponentId}
+            hoveredComponentId={hoveredComponentId}
+            onSelect={onSelect}
+            onHover={onHover}
+            locale={locale}
+            t={t}
+            viewportScale={viewportScale}
+            spacePanActive={spacePanActive}
+            consumeSuppressedClick={consumeSuppressedClick}
+            addMenu={addMenu}
+            componentStatuses={componentStatuses}
+            independentRoot
+          />
+        </div>
+        <div className={`${styles.frameProjectionLayer} ${styles.stickyLayer}`} data-placement-layer="sticky">
+          {projected.sticky.map(projectedId => (
+            <ProjectedCanvasComponent
+              key={projectedId}
+              componentId={projectedId}
+              owningFrameId={componentId}
+              layer="sticky"
+              document={document}
+              activeState={activeState}
+              selectedComponentId={selectedComponentId}
+              hoveredComponentId={hoveredComponentId}
+              onSelect={onSelect}
+              onHover={onHover}
+              locale={locale}
+              t={t}
+              viewportScale={viewportScale}
+              spacePanActive={spacePanActive}
+              consumeSuppressedClick={consumeSuppressedClick}
+              addMenu={addMenu}
+              componentStatuses={componentStatuses}
+            />
+          ))}
+        </div>
+        <div className={`${styles.frameProjectionLayer} ${styles.viewportLayer}`} data-placement-layer="viewport">
+          {projected.viewport.map(projectedId => (
+            <ProjectedCanvasComponent
+              key={projectedId}
+              componentId={projectedId}
+              owningFrameId={componentId}
+              layer="viewport"
+              document={document}
+              activeState={activeState}
+              selectedComponentId={selectedComponentId}
+              hoveredComponentId={hoveredComponentId}
+              onSelect={onSelect}
+              onHover={onHover}
+              locale={locale}
+              t={t}
+              viewportScale={viewportScale}
+              spacePanActive={spacePanActive}
+              consumeSuppressedClick={consumeSuppressedClick}
+              addMenu={addMenu}
+              componentStatuses={componentStatuses}
+            />
+          ))}
+        </div>
+      </div>
     </section>
+  )
+}
+
+function collectFrameProjections(
+  document: ProjectDocument,
+  rootComponentId: EntityId,
+  activeState?: ScreenState,
+): { sticky: EntityId[]; viewport: EntityId[] } {
+  const result = { sticky: [] as EntityId[], viewport: [] as EntityId[] }
+  const visit = (componentId: EntityId, isRoot: boolean) => {
+    const base = getOwnEntity(document.components, componentId)
+    if (!base) return
+    const component = effectiveComponent(base, activeState)
+    if (!isRoot && !component.common.visible) return
+    if (!isRoot && component.placement.mode === 'sticky') result.sticky.push(component.id)
+    if (!isRoot && component.placement.mode === 'viewport') result.viewport.push(component.id)
+    component.childIds.forEach(childId => visit(childId, false))
+  }
+  visit(rootComponentId, true)
+  return result
+}
+
+type ProjectionLayer = 'sticky' | 'viewport' | 'overlay'
+type PlacementStyle = CSSProperties & {
+  '--placement-inset'?: string
+  '--placement-inset-x'?: string
+  '--placement-inset-y'?: string
+}
+
+function placementInset(token: PlacementInset): string {
+  switch (token) {
+    case 'none': return '0px'
+    case 'xs': return '4px'
+    case 'sm': return '8px'
+    case 'md': return '16px'
+    case 'lg': return '24px'
+  }
+}
+
+function owningFrameId(document: ProjectDocument, componentId: EntityId): EntityId {
+  let component = getOwnEntity(document.components, componentId)
+  const visited = new Set<EntityId>()
+  while (component?.parentId) {
+    if (visited.has(component.id)) break
+    visited.add(component.id)
+    component = getOwnEntity(document.components, component.parentId)
+  }
+  return component?.id ?? componentId
+}
+
+function projectionStyle(placement: ComponentPlacement): PlacementStyle {
+  if (placement.mode === 'sticky') {
+    return { '--placement-inset': placementInset(placement.inset) }
+  }
+  if (placement.mode === 'overlay' || placement.mode === 'viewport') {
+    return {
+      '--placement-inset-x': placementInset(placement.insetX),
+      '--placement-inset-y': placementInset(placement.insetY),
+    }
+  }
+  return {}
+}
+
+function ProjectedCanvasComponent({
+  componentId,
+  owningFrameId,
+  layer,
+  ...props
+}: Omit<CanvasComponentProps, 'independentRoot'> & {
+  owningFrameId: EntityId
+  layer: ProjectionLayer
+}) {
+  const component = getOwnEntity(props.document.components, componentId)
+  const placement = component?.placement
+  if (!component || !placement || placement.mode === 'flow') return null
+  const parent = component.parentId
+    ? getOwnEntity(props.document.components, component.parentId)
+    : undefined
+  const effectiveParent = parent ? effectiveComponent(parent, props.activeState) : undefined
+  const parentLayout = effectiveParent && hasLayout(effectiveParent.config)
+    ? effectiveParent.config
+    : undefined
+  const orientation = parentLayout?.layout === 'horizontal'
+    ? 'horizontal'
+    : parentLayout?.layout === 'grid'
+      ? 'grid'
+      : 'vertical'
+  const position = parent?.childIds.indexOf(component.id) ?? -1
+  const parentLabel = effectiveParent
+    ? getComponentDisplayLabel(effectiveParent, props.locale)
+    : ''
+  return (
+    <div
+      className={styles.projectionItem}
+      style={projectionStyle(placement)}
+      data-placement-projection={layer}
+      data-placement-anchor={
+        placement.mode === 'overlay' || placement.mode === 'viewport'
+          ? placement.anchor
+          : undefined
+      }
+      data-placement-edge={placement.mode === 'sticky' ? placement.edge : undefined}
+      data-owning-frame-id={owningFrameId}
+    >
+      {parent && position >= 0 ? (
+        <ComponentDropZone
+          surface="canvas"
+          parentId={parent.id}
+          screenId={component.screenId}
+          position={position}
+          orientation={orientation}
+          label={position === 0
+            ? props.t('dnd.first', { label: parentLabel })
+            : props.t('dnd.position', { position: position + 1 })}
+        />
+      ) : null}
+      <CanvasComponent componentId={componentId} {...props} />
+    </div>
   )
 }
 
@@ -462,6 +638,10 @@ function CanvasComponent({
   const isHovered = hoveredComponentId === component.id
   const canDrag = !isRoot && !reviewLocked && !spacePanActive
   const isContainer = CONTAINER_KINDS.includes(component.kind)
+  const flowChildIds = component.childIds.filter(childId =>
+    getOwnEntity(document.components, childId)?.placement.mode === 'flow')
+  const overlayChildIds = component.childIds.filter(childId =>
+    getOwnEntity(document.components, childId)?.placement.mode === 'overlay')
   const layout = hasLayout(component.config) ? component.config : null
   const dropOrientation = layout?.layout === 'horizontal'
     ? 'horizontal'
@@ -501,7 +681,7 @@ function CanvasComponent({
         isDragging && canDrag ? styles.dragging : '',
         component.kind === 'button' ? styles.buttonComponent : '',
         component.kind === 'container' ? styles.containerComponent : '',
-        component.kind === 'container' && component.childIds.length === 0
+        component.kind === 'container' && flowChildIds.length === 0
           ? styles.emptyContainer
           : '',
         independentRoot && !component.common.visible ? styles.rootStateHidden : '',
@@ -516,9 +696,11 @@ function CanvasComponent({
       onClick={event => {
         event.stopPropagation()
         if (consumeSuppressedClick()) return
-        event.currentTarget
-          .closest<HTMLElement>('[data-hierarchy-shortcut-scope="canvas"]')
-          ?.focus({ preventScroll: true })
+        if (!(event.target as HTMLElement).closest('a')) {
+          event.currentTarget
+            .closest<HTMLElement>('[data-hierarchy-shortcut-scope="canvas"]')
+            ?.focus({ preventScroll: true })
+        }
         onSelect(component.id)
       }}
       onContextMenu={event => {
@@ -552,6 +734,7 @@ function CanvasComponent({
       data-drag-surface={canDrag ? 'canvas' : undefined}
       data-drag-component={canDrag ? component.id : undefined}
       data-component-change={changeStatus}
+      data-placement-mode={component.placement.mode}
       data-container-component={component.kind === 'container' || undefined}
       data-container-empty={
         component.kind === 'container' && component.childIds.length === 0 || undefined
@@ -586,9 +769,14 @@ function CanvasComponent({
             ].join(' ')}
             style={childrenStyle}
             data-layout={layout?.layout}
+            onWheel={layout?.layout === 'horizontal' ? event => {
+              const delta = event.deltaX || (event.shiftKey ? event.deltaY : 0)
+              if (delta === 0) return
+              event.currentTarget.scrollLeft += delta
+            } : undefined}
           >
-            {component.childIds.map((childId, index) => (
-              <div key={childId} className={styles.childSlot}>
+            {component.childIds.map((childId, index) => {
+              const dropZone = (
                 <ComponentDropZone
                   surface="canvas"
                   parentId={component.id}
@@ -599,24 +787,32 @@ function CanvasComponent({
                     ? t('dnd.first', { label: displayName })
                     : t('dnd.position', { position: index + 1 })}
                 />
-                <CanvasComponent
-                  componentId={childId}
-                  document={document}
-                  activeState={activeState}
-                  selectedComponentId={selectedComponentId}
-                  hoveredComponentId={hoveredComponentId}
-                  onSelect={onSelect}
-                  onHover={onHover}
-                  locale={locale}
-                  t={t}
-                  viewportScale={viewportScale}
-                  spacePanActive={spacePanActive}
-                  consumeSuppressedClick={consumeSuppressedClick}
-                  addMenu={addMenu}
-                  componentStatuses={componentStatuses}
-                />
-              </div>
-            ))}
+              )
+              if (getOwnEntity(document.components, childId)?.placement.mode !== 'flow') {
+                return null
+              }
+              return (
+                <div className={styles.childSlot} key={childId}>
+                  {dropZone}
+                  <CanvasComponent
+                    componentId={childId}
+                    document={document}
+                    activeState={activeState}
+                    selectedComponentId={selectedComponentId}
+                    hoveredComponentId={hoveredComponentId}
+                    onSelect={onSelect}
+                    onHover={onHover}
+                    locale={locale}
+                    t={t}
+                    viewportScale={viewportScale}
+                    spacePanActive={spacePanActive}
+                    consumeSuppressedClick={consumeSuppressedClick}
+                    addMenu={addMenu}
+                    componentStatuses={componentStatuses}
+                  />
+                </div>
+              )
+            })}
             <ComponentDropZone
               surface="canvas"
               parentId={component.id}
@@ -629,6 +825,31 @@ function CanvasComponent({
           </div>
         </SortableContext>
       )}
+      {isContainer && overlayChildIds.length > 0 ? (
+        <div className={styles.overlayLayer} data-placement-layer="overlay">
+          {overlayChildIds.map(childId => (
+            <ProjectedCanvasComponent
+              key={childId}
+              componentId={childId}
+              owningFrameId={owningFrameId(document, component.id)}
+              layer="overlay"
+              document={document}
+              activeState={activeState}
+              selectedComponentId={selectedComponentId}
+              hoveredComponentId={hoveredComponentId}
+              onSelect={onSelect}
+              onHover={onHover}
+              locale={locale}
+              t={t}
+              viewportScale={viewportScale}
+              spacePanActive={spacePanActive}
+              consumeSuppressedClick={consumeSuppressedClick}
+              addMenu={addMenu}
+              componentStatuses={componentStatuses}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

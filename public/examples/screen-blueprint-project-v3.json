@@ -20,6 +20,7 @@
           "parentId": null,
           "childIds": ["header-title"],
           "kind": "container",
+          "placement": { "mode": "flow" },
           "common": {
             "description": "Header layout",
             "visible": true,
@@ -41,6 +42,7 @@
           "parentId": "header-root",
           "childIds": [],
           "kind": "text",
+          "placement": { "mode": "flow" },
           "common": {
             "description": "Product title",
             "visible": true,
@@ -101,6 +103,14 @@
               "config": {
                 "gap": "sm"
               }
+            },
+            "header-title": {
+              "placement": {
+                "mode": "overlay",
+                "anchor": "topLeft",
+                "insetX": "sm",
+                "insetY": "sm"
+              }
             }
           }
         }
@@ -128,6 +138,7 @@
       "parentId": null,
       "childIds": ["shared-header", "product-image", "documentation-link"],
       "kind": "page",
+      "placement": { "mode": "flow" },
       "common": {
         "description": "Home page",
         "visible": true,
@@ -149,6 +160,11 @@
       "screenId": "home",
       "parentId": "home-page",
       "childIds": [],
+      "placement": {
+        "mode": "sticky",
+        "edge": "top",
+        "inset": "sm"
+      },
       "source": {
         "$ref": "#/componentDefinitions/shared~1header"
       },
@@ -164,6 +180,7 @@
       "parentId": "home-page",
       "childIds": [],
       "kind": "image",
+      "placement": { "mode": "flow" },
       "common": {
         "description": "Product workflow illustration",
         "visible": true,
@@ -185,6 +202,12 @@
       "parentId": "home-page",
       "childIds": [],
       "kind": "link",
+      "placement": {
+        "mode": "viewport",
+        "anchor": "bottomRight",
+        "insetX": "md",
+        "insetY": "md"
+      },
       "common": {
         "description": "Product documentation",
         "visible": true,

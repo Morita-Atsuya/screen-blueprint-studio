@@ -7,6 +7,7 @@ import type {
   ApiOperation,
   ComponentConfig,
   ComponentOverride,
+  ComponentPlacement,
   EventAction,
   EventTrigger,
   FieldBinding,
@@ -60,6 +61,10 @@ export function cloneValidationRule(rule: ValidationRule): ValidationRule {
   return { ...rule }
 }
 
+export function cloneComponentPlacement(placement: ComponentPlacement): ComponentPlacement {
+  return { ...placement }
+}
+
 export function cloneComponentConfig(config: ComponentConfig): ComponentConfig {
   switch (config.kind) {
     case 'textInput':
@@ -71,6 +76,7 @@ export function cloneComponentConfig(config: ComponentConfig): ComponentConfig {
           'component config validationRules',
         ),
       }
+
     case 'select':
       return {
         ...config,
@@ -166,6 +172,7 @@ export function cloneScreenComponent(component: ScreenComponent): ScreenComponen
   return {
     ...component,
     childIds: cloneArray(component.childIds, value => value, 'component childIds'),
+    placement: cloneComponentPlacement(component.placement),
     common: { ...component.common },
     config: cloneComponentConfig(component.config),
   }
@@ -279,7 +286,11 @@ export function cloneDomainCommand(command: DomainCommand): DomainCommand {
     case 'removeApiOperation':
       return { ...command }
     case 'addComponent':
-      return { ...command, config: cloneComponentConfig(command.config) }
+      return {
+        ...command,
+        placement: cloneComponentPlacement(command.placement),
+        config: cloneComponentConfig(command.config),
+      }
     case 'duplicateComponent':
       return {
         ...command,
@@ -309,6 +320,9 @@ export function cloneDomainCommand(command: DomainCommand): DomainCommand {
             : {}),
           ...(command.patch.config
             ? { config: cloneComponentConfigPatch(command.patch.config) }
+            : {}),
+          ...(command.patch.placement
+            ? { placement: cloneComponentPlacement(command.patch.placement) }
             : {}),
         },
       }

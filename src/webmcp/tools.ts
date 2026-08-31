@@ -6,6 +6,7 @@ import type {
   ComponentConfig,
   ComponentKind,
   ComponentOverride,
+  ComponentPlacement,
   EventAction,
   EventTrigger,
   FieldBinding,
@@ -21,6 +22,7 @@ import type { ChangeSet } from '../domain/collaboration'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
+  componentPlacementSchema,
   componentOverridesSchema,
 } from './schemas'
 
@@ -577,10 +579,11 @@ const changeComponentStructure: ToolDefinition = {
           screenId: { type: 'string', minLength: 1 },
           parentId: { type: 'string', minLength: 1 },
           kind: { type: 'string', enum: CHILD_COMPONENT_KINDS },
+          placement: componentPlacementSchema,
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'config'],
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'config'],
         ...CLOSED_OBJECT,
       },
       {
@@ -591,10 +594,16 @@ const changeComponentStructure: ToolDefinition = {
           screenId: { type: 'string', minLength: 1 },
           parentId: { type: 'null' },
           kind: { const: 'modal' },
+          placement: {
+            type: 'object',
+            properties: { mode: { const: 'flow' } },
+            required: ['mode'],
+            ...CLOSED_OBJECT,
+          },
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'config'],
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'config'],
         ...CLOSED_OBJECT,
       },
       {
@@ -644,6 +653,7 @@ const changeComponentStructure: ToolDefinition = {
           'screenId',
           'parentId',
           'kind',
+          'placement',
           'config',
           'position',
         ], 'change_component_structure add input')
@@ -654,6 +664,7 @@ const changeComponentStructure: ToolDefinition = {
           screenId: requiredString(input, 'screenId'),
           parentId: requiredNullableString(input, 'parentId'),
           kind: requiredString(input, 'kind') as ComponentKind,
+          placement: requiredRecord(input, 'placement') as ComponentPlacement,
           config,
           position: typeof input.position === 'number' ? input.position : undefined,
         }
@@ -731,6 +742,7 @@ const updateComponentSpec: ToolDefinition = {
             ...CLOSED_OBJECT,
           },
           config: componentConfigPatchSchema,
+          placement: componentPlacementSchema,
         },
         minProperties: 1,
         ...CLOSED_OBJECT,
@@ -749,10 +761,11 @@ const updateComponentSpec: ToolDefinition = {
         'patch',
       ], 'update_component_spec input')
       const patchInput = requiredRecord(input, 'patch')
-      requireExactKeys(patchInput, ['common', 'config'], 'update_component_spec patch')
+      requireExactKeys(patchInput, ['common', 'config', 'placement'], 'update_component_spec patch')
       const patch: {
         common?: Partial<CommonComponentSpec>
         config?: Partial<ComponentConfig>
+        placement?: ComponentPlacement
       } = {}
       if (patchInput.common !== undefined) {
         if (!isRecord(patchInput.common)) {
@@ -765,6 +778,12 @@ const updateComponentSpec: ToolDefinition = {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.config must be an object')
         }
         patch.config = patchInput.config
+      }
+      if (patchInput.placement !== undefined) {
+        if (!isRecord(patchInput.placement)) {
+          throw new DomainError('INVARIANT_VIOLATION', 'patch.placement must be an object')
+        }
+        patch.placement = patchInput.placement as ComponentPlacement
       }
       return appendCommand(input, {
         type: 'updateComponentSpec',

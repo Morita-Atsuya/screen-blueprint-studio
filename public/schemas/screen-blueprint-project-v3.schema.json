@@ -172,6 +172,71 @@
         "enabled": { "type": "boolean" }
       }
     },
+    "flowPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": { "mode": { "const": "flow" } }
+    },
+    "componentPlacement": {
+      "description": "Portable placement. Insets are non-negative distances inward from aligned edges; centered axes require none.",
+      "oneOf": [
+        { "$ref": "#/$defs/flowPlacement" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "edge", "inset"],
+          "properties": {
+            "mode": { "const": "sticky" },
+            "edge": { "enum": ["top", "bottom"] },
+            "inset": { "enum": ["none", "xs", "sm", "md", "lg"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "anchor", "insetX", "insetY"],
+          "properties": {
+            "mode": { "enum": ["overlay", "viewport"] },
+            "anchor": {
+              "enum": [
+                "topLeft",
+                "topCenter",
+                "topRight",
+                "centerLeft",
+                "center",
+                "centerRight",
+                "bottomLeft",
+                "bottomCenter",
+                "bottomRight"
+              ]
+            },
+            "insetX": { "enum": ["none", "xs", "sm", "md", "lg"] },
+            "insetY": { "enum": ["none", "xs", "sm", "md", "lg"] }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": ["anchor"],
+                "properties": {
+                  "anchor": { "enum": ["topCenter", "center", "bottomCenter"] }
+                }
+              },
+              "then": { "properties": { "insetX": { "const": "none" } } }
+            },
+            {
+              "if": {
+                "required": ["anchor"],
+                "properties": {
+                  "anchor": { "enum": ["centerLeft", "center", "centerRight"] }
+                }
+              },
+              "then": { "properties": { "insetY": { "const": "none" } } }
+            }
+          ]
+        }
+      ]
+    },
     "validationRule": {
       "oneOf": [
         {
@@ -463,6 +528,7 @@
         "parentId",
         "childIds",
         "kind",
+        "placement",
         "common",
         "config"
       ],
@@ -475,10 +541,24 @@
         "kind": {
           "enum": ["page", "container", "text", "textInput", "select", "button", "image", "link", "modal"]
         },
+        "placement": { "$ref": "#/$defs/componentPlacement" },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
       },
-      "allOf": [{ "$ref": "#/$defs/kindMatchesConfig" }]
+      "allOf": [
+        { "$ref": "#/$defs/kindMatchesConfig" },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "enum": ["page", "modal"] } }
+          },
+          "then": {
+            "properties": {
+              "placement": { "$ref": "#/$defs/flowPlacement" }
+            }
+          }
+        }
+      ]
     },
     "definitionInstanceScreenNode": {
       "type": "object",
@@ -491,7 +571,8 @@
         "childIds",
         "source",
         "variantId",
-        "props"
+        "props",
+        "placement"
       ],
       "properties": {
         "nodeType": { "const": "definitionInstance" },
@@ -499,6 +580,7 @@
         "screenId": { "$ref": "#/$defs/entityId" },
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "type": "array", "maxItems": 0 },
+        "placement": { "$ref": "#/$defs/componentPlacement" },
         "source": { "$ref": "#/$defs/definitionSource" },
         "variantId": { "$ref": "#/$defs/nullableEntityId" },
         "props": { "$ref": "#/$defs/props" }
@@ -518,7 +600,7 @@
     "inlineDefinitionNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["nodeType", "id", "parentId", "childIds", "kind", "common", "config"],
+      "required": ["nodeType", "id", "parentId", "childIds", "kind", "placement", "common", "config"],
       "properties": {
         "nodeType": { "const": "inline" },
         "id": { "$ref": "#/$defs/entityId" },
@@ -527,20 +609,35 @@
         "kind": {
           "enum": ["page", "container", "text", "textInput", "select", "button", "image", "link", "modal"]
         },
+        "placement": { "$ref": "#/$defs/componentPlacement" },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
       },
-      "allOf": [{ "$ref": "#/$defs/kindMatchesConfig" }]
+      "allOf": [
+        { "$ref": "#/$defs/kindMatchesConfig" },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "enum": ["page", "modal"] } }
+          },
+          "then": {
+            "properties": {
+              "placement": { "$ref": "#/$defs/flowPlacement" }
+            }
+          }
+        }
+      ]
     },
     "nestedDefinitionInstanceNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["nodeType", "id", "parentId", "childIds", "source", "variantId", "props"],
+      "required": ["nodeType", "id", "parentId", "childIds", "source", "variantId", "props", "placement"],
       "properties": {
         "nodeType": { "const": "definitionInstance" },
         "id": { "$ref": "#/$defs/entityId" },
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "type": "array", "maxItems": 0 },
+        "placement": { "$ref": "#/$defs/componentPlacement" },
         "source": { "$ref": "#/$defs/definitionSource" },
         "variantId": { "$ref": "#/$defs/nullableEntityId" },
         "props": { "$ref": "#/$defs/props" }
@@ -588,7 +685,12 @@
             "config.destination.url",
             "config.destination.resourceId",
             "config.destination.displayName",
-            "config.openMode"
+            "config.openMode",
+            "placement.edge",
+            "placement.anchor",
+            "placement.inset",
+            "placement.insetX",
+            "placement.insetY"
           ]
         }
       }
@@ -739,7 +841,8 @@
       "minProperties": 1,
       "properties": {
         "common": { "$ref": "#/$defs/variantCommonOverride" },
-        "config": { "$ref": "#/$defs/variantConfigOverride" }
+        "config": { "$ref": "#/$defs/variantConfigOverride" },
+        "placement": { "$ref": "#/$defs/componentPlacement" }
       }
     },
     "componentVariant": {

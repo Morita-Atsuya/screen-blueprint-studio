@@ -17,6 +17,7 @@ import {
   type ComponentChangeStatus,
 } from '../../domain/changeSetComponentChanges'
 import { useI18n } from '../../i18n/I18nProvider'
+import type { MessageKey } from '../../i18n/messages'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import {
@@ -503,7 +504,8 @@ function TreeNode({
   const isHidden = !component.common.visible
   const isDisabled = !component.common.enabled
   const hasOverride = effectiveState?.hasOverride ?? false
-  const hasStateStatus = isHidden || isDisabled || hasOverride
+  const hasPlacement = component.placement.mode !== 'flow'
+  const hasStateStatus = isHidden || isDisabled || hasOverride || hasPlacement
   const changeStatus = componentStatuses?.get(component.id)
   const disclosureLabel = hasChildren
     ? t(isCollapsed ? 'tree.disclosureExpand' : 'tree.disclosureCollapse', { label: spokenLabel })
@@ -634,6 +636,15 @@ function TreeNode({
                   label={spokenLabel}
                   onActivate={() => onSelect(component.id)}
                 />
+              ) : null}
+              {hasPlacement ? (
+                <span
+                  className={styles.stateBadge}
+                  data-placement-badge={component.placement.mode}
+                  title={t(`tree.placement.${component.placement.mode}` as MessageKey)}
+                >
+                  {t(`tree.placement.${component.placement.mode}` as MessageKey)}
+                </span>
               ) : null}
               {isHidden ? (
                 <span

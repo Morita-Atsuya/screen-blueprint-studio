@@ -30,6 +30,73 @@ const layoutProperties = {
 } as const
 
 const layoutRequired = ['layout', 'gap', 'columns', 'justify', 'align', 'wrap'] as const
+const placementInset = { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg'] } as const
+const placementAnchor = {
+  type: 'string',
+  enum: [
+    'topLeft',
+    'topCenter',
+    'topRight',
+    'centerLeft',
+    'center',
+    'centerRight',
+    'bottomLeft',
+    'bottomCenter',
+    'bottomRight',
+  ],
+} as const
+
+export const componentPlacementSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: { mode: { const: 'flow' } },
+      required: ['mode'],
+      ...closed,
+    },
+    {
+      type: 'object',
+      properties: {
+        mode: { const: 'sticky' },
+        edge: { type: 'string', enum: ['top', 'bottom'] },
+        inset: placementInset,
+      },
+      required: ['mode', 'edge', 'inset'],
+      ...closed,
+    },
+    ...(['overlay', 'viewport'] as const).map(mode => ({
+      type: 'object',
+      properties: {
+        mode: { const: mode },
+        anchor: placementAnchor,
+        insetX: placementInset,
+        insetY: placementInset,
+      },
+      required: ['mode', 'anchor', 'insetX', 'insetY'],
+      allOf: [
+        {
+          if: {
+            properties: {
+              anchor: { enum: ['topCenter', 'center', 'bottomCenter'] },
+            },
+            required: ['anchor'],
+          },
+          then: { properties: { insetX: { const: 'none' } } },
+        },
+        {
+          if: {
+            properties: {
+              anchor: { enum: ['centerLeft', 'center', 'centerRight'] },
+            },
+            required: ['anchor'],
+          },
+          then: { properties: { insetY: { const: 'none' } } },
+        },
+      ],
+      ...closed,
+    })),
+  ],
+} as const
 
 const validationRuleSchema = {
   oneOf: [

@@ -1,6 +1,10 @@
 import type { EntityId, ProjectDocument } from './model'
 import { assertNever } from './assertNever'
-import { CONTAINER_KINDS, DEFAULT_COMPONENT_LAYOUT } from './model'
+import {
+  CONTAINER_KINDS,
+  DEFAULT_COMPONENT_LAYOUT,
+  DEFAULT_COMPONENT_PLACEMENT,
+} from './model'
 import type { ComponentConfig } from './model'
 import type { ComponentSubtreeSnapshot, DomainCommand } from './commands'
 import { DomainError } from './errors'
@@ -407,6 +411,7 @@ export function applyCommandWithoutRevision(
         parentId: null,
         childIds: [],
         kind: 'page',
+        placement: DEFAULT_COMPONENT_PLACEMENT,
         common: { description: '', visible: true, enabled: true },
         config: { kind: 'page', ...DEFAULT_COMPONENT_LAYOUT },
       })
@@ -488,10 +493,10 @@ export function applyCommandWithoutRevision(
     case 'addComponent': {
       requireExactKeys(
         command,
-        ['type', 'componentId', 'screenId', 'parentId', 'kind', 'config', 'position'],
+        ['type', 'componentId', 'screenId', 'parentId', 'kind', 'placement', 'config', 'position'],
         'addComponent command',
       )
-      const { componentId, screenId, parentId, kind, config, position } = command
+      const { componentId, screenId, parentId, kind, config, position, placement: componentPlacement } = command
       if (hasOwnEntity(next.components, componentId)) {
         throw new DomainError('INVARIANT_VIOLATION', `Component ${componentId} already exists`)
       }
@@ -506,6 +511,7 @@ export function applyCommandWithoutRevision(
         parentId,
         childIds: [],
         kind,
+        placement: componentPlacement,
         common: { description: '', visible: true, enabled: true },
         config,
       })
@@ -671,7 +677,7 @@ export function applyCommandWithoutRevision(
 
     case 'updateComponentSpec': {
       requireExactKeys(command, ['type', 'componentId', 'patch'], 'updateComponentSpec command')
-      requireExactKeys(command.patch, ['common', 'config'], 'updateComponentSpec patch')
+      requireExactKeys(command.patch, ['common', 'config', 'placement'], 'updateComponentSpec patch')
       if (Object.keys(command.patch).length === 0) {
         throw new DomainError('INVARIANT_VIOLATION', 'updateComponentSpec patch must not be empty')
       }
@@ -680,6 +686,15 @@ export function applyCommandWithoutRevision(
       const { patch } = command
       if (patch.common) comp.common = { ...comp.common, ...patch.common }
       if (patch.config) comp.config = { ...comp.config, ...patch.config } as typeof comp.config
+      if (patch.placement) {
+        if (comp.parentId === null && patch.placement.mode !== 'flow') {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            'Independent root placement must remain flow',
+          )
+        }
+        comp.placement = patch.placement
+      }
       break
     }
 

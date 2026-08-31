@@ -6,6 +6,9 @@ import { getOwnEntity } from '../../domain/entityMap'
 import type {
   ComponentLayout,
   ComponentOverride,
+  ComponentPlacement,
+  PlacementAnchor,
+  PlacementInset,
   ScreenComponent,
   ScreenState,
 } from '../../domain/model'
@@ -225,6 +228,13 @@ export function Inspector() {
     return dispatch(
       { type: 'updateComponentSpec', componentId: comp!.id, patch: { common: partial } },
       `Update ${comp!.kind} ${field}: ${comp!.id}`,
+    )
+  }
+
+  function updatePlacement(placement: ComponentPlacement): boolean {
+    return dispatch(
+      { type: 'updateComponentSpec', componentId: comp!.id, patch: { placement } },
+      `Update ${comp!.kind} placement: ${comp!.id}`,
     )
   }
 
@@ -701,6 +711,17 @@ export function Inspector() {
           <LayoutFields layout={cfg} onUpdate={updateConfig} />
         </InspectorSection>
       ) : null}
+      {comp.parentId !== null ? (
+        <InspectorSection
+          sectionId="placement"
+          title={t('inspector.sectionPlacement')}
+          expanded={sectionExpanded('placement')}
+          badges={sectionBadges('placement')}
+          onToggle={() => toggleSection('placement')}
+        >
+          <PlacementFields placement={comp.placement} onUpdate={updatePlacement} />
+        </InspectorSection>
+      ) : null}
       {hasBehaviorSection && behavior && eventEditor && apiEditor ? (
         <InspectorSection
           sectionId="behavior"
@@ -750,6 +771,166 @@ export function Inspector() {
         />
       </InspectorSection>
     </div>
+  )
+}
+
+const PLACEMENT_INSET_OPTIONS: readonly PlacementInset[] = ['none', 'xs', 'sm', 'md', 'lg']
+const PLACEMENT_ANCHOR_OPTIONS: readonly PlacementAnchor[] = [
+  'topLeft',
+  'topCenter',
+  'topRight',
+  'centerLeft',
+  'center',
+  'centerRight',
+  'bottomLeft',
+  'bottomCenter',
+  'bottomRight',
+]
+
+function defaultPlacement(mode: ComponentPlacement['mode']): ComponentPlacement {
+  switch (mode) {
+    case 'flow':
+      return { mode }
+    case 'sticky':
+      return { mode, edge: 'top', inset: 'none' }
+    case 'overlay':
+    case 'viewport':
+      return { mode, anchor: 'topLeft', insetX: 'none', insetY: 'none' }
+  }
+}
+
+function isHorizontalCenter(anchor: PlacementAnchor): boolean {
+  return anchor === 'topCenter' || anchor === 'center' || anchor === 'bottomCenter'
+}
+
+function isVerticalCenter(anchor: PlacementAnchor): boolean {
+  return anchor === 'centerLeft' || anchor === 'center' || anchor === 'centerRight'
+}
+
+function PlacementFields({
+  placement,
+  onUpdate,
+}: {
+  placement: ComponentPlacement
+  onUpdate(placement: ComponentPlacement): void
+}) {
+  const { t } = useI18n()
+  const updateAnchor = (anchor: PlacementAnchor) => {
+    if (placement.mode !== 'overlay' && placement.mode !== 'viewport') return
+    onUpdate({
+      ...placement,
+      anchor,
+      insetX: isHorizontalCenter(anchor) ? 'none' : placement.insetX,
+      insetY: isVerticalCenter(anchor) ? 'none' : placement.insetY,
+    })
+  }
+  return (
+    <div className={styles.layoutSection} data-placement-settings>
+      <div className={styles.settingsHeading}>
+        <p>{t('inspector.placementHelp')}</p>
+      </div>
+      <Field label={t('inspector.placementMode')}>{controlId => (
+        <select
+          id={controlId}
+          className={styles.input}
+          value={placement.mode}
+          onChange={event =>
+            onUpdate(defaultPlacement(event.target.value as ComponentPlacement['mode']))}
+        >
+          <option value="flow">{t('inspector.placementFlow')}</option>
+          <option value="sticky">{t('inspector.placementSticky')}</option>
+          <option value="overlay">{t('inspector.placementOverlay')}</option>
+          <option value="viewport">{t('inspector.placementViewport')}</option>
+        </select>
+      )}</Field>
+      {placement.mode === 'sticky' ? (
+        <>
+          <Field label={t('inspector.placementEdge')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={placement.edge}
+              onChange={event => onUpdate({
+                ...placement,
+                edge: event.target.value as 'top' | 'bottom',
+              })}
+            >
+              <option value="top">{t('inspector.placementTop')}</option>
+              <option value="bottom">{t('inspector.placementBottom')}</option>
+            </select>
+          )}</Field>
+          <InsetField
+            label={t('inspector.placementInset')}
+            value={placement.inset}
+            onChange={inset => onUpdate({ ...placement, inset })}
+          />
+          <div className={styles.settingsHeading}>
+            <p>{t('inspector.placementStickyHelp')}</p>
+          </div>
+        </>
+      ) : null}
+      {placement.mode === 'overlay' || placement.mode === 'viewport' ? (
+        <>
+          <Field label={t('inspector.placementAnchor')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={placement.anchor}
+              onChange={event => updateAnchor(event.target.value as PlacementAnchor)}
+            >
+              {PLACEMENT_ANCHOR_OPTIONS.map(anchor => (
+                <option key={anchor} value={anchor}>
+                  {t(`inspector.placementAnchor.${anchor}` as MessageKey)}
+                </option>
+              ))}
+            </select>
+          )}</Field>
+          <InsetField
+            label={t('inspector.placementInsetX')}
+            value={placement.insetX}
+            disabled={isHorizontalCenter(placement.anchor)}
+            onChange={insetX => onUpdate({ ...placement, insetX })}
+          />
+          <InsetField
+            label={t('inspector.placementInsetY')}
+            value={placement.insetY}
+            disabled={isVerticalCenter(placement.anchor)}
+            onChange={insetY => onUpdate({ ...placement, insetY })}
+          />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function InsetField({
+  label,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  value: PlacementInset
+  disabled?: boolean
+  onChange(value: PlacementInset): void
+}) {
+  const { t } = useI18n()
+  return (
+    <Field label={label}>{controlId => (
+      <select
+        id={controlId}
+        className={styles.input}
+        value={value}
+        disabled={disabled}
+        onChange={event => onChange(event.target.value as PlacementInset)}
+      >
+        {PLACEMENT_INSET_OPTIONS.map(token => (
+          <option key={token} value={token}>
+            {t(`inspector.placementInset.${token}` as MessageKey)}
+          </option>
+        ))}
+      </select>
+    )}</Field>
   )
 }
 

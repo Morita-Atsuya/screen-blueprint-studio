@@ -6,7 +6,11 @@ import type {
   PaletteComponentKind,
   ProjectDocument,
 } from '../../domain/model'
-import { DEFAULT_COMPONENT_LAYOUT, PALETTE_COMPONENT_KINDS } from '../../domain/model'
+import {
+  DEFAULT_COMPONENT_LAYOUT,
+  DEFAULT_COMPONENT_PLACEMENT,
+  PALETTE_COMPONENT_KINDS,
+} from '../../domain/model'
 import type { Locale } from '../../i18n/messages'
 import { translate } from '../../i18n/messages'
 import { assertNever } from '../../domain/assertNever'
@@ -111,6 +115,7 @@ export function createAddComponentCommand(
     screenId,
     parentId,
     kind,
+    placement: DEFAULT_COMPONENT_PLACEMENT,
     config: createDefaultComponentConfig(kind, doc, locale),
     position,
   }

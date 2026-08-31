@@ -4,6 +4,7 @@ import type {
   ComponentConfig,
   CommonComponentSpec,
   ComponentOverride,
+  ComponentPlacement,
   EventTrigger,
   EventAction,
   HttpMethod,
@@ -69,6 +70,7 @@ export interface AddComponentCommand {
   screenId: EntityId
   parentId: EntityId | null
   kind: ComponentKind
+  placement: ComponentPlacement
   config: ComponentConfig
   position?: number
 }
@@ -115,6 +117,7 @@ export interface UpdateComponentSpecCommand {
   patch: {
     common?: Partial<CommonComponentSpec>
     config?: Partial<ComponentConfig>
+    placement?: ComponentPlacement
   }
 }
 

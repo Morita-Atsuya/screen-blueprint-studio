@@ -118,6 +118,38 @@ export const DEFAULT_COMPONENT_LAYOUT: ComponentLayout = {
   wrap: false,
 }
 
+export const PLACEMENT_INSET_TOKENS = ['none', 'xs', 'sm', 'md', 'lg'] as const
+export type PlacementInset = (typeof PLACEMENT_INSET_TOKENS)[number]
+
+export const PLACEMENT_ANCHORS = [
+  'topLeft',
+  'topCenter',
+  'topRight',
+  'centerLeft',
+  'center',
+  'centerRight',
+  'bottomLeft',
+  'bottomCenter',
+  'bottomRight',
+] as const
+export type PlacementAnchor = (typeof PLACEMENT_ANCHORS)[number]
+
+export type ComponentPlacement =
+  | { mode: 'flow' }
+  | {
+      mode: 'sticky'
+      edge: 'top' | 'bottom'
+      inset: PlacementInset
+    }
+  | {
+      mode: 'overlay' | 'viewport'
+      anchor: PlacementAnchor
+      insetX: PlacementInset
+      insetY: PlacementInset
+    }
+
+export const DEFAULT_COMPONENT_PLACEMENT: ComponentPlacement = { mode: 'flow' }
+
 export type TextStyle = 'heading1' | 'heading2' | 'heading3' | 'body' | 'caption'
 export type ImageFit = 'contain' | 'cover'
 export type ImageAspectRatio = 'auto' | 'square' | '4:3' | '16:9'
@@ -190,6 +222,7 @@ export interface ScreenComponent {
   parentId: EntityId | null
   childIds: EntityId[]
   kind: ComponentKind
+  placement: ComponentPlacement
   common: CommonComponentSpec
   config: ComponentConfig
 }

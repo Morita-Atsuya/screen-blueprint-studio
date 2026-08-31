@@ -249,7 +249,7 @@ function connectCdp(webSocketUrl) {
         const id = ++nextId
         const timeout = setTimeout(() => {
           pending.delete(id)
-          rejectCall(new Error(`${method} timed out`))
+          rejectCall(new Error(`${method} timed out: ${JSON.stringify(params)}`))
         }, 10_000)
         pending.set(id, { resolveCall, rejectCall, method, timeout })
         socket.send(JSON.stringify({ id, method, params }))
@@ -475,6 +475,7 @@ async function run() {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Empty browser group', visible: true, enabled: true },
       config: { ...containerLayout, layout: 'horizontal' },
     }
@@ -484,6 +485,7 @@ async function run() {
       parentId: 'comp-edit-section',
       childIds: ['browser-inner-container'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Nested browser group', visible: true, enabled: true },
       config: containerLayout,
     }
@@ -493,6 +495,7 @@ async function run() {
       parentId: 'browser-nested-container',
       childIds: [],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Inner browser group', visible: true, enabled: true },
       config: containerLayout,
     }
@@ -512,6 +515,7 @@ async function run() {
         parentId,
         childIds: [childId],
         kind: 'container',
+        placement: { mode: 'flow' },
         common: { description, visible: true, enabled: true },
         config: containerLayout,
       }
@@ -522,6 +526,7 @@ async function run() {
       parentId: 'browser-tree-level-3',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Deep review status', visible: false, enabled: false },
       config: { kind: 'text', text: 'Waiting for review', style: 'body' },
     }
@@ -536,6 +541,7 @@ async function run() {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'link',
+      placement: { mode: 'flow' },
       common: {
         description: 'Downloadable resource regression',
         visible: true,
@@ -559,6 +565,7 @@ async function run() {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'image',
+      placement: { mode: 'flow' },
       common: {
         description: 'Broken image regression',
         visible: true,
@@ -579,6 +586,7 @@ async function run() {
       parentId: 'comp-list-section',
       childIds: Array.from({ length: 6 }, (_, index) => `browser-horizontal-item-${index + 1}`),
       kind: 'container',
+      placement: { mode: 'flow' },
       common: {
         description: 'Horizontal overflow regression',
         visible: true,
@@ -594,6 +602,7 @@ async function run() {
         parentId: 'browser-horizontal-overflow',
         childIds: [],
         kind: 'text',
+        placement: { mode: 'flow' },
         common: {
           description: `Horizontal item ${index}`,
           visible: true,
@@ -606,10 +615,59 @@ async function run() {
         },
       }
     }
+    browserDocument.components['browser-viewport-container'] = {
+      id: 'browser-viewport-container',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: ['browser-nested-overlay'],
+      kind: 'container',
+      placement: {
+        mode: 'viewport',
+        anchor: 'bottomLeft',
+        insetX: 'sm',
+        insetY: 'sm',
+      },
+      common: {
+        description: 'Projected viewport group',
+        visible: true,
+        enabled: true,
+      },
+      config: containerLayout,
+    }
+    browserDocument.components['browser-nested-overlay'] = {
+      id: 'browser-nested-overlay',
+      screenId: 'screen-list',
+      parentId: 'browser-viewport-container',
+      childIds: [],
+      kind: 'text',
+      placement: {
+        mode: 'overlay',
+        anchor: 'bottomRight',
+        insetX: 'xs',
+        insetY: 'xs',
+      },
+      common: {
+        description: 'Nested projected overlay',
+        visible: true,
+        enabled: true,
+      },
+      config: {
+        kind: 'text',
+        text: 'Nested overlay',
+        style: 'caption',
+      },
+    }
+    browserDocument.components['comp-create-modal-title'].placement = {
+      mode: 'viewport',
+      anchor: 'topCenter',
+      insetX: 'none',
+      insetY: 'sm',
+    }
     browserDocument.components['comp-list-section'].childIds.push(
       'browser-resource-link',
       'browser-broken-image',
       'browser-horizontal-overflow',
+      'browser-viewport-container',
     )
     const persisted = JSON.stringify({
       document: browserDocument,
@@ -1508,6 +1566,136 @@ async function run() {
         )?.getAttribute('role') === 'img'`,
         `${width}px broken Image did not expose an accessible failure placeholder`,
       )
+      const placementScrollResult = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const frame = document.querySelector(
+            '[data-owning-frame-kind="page"][data-owning-frame-id="comp-list-page"]'
+          )
+          const scrollport = frame.querySelector('[data-frame-scrollport]')
+          const sticky = document.querySelector('[data-component-id="comp-list-title"]')
+          const viewport = document.querySelector('[data-component-id="comp-list-help-link"]')
+          const flow = document.querySelector('[data-component-id="browser-resource-link"]')
+          const projectedParent = document.querySelector(
+            '[data-component-id="browser-viewport-container"]'
+          )
+          const nestedOverlay = document.querySelector(
+            '[data-component-id="browser-nested-overlay"]'
+          )
+          const modalFrame = document.querySelector(
+            '[data-owning-frame-kind="modal"][data-owning-frame-id="comp-create-modal"]'
+          )
+          const modalTitle = document.querySelector(
+            '[data-component-id="comp-create-modal-title"]'
+          )
+          const stickyProjection = sticky.closest('[data-placement-projection]')
+          const viewportProjection = viewport.closest('[data-placement-projection]')
+          const nestedProjection = nestedOverlay.closest('[data-placement-projection]')
+          const modalProjection = modalTitle.closest('[data-placement-projection]')
+          const stickyDrop = stickyProjection.querySelector(
+            '[data-drop-parent="comp-list-section"][data-drop-position="0"]'
+          )
+          const viewportDrop = viewportProjection.querySelector(
+            '[data-drop-parent="comp-list-section"][data-drop-position="3"]'
+          )
+          scrollport.scrollTop = 0
+          const before = {
+            sticky: sticky.getBoundingClientRect().top,
+            viewport: viewport.getBoundingClientRect().top,
+            flow: flow.getBoundingClientRect().top,
+          }
+          scrollport.scrollTop = Math.min(120, scrollport.scrollHeight - scrollport.clientHeight)
+          const after = {
+            sticky: sticky.getBoundingClientRect().top,
+            viewport: viewport.getBoundingClientRect().top,
+            flow: flow.getBoundingClientRect().top,
+          }
+          const parentRect = projectedParent.getBoundingClientRect()
+          const nestedRect = nestedOverlay.getBoundingClientRect()
+          const result = {
+            scrollTop: scrollport.scrollTop,
+            scrollRange: scrollport.scrollHeight - scrollport.clientHeight,
+            stickyShift: after.sticky - before.sticky,
+            viewportShift: after.viewport - before.viewport,
+            flowShift: after.flow - before.flow,
+            stickyLayer: stickyProjection?.getAttribute('data-placement-projection'),
+            stickyOwner: stickyProjection?.getAttribute('data-owning-frame-id'),
+            viewportLayer: viewportProjection?.getAttribute('data-placement-projection'),
+            viewportOwner: viewportProjection?.getAttribute('data-owning-frame-id'),
+            projectedDropsSeparated: (() => {
+              const stickyRect = stickyDrop?.getBoundingClientRect()
+              const viewportRect = viewportDrop?.getBoundingClientRect()
+              return Boolean(
+                stickyRect &&
+                viewportRect &&
+                (
+                  Math.abs(stickyRect.top - viewportRect.top) > 1 ||
+                  Math.abs(stickyRect.left - viewportRect.left) > 1
+                )
+              )
+            })(),
+            outsideScrollport:
+              !scrollport.contains(sticky) && !scrollport.contains(viewport),
+            nestedLayer: nestedProjection?.getAttribute('data-placement-projection'),
+            nestedInsideParent:
+              projectedParent.contains(nestedOverlay) &&
+              nestedRect.left >= parentRect.left - 0.5 &&
+              nestedRect.top >= parentRect.top - 0.5 &&
+              nestedRect.right <= parentRect.right + 0.5 &&
+              nestedRect.bottom <= parentRect.bottom + 0.5,
+            modalCount: document.querySelectorAll(
+              '[data-component-id="comp-create-modal-title"]'
+            ).length,
+            modalLayer: modalProjection?.getAttribute('data-placement-projection'),
+            modalOwner: modalProjection?.getAttribute('data-owning-frame-id'),
+            modalInsideOwnFrame: modalFrame.contains(modalTitle),
+            modalInsidePageFrame: frame.contains(modalTitle),
+            componentCounts: [
+              'comp-list-title',
+              'comp-list-help-link',
+              'browser-viewport-container',
+              'browser-nested-overlay',
+            ].map(id => document.querySelectorAll(
+              '[data-component-id="' + id + '"]'
+            ).length),
+            reviewLockedDragCounts: [
+              'comp-list-title',
+              'comp-list-help-link',
+              'browser-viewport-container',
+              'browser-nested-overlay',
+            ].map(id => document.querySelectorAll(
+              '[data-drag-surface="canvas"][data-drag-component="' + id + '"]'
+            ).length),
+          }
+          scrollport.scrollTop = 0
+          return result
+        })()`,
+        returnByValue: true,
+      })
+      const placementScroll = placementScrollResult.result.value
+      assert(
+        placementScroll.scrollRange > 0 &&
+          placementScroll.scrollTop > 0 &&
+          Math.abs(placementScroll.stickyShift) <= 0.5 &&
+          Math.abs(placementScroll.viewportShift) <= 0.5 &&
+          placementScroll.flowShift < -1 &&
+          placementScroll.stickyLayer === 'sticky' &&
+          placementScroll.stickyOwner === 'comp-list-page' &&
+          placementScroll.viewportLayer === 'viewport' &&
+          placementScroll.viewportOwner === 'comp-list-page' &&
+          placementScroll.projectedDropsSeparated &&
+          placementScroll.outsideScrollport &&
+          placementScroll.nestedLayer === 'overlay' &&
+          placementScroll.nestedInsideParent &&
+          placementScroll.modalCount === 1 &&
+          placementScroll.modalLayer === 'viewport' &&
+          placementScroll.modalOwner === 'comp-create-modal' &&
+          placementScroll.modalInsideOwnFrame &&
+          !placementScroll.modalInsidePageFrame &&
+          placementScroll.componentCounts.every(count => count === 1) &&
+          placementScroll.reviewLockedDragCounts.every(count => count === 0),
+        `${width}px placement projection, frame scroll, or nested overlay regressed: ` +
+          JSON.stringify(placementScroll),
+      )
       const semanticMediaResult = await cdp.call('Runtime.evaluate', {
         expression: `(() => {
           const image = document.querySelector(
@@ -1562,6 +1750,55 @@ async function run() {
           JSON.stringify(semanticMediaResult.result.value),
       )
       await cdp.call('Runtime.evaluate', {
+        expression: `document.querySelector(
+          '[data-component-id="comp-list-help-link"]'
+        ).focus({ preventScroll: true })`,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Tab',
+        code: 'Tab',
+        windowsVirtualKeyCode: 9,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Tab',
+        code: 'Tab',
+        windowsVirtualKeyCode: 9,
+      })
+      await waitForExpression(
+        `document.activeElement === document.querySelector(
+          '[data-component-id="comp-list-help-link"] a'
+        )`,
+        `${width}px trusted Tab did not reach the projected Link`,
+      )
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Enter',
+        code: 'Enter',
+        windowsVirtualKeyCode: 13,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Enter',
+        code: 'Enter',
+        windowsVirtualKeyCode: 13,
+      })
+      const projectedLinkKeyboard = await cdp.call('Runtime.evaluate', {
+        expression: `({
+          focused: document.activeElement === document.querySelector(
+            '[data-component-id="comp-list-help-link"] a'
+          ),
+          path: location.pathname,
+        })`,
+        returnByValue: true,
+      })
+      assert(
+        projectedLinkKeyboard.result.value.focused &&
+          projectedLinkKeyboard.result.value.path === '/',
+        `${width}px projected Link lost focus or navigated under trusted keyboard input`,
+      )
+      await cdp.call('Runtime.evaluate', {
         expression: `(() => {
           const card = document.querySelector('[data-component-id="comp-task-docs-card"]')
           card.click()
@@ -1600,6 +1837,16 @@ async function run() {
             const selected = document.querySelector(
               '[data-component-id="comp-task-docs-card"]'
             )
+            const frame = document.querySelector(
+              '[data-owning-frame-kind="page"][data-owning-frame-id="comp-list-page"]'
+            )
+            const sticky = document.querySelector('[data-component-id="comp-list-title"]')
+            const viewport = document.querySelector(
+              '[data-component-id="comp-list-help-link"]'
+            )
+            const frameRect = frame.getBoundingClientRect()
+            const stickyRect = sticky.getBoundingClientRect()
+            const viewportRect = viewport.getBoundingClientRect()
             return {
               zoom: [...document.querySelectorAll('button')].find(
                 button => /^\\d+%$/.test(button.textContent.trim())
@@ -1642,6 +1889,20 @@ async function run() {
               selected: {
                 marker: getComputedStyle(selected, '::after').boxShadow,
               },
+              placement: {
+                stickyInside:
+                  stickyRect.top >= frameRect.top - 0.5 &&
+                  stickyRect.bottom <= frameRect.bottom + 0.5,
+                viewportInside:
+                  viewportRect.left >= frameRect.left - 0.5 &&
+                  viewportRect.top >= frameRect.top - 0.5 &&
+                  viewportRect.right <= frameRect.right + 0.5 &&
+                  viewportRect.bottom <= frameRect.bottom + 0.5,
+                stickyOwner: sticky.closest('[data-placement-projection]')
+                  ?.getAttribute('data-owning-frame-id'),
+                viewportOwner: viewport.closest('[data-placement-projection]')
+                  ?.getAttribute('data-owning-frame-id'),
+              },
               documentOverflow:
                 document.documentElement.scrollWidth - document.documentElement.clientWidth,
             }
@@ -1664,6 +1925,10 @@ async function run() {
             layout.horizontal.scrollWidth > layout.horizontal.clientWidth &&
             layout.horizontal.scrollLeft > 0 &&
             layout.selected.marker.includes('2px') &&
+            layout.placement.stickyInside &&
+            layout.placement.viewportInside &&
+            layout.placement.stickyOwner === 'comp-list-page' &&
+            layout.placement.viewportOwner === 'comp-list-page' &&
             layout.documentOverflow === 0,
           `${width}px ${zoomPercent}% horizontal/grid overflow geometry regressed: ` +
             JSON.stringify(layout),
@@ -1681,20 +1946,31 @@ async function run() {
             horizontal.scrollLeft = 0
             horizontal.scrollIntoView({ block: 'center', inline: 'center' })
             const rect = horizontal.getBoundingClientRect()
+            const x = Math.round(rect.left + rect.width / 2)
+            const y = Math.round(rect.top + rect.height / 2)
             return {
-              x: rect.left + rect.width / 2,
-              y: rect.top + rect.height / 2,
+              x,
+              y,
               transform: document.querySelector('[data-canvas-surface]').style.transform,
+              hitHorizontal: horizontal.contains(document.elementFromPoint(x, y)),
+              hitComponent: document.elementFromPoint(x, y)
+                ?.closest('[data-component-id]')?.getAttribute('data-component-id'),
             }
           })()`,
           returnByValue: true,
         })
-        await cdp.call('Input.dispatchMouseEvent', {
-          type: 'mouseWheel',
+        assert(
+          wheelStart.result.value.hitHorizontal,
+          'horizontal wheel point was covered by placement projection: ' +
+            JSON.stringify(wheelStart.result.value),
+        )
+        await cdp.call('Input.synthesizeScrollGesture', {
           x: wheelStart.result.value.x,
           y: wheelStart.result.value.y,
-          deltaX: 160,
-          deltaY: 0,
+          xDistance: -160,
+          yDistance: 0,
+          speed: 800,
+          gestureSourceType: 'mouse',
         })
         await waitForExpression(
           `document.querySelector(
@@ -1787,6 +2063,106 @@ async function run() {
         windowsVirtualKeyCode,
       })
     }
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const taskList = [...document.querySelectorAll('button')].find(
+          button => button.textContent.trim() === 'Task List'
+        )
+        taskList?.click()
+        return Boolean(taskList)
+      })()`,
+    })
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-component-id="comp-list-help-link"]'
+      ))`,
+      'Task List did not render before projected Canvas keyboard DnD',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector(
+        '[data-component-id="comp-list-help-link"]'
+      ).focus({ preventScroll: true })`,
+    })
+    await dispatchTrustedKey(' ', 'Space', 32)
+    await waitForExpression(
+      `Boolean(document.querySelector('[data-drag-overlay]'))`,
+      'trusted projected Canvas keyboard drag did not start',
+    )
+    const projectedKeyboardDrag = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        dragging: document.querySelector(
+          '[data-component-id="comp-list-help-link"]'
+        )?.getAttribute('data-canvas-dragging'),
+        canvasOrigins: document.querySelectorAll(
+          '[data-drag-surface="canvas"][data-drag-component="comp-list-help-link"]'
+        ).length,
+        visibleSurfaces: [...document.querySelectorAll('[data-drop-visible="true"]')]
+          .map(zone => zone.getAttribute('data-drop-surface')),
+        treeOutcomes: document.querySelectorAll(
+          '[data-drop-surface="tree"][data-drop-outcome]'
+        ).length,
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      projectedKeyboardDrag.result.value.dragging === 'true' &&
+        projectedKeyboardDrag.result.value.canvasOrigins === 1 &&
+        projectedKeyboardDrag.result.value.visibleSurfaces.length > 0 &&
+        projectedKeyboardDrag.result.value.visibleSurfaces.every(
+          surface => surface === 'canvas'
+        ) &&
+        projectedKeyboardDrag.result.value.treeOutcomes === 0,
+      'trusted projected Canvas keyboard drag exposed invalid surfaces or duplicate origins: ' +
+        JSON.stringify(projectedKeyboardDrag.result.value),
+    )
+    const projectedOrderBefore = await cdp.call('Runtime.evaluate', {
+      expression: `JSON.stringify(
+        JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+          .document.components['comp-list-section'].childIds
+      )`,
+      returnByValue: true,
+    })
+    await new Promise(resolveWait => setTimeout(resolveWait, 100))
+    await dispatchTrustedKey('Escape', 'Escape', 27)
+    await new Promise(resolveWait => setTimeout(resolveWait, 250))
+    const projectedKeyboardCancel = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const persisted = JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        return {
+          overlay: Boolean(document.querySelector('[data-drag-overlay]')),
+          dragging: [...document.querySelectorAll('[data-canvas-dragging="true"]')]
+            .map(node => node.getAttribute('data-component-id')),
+          active: document.activeElement?.getAttribute('data-component-id') ??
+            document.activeElement?.tagName,
+          order: JSON.stringify(
+            persisted.document.components['comp-list-section'].childIds
+          ),
+          parentId: persisted.document.components['comp-list-help-link'].parentId,
+          placement: persisted.document.components['comp-list-help-link'].placement.mode,
+        }
+      })()`,
+      returnByValue: true,
+    })
+    assert(
+      !projectedKeyboardCancel.result.value.overlay &&
+        projectedKeyboardCancel.result.value.dragging.length === 0 &&
+        projectedKeyboardCancel.result.value.order === projectedOrderBefore.result.value &&
+        projectedKeyboardCancel.result.value.parentId === 'comp-list-section' &&
+        projectedKeyboardCancel.result.value.placement === 'viewport',
+      'trusted projected Canvas keyboard drop changed canonical placement or order: ' +
+        JSON.stringify(projectedKeyboardCancel.result.value),
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('button')].find(
+        button => button.textContent.trim() === 'Edit Task'
+      ).click()`,
+    })
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-drag-surface="tree"][data-drag-component="comp-edit-summary"]'
+      ))`,
+      'Edit Task did not restore after projected Canvas keyboard DnD',
+    )
     await cdp.call('Runtime.evaluate', {
       expression: `(() => {
         const left = document.querySelector('aside[aria-label="Project navigation"]')
@@ -2248,13 +2624,20 @@ async function run() {
           const source = document.querySelector(
             '[data-component-id="' + componentId + '"]'
           )
+          source.scrollIntoView({ block: 'center', inline: 'center' })
           const sourceRect = source.getBoundingClientRect()
-          const sourcePoint = source.hasAttribute('data-container-component')
-            ? { x: sourceRect.left + 5, y: sourceRect.top + 5 }
-            : {
-                x: sourceRect.left + sourceRect.width / 2,
-                y: sourceRect.top + sourceRect.height / 2,
-              }
+          const candidates = [
+            { x: sourceRect.left + sourceRect.width / 2, y: sourceRect.top + sourceRect.height / 2 },
+            { x: sourceRect.left + 5, y: sourceRect.top + 5 },
+            { x: sourceRect.right - 5, y: sourceRect.top + 5 },
+            { x: sourceRect.left + 5, y: sourceRect.bottom - 5 },
+            { x: sourceRect.right - 5, y: sourceRect.bottom - 5 },
+          ]
+          const sourcePoint = candidates.find(point => {
+            const owner = document.elementFromPoint(point.x, point.y)
+              ?.closest('[data-component-id]')
+            return owner === source
+          }) ?? candidates[0]
           const hit = document.elementFromPoint(sourcePoint.x, sourcePoint.y)
           const targets = ${targetParentId === undefined
             ? '[]'
@@ -2282,6 +2665,7 @@ async function run() {
                 ?.getAttribute('data-drag-surface'),
             },
             targetParent: target?.getAttribute('data-drop-parent') ?? null,
+            targetPosition: target?.getAttribute('data-drop-position') ?? null,
             draggable: source.getAttribute('data-canvas-draggable'),
             cursor: getComputedStyle(source).cursor,
           }
@@ -2352,6 +2736,13 @@ async function run() {
               : `[...document.querySelectorAll(
                   '[data-drop-surface="canvas"][data-drop-parent=${JSON.stringify(targetParentId)}]'
                 )].some(target => target.className.includes('_over_'))`},
+            over: [...document.querySelectorAll(
+              '[data-drop-surface="canvas"]'
+            )].filter(target => target.className.includes('_over_')).map(target => ({
+              parent: target.getAttribute('data-drop-parent'),
+              position: target.getAttribute('data-drop-position'),
+              outcome: target.getAttribute('data-drop-outcome'),
+            })),
           }
         })()`,
         returnByValue: true,
@@ -2366,7 +2757,11 @@ async function run() {
             surface => surface === 'canvas'
           ) &&
           feedback.result.value.oppositeOutcomes === 0 &&
-          feedback.result.value.targetActive,
+          feedback.result.value.targetActive &&
+          (targetParentId === undefined || feedback.result.value.over.some(
+            target => target.parent === points.targetParent &&
+              target.position === points.targetPosition
+          )),
         `trusted Canvas drag feedback is incomplete for ${componentId}: ` +
           JSON.stringify(feedback.result.value),
       )
@@ -2422,6 +2817,14 @@ async function run() {
     await waitForExpression(
       `Boolean(document.querySelector('[data-component-id="comp-list-grid"]'))`,
       'Task List did not render before trusted grid DnD',
+    )
+    const projectedLinkPoints = await pressTrustedComponent('comp-list-help-link')
+    await cancelTrustedComponent(projectedLinkPoints)
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-component-id="comp-list-help-link"][data-placement-mode="viewport"]'
+      ))`,
+      'projected Link placement did not survive trusted pointer drag cancellation',
     )
     const gridPoints = await pressTrustedComponent(
       'comp-task-launch-card',

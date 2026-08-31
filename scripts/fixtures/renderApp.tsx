@@ -149,6 +149,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           screenId: 'screen-edit',
           parentId,
           kind: 'container',
+          placement: { mode: 'flow' },
           config: {
             kind: 'container',
             layout: 'vertical',
@@ -196,6 +197,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           screenId: 'screen-edit',
           parentId,
           kind: 'container',
+          placement: { mode: 'flow' },
           config: {
             kind: 'container',
             layout: 'vertical',
@@ -215,6 +217,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           screenId: 'screen-edit',
           parentId: 'regression-tree-level-3',
           kind: 'text',
+          placement: { mode: 'flow' },
           config: {
             kind: 'text',
             text: 'Waiting for review',
@@ -250,6 +253,64 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           componentId: 'regression-tree-state-message',
           patch: { config: { text: 'Agent review pending' } },
         }, 'agent')
+      })
+    },
+    addPlacementFixture() {
+      flushSync(() => {
+        useAppStore.getState().dispatch({
+          type: 'addComponent',
+          componentId: 'regression-viewport-container',
+          screenId: 'screen-list',
+          parentId: 'comp-list-section',
+          kind: 'container',
+          placement: {
+            mode: 'viewport',
+            anchor: 'bottomLeft',
+            insetX: 'sm',
+            insetY: 'sm',
+          },
+          config: {
+            kind: 'container',
+            layout: 'vertical',
+            gap: 'sm',
+            columns: 1,
+            justify: 'start',
+            align: 'stretch',
+            wrap: false,
+          },
+        }, 'Add projected Container')
+        useAppStore.getState().dispatch({
+          type: 'addComponent',
+          componentId: 'regression-nested-overlay',
+          screenId: 'screen-list',
+          parentId: 'regression-viewport-container',
+          kind: 'text',
+          placement: {
+            mode: 'overlay',
+            anchor: 'bottomRight',
+            insetX: 'xs',
+            insetY: 'xs',
+          },
+          config: {
+            kind: 'text',
+            text: 'Nested overlay',
+            style: 'caption',
+          },
+        }, 'Add nested overlay')
+        useAppStore.getState().dispatch({
+          type: 'updateComponentSpec',
+          componentId: 'comp-create-modal-title',
+          patch: {
+            placement: {
+              mode: 'viewport',
+              anchor: 'topCenter',
+              insetX: 'none',
+              insetY: 'sm',
+            },
+          },
+        }, 'Project modal title')
+        useAppStore.getState().setActiveScreen('screen-list')
+        useAppStore.getState().setActiveState('state-list-default')
       })
     },
     markInnerContainerChanged() {

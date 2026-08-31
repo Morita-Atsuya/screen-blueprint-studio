@@ -3,6 +3,7 @@ import type {
   ComponentConfig,
   ComponentKind,
   ComponentLayout,
+  ComponentPlacement,
   ComponentOverride,
   TextStyle,
 } from './model'
@@ -101,6 +102,7 @@ export interface InlineScreenNodeV3 {
   parentId: CanonicalEntityIdV3 | null
   childIds: CanonicalEntityIdV3[]
   kind: ComponentKind
+  placement: ComponentPlacement
   common: CommonComponentSpecV3
   config: ComponentConfigV3
 }
@@ -111,6 +113,7 @@ export interface DefinitionInstanceScreenNodeV3 extends DefinitionInstanceFields
   screenId: CanonicalEntityIdV3
   parentId: CanonicalEntityIdV3 | null
   childIds: []
+  placement: ComponentPlacement
 }
 
 export type ScreenNodeV3 = InlineScreenNodeV3 | DefinitionInstanceScreenNodeV3
@@ -121,6 +124,7 @@ export interface InlineDefinitionNodeV3 {
   parentId: StableDefinitionNodeIdV3 | null
   childIds: StableDefinitionNodeIdV3[]
   kind: ComponentKind
+  placement: ComponentPlacement
   common: CommonComponentSpecV3
   config: ComponentConfigV3
 }
@@ -130,6 +134,7 @@ export interface NestedDefinitionInstanceNodeV3 extends DefinitionInstanceFields
   id: StableDefinitionNodeIdV3
   parentId: StableDefinitionNodeIdV3 | null
   childIds: []
+  placement: ComponentPlacement
 }
 
 export type ComponentDefinitionNodeV3 =
@@ -196,6 +201,11 @@ export const PUBLIC_PROP_FIELDS_V3 = [
   'config.destination.resourceId',
   'config.destination.displayName',
   'config.openMode',
+  'placement.edge',
+  'placement.anchor',
+  'placement.inset',
+  'placement.insetX',
+  'placement.insetY',
 ] as const
 export type PublicPropFieldV3 = (typeof PUBLIC_PROP_FIELDS_V3)[number]
 
@@ -234,6 +244,7 @@ export interface VariantConfigOverrideV3 {
 export interface VariantNodeOverrideV3 {
   common?: VariantCommonOverrideV3
   config?: VariantConfigOverrideV3
+  placement?: ComponentPlacement
 }
 
 export interface ComponentVariantV3 {
@@ -253,6 +264,42 @@ export interface ComponentDefinitionV3 {
   variantProperties: VariantPropertyV3[]
   variants: ComponentVariantV3[]
   representativeVariantId: CanonicalEntityIdV3 | null
+}
+
+export function assertCanonicalRootPlacementsV3(
+  spec: Pick<CanonicalProjectSpecV3, 'components' | 'componentDefinitions' | 'screens'>,
+): void {
+  const assertFlow = (placement: ComponentPlacement, label: string) => {
+    if (placement.mode !== 'flow') {
+      throw new Error(`${label} must use flow placement`)
+    }
+  }
+  for (const screen of Object.values(spec.screens)) {
+    const rootIds = [screen.rootComponentId, ...screen.modalComponentIds]
+    for (const rootId of rootIds) {
+      const root = spec.components[rootId]
+      if (!root) throw new Error(`Unresolved Screen root component: ${rootId}`)
+      assertFlow(root.placement, `Screen root ${rootId}`)
+    }
+  }
+  for (const definition of Object.values(spec.componentDefinitions)) {
+    const root = definition.nodes[definition.rootNodeId]
+    if (!root) {
+      throw new Error(
+        `Unresolved root node ${definition.rootNodeId} in Component Definition ${definition.id}`,
+      )
+    }
+    assertFlow(root.placement, `Component Definition root ${definition.id}/${root.id}`)
+    for (const variant of definition.variants) {
+      const rootOverride = variant.nodeOverrides[definition.rootNodeId]?.placement
+      if (rootOverride) {
+        assertFlow(
+          rootOverride,
+          `Component Definition root Variant ${definition.id}/${variant.id}`,
+        )
+      }
+    }
+  }
 }
 
 export function assertUniqueVariantPropertyCombinationsV3(

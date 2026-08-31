@@ -529,9 +529,15 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       example.components['product-image'].config.kind === 'image' &&
       example.components['product-image'].config.alt.length > 0 &&
       example.components['documentation-link'].config.destination.type === 'external' &&
-      example.components['documentation-link'].config.openMode === 'newContext',
+      example.components['documentation-link'].config.openMode === 'newContext' &&
+      example.components['home-page'].placement.mode === 'flow' &&
+      example.components['shared-header'].placement.mode === 'sticky' &&
+      example.components['documentation-link'].placement.mode === 'viewport' &&
+      resolvedDefinition.nodes[resolvedDefinition.rootNodeId].placement.mode === 'flow' &&
+      resolvedDefinition.variants[1].nodeOverrides['header-title'].placement.mode === 'overlay',
     'public v3 example does not demonstrate the approved Stage 1 contract',
   )
+  contracts.assertCanonicalRootPlacementsV3(example)
   const unsafeImage = clone(example)
   unsafeImage.components['product-image'].config.source = 'javascript:alert(1)'
   const missingAlt = clone(example)
@@ -559,6 +565,24 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
     }
   incompatibleLinkVariant.componentDefinitions['shared/header'].variants[0]
     .nodeOverrides['header-root'].config.openMode = 'newContext'
+  const missingPlacement = clone(example)
+  delete missingPlacement.components['product-image'].placement
+  const invalidCenteredInset = clone(example)
+  invalidCenteredInset.components['documentation-link'].placement = {
+    mode: 'viewport',
+    anchor: 'bottomCenter',
+    insetX: 'sm',
+    insetY: 'md',
+  }
+  const signedInset = clone(example)
+  signedInset.components['documentation-link'].placement.insetX = '-sm'
+  const nonFlowPageRoot = clone(example)
+  nonFlowPageRoot.components['home-page'].placement = {
+    mode: 'viewport',
+    anchor: 'bottomRight',
+    insetX: 'sm',
+    insetY: 'sm',
+  }
   assert(
     !isValid(unsafeImage) &&
       !isValid(missingAlt) &&
@@ -566,9 +590,42 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       !isValid(incompatibleExternalMode) &&
       !isValid(unsafeImageVariant) &&
       !isValid(incompatibleLinkVariant) &&
+      !isValid(missingPlacement) &&
+      !isValid(invalidCenteredInset) &&
+      !isValid(signedInset) &&
+      !isValid(nonFlowPageRoot) &&
       isValid(downloadableResource),
     'public v3 Image/Link URL, alt, or open-mode constraints drifted',
   )
+  for (const mutate of [
+    candidate => {
+      const definition = candidate.componentDefinitions['shared/header']
+      definition.nodes[definition.rootNodeId].placement = {
+        mode: 'sticky',
+        edge: 'top',
+        inset: 'sm',
+      }
+    },
+    candidate => {
+      const definition = candidate.componentDefinitions['shared/header']
+      definition.variants[0].nodeOverrides[definition.rootNodeId].placement = {
+        mode: 'overlay',
+        anchor: 'topLeft',
+        insetX: 'sm',
+        insetY: 'sm',
+      }
+    },
+  ]) {
+    const invalidRootPlacement = clone(example)
+    mutate(invalidRootPlacement)
+    let rejected = false
+    try {
+      contracts.assertCanonicalRootPlacementsV3(invalidRootPlacement)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, 'canonical v3 semantic validation accepted non-flow Definition root placement')
+  }
 
   for (const invalidRef of [
     'https://example.com/components/header.json',
@@ -686,6 +743,7 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       enumerable: true,
       value: clone(reservedEntity.components['home-page']),
     })
+
     reservedEntity.components[reservedId].id = reservedId
     assert(!isValid(reservedEntity), `canonical schema accepted reserved entity ID ${reservedId}`)
   }
@@ -712,6 +770,152 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
   assert(duplicateRejected, 'variant contract accepted a duplicate property/value combination')
 })
 
+await test('component placement is atomic, constrained, and retained by structural edits', async () => {
+  const { validateComponentPlacement } = await import(
+    moduleUrl(runtimeValidationBundle, 'placement-validation')
+  )
+  const { validateInvariants } = await import(
+    moduleUrl(invariantsBundle, 'placement-invariants')
+  )
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'placement-domain')
+  )
+  const { sampleProject } = await import(moduleUrl(sampleProjectBundle, 'placement-sample'))
+
+  for (const placement of [
+    { mode: 'flow' },
+    { mode: 'sticky', edge: 'bottom', inset: 'lg' },
+    { mode: 'overlay', anchor: 'topLeft', insetX: 'xs', insetY: 'md' },
+    { mode: 'viewport', anchor: 'center', insetX: 'none', insetY: 'none' },
+  ]) {
+    validateComponentPlacement(placement)
+  }
+  for (const placement of [
+    { mode: 'sticky', edge: 'left', inset: 'sm' },
+    { mode: 'viewport', anchor: 'center', insetX: 'sm', insetY: 'none' },
+    { mode: 'overlay', anchor: 'topCenter', insetX: 'none', insetY: -1 },
+    { mode: 'flow', inset: 'sm' },
+  ]) {
+    let rejected = false
+    try {
+      validateComponentPlacement(placement)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `runtime accepted invalid placement ${JSON.stringify(placement)}`)
+  }
+
+  let rootRejected = false
+  try {
+    applyCommandWithoutRevision(sampleProject, {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-page',
+      patch: {
+        placement: {
+          mode: 'viewport',
+          anchor: 'bottomRight',
+          insetX: 'sm',
+          insetY: 'sm',
+        },
+      },
+    })
+  } catch {
+    rootRejected = true
+  }
+  assert(rootRejected, 'independent Page root accepted non-flow placement')
+
+  const callerPlacement = {
+    mode: 'overlay',
+    anchor: 'bottomRight',
+    insetX: 'sm',
+    insetY: 'md',
+  }
+  const updated = applyCommandWithoutRevision(sampleProject, {
+    type: 'updateComponentSpec',
+    componentId: 'comp-list-summary',
+    patch: { placement: callerPlacement },
+  })
+  callerPlacement.insetX = 'lg'
+  assert(
+    updated.components['comp-list-summary'].placement.mode === 'overlay' &&
+      updated.components['comp-list-summary'].placement.insetX === 'sm',
+    'placement update retained caller-owned state or was not atomic',
+  )
+
+  const duplicated = applyCommandWithoutRevision(sampleProject, {
+    type: 'duplicateComponent',
+    componentId: 'comp-list-title',
+    componentIdMap: { 'comp-list-title': 'copy-list-title' },
+  })
+  assert(
+    duplicated.components['copy-list-title'].placement.mode === 'sticky' &&
+      duplicated.components['copy-list-title'].placement !==
+        duplicated.components['comp-list-title'].placement,
+    'duplicate did not retain an isolated placement value',
+  )
+
+  const moved = applyCommandWithoutRevision(sampleProject, {
+    type: 'moveComponent',
+    componentId: 'comp-list-help-link',
+    newParentId: 'comp-list-grid',
+    position: 0,
+  })
+  assert(
+    moved.components['comp-list-help-link'].parentId === 'comp-list-grid' &&
+      moved.components['comp-list-help-link'].placement.mode === 'viewport',
+    'reparent changed a valid portable placement',
+  )
+  validateInvariants(moved)
+})
+
+await test('placement editing survives undo, redo, persistence, and review lock', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const store = await freshStore('placement-history')
+  const placement = {
+    mode: 'overlay',
+    anchor: 'topRight',
+    insetX: 'sm',
+    insetY: 'lg',
+  }
+  assert(
+    store.getState().dispatch({
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-summary',
+      patch: { placement },
+    }, 'Update placement'),
+    'human placement update failed',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().document.components['comp-list-summary'].placement.mode === 'flow',
+    'undo did not restore flow placement',
+  )
+  store.getState().redo()
+  assert(
+    JSON.stringify(store.getState().document.components['comp-list-summary'].placement) ===
+      JSON.stringify(placement),
+    'redo did not restore atomic placement',
+  )
+  const reloaded = await freshStore('placement-history-reload')
+  assert(
+    JSON.stringify(reloaded.getState().document.components['comp-list-summary'].placement) ===
+      JSON.stringify(placement),
+    'placement did not survive reload',
+  )
+  reloaded.getState().beginChangeSet('Lock placement')
+  const before = JSON.stringify(reloaded.getState().document)
+  assert(
+    !reloaded.getState().dispatch({
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-summary',
+      patch: { placement: { mode: 'flow' } },
+    }, 'Blocked placement update') &&
+      JSON.stringify(reloaded.getState().document) === before,
+    'review lock allowed a human placement edit',
+  )
+})
+
 await test('schema v1 sections migrate to containers across persisted change set data', async () => {
   memoryStorage.clear()
   const baselineStore = await freshStore('section-migration-baseline')
@@ -733,6 +937,7 @@ await test('schema v1 sections migrate to containers across persisted change set
         screenId: 'screen-edit',
         parentId: 'comp-edit-section',
         kind: 'section',
+        placement: { mode: 'flow' },
         config: {
           kind: 'section',
           layout: 'vertical',
@@ -761,6 +966,7 @@ await test('schema v1 sections migrate to containers across persisted change set
               parentId: null,
               childIds: [],
               kind: 'section',
+              placement: { mode: 'flow' },
               common: { description: 'Snapshot group', visible: true, enabled: true },
               config: {
                 kind: 'section',
@@ -1643,6 +1849,12 @@ await test('domain commands isolate every nested payload from returned documents
     screenId: 'screen-edit',
     parentId: 'comp-edit-section',
     kind: 'textInput',
+    placement: {
+      mode: 'overlay',
+      anchor: 'topLeft',
+      insetX: 'sm',
+      insetY: 'sm',
+    },
     config: {
       kind: 'textInput',
       fieldKey: 'isolatedInput',
@@ -1661,6 +1873,7 @@ await test('domain commands isolate every nested payload from returned documents
     added,
     document => document.components['comp-isolated-input'],
     () => {
+      addCommand.placement.insetX = 'lg'
       addCommand.config.validationRules[0].message = 'Mutated'
       addCommand.config.validationRules.push({
         id: 'rule-late',
@@ -1669,7 +1882,7 @@ await test('domain commands isolate every nested payload from returned documents
         message: 'Late',
       })
     },
-    'addComponent config',
+    'addComponent placement or config',
   )
 
   const updateSpecCommand = {
@@ -1957,6 +2170,7 @@ await test('domain commands isolate every nested payload from returned documents
       screenId: 'screen-list',
       parentId: 'comp-list-section',
       kind: 'text',
+      placement: { mode: 'flow' },
       config: { kind: 'unsupportedConfig' },
     },
     {
@@ -2450,6 +2664,7 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
     screenId: 'screen-list',
     parentId: null,
     kind: 'modal',
+    placement: { mode: 'flow' },
     config: {
       kind: 'modal',
       layout: 'vertical',
@@ -3016,6 +3231,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
         screenId: 'toString',
         parentId: 'comp-list-page',
         kind: 'text',
+        placement: { mode: 'flow' },
         config: { kind: 'text', text: 'Wrong', style: 'body' },
       },
       {
@@ -3024,6 +3240,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
         screenId: 'screen-list',
         parentId: 'comp-list-page',
         kind: 'text',
+        placement: { mode: 'flow' },
         config: { kind: 'text', text: 'Wrong', style: 'body' },
       },
       {
@@ -3032,6 +3249,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
         screenId: 'screen-edit',
         parentId: 'comp-list-page',
         kind: 'text',
+        placement: { mode: 'flow' },
         config: { kind: 'text', text: 'Wrong', style: 'body' },
       },
       {
@@ -3322,6 +3540,18 @@ await test('nine tools register and invalid writes fail without adding operation
     ['update_component_spec', {
       ...common,
       componentId: 'comp-list-title',
+      patch: {
+        placement: {
+          mode: 'viewport',
+          anchor: 'center',
+          insetX: 'sm',
+          insetY: 'none',
+        },
+      },
+    }],
+    ['update_component_spec', {
+      ...common,
+      componentId: 'comp-list-title',
       patch: { name: { invalid: true } },
     }],
     ['change_screen_structure', {
@@ -3588,7 +3818,13 @@ await test('representative screen/component/state/event/API writes reach the cha
       componentSchema.oneOf.some(variant =>
         variant.properties?.operation?.const === 'duplicate' &&
         variant.required?.includes('componentId')
-      ),
+      ) &&
+      componentSchema.oneOf
+        .filter(variant => variant.properties?.operation?.const === 'add')
+        .every(variant =>
+          variant.required?.includes('placement') &&
+          variant.properties?.placement
+        ),
     'WebMCP does not distinguish modal creation, child creation, and duplication',
   )
 
@@ -3602,6 +3838,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     screenId: 'screen-list',
     parentId: 'comp-list-page',
     kind: 'container',
+    placement: { mode: 'flow' },
     config: {
       kind: 'container',
       layout: 'horizontal',
@@ -3615,12 +3852,21 @@ await test('representative screen/component/state/event/API writes reach the cha
   const addedContainerId = latestCommand().componentId
   execute('update_component_spec', {
     componentId: addedContainerId,
-    patch: { config: { layout: 'grid', columns: 3, gap: 'lg' } },
+    patch: {
+      config: { layout: 'grid', columns: 3, gap: 'lg' },
+      placement: {
+        mode: 'overlay',
+        anchor: 'topRight',
+        insetX: 'sm',
+        insetY: 'md',
+      },
+    },
   })
   assert(
     latestCommand().patch.config.layout === 'grid' &&
-      latestCommand().patch.config.columns === 3,
-    'WebMCP layout update did not reach the change set',
+      latestCommand().patch.config.columns === 3 &&
+      latestCommand().patch.placement.mode === 'overlay',
+    'WebMCP layout or placement update did not reach the change set',
   )
 
   execute('change_component_structure', {
@@ -3628,6 +3874,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     screenId: 'screen-list',
     parentId: addedContainerId,
     kind: 'text',
+    placement: { mode: 'flow' },
     config: { kind: 'text', text: 'Agent text', style: 'heading2' },
   })
   const addedComponentId = latestCommand().componentId
@@ -3659,6 +3906,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     screenId: 'screen-list',
     parentId: null,
     kind: 'modal',
+    placement: { mode: 'flow' },
     config: {
       kind: 'modal',
       layout: 'vertical',
@@ -3683,6 +3931,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     screenId: 'screen-list',
     parentId: 'comp-list-page',
     kind: 'modal',
+    placement: { mode: 'flow' },
     config: {
       kind: 'modal',
       layout: 'vertical',
@@ -4150,6 +4399,7 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
     parentId: 'comp-edit-section',
     kind: 'select',
     position: 6,
+    placement: { mode: 'flow' },
     config: {
       kind: 'select',
       fieldKey: 'priority',
@@ -4817,6 +5067,7 @@ await test('modal roots own independent trees and clean references on removal', 
     screenId: 'screen-list',
     parentId: null,
     kind: 'modal',
+    placement: { mode: 'flow' },
     config: { kind: 'modal', ...layout },
   })
   assert(
@@ -4832,6 +5083,7 @@ await test('modal roots own independent trees and clean references on removal', 
     screenId: 'screen-list',
     parentId: 'modal-root',
     kind: 'button',
+    placement: { mode: 'flow' },
     config: {
       kind: 'button',
       label: 'Close',
@@ -4881,6 +5133,7 @@ await test('modal roots own independent trees and clean references on removal', 
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       kind: 'modal',
+      placement: { mode: 'flow' },
       config: { kind: 'modal', ...layout },
     },
     {
@@ -4889,6 +5142,7 @@ await test('modal roots own independent trees and clean references on removal', 
       screenId: 'screen-list',
       parentId: null,
       kind: 'text',
+      placement: { mode: 'flow' },
       config: { kind: 'text', text: 'Orphan', style: 'body' },
     },
     {
@@ -4940,6 +5194,7 @@ await test('modal roots own independent trees and clean references on removal', 
     screenId: 'screen-list',
     parentId: null,
     kind: 'modal',
+    placement: { mode: 'flow' },
     config: { kind: 'modal', ...layout },
   })
   const state = store.getState()
@@ -6263,6 +6518,135 @@ await test('Canvas Containers expose persistent selectable and droppable structu
     inner.getAttribute('data-component-change') === 'modified' &&
       inner.querySelector('[data-editor-chrome] [data-change-status]'),
     'nested Container boundary did not coexist with its change marker',
+  )
+  harness.unmount()
+})
+
+await test('Canvas projects placement once per owning frame without changing logical targets', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  Object.defineProperties(globalThis, {
+    requestAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: callback => {
+        callback(0)
+        return 1
+      },
+    },
+    cancelAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    },
+  })
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppBundle, 'canvas-placement-projection')
+  )
+  const harness = mountReviewLockApp('en')
+  harness.addPlacementFixture()
+
+  const pageFrame = document.querySelector(
+    '[data-owning-frame-kind="page"][data-owning-frame-id="comp-list-page"]',
+  )
+  const modalFrame = document.querySelector(
+    '[data-owning-frame-kind="modal"][data-owning-frame-id="comp-create-modal"]',
+  )
+  const pageScrollport = pageFrame?.querySelector('[data-frame-scrollport]')
+  const stickyTitle = document.querySelector('[data-component-id="comp-list-title"]')
+  const viewportLink = document.querySelector('[data-component-id="comp-list-help-link"]')
+  const modalTitle = document.querySelector('[data-component-id="comp-create-modal-title"]')
+  const viewportContainer = document.querySelector(
+    '[data-component-id="regression-viewport-container"]',
+  )
+  const nestedOverlay = document.querySelector(
+    '[data-component-id="regression-nested-overlay"]',
+  )
+
+  for (const componentId of [
+    'comp-list-title',
+    'comp-list-help-link',
+    'comp-create-modal-title',
+    'regression-viewport-container',
+    'regression-nested-overlay',
+  ]) {
+    assert(
+      document.querySelectorAll(`[data-component-id="${componentId}"]`).length === 1,
+      `${componentId} was duplicated between its logical and projected position`,
+    )
+    assert(
+      document.querySelectorAll(
+        `[data-drag-surface="canvas"][data-drag-component="${componentId}"]`,
+      ).length === 1,
+      `${componentId} registered more than one Canvas drag origin`,
+    )
+  }
+  assert(
+    stickyTitle?.closest('[data-placement-projection="sticky"]')
+      ?.getAttribute('data-owning-frame-id') === 'comp-list-page' &&
+      viewportLink?.closest('[data-placement-projection="viewport"]')
+        ?.getAttribute('data-owning-frame-id') === 'comp-list-page' &&
+      !pageScrollport?.contains(stickyTitle) &&
+      !pageScrollport?.contains(viewportLink),
+    'Page sticky/viewport components were not projected outside Page scroll content',
+  )
+  assert(
+    modalTitle?.closest('[data-placement-projection="viewport"]')
+      ?.getAttribute('data-owning-frame-id') === 'comp-create-modal' &&
+      modalFrame?.contains(modalTitle) &&
+      !pageFrame?.contains(modalTitle),
+    'Modal descendant crossed its owning frame during projection',
+  )
+  assert(
+    viewportContainer?.contains(nestedOverlay) &&
+      nestedOverlay?.closest('[data-placement-layer="overlay"]')?.parentElement ===
+        viewportContainer,
+    'nested overlay did not use its projected immediate parent bounds',
+  )
+  const logicalPositions = [
+    ...document.querySelectorAll(
+      '[data-drop-surface="canvas"][data-drop-parent="comp-list-section"]',
+    ),
+  ].map(zone => Number(zone.getAttribute('data-drop-position')))
+  assert(
+    logicalPositions.includes(0) &&
+      logicalPositions.includes(3) &&
+      logicalPositions.includes(11),
+    'projected children lost canonical parent/index drop targets',
+  )
+  const stickyDropTarget = document.querySelector(
+    '[data-drop-surface="canvas"][data-drop-parent="comp-list-section"]' +
+      '[data-drop-position="0"]',
+  )
+  const viewportDropTarget = document.querySelector(
+    '[data-drop-surface="canvas"][data-drop-parent="comp-list-section"]' +
+      '[data-drop-position="3"]',
+  )
+  assert(
+    stickyDropTarget?.closest('[data-placement-projection="sticky"]') &&
+      viewportDropTarget?.closest('[data-placement-projection="viewport"]'),
+    'projected canonical drop targets collapsed into the logical parent origin',
+  )
+  const linkAnchor = viewportLink?.querySelector('a')
+  linkAnchor?.focus()
+  assert(
+    document.activeElement === linkAnchor &&
+      linkAnchor?.getAttribute('target') === '_blank' &&
+      linkAnchor?.getAttribute('rel') === 'noopener noreferrer',
+    'projected Link lost its trusted keyboard focus or anchor contract',
+  )
+  harness.click(viewportLink)
+  assert(
+    harness.state().selectedComponentId === 'comp-list-help-link',
+    'projected component selection did not preserve its canonical component ID',
+  )
+  const dropIds = [
+    ...document.querySelectorAll('[data-editor-drop-id]'),
+  ].map(zone => zone.getAttribute('data-editor-drop-id'))
+  assert(
+    new Set(dropIds).size === dropIds.length,
+    'placement projection duplicated a logical droppable registration',
   )
   harness.unmount()
 })
@@ -7873,6 +8257,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
     defaultInspectorSectionOpen('basic', emptySignals) &&
       defaultInspectorSectionOpen('content', emptySignals) &&
       !defaultInspectorSectionOpen('layout', emptySignals) &&
+      !defaultInspectorSectionOpen('placement', emptySignals) &&
       !defaultInspectorSectionOpen('behavior', emptySignals) &&
       !defaultInspectorSectionOpen('validation', emptySignals) &&
       !defaultInspectorSectionOpen('stateOverrides', emptySignals),
@@ -7908,6 +8293,12 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
     value: 'Preview name',
   }
   preview.components['comp-actions'].config.gap = 'lg'
+  preview.components['comp-actions'].placement = {
+    mode: 'overlay',
+    anchor: 'bottomRight',
+    insetX: 'sm',
+    insetY: 'sm',
+  }
   preview.components['comp-save-btn'].config.eventId = null
 
   const inputMarkers = inspectorSectionChangeCounts(
@@ -7934,6 +8325,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
       inputMarkers.validation > 0 &&
       inputMarkers.stateOverrides > 0 &&
       layoutMarkers.layout > 0 &&
+      layoutMarkers.placement > 0 &&
       behaviorMarkers.behavior > 0,
     'Inspector review markers do not identify the changed specification section',
   )
@@ -7962,6 +8354,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
       inspectorSource.includes('sectionId="basic"') &&
       inspectorSource.includes('sectionId="content"') &&
       inspectorSource.includes('sectionId="layout"') &&
+      inspectorSource.includes('sectionId="placement"') &&
       inspectorSource.includes('sectionId="behavior"') &&
       inspectorSource.includes('sectionId="validation"') &&
       inspectorSource.includes('sectionId="stateOverrides"'),
@@ -9463,6 +9856,7 @@ await test('semantic containers replace legacy layout kinds across commands and 
       screenId: 'screen-list',
       parentId: 'comp-list-section',
       kind: 'layoutPreset',
+      placement: { mode: 'flow' },
       config: { kind: 'layoutPreset', gap: 'md' },
     },
     {
@@ -9471,6 +9865,7 @@ await test('semantic containers replace legacy layout kinds across commands and 
       screenId: 'screen-list',
       parentId: 'comp-list-section',
       kind: 'container',
+      placement: { mode: 'flow' },
       config: { kind: 'container', layout: 'vertical' },
     },
     {
@@ -9584,6 +9979,7 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
       screenId: 'screen-list',
       parentId: 'comp-list-section',
       kind: 'heading',
+      placement: { mode: 'flow' },
       config: { kind: 'heading', text: 'Legacy heading', level: 2 },
     })
   } catch {
@@ -9751,6 +10147,7 @@ await test('structural components reject content titles across every write path'
       screenId: 'screen-list',
       parentId: null,
       kind: 'modal',
+      placement: { mode: 'flow' },
       config: { kind: 'modal', title: 'Legacy modal title', ...layout },
     },
     {
@@ -11375,6 +11772,7 @@ await test('API editor commands preserve references and enforce canonical bindin
       screenId: 'screen-list',
       parentId: 'comp-list-section',
       kind: 'textInput',
+      placement: { mode: 'flow' },
       config: {
         kind: 'textInput',
         fieldKey: 'foreign',

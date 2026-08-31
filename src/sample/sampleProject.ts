@@ -65,6 +65,7 @@ export const sampleProject: ProjectDocument = {
       parentId: null,
       childIds: ['comp-list-section'],
       kind: 'page',
+      placement: { mode: 'flow' },
       common: { description: 'Task list page', visible: true, enabled: true },
       config: { kind: 'page', ...DEFAULT_COMPONENT_LAYOUT },
     },
@@ -85,6 +86,7 @@ export const sampleProject: ProjectDocument = {
         'comp-retry-tasks-btn',
       ],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Team task overview', visible: true, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT },
     },
@@ -94,6 +96,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'sticky', edge: 'top', inset: 'sm' },
       common: { description: 'Page heading', visible: true, enabled: true },
       config: { kind: 'text', text: 'Team Tasks', style: 'heading1' },
     },
@@ -103,6 +106,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task list purpose', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -116,6 +120,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'image',
+      placement: { mode: 'flow' },
       common: { description: 'Task board overview illustration', visible: true, enabled: true },
       config: {
         kind: 'image',
@@ -132,6 +137,12 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'link',
+      placement: {
+        mode: 'viewport',
+        anchor: 'bottomRight',
+        insetX: 'md',
+        insetY: 'md',
+      },
       common: { description: 'Open task planning guidance', visible: true, enabled: true },
       config: {
         kind: 'link',
@@ -149,6 +160,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Open a new task form', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -165,6 +177,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: ['comp-list-loading-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task loading status', visible: false, enabled: true },
       config: {
         kind: 'container',
@@ -178,6 +191,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-loading-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task loading message', visible: true, enabled: true },
       config: { kind: 'text', text: 'Loading tasks...', style: 'body' },
     },
@@ -187,6 +201,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: ['comp-list-empty-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Empty task list guidance', visible: false, enabled: true },
       config: {
         kind: 'container',
@@ -200,6 +215,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-empty-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Empty task list message', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -213,6 +229,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: ['comp-list-error-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task list error', visible: false, enabled: true },
       config: {
         kind: 'container',
@@ -226,6 +243,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-error-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task list error message', visible: true, enabled: true },
       config: { kind: 'text', text: 'Could not load tasks. Try again.', style: 'body' },
     },
@@ -235,6 +253,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: ['comp-task-launch-card', 'comp-task-docs-card'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Current team tasks', visible: true, enabled: true },
       config: {
         kind: 'container',
@@ -254,6 +273,7 @@ export const sampleProject: ProjectDocument = {
         'comp-edit-launch-task-btn',
       ],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Launch task card', visible: true, enabled: true },
       config: {
         kind: 'container',
@@ -267,6 +287,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-task-launch-card',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task title', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -280,6 +301,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-task-launch-card',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task status and assignee', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -293,6 +315,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-task-launch-card',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Edit launch task', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -313,6 +336,7 @@ export const sampleProject: ProjectDocument = {
         'comp-edit-docs-task-btn',
       ],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Documentation task card', visible: true, enabled: true },
       config: {
         kind: 'container',
@@ -326,6 +350,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-task-docs-card',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task title', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -339,6 +364,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-task-docs-card',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task status and assignee', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -352,6 +378,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-task-docs-card',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Edit documentation task', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -368,6 +395,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-list-section',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Retry loading tasks', visible: false, enabled: true },
       config: {
         kind: 'button',
@@ -384,6 +412,7 @@ export const sampleProject: ProjectDocument = {
       parentId: null,
       childIds: ['comp-create-modal-content'],
       kind: 'modal',
+      placement: { mode: 'flow' },
       common: { description: 'New task dialog', visible: false, enabled: true },
       config: { kind: 'modal', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -399,6 +428,7 @@ export const sampleProject: ProjectDocument = {
         'comp-create-modal-actions',
       ],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'New task form', visible: true, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -408,6 +438,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-content',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'New task form heading', visible: true, enabled: true },
       config: { kind: 'text', text: 'Create a task', style: 'heading2' },
     },
@@ -417,6 +448,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-content',
       childIds: [],
       kind: 'textInput',
+      placement: { mode: 'flow' },
       common: { description: 'New task title', visible: true, enabled: true },
       config: {
         kind: 'textInput',
@@ -443,6 +475,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-content',
       childIds: ['comp-create-task-progress-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Create task progress', visible: false, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -452,6 +485,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-task-progress-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Create task progress message', visible: true, enabled: true },
       config: { kind: 'text', text: 'Creating task...', style: 'body' },
     },
@@ -461,6 +495,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-content',
       childIds: ['comp-create-task-error-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Create task error', visible: false, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -470,6 +505,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-task-error-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Create task error message', visible: true, enabled: true },
       config: { kind: 'text', text: 'Could not create the task. Try again.', style: 'body' },
     },
@@ -479,6 +515,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-content',
       childIds: ['comp-cancel-create-task-btn', 'comp-submit-create-task-btn'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'New task form actions', visible: true, enabled: true },
       config: {
         kind: 'container',
@@ -496,6 +533,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-actions',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Close the new task form', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -512,6 +550,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-create-modal-actions',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Submit the new task', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -530,6 +569,7 @@ export const sampleProject: ProjectDocument = {
       parentId: null,
       childIds: ['comp-edit-section'],
       kind: 'page',
+      placement: { mode: 'flow' },
       common: { description: 'Task editing page', visible: true, enabled: true },
       config: { kind: 'page', ...DEFAULT_COMPONENT_LAYOUT },
     },
@@ -550,6 +590,7 @@ export const sampleProject: ProjectDocument = {
         'comp-actions',
       ],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task details form', visible: true, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT },
     },
@@ -559,6 +600,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Form heading', visible: true, enabled: true },
       config: { kind: 'text', text: 'Edit task', style: 'heading2' },
     },
@@ -568,6 +610,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Form guidance', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -581,6 +624,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'textInput',
+      placement: { mode: 'flow' },
       common: { description: 'Task title field', visible: true, enabled: true },
       config: {
         kind: 'textInput',
@@ -617,6 +661,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'textInput',
+      placement: { mode: 'flow' },
       common: { description: 'Task description field', visible: true, enabled: true },
       config: {
         kind: 'textInput',
@@ -642,6 +687,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'select',
+      placement: { mode: 'flow' },
       common: { description: 'Task assignee field', visible: true, enabled: true },
       config: {
         kind: 'select',
@@ -662,6 +708,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: [],
       kind: 'select',
+      placement: { mode: 'flow' },
       common: { description: 'Task status field', visible: true, enabled: true },
       config: {
         kind: 'select',
@@ -682,6 +729,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: ['comp-saving-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task saving status', visible: false, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -691,6 +739,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-saving-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task saving message', visible: true, enabled: true },
       config: { kind: 'text', text: 'Saving task...', style: 'body' },
     },
@@ -700,6 +749,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: ['comp-status-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task update success', visible: false, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -709,6 +759,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-status-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task update success message', visible: true, enabled: true },
       config: { kind: 'text', text: 'Task updated successfully.', style: 'body' },
     },
@@ -718,6 +769,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: ['comp-save-error-message-text'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task update error', visible: false, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -727,6 +779,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-save-error-message',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Task update error message', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -740,6 +793,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-edit-section',
       childIds: ['comp-cancel-btn', 'comp-save-btn'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Task form actions', visible: true, enabled: true },
       config: {
         kind: 'container',
@@ -757,6 +811,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-actions',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Review unsaved changes before leaving', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -773,6 +828,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-actions',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Save task changes', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -789,6 +845,7 @@ export const sampleProject: ProjectDocument = {
       parentId: null,
       childIds: ['comp-discard-modal-section'],
       kind: 'modal',
+      placement: { mode: 'flow' },
       common: { description: 'Unsaved task changes confirmation', visible: false, enabled: true },
       config: {
         kind: 'modal',
@@ -802,6 +859,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-discard-modal',
       childIds: ['comp-discard-title', 'comp-discard-message', 'comp-discard-actions'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Discard confirmation content', visible: true, enabled: true },
       config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
@@ -811,6 +869,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-discard-modal-section',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Discard confirmation heading', visible: true, enabled: true },
       config: { kind: 'text', text: 'Discard unsaved changes?', style: 'heading2' },
     },
@@ -820,6 +879,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-discard-modal-section',
       childIds: [],
       kind: 'text',
+      placement: { mode: 'flow' },
       common: { description: 'Discard confirmation guidance', visible: true, enabled: true },
       config: {
         kind: 'text',
@@ -833,6 +893,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-discard-modal-section',
       childIds: ['comp-continue-editing-btn', 'comp-discard-leave-btn'],
       kind: 'container',
+      placement: { mode: 'flow' },
       common: { description: 'Discard confirmation actions', visible: true, enabled: true },
       config: {
         kind: 'container',
@@ -850,6 +911,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-discard-actions',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Return to task editing', visible: true, enabled: true },
       config: {
         kind: 'button',
@@ -866,6 +928,7 @@ export const sampleProject: ProjectDocument = {
       parentId: 'comp-discard-actions',
       childIds: [],
       kind: 'button',
+      placement: { mode: 'flow' },
       common: { description: 'Discard changes and return to tasks', visible: true, enabled: true },
       config: {
         kind: 'button',

@@ -241,6 +241,12 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
   for (const comp of screenComponents) {
     const isPageRoot = comp.id === screen.rootComponentId
     const isModalRoot = screen.modalComponentIds.includes(comp.id)
+    if ((isPageRoot || isModalRoot) && comp.placement.mode !== 'flow') {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Independent root ${comp.id} placement must be flow`,
+      )
+    }
     if (comp.parentId === null && !isPageRoot && !isModalRoot) {
       throw new DomainError('INVARIANT_VIOLATION', `Unlisted component root ${comp.id}`)
     }
