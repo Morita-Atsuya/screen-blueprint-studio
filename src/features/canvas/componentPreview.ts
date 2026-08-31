@@ -3,7 +3,7 @@ import type { ComponentConfig, TextStyle } from '../../domain/model'
 
 export type CanvasComponentPreview =
   | {
-      kind: 'page' | 'section' | 'container' | 'modal'
+      kind: 'page' | 'container' | 'modal'
       rendersContent: false
     }
   | {
@@ -65,7 +65,6 @@ export function createCanvasComponentPreview(
 ): CanvasComponentPreview {
   switch (config.kind) {
     case 'page':
-    case 'section':
     case 'container':
     case 'modal':
       return { kind: config.kind, rendersContent: false }

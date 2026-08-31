@@ -104,6 +104,7 @@ const renderInspectorBundle = join(temp, 'renderInspector.mjs')
 const renderAppBundle = join(temp, 'renderApp.mjs')
 const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
 const mountDeleteDialogBundle = join(temp, 'mountDeleteDialog.mjs')
+const migratePersistedDataBundle = join(temp, 'migratePersistedData.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -135,6 +136,7 @@ bundle('src/domain/componentPlacement.ts', componentPlacementBundle)
 bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
 bundle('src/features/inspector/inspectorSections.ts', inspectorSectionsBundle)
 bundle('src/domain/screenFlow.ts', screenFlowBundle)
+bundle('src/persistence/migratePersistedData.ts', migratePersistedDataBundle)
 bundle(
   'scripts/fixtures/renderInspector.tsx',
   renderInspectorBundle,
@@ -363,6 +365,179 @@ async function freshStore(caseName) {
   const module = await import(moduleUrl(appStoreBundle, caseName))
   return module.useAppStore
 }
+
+await test('schema v1 sections migrate to containers across persisted change set data', async () => {
+  memoryStorage.clear()
+  const baselineStore = await freshStore('section-migration-baseline')
+  const legacyDocument = clone(baselineStore.getState().document)
+  legacyDocument.schemaVersion = 1
+  for (const componentId of ['comp-list-section', 'comp-edit-section']) {
+    legacyDocument.components[componentId].kind = 'section'
+    legacyDocument.components[componentId].config.kind = 'section'
+  }
+
+  const legacyBaseDocument = clone(legacyDocument)
+  const operations = [
+    {
+      id: 'legacy-add-operation',
+      source: 'agent',
+      command: {
+        type: 'addComponent',
+        componentId: 'legacy-section-added',
+        screenId: 'screen-edit',
+        parentId: 'comp-edit-section',
+        kind: 'section',
+        config: {
+          kind: 'section',
+          layout: 'vertical',
+          gap: 'md',
+          columns: 2,
+          justify: 'start',
+          align: 'stretch',
+          wrap: false,
+        },
+      },
+      issuedAt: new Date().toISOString(),
+    },
+    {
+      id: 'legacy-paste-operation',
+      source: 'agent',
+      command: {
+        type: 'pasteComponent',
+        snapshot: {
+          projectId: legacyDocument.project.id,
+          sourceScreenId: 'screen-edit',
+          rootComponentId: 'legacy-snapshot-section',
+          components: {
+            'legacy-snapshot-section': {
+              id: 'legacy-snapshot-section',
+              screenId: 'screen-edit',
+              parentId: null,
+              childIds: [],
+              kind: 'section',
+              common: { description: 'Snapshot group', visible: true, enabled: true },
+              config: {
+                kind: 'section',
+                layout: 'vertical',
+                gap: 'sm',
+                columns: 1,
+                justify: 'start',
+                align: 'stretch',
+                wrap: false,
+              },
+            },
+          },
+          stateOverrides: {},
+        },
+        destinationComponentId: 'legacy-pasted-container',
+        destinationScreenId: 'screen-edit',
+        destinationParentId: 'comp-edit-section',
+        position: 0,
+        componentIdMap: {
+          'legacy-snapshot-section': 'legacy-pasted-container',
+        },
+      },
+      issuedAt: new Date().toISOString(),
+    },
+    {
+      id: 'legacy-update-operation',
+      source: 'agent',
+      command: {
+        type: 'updateComponentSpec',
+        componentId: 'comp-edit-section',
+        patch: { config: { kind: 'section' } },
+      },
+      issuedAt: new Date().toISOString(),
+    },
+  ]
+  const legacyPayload = {
+    document: legacyDocument,
+    activeScreenId: 'screen-edit',
+    activeChangeSet: {
+      id: 'legacy-section-change-set',
+      summary: 'Migrate structural grouping',
+      baseRevision: legacyDocument.revision,
+      version: operations.length,
+      baseDocument: legacyBaseDocument,
+      operations,
+      createdAt: new Date().toISOString(),
+    },
+  }
+
+  const { migratePersistedData } = await import(
+    moduleUrl(migratePersistedDataBundle, 'section-migration-direct')
+  )
+  const migration = migratePersistedData(legacyPayload)
+  assert(migration.migrated, 'schema v1 payload was not marked as migrated')
+  const migrated = migration.value
+  assert(
+    migrated.document.schemaVersion === 2 &&
+      migrated.document.revision === legacyDocument.revision &&
+      migrated.document.components['comp-list-section'].kind === 'container' &&
+      migrated.document.components['comp-edit-section'].config.kind === 'container',
+    'confirmed document identity, revision, or Section conversion was not preserved',
+  )
+  assert(
+    migrated.activeChangeSet.baseDocument.schemaVersion === 2 &&
+      migrated.activeChangeSet.baseDocument.components['comp-edit-section'].kind === 'container',
+    'active change set base document was not migrated',
+  )
+  assert(
+    migrated.activeChangeSet.operations[0].command.kind === 'container' &&
+      migrated.activeChangeSet.operations[0].command.config.kind === 'container' &&
+      migrated.activeChangeSet.operations[1].command.snapshot.components[
+        'legacy-snapshot-section'
+      ].config.kind === 'container' &&
+      migrated.activeChangeSet.operations[2].command.patch.config.kind === 'container',
+    'embedded add, paste, or update component data was not migrated',
+  )
+  assert(
+    legacyPayload.document.schemaVersion === 1 &&
+      legacyPayload.document.components['comp-edit-section'].kind === 'section',
+    'migration mutated the parsed legacy payload',
+  )
+
+  const replayPayload = clone(legacyPayload)
+  replayPayload.activeChangeSet.operations = [clone(operations[0])]
+  replayPayload.activeChangeSet.version = 1
+  memoryStorage.setItem(storageKey, JSON.stringify(replayPayload))
+  const migratedStore = await freshStore('section-migration-replay')
+  const state = migratedStore.getState()
+  assert(
+    state.recoveryState === null &&
+      state.document.schemaVersion === 2 &&
+      state.document.components['comp-edit-section'].kind === 'container' &&
+      state.effectiveDocument.components['legacy-section-added'].kind === 'container',
+    'valid migrated change set did not reload and replay as containers',
+  )
+  const persisted = JSON.parse(memoryStorage.getItem(storageKey))
+  assert(
+    persisted.document.schemaVersion === 2 &&
+      persisted.activeChangeSet.baseDocument.schemaVersion === 2 &&
+      persisted.activeChangeSet.operations[0].command.kind === 'container',
+    'successful migration was not persisted as current schema data',
+  )
+
+  const dangerousLegacy = clone(legacyDocument)
+  dangerousLegacy.components = JSON.parse(JSON.stringify(dangerousLegacy.components))
+  Object.defineProperty(dangerousLegacy.components, '__proto__', {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: {
+      ...dangerousLegacy.components['comp-list-title'],
+      id: '__proto__',
+    },
+  })
+  memoryStorage.setItem(storageKey, JSON.stringify({ document: dangerousLegacy }))
+  const dangerousStore = await freshStore('section-migration-dangerous-id')
+  assert(
+    dangerousStore.getState().recoveryState !== null &&
+      ({}).polluted === undefined &&
+      ({}).name === undefined,
+    'legacy prototype-like IDs bypassed recovery or polluted the prototype',
+  )
+})
 
 await test('storage access failures never crash initialization or reset', async () => {
   memoryStorage.clear()
@@ -986,7 +1161,7 @@ await test('invalid schema, revision, and entity metadata enter recovery state',
   delete missingRevision.revision
   poisonedDocuments.push(missingRevision)
 
-  for (const schemaVersion of ['1', null, 2]) {
+  for (const schemaVersion of ['1', null, 3]) {
     const document = clone(baseline)
     document.schemaVersion = schemaVersion
     poisonedDocuments.push(document)
@@ -5885,8 +6060,14 @@ await test('component display labels separate structure from visible content', a
     'page label did not use its structural kind fallback',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-edit-section']) === 'Section',
-    'section label did not use its structural kind fallback',
+    getComponentDisplayLabel(document.components['comp-edit-section']) === 'Container',
+    'container label did not use its structural kind fallback',
+  )
+  const describedContainer = clone(document.components['comp-edit-section'])
+  describedContainer.common.description = 'Task form'
+  assert(
+    getComponentDisplayLabel(describedContainer) === 'Task form',
+    'container label did not use its editor description',
   )
   assert(
     getComponentDisplayLabel(document.components['comp-name-input']) === 'Name',
@@ -5920,7 +6101,7 @@ await test('component display labels separate structure from visible content', a
     deepContext?.screenName === 'Edit User' &&
       deepContext.targetLabel === 'Save' &&
       deepContext.hierarchy.map(item => item.label).join(' > ') ===
-        'Page > Section > Container > Save',
+        'Page > Container > Container > Save',
     'deep component context did not preserve its screen and real parent hierarchy',
   )
   assert(
@@ -5935,7 +6116,7 @@ await test('component display labels separate structure from visible content', a
   assert(
     getComponentSelectionContext(document, 'comp-save-btn', 'ja')
       ?.hierarchy.slice(0, -1).map(item => item.label).join(' > ') ===
-      'ページ > セクション > コンテナ',
+      'ページ > コンテナ > コンテナ',
     'component hierarchy labels did not use the selected locale',
   )
   assert(
@@ -6421,7 +6602,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
   } = await import(moduleUrl(inspectorSectionsBundle, 'inspector-sections'))
   const { COMPONENT_KINDS } = await import(moduleUrl(modelBundle, 'inspector-section-kinds'))
   const contentKinds = new Set(['text', 'textInput', 'select', 'button', 'alert'])
-  const layoutKinds = new Set(['page', 'section', 'container', 'modal'])
+  const layoutKinds = new Set(['page', 'container', 'modal'])
 
   for (const kind of COMPONENT_KINDS) {
     assert(
@@ -6828,7 +7009,9 @@ await test('change set review presents sequential diffs for every command type',
     moduleUrl(componentFactoryBundle, 'change-set-presenter-factory')
   )
   const store = await freshStore('change-set-presenter')
-  const baseDocument = store.getState().document
+  const baseDocument = clone(store.getState().document)
+  baseDocument.components['comp-list-section'].common.description = 'List content'
+  baseDocument.components['comp-list-grid'].common.description = 'User grid'
   let operationNumber = 0
   const makeChangeSet = commands => ({
     id: `review-${operationNumber}`,
@@ -6935,8 +7118,8 @@ await test('change set review presents sequential diffs for every command type',
       componentRows[4].action === 'Move component to another parent' &&
       componentRows[4].changes.some(change =>
         change.field === 'Parent' &&
-        change.before.text === 'Section' &&
-        change.after.text === 'Container'
+        change.before.text === 'List content' &&
+        change.after.text === 'User grid'
       ) &&
       componentRows[5].navigation === null,
     'component review lost nested config, immediate snapshots, move semantics, or navigation',
@@ -7848,7 +8031,10 @@ await test('semantic containers replace legacy layout kinds across commands and 
     moduleUrl(modelBundle, 'semantic-container-kinds')
   )
   const kinds = PALETTE_ITEMS.map(item => item.kind)
-  assert(kinds.includes('section') && kinds.includes('container'), 'semantic containers are missing from palette')
+  assert(
+    kinds.includes('container') && !kinds.includes('section'),
+    'palette did not consolidate structural grouping into Container',
+  )
   assert(
     kinds.join(',') === PALETTE_COMPONENT_KINDS.join(','),
     'palette diverged from the canonical component catalog',

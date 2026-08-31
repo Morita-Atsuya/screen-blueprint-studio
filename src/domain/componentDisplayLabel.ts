@@ -7,7 +7,6 @@ import { assertNever } from './assertNever'
 
 export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], MessageKey> = {
   page: 'component.page',
-  section: 'component.section',
   container: 'component.container',
   text: 'component.text',
   textInput: 'component.textInput',
@@ -35,10 +34,10 @@ export function getComponentDisplayLabel(
 
   switch (config.kind) {
     case 'page':
-    case 'section':
     case 'modal':
-    case 'container':
       return fallback
+    case 'container':
+      return readableText(component.common.description, fallback)
     case 'text':
       return readableText(config.text, fallback)
     case 'textInput':

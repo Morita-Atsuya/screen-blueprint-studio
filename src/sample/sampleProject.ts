@@ -1,8 +1,8 @@
 import type { ProjectDocument } from '../domain/model'
-import { DEFAULT_COMPONENT_LAYOUT } from '../domain/model'
+import { CURRENT_SCHEMA_VERSION, DEFAULT_COMPONENT_LAYOUT } from '../domain/model'
 
 export const sampleProject: ProjectDocument = {
-  schemaVersion: 1,
+  schemaVersion: CURRENT_SCHEMA_VERSION,
   revision: 1,
   project: {
     id: 'proj-1',
@@ -52,9 +52,9 @@ export const sampleProject: ProjectDocument = {
       screenId: 'screen-list',
       parentId: 'comp-list-page',
       childIds: ['comp-list-title', 'comp-list-grid'],
-      kind: 'section',
+      kind: 'container',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', ...DEFAULT_COMPONENT_LAYOUT },
+      config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT },
     },
     'comp-list-title': {
       id: 'comp-list-title',
@@ -113,9 +113,9 @@ export const sampleProject: ProjectDocument = {
       screenId: 'screen-edit',
       parentId: 'comp-edit-page',
       childIds: ['comp-edit-title', 'comp-name-input', 'comp-email-input', 'comp-role-select', 'comp-status-alert', 'comp-actions'],
-      kind: 'section',
+      kind: 'container',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', ...DEFAULT_COMPONENT_LAYOUT },
+      config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT },
     },
     'comp-edit-title': {
       id: 'comp-edit-title',
@@ -267,9 +267,9 @@ export const sampleProject: ProjectDocument = {
       screenId: 'screen-edit',
       parentId: 'comp-delete-modal',
       childIds: ['comp-delete-title', 'comp-delete-warning', 'comp-delete-actions'],
-      kind: 'section',
+      kind: 'container',
       common: { description: '', visible: true, enabled: true },
-      config: { kind: 'section', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
+      config: { kind: 'container', ...DEFAULT_COMPONENT_LAYOUT, gap: 'sm' },
     },
     'comp-delete-title': {
       id: 'comp-delete-title',

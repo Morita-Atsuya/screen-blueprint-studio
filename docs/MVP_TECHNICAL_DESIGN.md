@@ -143,7 +143,7 @@ MVPは正規化した参照モデルを採用する。順序は親コンポー�
 type EntityId = string;
 
 interface ProjectDocument {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revision: number;
   project: Project;
   screens: Record<EntityId, Screen>;
@@ -178,7 +178,6 @@ interface Screen {
 ```ts
 type ComponentKind =
   | "page"
-  | "section"
   | "container"
   | "text"
   | "textInput"
@@ -209,7 +208,6 @@ interface CommonComponentSpec {
 ```ts
 type ComponentConfig =
   | ({ kind: "page" } & ComponentLayout)
-  | ({ kind: "section" } & ComponentLayout)
   | ({ kind: "container" } & ComponentLayout)
   | {
       kind: "text";
@@ -269,7 +267,9 @@ interface AlertConfig {
 type ModalConfig = { kind: "modal" } & ComponentLayout;
 ```
 
-`page`、`section`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。見出し、本文、補足はchildの`text`と`style`で表現する。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`、`alert`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。`CommonComponentSpec.description`は仕様metadataであり、Canvas contentへ自動描画しない。
+`page`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。意味的なグループ名はContainerの`CommonComponentSpec.description`へ保存し、TreeとCanvasのeditor-only識別に使うが、preview contentへは自動描画しない。見出し、本文、補足はchildの`text`と`style`で表現する。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`、`alert`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。
+
+schema version 2では、機能差のなかった旧`section` kindを`container`へ統合した。version 1の保存データは読込時に、component ID、親子関係、共通仕様、layout、revisionを保持したまま決定的に変換する。active change setのbase documentと未確定operation内のcomponent snapshot/configも同じ境界で変換し、変換後の全体を現行runtime validationで検証してから再保存する。壊れた旧データは補正せずRecoveryへ送る。
 
 `vertical`は縦積み、`horizontal`は横並び、`grid`は指定列数で配置し、Inspector、Canvas、DnDが同じ値を参照する。`page`は`rootComponentId`、各`modal`は`modalComponentIds`で参照され、いずれも`parentId: null`の独立rootとなる。Modalのchildrenは通常componentと同じtree操作に対応するが、Modal root自体はPageや他のcontainerへreparentしない。CanvasではPage artboard外の独立frameとして常時編集でき、状態別のvisible overrideはframeのeditor chromeで示す。
 

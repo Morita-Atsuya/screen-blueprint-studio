@@ -73,7 +73,7 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 
 初期コンポーネント候補:
 
-- Container: Page、Section、Container、Modal
+- Container: Page、Container、Modal
 - Layout properties: vertical、horizontal、grid、gap、distribution、alignment、wrap
 - Navigation: Header、Sidebar、Tabs、Breadcrumbs
 - Content: Text（heading／body／caption styles）、Image、Card、Table
@@ -86,7 +86,7 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 ```text
 Page
 ├─ Header
-├─ Section: 基本情報
+├─ Container: 基本情報
 │  ├─ TextInput: 氏名
 │  ├─ EmailInput: メールアドレス
 │  └─ Select: ロール

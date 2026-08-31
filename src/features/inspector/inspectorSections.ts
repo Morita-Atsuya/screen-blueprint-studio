@@ -41,7 +41,6 @@ export function componentHasContentSection(kind: ComponentKind): boolean {
     case 'alert':
       return true
     case 'page':
-    case 'section':
     case 'container':
     case 'modal':
       return false
@@ -51,7 +50,6 @@ export function componentHasContentSection(kind: ComponentKind): boolean {
 export function componentHasLayoutSection(kind: ComponentKind): boolean {
   switch (kind) {
     case 'page':
-    case 'section':
     case 'container':
     case 'modal':
       return true
@@ -93,7 +91,6 @@ function layoutValues(config: ComponentConfig | undefined): Record<string, unkno
   if (
     !config ||
     (config.kind !== 'page' &&
-      config.kind !== 'section' &&
       config.kind !== 'container' &&
       config.kind !== 'modal')
   ) {
@@ -106,7 +103,6 @@ function contentValues(config: ComponentConfig | undefined): Record<string, unkn
   if (!config) return {}
   switch (config.kind) {
     case 'page':
-    case 'section':
     case 'container':
     case 'modal':
       return {}

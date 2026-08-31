@@ -74,11 +74,6 @@ const configVariants = [
     required: ['kind', ...layoutRequired],
   },
   {
-    kind: 'section',
-    properties: { kind: { const: 'section' }, ...layoutProperties },
-    required: ['kind', ...layoutRequired],
-  },
-  {
     kind: 'container',
     properties: { kind: { const: 'container' }, ...layoutProperties },
     required: ['kind', ...layoutRequired],

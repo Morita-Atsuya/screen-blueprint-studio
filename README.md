@@ -13,8 +13,8 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 ## 主な機能
 
 - 複数画面の管理
-- Page、Section、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
-- Page／Section／Container／Modalごとのvertical、horizontal、gridレイアウト設定
+- Page、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
+- Page／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
 - Page／Modal root以外のcomponent subtreeを直後へatomicに複製。全状態overrideを引き継ぎ、event／API field bindingは複製しない
 - Page／Modal root以外のcomponent subtreeをアプリ内clipboardへコピーし、選択したcontainer/rootの内側またはleaf直後へatomicに貼り付け。同一画面だけ状態overrideを引き継ぐ
@@ -86,7 +86,7 @@ AIがcurrent modelと直近の破棄記録を再読し、次のchange setを作�
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
 
 Page／Modal root、別screen、leaf、自分自身・子孫へのdropは理由別に拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。同じ位置へ戻すdropは正常なno-opとしてToast、history、change set operationを生成せず、対象外でdragを終えた場合やEscapeは通常cancelとして扱います。active change setが始まると進行中のdragは安全にcancelされ、反映または破棄まで新しいdragを開始できません。
-drop位置はdrag中だけ挿入line・outlineで示し、無効な位置は別のchromeで識別できます。preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Section／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。treeとdrag表示はleafのlabel／textなどの仕様値、または構造kindのeditor-only名を使います。
+drop位置はdrag中だけ挿入line・outlineで示し、無効な位置は別のchromeで識別できます。preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。Containerの`description`はTreeとCanvasでグループを識別するeditor metadataです。
 
 ## ローカル実行
 

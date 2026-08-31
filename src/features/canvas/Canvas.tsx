@@ -624,7 +624,6 @@ function CanvasComponent({
 function hasLayout(config: ComponentConfig): config is ComponentConfig & ComponentLayout {
   return (
     config.kind === 'page' ||
-    config.kind === 'section' ||
     config.kind === 'container' ||
     config.kind === 'modal'
   )
@@ -649,7 +648,6 @@ function ComponentView({
   const preview = createCanvasComponentPreview(comp.config)
   switch (preview.kind) {
     case 'page':
-    case 'section':
     case 'container':
       return null
     case 'text': {

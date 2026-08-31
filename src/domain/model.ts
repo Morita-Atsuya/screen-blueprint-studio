@@ -2,6 +2,7 @@
 // Core identity types
 // ============================================================
 export type EntityId = string
+export const CURRENT_SCHEMA_VERSION = 2
 
 // ============================================================
 // Validation rules
@@ -30,12 +31,6 @@ export const COMPONENT_KIND_CATALOG = [
     kind: 'page',
     canContainChildren: true,
     placement: 'screen-root',
-    canvasContent: false,
-  },
-  {
-    kind: 'section',
-    canContainChildren: true,
-    placement: 'child',
     canvasContent: false,
   },
   {
@@ -126,7 +121,6 @@ export type TextStyle = 'heading1' | 'heading2' | 'heading3' | 'body' | 'caption
 
 export type ComponentConfig =
   | ({ kind: 'page' } & ComponentLayout)
-  | ({ kind: 'section' } & ComponentLayout)
   | ({ kind: 'container' } & ComponentLayout)
   | { kind: 'text'; text: string; style: TextStyle }
   | {
@@ -257,7 +251,7 @@ export interface Project {
 // Document (source of truth)
 // ============================================================
 export interface ProjectDocument {
-  schemaVersion: 1
+  schemaVersion: 2
   revision: number
   project: Project
   screens: Record<EntityId, Screen>

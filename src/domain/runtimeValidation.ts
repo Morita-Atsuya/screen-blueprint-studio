@@ -1,3 +1,4 @@
+import { CURRENT_SCHEMA_VERSION, COMPONENT_KINDS } from './model'
 import type {
   ApiOperation,
   CommonComponentSpec,
@@ -15,7 +16,6 @@ import type {
   ScreenState,
   ValidationRule,
 } from './model'
-import { COMPONENT_KINDS } from './model'
 import { DomainError } from './errors'
 import { isSafeEntityId } from './entityMap'
 
@@ -172,7 +172,9 @@ export function validateProjectDocumentMetadata(
     [],
     path,
   )
-  if (document.schemaVersion !== 1) fail(`${path}.schemaVersion`, 'must equal 1')
+  if (document.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    fail(`${path}.schemaVersion`, `must equal ${CURRENT_SCHEMA_VERSION}`)
+  }
   if (!Number.isSafeInteger(document.revision) || (document.revision as number) < 0) {
     fail(`${path}.revision`, 'must be a non-negative safe integer')
   }
@@ -401,7 +403,6 @@ export function validateComponentConfig(
 
   switch (config.kind) {
     case 'page':
-    case 'section':
     case 'modal':
     case 'container':
       exactKeys(

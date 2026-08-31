@@ -81,7 +81,6 @@ export function cloneComponentConfig(config: ComponentConfig): ComponentConfig {
         ),
       }
     case 'page':
-    case 'section':
     case 'container':
     case 'text':
     case 'button':

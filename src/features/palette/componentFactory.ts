@@ -38,7 +38,6 @@ export function createDefaultComponentConfig(
   locale: Locale,
 ): ComponentConfig {
   switch (kind) {
-    case 'section':
     case 'container':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
     case 'text':

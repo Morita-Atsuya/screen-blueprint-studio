@@ -174,7 +174,6 @@ function duplicateComponentConfig(
     case 'button':
       return { ...copied, eventId: null }
     case 'page':
-    case 'section':
     case 'container':
     case 'text':
     case 'alert':

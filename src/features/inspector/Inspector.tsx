@@ -611,7 +611,6 @@ export function Inspector() {
         </InspectorSection>
       ) : null}
       {componentHasLayoutSection(cfg.kind) && (cfg.kind === 'page' ||
-        cfg.kind === 'section' ||
         cfg.kind === 'container' ||
         cfg.kind === 'modal') ? (
         <InspectorSection

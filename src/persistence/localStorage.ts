@@ -2,6 +2,8 @@ import type { ProjectDocument } from '../domain/model'
 import type { ChangeSet, RejectedChangeSetRecord } from '../domain/collaboration'
 import { validateInvariants } from '../domain/invariants'
 import { applyCommandWithoutRevision } from '../domain/applyCommand'
+import { CURRENT_SCHEMA_VERSION } from '../domain/model'
+import { migratePersistedData } from './migratePersistedData'
 
 const STORAGE_KEY = 'screen-blueprint-studio:v1'
 const REJECTED_KEY = 'screen-blueprint-studio:rejected:v1'
@@ -140,8 +142,17 @@ export function loadFromStorage(): LoadResult {
     return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
   }
 
-  const data = parsed as unknown as PersistedData
-  if (data.document.schemaVersion !== 1) {
+  let migration
+  try {
+    migration = migratePersistedData(parsed)
+  } catch (e) {
+    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+  }
+  const data = migration.value as PersistedData
+  if (
+    (data.document as unknown as { schemaVersion?: unknown }).schemaVersion !==
+    CURRENT_SCHEMA_VERSION
+  ) {
     return { status: 'invalid', rawData: raw, error: 'Unsupported schema version' }
   }
   try {
@@ -151,6 +162,7 @@ export function loadFromStorage(): LoadResult {
   }
 
   if (data.activeChangeSet === undefined) {
+    if (migration.migrated) saveToStorage(data)
     return {
       status: 'success',
       document: data.document,
@@ -171,12 +183,14 @@ export function loadFromStorage(): LoadResult {
     }
   }
   try {
-    return {
+    const result = {
       status: 'success',
       document: data.document,
       activeChangeSet: validateActiveChangeSet(data.activeChangeSet, data.document),
       activeScreenId: data.activeScreenId,
-    }
+    } as const
+    if (migration.migrated) saveToStorage(data)
+    return result
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)
     console.warn('Discarding invalid active change set', e)
