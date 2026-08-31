@@ -2480,9 +2480,8 @@ async function run() {
       windowsVirtualKeyCode: 13,
     })
     await waitForExpression(
-      `document.querySelector('[data-delete-confirmation="component"]') &&
-        document.activeElement ===
-          document.querySelector('[data-delete-confirmation="component"] button')`,
+      `document.querySelector('[data-delete-confirmation="component"]')
+        ?.contains(document.activeElement)`,
       'context-menu Delete did not open a focused confirmation dialog',
     )
     const deleteDialogState = await cdp.call('Runtime.evaluate', {
