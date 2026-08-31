@@ -456,7 +456,7 @@ async function run() {
     browserDocument.events['event-flow-regression'] = {
       id: 'event-flow-regression',
       screenId: 'screen-edit',
-      name: 'Return to user list',
+      name: 'Return to task list',
       trigger: { type: 'click', componentId: 'comp-cancel-btn' },
       actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
     }
@@ -623,6 +623,12 @@ async function run() {
               pageRect.top >= viewportRect.top &&
               pageRect.right <= viewportRect.right &&
               pageRect.bottom <= viewportRect.bottom,
+            taskSampleVisible:
+              page.textContent.includes('Edit task') &&
+              page.textContent.includes('Task title') &&
+              page.textContent.includes('Assignee') &&
+              page.textContent.includes('Status') &&
+              !page.textContent.includes('Priority'),
             scale: new DOMMatrix(getComputedStyle(surface).transform).a,
             transform: surface.style.transform,
             panStart: {
@@ -638,6 +644,7 @@ async function run() {
       const fitted = initialFit.result.value
       assert(fitted.framesInsideMargin, `${width}px initial Canvas frames missed the fit margin`)
       assert(fitted.pageInsideViewport, `${width}px initial Page frame remained clipped`)
+      assert(fitted.taskSampleVisible, `${width}px TaskFlow edit sample is incomplete or includes Priority`)
       assert(fitted.scale < 1.5, `${width}px oversized persisted zoom was not reduced`)
       assert(fitted.overflow === 0, `${width}px Canvas initial fit introduced document overflow`)
 
@@ -885,7 +892,9 @@ async function run() {
           const flowInitiallyOpen = flowDetails?.open
           flowSummary?.click()
           const flowOpened = flowDetails?.open
-          const flowMetadata = [...(flowDetails?.querySelectorAll('dt') ?? [])].map(label => ({
+          const flowMetadata = [
+            ...(flowDetails?.querySelector('dl')?.querySelectorAll('dt') ?? []),
+          ].map(label => ({
             text: label.textContent.trim(),
             foreground: getComputedStyle(label).color,
             background: opaqueBackground(label),
@@ -1007,7 +1016,7 @@ async function run() {
             }
             return 'rgb(255, 255, 255)'
           }
-          const labels = [...details.querySelectorAll('dt')].map(label => ({
+          const labels = [...details.querySelector('dl').querySelectorAll('dt')].map(label => ({
             text: label.textContent.trim(),
             foreground: getComputedStyle(label).color,
             background: opaqueBackground(label),
@@ -1132,12 +1141,12 @@ async function run() {
         `document.querySelector(
           '[data-inspector-section-toggle="behavior"]'
         ).getAttribute('aria-expanded') === 'true' &&
-          Boolean(document.querySelector('[data-event-edit="event-submit"]'))`,
+          Boolean(document.querySelector('[data-event-edit="event-save-task"]'))`,
         `${width}px Event section did not expand`,
       )
       const eventButtonState = await cdp.call('Runtime.evaluate', {
         expression: `(() => {
-          const button = document.querySelector('[data-event-edit="event-submit"]')
+          const button = document.querySelector('[data-event-edit="event-save-task"]')
           const fieldset = button.closest('fieldset')
           const state = {
             disabled: button.disabled,

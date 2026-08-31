@@ -51,6 +51,7 @@ export function App() {
     toast,
     persistenceUnavailable,
     exportCurrentData,
+    resetToSample,
     dismissToast,
     runToastAction,
   } = useAppStore()
@@ -72,6 +73,7 @@ export function App() {
     : activeChangeSet
       ? t('changes.editLocked')
       : t('app.redo')
+  const resetSampleTitle = activeChangeSet ? t('changes.editLocked') : t('app.resetSample')
   const activeScreen = ui.activeScreenId
     ? getOwnEntity(effectiveDocument.screens, ui.activeScreenId)
     : undefined
@@ -146,6 +148,10 @@ export function App() {
     })
   }
 
+  function confirmResetToSample() {
+    if (window.confirm(t('app.resetSampleConfirm'))) resetToSample()
+  }
+
   // ── Recovery screen ─────────────────────────────────────────
   if (recoveryState) {
     return (
@@ -192,6 +198,16 @@ export function App() {
           </span>
           <div className={styles.headerActions}>
             <LanguageSelector />
+            <button
+              className={styles.historyBtn}
+              onClick={confirmResetToSample}
+              disabled={Boolean(activeChangeSet)}
+              title={resetSampleTitle}
+              aria-label={resetSampleTitle}
+              type="button"
+            >
+              ↻ <span className={styles.historyActionText}>{t('app.resetSample')}</span>
+            </button>
             <button
               className={styles.historyBtn}
               onClick={undo}

@@ -1088,15 +1088,15 @@ await test('poisoned component config and default overrides enter recovery state
   poisonedDocuments.push(foreignCommonKey)
 
   const invalidTrigger = clone(baseline)
-  invalidTrigger.events['event-submit'].trigger.type = 'hover'
+  invalidTrigger.events['event-save-task'].trigger.type = 'hover'
   poisonedDocuments.push(invalidTrigger)
 
   const invalidAction = clone(baseline)
-  invalidAction.events['event-submit'].actions = [{ type: 'unknown', value: true }]
+  invalidAction.events['event-save-task'].actions = [{ type: 'unknown', value: true }]
   poisonedDocuments.push(invalidAction)
 
   const foreignActionKey = clone(baseline)
-  foreignActionKey.events['event-submit'].actions[0].evil = true
+  foreignActionKey.events['event-save-task'].actions[0].evil = true
   poisonedDocuments.push(foreignActionKey)
 
   const invalidApiMethod = clone(baseline)
@@ -1119,7 +1119,7 @@ await test('poisoned component config and default overrides enter recovery state
     name: 'Poison',
     method: 'POST',
     path: '/poison',
-    requestBindings: [{ componentId: 'comp-name-input', targetPath: { evil: true } }],
+    requestBindings: [{ componentId: 'comp-task-title-input', targetPath: { evil: true } }],
     successStateId: null,
     errorStateId: null,
   }
@@ -1328,15 +1328,15 @@ await test('domain commands isolate every nested payload from returned documents
 
   const updateSpecCommand = {
     type: 'updateComponentSpec',
-    componentId: 'comp-role-select',
+    componentId: 'comp-task-assignee-select',
     patch: {
       common: { description: 'Updated select' },
       config: {
         options: [
-          { value: 'admin', label: 'Administrator' },
-          { value: 'editor', label: 'Editor' },
-          { value: 'member', label: 'Member' },
-          { value: 'viewer', label: 'Viewer' },
+          { value: 'maya-chen', label: 'Maya Chen' },
+          { value: 'leo-martins', label: 'Leo Martins' },
+          { value: 'unassigned', label: 'Unassigned' },
+          { value: 'new-owner', label: 'New owner' },
         ],
       },
     },
@@ -1344,7 +1344,7 @@ await test('domain commands isolate every nested payload from returned documents
   const updatedSpec = applyCommandWithoutRevision(sampleProject, updateSpecCommand)
   stableFragment(
     updatedSpec,
-    document => document.components['comp-role-select'],
+    document => document.components['comp-task-assignee-select'],
     () => {
       updateSpecCommand.patch.common.description = 'Mutated'
       updateSpecCommand.patch.config.options[0].label = 'Mutated'
@@ -1360,7 +1360,7 @@ await test('domain commands isolate every nested payload from returned documents
     name: 'Isolated',
     description: 'Command-owned state',
     overrides: {
-      'comp-name-input': { enabled: false, value: 'Initial' },
+      'comp-task-title-input': { enabled: false, value: 'Initial' },
     },
   }
   const createdState = applyCommandWithoutRevision(sampleProject, createStateCommand)
@@ -1368,8 +1368,8 @@ await test('domain commands isolate every nested payload from returned documents
     createdState,
     document => document.screenStates['state-isolated'],
     () => {
-      createStateCommand.overrides['comp-name-input'].value = 'Mutated'
-      createStateCommand.overrides['comp-email-input'] = { visible: false }
+      createStateCommand.overrides['comp-task-title-input'].value = 'Mutated'
+      createStateCommand.overrides['comp-task-description-input'] = { visible: false }
     },
     'createScreenState overrides',
   )
@@ -1411,28 +1411,28 @@ await test('domain commands isolate every nested payload from returned documents
     () => {
       connectEventCommand.trigger.componentId = 'comp-save-btn'
       connectEventCommand.actions[0].stateId = 'state-edit-success'
-      connectEventCommand.actions.push({ type: 'callApi', apiOperationId: 'api-save-user' })
+      connectEventCommand.actions.push({ type: 'callApi', apiOperationId: 'api-update-task' })
     },
     'connectEvent trigger/actions',
   )
 
   const updateEventCommand = {
     type: 'updateEvent',
-    eventId: 'event-submit',
+    eventId: 'event-save-task',
     name: 'Updated event',
     trigger: { type: 'submit', componentId: 'comp-edit-section' },
     actions: [
       { type: 'showAlert', componentId: 'comp-status-alert' },
-      { type: 'callApi', apiOperationId: 'api-save-user' },
+      { type: 'callApi', apiOperationId: 'api-update-task' },
     ],
   }
   const updatedEvent = applyTransaction(sampleProject, [updateEventCommand])
   stableFragment(
     updatedEvent,
-    document => document.events['event-submit'],
+    document => document.events['event-save-task'],
     () => {
       updateEventCommand.trigger.componentId = 'comp-actions'
-      updateEventCommand.actions[0].componentId = 'comp-name-input'
+      updateEventCommand.actions[0].componentId = 'comp-task-title-input'
       updateEventCommand.actions.length = 0
     },
     'updateEvent transaction payload',
@@ -1446,7 +1446,7 @@ await test('domain commands isolate every nested payload from returned documents
     method: 'POST',
     path: '/isolated',
     requestBindings: [
-      { componentId: 'comp-name-input', targetPath: 'body.name' },
+      { componentId: 'comp-task-title-input', targetPath: 'body.name' },
     ],
     successStateId: 'state-edit-success',
     errorStateId: 'state-edit-error',
@@ -1458,8 +1458,8 @@ await test('domain commands isolate every nested payload from returned documents
     () => {
       bindApiCommand.requestBindings[0].targetPath = 'body.mutated'
       bindApiCommand.requestBindings.push({
-        componentId: 'comp-email-input',
-        targetPath: 'body.email',
+        componentId: 'comp-task-description-input',
+        targetPath: 'body.description',
       })
     },
     'bindApiOperation requestBindings',
@@ -1467,12 +1467,12 @@ await test('domain commands isolate every nested payload from returned documents
 
   const updateApiCommand = {
     type: 'updateApiOperation',
-    operationId: 'api-save-user',
+    operationId: 'api-update-task',
     name: 'Updated API',
     method: 'PATCH',
-    path: '/api/users/{id}',
+    path: '/api/tasks/{taskId}',
     requestBindings: [
-      { componentId: 'comp-role-select', targetPath: 'body.role' },
+      { componentId: 'comp-task-assignee-select', targetPath: 'body.assigneeId' },
     ],
     successStateId: 'state-edit-success',
     errorStateId: 'state-edit-error',
@@ -1480,9 +1480,9 @@ await test('domain commands isolate every nested payload from returned documents
   const updatedApi = applyCommandWithoutRevision(sampleProject, updateApiCommand)
   stableFragment(
     updatedApi,
-    document => document.apiOperations['api-save-user'],
+    document => document.apiOperations['api-update-task'],
     () => {
-      updateApiCommand.requestBindings[0].componentId = 'comp-name-input'
+      updateApiCommand.requestBindings[0].componentId = 'comp-task-title-input'
       updateApiCommand.requestBindings.length = 0
     },
     'updateApiOperation requestBindings',
@@ -1511,9 +1511,9 @@ await test('domain commands isolate every nested payload from returned documents
     () => {
       pasteCommand.componentIdMap[pasteCommand.snapshot.rootComponentId] = 'mutated-id'
       pasteCommand.snapshot.components['comp-edit-section'].childIds.length = 0
-      pasteCommand.snapshot.components['comp-name-input'].config.validationRules[0].message =
+      pasteCommand.snapshot.components['comp-task-title-input'].config.validationRules[0].message =
         'Mutated'
-      pasteCommand.snapshot.components['comp-role-select'].config.options[0].label = 'Mutated'
+      pasteCommand.snapshot.components['comp-task-assignee-select'].config.options[0].label = 'Mutated'
       const stateOverrides = pasteCommand.snapshot.stateOverrides['state-edit-saving']
       if (stateOverrides?.['comp-save-btn']) {
         stateOverrides['comp-save-btn'].enabled = true
@@ -1524,15 +1524,15 @@ await test('domain commands isolate every nested payload from returned documents
 
   const duplicateCommand = {
     type: 'duplicateComponent',
-    componentId: 'comp-role-select',
-    componentIdMap: { 'comp-role-select': 'comp-isolated-duplicate' },
+    componentId: 'comp-task-assignee-select',
+    componentIdMap: { 'comp-task-assignee-select': 'comp-isolated-duplicate' },
   }
   const duplicated = applyCommandWithoutRevision(sampleProject, duplicateCommand)
   stableFragment(
     duplicated,
     document => document.components['comp-isolated-duplicate'],
     () => {
-      duplicateCommand.componentIdMap['comp-role-select'] = 'mutated-id'
+      duplicateCommand.componentIdMap['comp-task-assignee-select'] = 'mutated-id'
     },
     'duplicateComponent ID map',
   )
@@ -1542,7 +1542,7 @@ await test('domain commands isolate every nested payload from returned documents
   const review = reviewStore.getState().beginChangeSet('Isolate command payload')
   const reviewCommand = {
     type: 'updateEvent',
-    eventId: 'event-submit',
+    eventId: 'event-save-task',
     name: 'Review event',
     trigger: { type: 'click', componentId: 'comp-save-btn' },
     actions: [{ type: 'setState', stateId: 'state-edit-success' }],
@@ -1552,7 +1552,7 @@ await test('domain commands isolate every nested payload from returned documents
     reviewStore.getState().activeChangeSet.operations[0].command,
   )
   const effectiveBeforeMutation = JSON.stringify(
-    reviewStore.getState().effectiveDocument.events['event-submit'],
+    reviewStore.getState().effectiveDocument.events['event-save-task'],
   )
   reviewCommand.trigger.componentId = 'comp-cancel-btn'
   reviewCommand.actions[0].stateId = 'state-edit-error'
@@ -1560,13 +1560,13 @@ await test('domain commands isolate every nested payload from returned documents
   assert(
     JSON.stringify(reviewStore.getState().activeChangeSet.operations[0].command) ===
       operationBeforeMutation &&
-      JSON.stringify(reviewStore.getState().effectiveDocument.events['event-submit']) ===
+      JSON.stringify(reviewStore.getState().effectiveDocument.events['event-save-task']) ===
         effectiveBeforeMutation,
     'change set retained the caller command or nested payload',
   )
   reviewStore.getState().acceptChangeSet()
   assert(
-    reviewStore.getState().document.events['event-submit'].actions[0].stateId ===
+    reviewStore.getState().document.events['event-save-task'].actions[0].stateId ===
       'state-edit-success',
     'Accept replayed a caller-mutated command payload',
   )
@@ -1577,7 +1577,7 @@ await test('domain commands isolate every nested payload from returned documents
   try {
     applyCommandWithoutRevision(sampleProject, {
       type: 'updateComponentSpec',
-      componentId: 'comp-role-select',
+      componentId: 'comp-task-assignee-select',
       patch: { config: { options: sparseOptions } },
     })
   } catch (error) {
@@ -1615,16 +1615,16 @@ await test('domain commands isolate every nested payload from returned documents
     },
     {
       type: 'updateEvent',
-      eventId: 'event-submit',
+      eventId: 'event-save-task',
       name: 'Invalid action',
       trigger: { type: 'click', componentId: 'comp-save-btn' },
       actions: [{ type: 'unsupportedAction' }],
     },
     Object.assign([], {
       type: 'duplicateComponent',
-      componentId: 'comp-role-select',
+      componentId: 'comp-task-assignee-select',
       componentIdMap: Object.assign([], {
-        'comp-role-select': 'comp-array-map-copy',
+        'comp-task-assignee-select': 'comp-array-map-copy',
       }),
     }),
     {
@@ -1653,7 +1653,7 @@ await test('domain commands isolate every nested payload from returned documents
     changeSetId: webBegin.data.changeSetId,
     expectedRevision: webBegin.data.baseRevision,
     expectedChangeSetVersion: 0,
-    componentId: 'comp-name-input',
+    componentId: 'comp-task-title-input',
     patch: {
       config: {
         validationRules: [
@@ -1687,8 +1687,18 @@ await test('UI references reconcile after preview, accept, initialization, and u
   const previewStore = await freshStore('ui-reconcile-preview')
   previewStore.getState().setActiveScreen('screen-edit')
   previewStore.getState().setActiveState('state-edit-saving')
-  previewStore.getState().setSelectedComponent('comp-name-input')
+  previewStore.getState().setSelectedComponent('comp-task-title-input')
   const changeSet = previewStore.getState().beginChangeSet('Remove active screen')
+  for (const eventId of [
+    'event-create-task',
+    'event-edit-launch-task',
+    'event-edit-docs-task',
+  ]) {
+    previewStore.getState().dispatchToChangeSet(changeSet.id, {
+      type: 'removeEvent',
+      eventId,
+    })
+  }
   previewStore.getState().dispatchToChangeSet(changeSet.id, {
     type: 'removeScreen',
     screenId: 'screen-edit',
@@ -1758,7 +1768,7 @@ await test('duplicateComponent atomically copies subtrees, overrides, and safe c
     JSON.stringify(duplicated.components['copy-actions'].common) ===
       JSON.stringify(sampleProject.components['comp-actions'].common) &&
       duplicated.components['copy-save'].config.eventId === null &&
-      sampleProject.components['comp-save-btn'].config.eventId === 'event-submit',
+      sampleProject.components['comp-save-btn'].config.eventId === 'event-save-task',
     'duplicate did not preserve component config or clear the external event connection',
   )
   assert(
@@ -1773,7 +1783,7 @@ await test('duplicateComponent atomically copies subtrees, overrides, and safe c
   assert(
     JSON.stringify(duplicated.events) === JSON.stringify(sampleProject.events) &&
       JSON.stringify(duplicated.apiOperations) === JSON.stringify(sampleProject.apiOperations) &&
-      !duplicated.apiOperations['api-save-user'].requestBindings.some(
+      !duplicated.apiOperations['api-update-task'].requestBindings.some(
         binding => binding.componentId.startsWith('copy-'),
       ),
     'events or API request bindings were duplicated',
@@ -1781,13 +1791,13 @@ await test('duplicateComponent atomically copies subtrees, overrides, and safe c
 
   const inputCopy = applyCommandWithoutRevision(sampleProject, {
     type: 'duplicateComponent',
-    componentId: 'comp-name-input',
-    componentIdMap: { 'comp-name-input': 'copy-name-input' },
+    componentId: 'comp-task-title-input',
+    componentIdMap: { 'comp-task-title-input': 'copy-name-input' },
   })
   assert(
-    inputCopy.components['copy-name-input'].config.fieldKey === 'name_copy' &&
+    inputCopy.components['copy-name-input'].config.fieldKey === 'title_copy' &&
       JSON.stringify(inputCopy.components['copy-name-input'].config.validationRules) ===
-        JSON.stringify(sampleProject.components['comp-name-input'].config.validationRules),
+        JSON.stringify(sampleProject.components['comp-task-title-input'].config.validationRules),
     'duplicated input fieldKey was not made unique or validation config was lost',
   )
 
@@ -1995,7 +2005,9 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
       .componentOverrides[pastedRootId]?.visible === false &&
       store.getState().document.screenStates['state-edit-saving']
         .componentOverrides[pastedSaveId]?.enabled === false &&
-      Object.keys(store.getState().document.events).length === 0,
+      !store.getState().document.events['event-save-task'] &&
+      !store.getState().document.events['event-cancel-task-edit'] &&
+      store.getState().document.events['event-create-task'],
     'same-screen paste did not copy snapshot overrides or recreated an event',
   )
   store.getState().undo()
@@ -2054,29 +2066,29 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
 
   store.getState().resetToSample()
   store.getState().setActiveScreen('screen-edit')
-  store.getState().copyComponent('comp-name-input')
+  store.getState().copyComponent('comp-task-title-input')
   store.getState().setActiveScreen('screen-list')
   store.getState().setSelectedComponent('comp-list-page')
   store.getState().pasteComponent('comp-list-page', 'Paste component')
   const pastedInputId = store.getState().ui.selectedComponentId
   assert(
-    store.getState().document.components[pastedInputId].config.fieldKey === 'name_copy' &&
-      !store.getState().document.apiOperations['api-save-user'].requestBindings.some(
+    store.getState().document.components[pastedInputId].config.fieldKey === 'title_copy' &&
+      !store.getState().document.apiOperations['api-update-task'].requestBindings.some(
         binding => binding.componentId === pastedInputId,
       ),
     'pasted input did not reuse fieldKey uniqueness or retained an API request binding',
   )
 
   store.getState().resetToSample()
-  store.getState().setSelectedComponent('comp-list-active')
-  store.getState().copyComponent('comp-list-active')
-  store.getState().setSelectedComponent('comp-list-invited')
-  store.getState().pasteComponent('comp-list-invited', 'Paste component')
-  const gridChildren = store.getState().document.components['comp-list-grid'].childIds
-  const invitedIndex = gridChildren.indexOf('comp-list-invited')
+  store.getState().setSelectedComponent('comp-task-launch-title')
+  store.getState().copyComponent('comp-task-launch-title')
+  store.getState().setSelectedComponent('comp-task-launch-meta')
+  store.getState().pasteComponent('comp-task-launch-meta', 'Paste component')
+  const cardChildren = store.getState().document.components['comp-task-launch-card'].childIds
+  const metadataIndex = cardChildren.indexOf('comp-task-launch-meta')
   assert(
-    invitedIndex >= 0 &&
-      gridChildren[invitedIndex + 1] === store.getState().ui.selectedComponentId,
+    metadataIndex >= 0 &&
+      cardChildren[metadataIndex + 1] === store.getState().ui.selectedComponentId,
     'non-container paste was not inserted immediately after the destination',
   )
   assert(
@@ -2084,8 +2096,8 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
     'Page root was copied even though it cannot be pasted as a child',
   )
 
-  store.getState().setSelectedComponent('comp-list-active')
-  store.getState().copyComponent('comp-list-active')
+  store.getState().setSelectedComponent('comp-task-launch-title')
+  store.getState().copyComponent('comp-task-launch-title')
   store.getState().dispatch({
     type: 'addComponent',
     componentId: 'copy-paste-modal',
@@ -2304,6 +2316,8 @@ await test('redo restores human operations and respects review and persistence b
     'text Redo failed or rewound revision',
   )
 
+  const originalGridPosition = store.getState()
+    .document.components['comp-list-section'].childIds.indexOf('comp-list-grid')
   store.getState().dispatch({
     type: 'moveComponent',
     componentId: 'comp-list-grid',
@@ -2312,7 +2326,8 @@ await test('redo restores human operations and respects review and persistence b
   }, 'Move component')
   store.getState().undo()
   assert(
-    store.getState().document.components['comp-list-section'].childIds[1] === 'comp-list-grid',
+    store.getState().document.components['comp-list-section']
+      .childIds[originalGridPosition] === 'comp-list-grid',
     'move Undo failed',
   )
   store.getState().redo()
@@ -2321,17 +2336,17 @@ await test('redo restores human operations and respects review and persistence b
     'move Redo failed',
   )
 
-  store.getState().setSelectedComponent('comp-list-active')
+  store.getState().setSelectedComponent('comp-task-launch-title')
   store.getState().dispatch({
     type: 'removeComponent',
-    componentId: 'comp-list-active',
+    componentId: 'comp-task-launch-title',
   }, 'Delete component')
   assert(store.getState().ui.selectedComponentId === null, 'delete did not reconcile selection')
   store.getState().undo()
-  assert(store.getState().document.components['comp-list-active'], 'delete Undo did not restore component')
+  assert(store.getState().document.components['comp-task-launch-title'], 'delete Undo did not restore component')
   store.getState().redo()
   assert(
-    store.getState().document.components['comp-list-active'] === undefined &&
+    store.getState().document.components['comp-task-launch-title'] === undefined &&
       store.getState().ui.selectedComponentId === null,
     'delete Redo did not remove component or reconcile selection',
   )
@@ -2475,8 +2490,8 @@ await test('state and screen removal clean API/event references', async () => {
     screenId: 'screen-edit',
     name: 'Edit',
     method: 'POST',
-    path: '/users',
-    requestBindings: [{ componentId: 'comp-name-input', targetPath: 'name' }],
+    path: '/tasks',
+    requestBindings: [{ componentId: 'comp-task-title-input', targetPath: 'body.title' }],
     successStateId: 'state-edit-saving',
     errorStateId: 'state-edit-saving',
   })
@@ -2487,10 +2502,17 @@ await test('state and screen removal clean API/event references', async () => {
   assert(document.apiOperations['edit-api'].successStateId === null, 'success state was not cleared')
   assert(document.apiOperations['edit-api'].errorStateId === null, 'error state was not cleared')
   assert(
-    document.events['event-submit'].actions.every(action => action.type !== 'setState'),
+    document.events['event-save-task'].actions.every(action => action.type !== 'setState'),
     'setState action was not cleared',
   )
 
+  for (const eventId of [
+    'event-create-task',
+    'event-edit-launch-task',
+    'event-edit-docs-task',
+  ]) {
+    document = applyCommandWithoutRevision(document, { type: 'removeEvent', eventId })
+  }
   document = applyCommandWithoutRevision(document, {
     type: 'removeScreen',
     screenId: 'screen-edit',
@@ -2576,18 +2598,18 @@ await test('alert target removal filters only matching showAlert actions', async
 await test('API request bindings clean up on component removal and reload', async () => {
   memoryStorage.clear()
   const store = await freshStore('api-binding-cleanup')
-  store.getState().dispatch({ type: 'removeComponent', componentId: 'comp-name-input' })
+  store.getState().dispatch({ type: 'removeComponent', componentId: 'comp-task-title-input' })
   assert(
-    !store.getState().document.apiOperations['api-save-user'].requestBindings.some(
-      binding => binding.componentId === 'comp-name-input',
+    !store.getState().document.apiOperations['api-update-task'].requestBindings.some(
+      binding => binding.componentId === 'comp-task-title-input',
     ),
     'API request binding was not cleared when its component was removed',
   )
 
   const reloadedStore = await freshStore('api-binding-cleanup-reload')
   assert(
-    !reloadedStore.getState().document.apiOperations['api-save-user'].requestBindings.some(
-      binding => binding.componentId === 'comp-name-input',
+    !reloadedStore.getState().document.apiOperations['api-update-task'].requestBindings.some(
+      binding => binding.componentId === 'comp-task-title-input',
     ),
     'cleaned API request binding was not persisted',
   )
@@ -2642,7 +2664,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       },
       {
         type: 'updateComponentSpec',
-        componentId: 'comp-name-input',
+        componentId: 'comp-task-title-input',
         patch: { config: { requestBinding: null } },
       },
       {
@@ -2820,7 +2842,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       name: 'Cross binding',
       method: 'POST',
       path: '/users',
-      requestBindings: [{ componentId: 'comp-name-input', targetPath: 'name' }],
+      requestBindings: [{ componentId: 'comp-task-title-input', targetPath: 'name' }],
     },
     {
       type: 'bindApiOperation',
@@ -2845,11 +2867,11 @@ await test('event actions and API bindings reject cross-screen references', asyn
   }
 })
 
-await test('ten tools register and invalid writes fail without adding operations', async () => {
+await test('nine tools register and invalid writes fail without adding operations', async () => {
   localStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'invalid-writes'))
   const tools = module.WEBMCP_TOOLS
-  assert(tools.length === 10, `expected 10 tools, got ${tools.length}`)
+  assert(tools.length === 9, `expected 9 tools, got ${tools.length}`)
 
   const registered = []
   document.modelContext = {
@@ -2860,7 +2882,7 @@ await test('ten tools register and invalid writes fail without adding operations
   }
   const registrationSucceeded = await module.registerWebMCPTools()
   assert(registrationSucceeded, 'valid Promise registrations reported failure')
-  assert(registered.length === 10, `expected 10 registered tools, got ${registered.length}`)
+  assert(registered.length === 9, `expected 9 registered tools, got ${registered.length}`)
 
   const byName = name => tools.find(tool => tool.name === name)
   const begin = byName('begin_change_set').execute({ summary: 'Invalid writes' })
@@ -2938,7 +2960,7 @@ await test('ten tools register and invalid writes fail without adding operations
         placeholder: '',
         defaultValue: '',
         validationRules: [],
-        requestBinding: { componentId: 'comp-name-input', targetPath: 'value' },
+        requestBinding: { componentId: 'comp-task-title-input', targetPath: 'value' },
       },
     }],
     ['update_component_spec', { ...common, componentId: 'ghost', patch: { name: 'Ghost' } }],
@@ -2964,12 +2986,12 @@ await test('ten tools register and invalid writes fail without adding operations
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       patch: { config: { requestBinding: { componentId: 'ghost', targetPath: 'value' } } },
     }],
     ['update_component_spec', {
       ...common,
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       patch: { config: { requestBinding: { componentId: 'comp-list-title', targetPath: 'value' } } },
     }],
     ['update_component_spec', {
@@ -3074,7 +3096,7 @@ await test('ten tools register and invalid writes fail without adding operations
     ['connect_behavior', {
       ...common,
       operation: 'updateEvent',
-      eventId: 'event-submit',
+      eventId: 'event-save-task',
       name: 'Cross screen update',
       trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [],
@@ -3112,12 +3134,12 @@ await test('ten tools register and invalid writes fail without adding operations
       name: 'Cross screen API',
       method: 'POST',
       path: '/cross',
-      requestBindings: [{ componentId: 'comp-name-input', targetPath: 'name' }],
+      requestBindings: [{ componentId: 'comp-task-title-input', targetPath: 'name' }],
     }],
     ['connect_behavior', {
       ...common,
       operation: 'updateApi',
-      operationId: 'api-save-user',
+      operationId: 'api-update-task',
       name: 'Cross screen API update',
       method: 'POST',
       path: '/users',
@@ -3219,10 +3241,10 @@ await test('representative screen/component/state/event/API writes reach the cha
   )
   execute('connect_behavior', {
     operation: 'updateEvent',
-    eventId: 'event-submit',
+    eventId: 'event-save-task',
     name: 'Save from form',
     trigger: { type: 'submit', componentId: 'comp-edit-page' },
-    actions: [{ type: 'callApi', apiOperationId: 'api-save-user' }],
+    actions: [{ type: 'callApi', apiOperationId: 'api-update-task' }],
   })
   assert(
     byName('get_component').execute({ componentId: 'comp-save-btn' })
@@ -3436,7 +3458,7 @@ await test('representative screen/component/state/event/API writes reach the cha
   assert(pending().operations.length === version, 'operation count and version diverged')
 })
 
-await test('WebMCP reads are compact, discoverable, serializable, and diagnostic', async () => {
+await test('WebMCP reads are compact, discoverable, and serializable', async () => {
   localStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'agent-read-surfaces'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
@@ -3452,8 +3474,8 @@ await test('WebMCP reads are compact, discoverable, serializable, and diagnostic
       Array.isArray(initialContext.data.activeScreen.apiOperations),
     'active screen context does not provide one complete effective projection',
   )
-  const begin = byName('begin_change_set').execute({ summary: 'Read surface diagnostics' })
-  assert(begin.ok, 'diagnostic change set failed to begin')
+  const begin = byName('begin_change_set').execute({ summary: 'Read surface review' })
+  assert(begin.ok, 'read surface change set failed to begin')
   let version = begin.data.changeSetVersion
   const write = input => {
     const result = byName('connect_behavior').execute({
@@ -3462,7 +3484,7 @@ await test('WebMCP reads are compact, discoverable, serializable, and diagnostic
       expectedChangeSetVersion: version,
       ...input,
     })
-    assert(result.ok, `diagnostic fixture write failed: ${JSON.stringify(result)}`)
+    assert(result.ok, `read fixture write failed: ${JSON.stringify(result)}`)
     version = result.data.changeSetVersion
   }
   write({
@@ -3519,39 +3541,313 @@ await test('WebMCP reads are compact, discoverable, serializable, and diagnostic
       )
     }
   }
+})
 
-  const sampleDiagnostics = byName('get_screen_diagnostics').execute({
-    screenId: 'screen-edit',
-  })
+await test('TaskFlow sample is a complete two-screen task specification', async () => {
+  const { sampleProject } = await import(moduleUrl(sampleProjectBundle, 'taskflow-completeness'))
+  const { validateInvariants } = await import(moduleUrl(invariantsBundle, 'taskflow-completeness'))
+  const { selectScreenFlow } = await import(moduleUrl(screenFlowBundle, 'taskflow-completeness'))
+
+  validateInvariants(sampleProject)
   assert(
-    sampleDiagnostics.ok &&
-      sampleDiagnostics.data.diagnostics.some(item =>
-        item.code === 'UNCONNECTED_BUTTON' &&
-        item.severity === 'warning' &&
-        item.entityId === 'comp-cancel-btn'
-      ),
-    'sample diagnostics did not identify the unconnected Cancel button',
+    sampleProject.project.name === 'TaskFlow' &&
+      sampleProject.screens['screen-list'].name === 'Task List' &&
+      sampleProject.screens['screen-list'].route === '/tasks' &&
+      sampleProject.screens['screen-edit'].name === 'Edit Task' &&
+      sampleProject.screens['screen-edit'].route === '/tasks/:taskId',
+    'TaskFlow project or screen story is incomplete',
   )
-  const diagnostics = byName('get_screen_diagnostics').execute({
-    screenId: 'screen-list',
-  })
-  const diagnosticKeys = diagnostics.data.diagnostics
-    .map(item => `${item.entityId}:${item.code}`)
   assert(
-    diagnostics.ok &&
-      diagnostics.data.diagnostics.some(item =>
-        item.code === 'EVENT_WITHOUT_ACTIONS' && item.severity === 'warning'
+    [...new Set(Object.values(sampleProject.components).map(component => component.kind))]
+      .sort().join(',') ===
+      ['alert', 'button', 'container', 'modal', 'page', 'select', 'text', 'textInput']
+        .sort().join(','),
+    'TaskFlow does not exercise all canonical component kinds',
+  )
+  assert(
+    !Object.values(sampleProject.components).some(component =>
+      component.config.kind === 'select' && component.config.fieldKey === 'priority'
+    ),
+    'Priority must remain absent until the WebMCP demo',
+  )
+
+  for (const screen of Object.values(sampleProject.screens)) {
+    assert(
+      Object.keys(sampleProject.screenStates[screen.defaultStateId].componentOverrides).length === 0,
+      `${screen.name} default state contains overrides`,
+    )
+  }
+  for (const component of Object.values(sampleProject.components)) {
+    if (component.config.kind !== 'button' || !component.common.enabled) continue
+    const event = sampleProject.events[component.config.eventId]
+    assert(
+      event?.trigger.componentId === component.id && event.actions.length > 0,
+      `enabled button ${component.id} is not connected to an actionable event`,
+    )
+  }
+  assert(
+    Object.values(sampleProject.events).every(event => event.actions.length > 0),
+    'TaskFlow contains an event without actions',
+  )
+  for (const operation of Object.values(sampleProject.apiOperations)) {
+    assert(
+      operation.successStateId &&
+        operation.errorStateId &&
+        sampleProject.screenStates[operation.successStateId]?.screenId === operation.screenId &&
+        sampleProject.screenStates[operation.errorStateId]?.screenId === operation.screenId,
+      `API ${operation.id} does not resolve both result states on its screen`,
+    )
+    const bindingKeys = operation.requestBindings.map(binding =>
+      `${binding.componentId}:${binding.targetPath}`
+    )
+    assert(
+      new Set(bindingKeys).size === bindingKeys.length &&
+        operation.requestBindings.every(binding =>
+          sampleProject.components[binding.componentId]?.screenId === operation.screenId
+        ),
+      `API ${operation.id} has duplicate or cross-screen request bindings`,
+    )
+  }
+  const titleRules =
+    sampleProject.components['comp-task-title-input'].config.validationRules
+  assert(
+    titleRules.map(rule => rule.type).join(',') === 'required,minLength,maxLength' &&
+      titleRules[1].value === 3 &&
+      titleRules[2].value === 80,
+    'Task title validation does not cover required and bounded length',
+  )
+  assert(
+    sampleProject.screens['screen-edit'].modalComponentIds.join(',') === 'comp-discard-modal' &&
+      sampleProject.components['comp-discard-modal'].parentId === null &&
+      sampleProject.screenStates['state-edit-confirm-exit']
+        .componentOverrides['comp-discard-modal'].visible === true,
+    'discard confirmation is not modeled as an independent modal state',
+  )
+
+  const flow = selectScreenFlow(sampleProject, 'en')
+  const listToEdit = flow.edges.find(edge =>
+    edge.source.screenId === 'screen-list' && edge.target.screenId === 'screen-edit'
+  )
+  const editToList = flow.edges.find(edge =>
+    edge.source.screenId === 'screen-edit' && edge.target.screenId === 'screen-list'
+  )
+  assert(
+    listToEdit?.transitions.length === 2 &&
+      editToList?.transitions.length === 1 &&
+      editToList.transitions[0].eventId === 'event-discard-task-changes',
+    'TaskFlow navigation edges do not explain edit/discard paths',
+  )
+  assert(
+    sampleProject.screens['screen-list'].modalComponentIds.includes('comp-create-modal') &&
+      sampleProject.events['event-create-task'].actions[0].stateId === 'state-list-create' &&
+      sampleProject.events['event-submit-create-task'].actions.some(
+        action => action.type === 'callApi' && action.apiOperationId === 'api-create-task',
       ) &&
-      diagnostics.data.diagnostics.some(item =>
-        item.code === 'API_WITHOUT_SUCCESS_STATE' && item.severity === 'info'
-      ) &&
-      diagnostics.data.diagnostics.some(item =>
-        item.code === 'API_WITHOUT_ERROR_STATE' && item.severity === 'info'
-      ) &&
-      diagnosticKeys.join('|') === [...diagnosticKeys].sort().join('|'),
-    `constructed completeness diagnostics are incomplete or nondeterministic: ${
-      JSON.stringify(diagnostics)
-    }`,
+      sampleProject.apiOperations['api-create-task'].method === 'POST' &&
+      sampleProject.apiOperations['api-create-task'].requestBindings[0].componentId ===
+        'comp-new-task-title-input',
+    'Create task does not use its own modal form and POST operation',
+  )
+})
+
+await test('TaskFlow reset is explicit and preserves existing saved projects by default', async () => {
+  memoryStorage.clear()
+  const editedStore = await freshStore('taskflow-reset-existing')
+  editedStore.getState().dispatch({
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'My saved task board',
+  }, 'Rename saved project screen')
+  const reloaded = await freshStore('taskflow-reset-existing-reload')
+  assert(
+    reloaded.getState().document.screens['screen-list'].name === 'My saved task board',
+    'loading the updated sample silently replaced existing local data',
+  )
+
+  const rejectedReview = reloaded.getState().beginChangeSet('Old project proposal')
+  reloaded.getState().dispatchToChangeSet(rejectedReview.id, {
+    type: 'updateScreen',
+    screenId: 'screen-list',
+    name: 'Rejected task board',
+  }, 'agent')
+  reloaded.getState().rejectChangeSet()
+  assert(reloaded.getState().rejectedRecords.length === 1, 'rejected proposal fixture was not stored')
+  reloaded.getState().resetToSample()
+  assert(
+    reloaded.getState().rejectedRecords.length === 0,
+    'reset retained rejected proposal history from the replaced project',
+  )
+  const resetReload = await freshStore('taskflow-reset-explicit-reload')
+  assert(
+    resetReload.getState().document.project.name === 'TaskFlow' &&
+      resetReload.getState().document.screens['screen-list'].name === 'Task List' &&
+      resetReload.getState().history.length === 0 &&
+      resetReload.getState().activeChangeSet === null,
+    'explicit reset did not persist a clean TaskFlow sample',
+  )
+
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  assert(
+    appSource.includes("window.confirm(t('app.resetSampleConfirm'))") &&
+      appSource.includes('disabled={Boolean(activeChangeSet)}') &&
+      appSource.includes('resetToSample()'),
+    'main UI reset is not confirmed or review-locked',
+  )
+})
+
+await test('Priority demo reuses human edits and preserves the Update Task API ID', async () => {
+  memoryStorage.clear()
+  const seedStore = await freshStore('priority-demo-seed')
+  seedStore.getState().setActiveScreen('screen-edit')
+
+  const firstModule = await import(moduleUrl(toolsBundle, 'priority-demo-first-agent'))
+  const firstTool = name => firstModule.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const firstContext = firstTool('get_current_screen_context').execute({})
+  assert(
+    firstContext.ok &&
+      firstContext.data.activeScreen.screen.id === 'screen-edit' &&
+      !firstContext.data.activeScreen.components.some(component =>
+        component.config.kind === 'select' && component.config.fieldKey === 'priority'
+      ),
+    'Priority demo did not start from the live Edit Task context without Priority',
+  )
+  const firstReview = firstTool('begin_change_set').execute({
+    summary: 'Add Priority after Status',
+  })
+  const addPriority = firstTool('change_component_structure').execute({
+    changeSetId: firstReview.data.changeSetId,
+    expectedRevision: firstReview.data.baseRevision,
+    expectedChangeSetVersion: firstReview.data.changeSetVersion,
+    operation: 'add',
+    screenId: 'screen-edit',
+    parentId: 'comp-edit-section',
+    kind: 'select',
+    position: 6,
+    config: {
+      kind: 'select',
+      fieldKey: 'priority',
+      label: 'Priority',
+      required: true,
+      options: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+      ],
+      defaultValue: 'medium',
+    },
+  })
+  assert(addPriority.ok, `Priority proposal failed: ${JSON.stringify(addPriority)}`)
+  const proposedContext = firstTool('get_current_screen_context').execute({})
+  const proposedPriority = proposedContext.data.activeScreen.components.find(component =>
+    component.config.kind === 'select' && component.config.fieldKey === 'priority'
+  )
+  const savingState = proposedContext.data.activeScreen.states.find(
+    state => state.id === 'state-edit-saving',
+  )
+  assert(proposedPriority && savingState, 'Priority or Saving state was missing from the proposal')
+  const integratePriority = firstTool('upsert_screen_state').execute({
+    changeSetId: firstReview.data.changeSetId,
+    expectedRevision: firstReview.data.baseRevision,
+    expectedChangeSetVersion: addPriority.data.changeSetVersion,
+    operation: 'update',
+    stateId: savingState.id,
+    overrides: {
+      ...savingState.componentOverrides,
+      [proposedPriority.id]: { enabled: false },
+    },
+  })
+  assert(integratePriority.ok, `Priority saving-state integration failed: ${JSON.stringify(integratePriority)}`)
+  const integratedContext = firstTool('get_current_screen_context').execute({})
+  const firstPending = firstTool('get_pending_change_set').execute({})
+  assert(
+    proposedPriority &&
+      integratedContext.data.activeScreen.components.find(
+        component => component.id === 'comp-edit-section',
+      ).childIds.indexOf(proposedPriority.id) ===
+        integratedContext.data.activeScreen.components.find(
+          component => component.id === 'comp-edit-section',
+        ).childIds.indexOf('comp-task-status-select') + 1 &&
+      integratedContext.data.activeScreen.states.find(
+        state => state.id === 'state-edit-saving',
+      ).componentOverrides[proposedPriority.id].enabled === false &&
+      firstPending.data.activeChangeSet.operationSummaries.length === 2,
+    'Priority proposal was not discoverable after Status, disabled while saving, or reviewable',
+  )
+
+  const firstHumanStore = await freshStore('priority-demo-first-human')
+  firstHumanStore.getState().acceptChangeSet()
+  firstHumanStore.getState().dispatch({
+    type: 'updateComponentSpec',
+    componentId: proposedPriority.id,
+    patch: {
+      config: {
+        options: [
+          { value: 'low', label: 'Low' },
+          { value: 'normal', label: 'Normal' },
+          { value: 'critical', label: 'Critical' },
+        ],
+        defaultValue: 'normal',
+      },
+    },
+  }, 'Refine Priority options')
+
+  const secondModule = await import(moduleUrl(toolsBundle, 'priority-demo-second-agent'))
+  const secondTool = name => secondModule.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const correctedContext = secondTool('get_current_screen_context').execute({})
+  const correctedPriority = correctedContext.data.activeScreen.components.find(
+    component => component.id === proposedPriority.id,
+  )
+  const updateTask = correctedContext.data.activeScreen.apiOperations.find(
+    operation => operation.id === 'api-update-task',
+  )
+  assert(
+    correctedPriority.config.defaultValue === 'normal' &&
+      correctedPriority.config.options[2].label === 'Critical' &&
+      !updateTask.requestBindings.some(binding => binding.targetPath === 'body.priority'),
+    'second agent did not re-read the human-corrected live model',
+  )
+
+  const secondReview = secondTool('begin_change_set').execute({
+    summary: 'Bind Priority to Update Task',
+  })
+  const updateApi = secondTool('connect_behavior').execute({
+    changeSetId: secondReview.data.changeSetId,
+    expectedRevision: secondReview.data.baseRevision,
+    expectedChangeSetVersion: secondReview.data.changeSetVersion,
+    operation: 'updateApi',
+    operationId: updateTask.id,
+    name: updateTask.name,
+    method: updateTask.method,
+    path: updateTask.path,
+    requestBindings: [
+      ...updateTask.requestBindings,
+      { componentId: correctedPriority.id, targetPath: 'body.priority' },
+    ],
+    successStateId: updateTask.successStateId,
+    errorStateId: updateTask.errorStateId,
+  })
+  assert(updateApi.ok, `Priority API binding proposal failed: ${JSON.stringify(updateApi)}`)
+  const secondPending = secondTool('get_pending_change_set').execute({})
+  assert(
+    secondPending.data.activeChangeSet.operationSummaries.length === 1 &&
+      secondPending.data.activeChangeSet.operations[0].command.operationId === 'api-update-task',
+    'Priority API proposal did not retain the existing operation ID',
+  )
+
+  const secondHumanStore = await freshStore('priority-demo-second-human')
+  secondHumanStore.getState().acceptChangeSet()
+  const reloaded = await freshStore('priority-demo-reload')
+  const persistedPriority =
+    reloaded.getState().document.components[proposedPriority.id]
+  const persistedApi = reloaded.getState().document.apiOperations['api-update-task']
+  assert(
+    persistedPriority.config.kind === 'select' &&
+      persistedPriority.config.defaultValue === 'normal' &&
+      persistedApi.id === 'api-update-task' &&
+      persistedApi.requestBindings.some(binding =>
+        binding.componentId === proposedPriority.id && binding.targetPath === 'body.priority'
+      ),
+    'accepted Priority field, human correction, or API binding did not survive reload',
   )
 })
 
@@ -3713,8 +4009,8 @@ await test('sample and component surfaces cover every canonical component kind',
       select.options.length >= 2 &&
       select.options.some(option => option.value === select.defaultValue) &&
       Object.values(sampleProject.screenStates).some(state =>
-        state.componentOverrides[representativeByKind.get('select').id]?.value !== undefined),
-    'sample Select does not demonstrate options, default, and state override',
+        state.componentOverrides[representativeByKind.get('select').id]?.enabled === false),
+    'sample Select does not demonstrate options, default, and state behavior',
   )
   const textInput = representativeByKind.get('textInput').config
   assert(
@@ -3871,7 +4167,7 @@ await test('sample and component surfaces cover every canonical component kind',
   persistenceSourceStore.getState().dispatch({
     type: 'updateScreen',
     screenId: 'screen-list',
-    name: 'User List coverage',
+    name: 'Task List coverage',
   }, 'Persist all component kinds')
   const persistedComponents = clone(persistenceSourceStore.getState().document.components)
   const persistenceReload = await freshStore('all-component-kinds-persistence-reload')
@@ -3907,7 +4203,8 @@ await test('modal roots own independent trees and clean references on removal', 
     config: { kind: 'modal', ...layout },
   })
   assert(
-    document.screens['screen-list'].modalComponentIds.join(',') === 'modal-root' &&
+    document.screens['screen-list'].modalComponentIds.includes('comp-create-modal') &&
+      document.screens['screen-list'].modalComponentIds.includes('modal-root') &&
       document.components['modal-root'].parentId === null,
     'modal was not registered as an independent screen root',
   )
@@ -3999,7 +4296,7 @@ await test('modal roots own independent trees and clean references on removal', 
     applyCommandWithoutRevision(orphaned, {
       type: 'updateScreen',
       screenId: 'screen-list',
-      name: 'User List',
+      name: 'Task List',
     })
   } catch {
     orphanRejected = true
@@ -4011,7 +4308,7 @@ await test('modal roots own independent trees and clean references on removal', 
     componentId: 'modal-root',
   })
   assert(
-    document.screens['screen-list'].modalComponentIds.length === 0 &&
+    document.screens['screen-list'].modalComponentIds.join(',') === 'comp-create-modal' &&
       !document.components['modal-root'] &&
       !document.components['modal-button'] &&
       !document.events['event-modal-button'] &&
@@ -4061,13 +4358,13 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
 
   document = applyCommandWithoutRevision(document, {
     type: 'moveComponent',
-    componentId: 'comp-email-input',
+    componentId: 'comp-task-description-input',
     newParentId: 'comp-actions',
     position: 0,
   })
   assert(
-    document.components['comp-email-input'].parentId === 'comp-actions' &&
-      document.components['comp-actions'].childIds[0] === 'comp-email-input',
+    document.components['comp-task-description-input'].parentId === 'comp-actions' &&
+      document.components['comp-actions'].childIds[0] === 'comp-task-description-input',
     'cross-container reparent failed',
   )
 
@@ -4087,7 +4384,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     {
       type: 'moveComponent',
       componentId: 'comp-cancel-btn',
-      newParentId: 'comp-name-input',
+      newParentId: 'comp-task-title-input',
       position: 0,
     },
     {
@@ -4098,9 +4395,9 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     },
     {
       type: 'moveComponent',
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       newParentId: 'comp-edit-section',
-      position: 1,
+      position: 2,
     },
   ]
   for (const command of invalidCommands) {
@@ -4137,7 +4434,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     },
     {
       componentId: 'comp-cancel-btn',
-      parentId: 'comp-name-input',
+      parentId: 'comp-task-title-input',
       position: 0,
       status: 'invalid',
       reason: 'parentCannotContainChildren',
@@ -4150,15 +4447,15 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
       reason: 'crossScreen',
     },
     {
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       parentId: 'comp-edit-section',
-      position: 1,
+      position: 2,
       status: 'no-op',
     },
     {
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       parentId: 'comp-edit-section',
-      position: 2,
+      position: 3,
       status: 'no-op',
     },
     {
@@ -4169,14 +4466,14 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
       reason: 'stale',
     },
     {
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       parentId: 'missing-parent',
       position: 0,
       status: 'invalid',
       reason: 'stale',
     },
     {
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       parentId: 'comp-edit-section',
       position: 99,
       status: 'invalid',
@@ -4209,7 +4506,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
   assert(
     canAcceptDrop(baseline, {
       type: 'component',
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       screenId: 'screen-edit',
       label: 'Name',
     }, noOpTarget),
@@ -4231,7 +4528,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     label: 'Button',
   }, {
     ...noOpTarget,
-    parentId: 'comp-name-input',
+    parentId: 'comp-task-title-input',
   })
   assert(
     paletteAdd.status === 'moved' &&
@@ -4248,13 +4545,13 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
   memoryStorage.clear()
   const noOpStore = await freshStore('direct-edit-no-op')
   noOpStore.getState().setActiveScreen('screen-edit')
-  noOpStore.getState().setSelectedComponent('comp-email-input')
+  noOpStore.getState().setSelectedComponent('comp-task-description-input')
   const beforeNoOp = noOpStore.getState()
   const noOpApplied = noOpStore.getState().dispatch({
     type: 'moveComponent',
-    componentId: 'comp-name-input',
+    componentId: 'comp-task-title-input',
     newParentId: 'comp-edit-section',
-    position: 1,
+    position: 2,
   }, 'No-op move')
   const afterNoOp = noOpStore.getState()
   assert(
@@ -4269,9 +4566,9 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
   const changeSet = noOpStore.getState().beginChangeSet('No-op review')
   noOpStore.getState().dispatch({
     type: 'moveComponent',
-    componentId: 'comp-name-input',
+    componentId: 'comp-task-title-input',
     newParentId: 'comp-edit-section',
-    position: 1,
+    position: 2,
   }, 'No-op review move')
   assert(
     noOpStore.getState().activeChangeSet?.id === changeSet.id &&
@@ -4395,8 +4692,8 @@ await test('review lock blocks human document mutations and screen management re
   screenStore.getState().dispatch({
     type: 'updateScreen',
     screenId: 'screen-edit',
-    name: 'Account editor',
-    route: '/accounts/:id',
+    name: 'Task editor',
+    route: '/tasks/:taskId/details',
   })
 
   await test('human state editing persists overrides and protects the default state', async () => {
@@ -4427,7 +4724,7 @@ await test('review lock blocks human document mutations and screen management re
         'comp-list-title': {
           visible: true,
           enabled: false,
-          text: 'Users loaded.',
+          text: 'Tasks loaded.',
         },
       },
     }, 'Update state')
@@ -4435,7 +4732,7 @@ await test('review lock blocks human document mutations and screen management re
     assert(
       updated.name === 'Request complete' &&
         updated.description === 'Updated in the human UI' &&
-        updated.componentOverrides['comp-list-title'].text === 'Users loaded.',
+        updated.componentOverrides['comp-list-title'].text === 'Tasks loaded.',
       'state metadata or overrides were not updated',
     )
 
@@ -4445,7 +4742,7 @@ await test('review lock blocks human document mutations and screen management re
       updated,
     )
     assert(
-      effectiveText.config.text === 'Users loaded.' &&
+      effectiveText.config.text === 'Tasks loaded.' &&
         effectiveText.common.enabled === false,
       'state override was not reflected in the effective component',
     )
@@ -4455,7 +4752,7 @@ await test('review lock blocks human document mutations and screen management re
     )
     assert(
       successAlert.common.visible === true &&
-        successAlert.config.message === 'User saved successfully.',
+        successAlert.config.message === 'Task updated successfully.',
       'alert visibility or message override was not reflected in the preview',
     )
     const savingState = store.getState().document.screenStates['state-edit-saving']
@@ -4464,11 +4761,11 @@ await test('review lock blocks human document mutations and screen management re
       stateId: savingState.id,
       overrides: {
         ...savingState.componentOverrides,
-        'comp-name-input': { value: 'Alex Morgan' },
+        'comp-task-title-input': { value: 'Alex Morgan' },
       },
     }, 'Set state field value')
     const effectiveInput = effectiveComponent(
-      store.getState().document.components['comp-name-input'],
+      store.getState().document.components['comp-task-title-input'],
       store.getState().document.screenStates['state-edit-saving'],
     )
     assert(
@@ -4541,11 +4838,15 @@ await test('review lock blocks human document mutations and screen management re
     )
   })
   screenStore.getState().dispatch({
+    type: 'removeEvent',
+    eventId: 'event-discard-task-changes',
+  })
+  screenStore.getState().dispatch({
     type: 'removeScreen',
     screenId: 'screen-list',
   })
   assert(
-    screenStore.getState().document.screens['screen-edit'].name === 'Account editor' &&
+    screenStore.getState().document.screens['screen-edit'].name === 'Task editor' &&
       screenStore.getState().document.screens['screen-list'] === undefined &&
       screenStore.getState().ui.activeScreenId === 'screen-edit',
     'screen edit, delete, or active-screen reconciliation failed',
@@ -4609,11 +4910,11 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   harness.prepareHistory()
 
   const unlockedTreeHandle = document.querySelector(
-    '[data-drag-surface="tree"][data-drag-component="comp-name-input"]',
+    '[data-drag-surface="tree"][data-drag-component="comp-task-title-input"]',
   )
   assert(unlockedTreeHandle && !unlockedTreeHandle.disabled, 'Tree drag did not begin unlocked')
   const unlockedCanvasComponent = document.querySelector(
-    '[data-component-id="comp-name-input"]',
+    '[data-component-id="comp-task-title-input"]',
   )
   const unlockedCanvasRoot = document.querySelector(
     '[data-component-id="comp-edit-page"]',
@@ -4708,7 +5009,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     treeHandles.length > 0 && treeHandles.every(button => button.disabled),
     'Tree drag controls remain enabled during review',
   )
-  const treeNode = tree.querySelector('[data-tree-component-id="comp-name-input"]')
+  const treeNode = tree.querySelector('[data-tree-component-id="comp-task-title-input"]')
   const treeItem = treeNode.closest('[role="treeitem"]')
   const treeMutationButtons = [...treeItem.querySelectorAll('button')]
     .filter(button => (
@@ -4729,7 +5030,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   })
   assert(!document.querySelector('[data-drag-overlay]'), 'locked Tree keyboard DnD started')
 
-  const canvasComponent = document.querySelector('[data-component-id="comp-name-input"]')
+  const canvasComponent = document.querySelector('[data-component-id="comp-task-title-input"]')
   assert(
     canvasComponent &&
       !canvasComponent.hasAttribute('data-canvas-draggable') &&
@@ -4749,11 +5050,11 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     harness.pointer(window, 'pointermove', { clientX: 180, clientY: 180 })
     harness.pointer(window, 'pointerup', { clientX: 180, clientY: 180 })
   })
-  const canvasMenuTarget = document.querySelector('[data-component-id="comp-role-select"]')
+  const canvasMenuTarget = document.querySelector('[data-component-id="comp-task-assignee-select"]')
   harness.contextMenu(canvasMenuTarget)
   const canvasLockedMenu = document.querySelector('[data-component-add-menu]')
   assert(
-    harness.state().selectedComponentId === 'comp-role-select' &&
+    harness.state().selectedComponentId === 'comp-task-assignee-select' &&
       canvasLockedMenu?.querySelector('[data-component-copy]') &&
       !canvasLockedMenu.querySelector('[data-component-duplicate]') &&
       !canvasLockedMenu.querySelector('[data-component-paste]') &&
@@ -4779,10 +5080,10 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
       harness.click(button)
     })
   }
-  const canvasSelectionTarget = document.querySelector('[data-component-id="comp-email-input"]')
+  const canvasSelectionTarget = document.querySelector('[data-component-id="comp-task-description-input"]')
   harness.click(canvasSelectionTarget)
   assert(
-    harness.state().selectedComponentId === 'comp-email-input',
+    harness.state().selectedComponentId === 'comp-task-description-input',
     'review lock incorrectly blocked Canvas selection',
   )
   const rightPanelTabs = document.querySelector(
@@ -4814,7 +5115,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   )
   harness.click(inspectorCopy)
   assert(
-    harness.state().clipboardRootComponentId === 'comp-email-input',
+    harness.state().clipboardRootComponentId === 'comp-task-description-input',
     'Inspector Copy stopped working during review',
   )
   const inspectorPaste = inspector.querySelector('[data-component-paste-inspector]')
@@ -4840,7 +5141,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     harness.click(lockedMenu.querySelector('[data-component-copy]'))
   })
   assert(
-    harness.state().clipboardRootComponentId === 'comp-name-input',
+    harness.state().clipboardRootComponentId === 'comp-task-title-input',
     'review lock incorrectly blocked context-menu Copy',
   )
 
@@ -4901,7 +5202,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     'review lock incorrectly blocked Flow view switching',
   )
 
-  const otherScreen = screenButtons.find(button => button.textContent.trim() === 'User List')
+  const otherScreen = screenButtons.find(button => button.textContent.trim() === 'Task List')
   harness.click(otherScreen)
   assert(
     harness.state().activeScreenId === 'screen-list' &&
@@ -4944,7 +5245,7 @@ await test('Canvas DOM supports discoverable pan without stealing component or i
   const harness = mountReviewLockApp('en')
   const viewport = document.querySelector('[data-canvas-viewport]')
   const surface = document.querySelector('[data-canvas-surface]')
-  const component = document.querySelector('[data-component-id="comp-name-input"]')
+  const component = document.querySelector('[data-component-id="comp-task-title-input"]')
   const previewInput = component.querySelector('input')
   assert(
     viewport &&
@@ -4966,7 +5267,7 @@ await test('Canvas DOM supports discoverable pan without stealing component or i
   )
   harness.click(viewport)
   assert(
-    harness.state().selectedComponentId === 'comp-name-input',
+    harness.state().selectedComponentId === 'comp-task-title-input',
     'pan tail click incorrectly cleared Canvas selection',
   )
   harness.click(viewport)
@@ -5011,10 +5312,10 @@ await test('Canvas DOM supports discoverable pan without stealing component or i
     middlePanTransform !== beforeComponentDrag,
     'middle drag over a component did not pan the Canvas',
   )
-  const otherComponent = document.querySelector('[data-component-id="comp-email-input"]')
+  const otherComponent = document.querySelector('[data-component-id="comp-task-description-input"]')
   harness.click(otherComponent)
   assert(
-    harness.state().selectedComponentId === 'comp-email-input',
+    harness.state().selectedComponentId === 'comp-task-description-input',
     'middle pan swallowed the next primary Canvas click',
   )
   const zoomControl = viewport.querySelector('button[title="Zoom in"]')
@@ -5068,12 +5369,12 @@ await test('Canvas DOM supports discoverable pan without stealing component or i
   harness.click(component)
   assert(
     surface.getAttribute('style') === spacePanTransform &&
-      harness.state().selectedComponentId === 'comp-email-input',
+      harness.state().selectedComponentId === 'comp-task-description-input',
     'Space-pan tail click incorrectly changed Canvas selection',
   )
   harness.click(component)
   assert(
-    harness.state().selectedComponentId === 'comp-name-input',
+    harness.state().selectedComponentId === 'comp-task-title-input',
     'Space-pan click suppression did not clear after the compatibility click',
   )
   harness.click(zoomControl)
@@ -5141,7 +5442,7 @@ await test('visible Screen and Inspector labels focus their draft controls', asy
     const fields = [
       ['screen:screen-edit:name', 'Screen Name'],
       ['screen:screen-edit:route', 'Screen Route'],
-      ['component:comp-name-input:common.description', 'Inspector Description'],
+      ['component:comp-task-title-input:common.description', 'Inspector Description'],
     ]
     const ids = []
 
@@ -5386,20 +5687,20 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
   const hierarchyStore = await freshStore('hierarchy-selection-shortcuts')
   const document = hierarchyStore.getState().effectiveDocument
   assert(
-    resolveHierarchySelectionTarget(document, 'comp-list-active', 'select-parent') ===
-      'comp-list-grid' &&
+    resolveHierarchySelectionTarget(document, 'comp-task-launch-title', 'select-parent') ===
+      'comp-task-launch-card' &&
       resolveHierarchySelectionTarget(document, 'comp-list-grid', 'select-first-child') ===
-        'comp-list-active' &&
-      resolveHierarchySelectionTarget(document, 'comp-list-active', 'select-next-sibling') ===
-        'comp-list-invited' &&
-      resolveHierarchySelectionTarget(document, 'comp-list-invited', 'select-previous-sibling') ===
-        'comp-list-active',
+        'comp-task-launch-card' &&
+      resolveHierarchySelectionTarget(document, 'comp-task-launch-title', 'select-next-sibling') ===
+        'comp-task-launch-meta' &&
+      resolveHierarchySelectionTarget(document, 'comp-task-launch-meta', 'select-previous-sibling') ===
+        'comp-task-launch-title',
     'hierarchy selection did not follow parent childIds order',
   )
   assert(
     resolveHierarchySelectionTarget(document, 'comp-list-page', 'select-parent') === null &&
       resolveHierarchySelectionTarget(document, 'comp-list-page', 'select-next-sibling') === null &&
-      resolveHierarchySelectionTarget(document, 'comp-list-active', 'select-previous-sibling') ===
+      resolveHierarchySelectionTarget(document, 'comp-task-launch-title', 'select-previous-sibling') ===
         null,
     'hierarchy selection crossed a root or sibling boundary',
   )
@@ -5561,8 +5862,8 @@ await test('delete impact analysis follows command cleanup and confirmation thre
   })
   assert(
     subtree.counts.components === 3 &&
-      subtree.counts.events === 1 &&
-      subtree.counts.eventActions === 2 &&
+      subtree.counts.events === 2 &&
+      subtree.counts.eventActions === 3 &&
       subtree.counts.stateOverrides === 3 &&
       subtree.requiresConfirmation,
     'component subtree cleanup impact did not match removeComponent',
@@ -5574,7 +5875,7 @@ await test('delete impact analysis follows command cleanup and confirmation thre
   })
   assert(
     state.counts.states === 1 &&
-      state.counts.stateOverrides === 2 &&
+      state.counts.stateOverrides === 7 &&
       state.counts.eventActions === 1 &&
       state.requiresConfirmation,
     'state override and setState cleanup impact was incomplete',
@@ -5582,7 +5883,7 @@ await test('delete impact analysis follows command cleanup and confirmation thre
 
   const event = analyzeDeleteImpact(sampleProject, {
     type: 'removeEvent',
-    eventId: 'event-submit',
+    eventId: 'event-save-task',
   })
   assert(
     event.counts.events === 1 &&
@@ -5594,27 +5895,32 @@ await test('delete impact analysis follows command cleanup and confirmation thre
 
   const api = analyzeDeleteImpact(sampleProject, {
     type: 'removeApiOperation',
-    operationId: 'api-save-user',
+    operationId: 'api-update-task',
   })
   assert(
     api.counts.apiOperations === 1 &&
-      api.counts.apiBindings === 3 &&
+      api.counts.apiBindings === 4 &&
       api.counts.eventActions === 1 &&
       api.counts.apiStateConnections === 2 &&
       api.requiresConfirmation,
     'API binding and callApi cleanup impact was incomplete',
   )
 
-  const screen = analyzeDeleteImpact(sampleProject, {
+  const screenDeleteDocument = clone(sampleProject)
+  delete screenDeleteDocument.events['event-discard-task-changes']
+  screenDeleteDocument.screens['screen-edit'].eventIds = screenDeleteDocument
+    .screens['screen-edit'].eventIds.filter(id => id !== 'event-discard-task-changes')
+  screenDeleteDocument.components['comp-discard-leave-btn'].config.eventId = null
+  const screen = analyzeDeleteImpact(screenDeleteDocument, {
     type: 'removeScreen',
     screenId: 'screen-list',
   })
   assert(
-    screen.counts.components === 6 &&
-      screen.counts.states === 2 &&
-      screen.counts.stateOverrides === 1 &&
+    screen.counts.components === 27 &&
+      screen.counts.states === 7 &&
+      screen.counts.stateOverrides === 16 &&
       screen.requiresConfirmation,
-    'screen-owned entity impact was incomplete',
+    `screen-owned entity impact was incomplete: ${JSON.stringify(screen.counts)}`,
   )
 
   const emptyEventDocument = clone(sampleProject)
@@ -6060,30 +6366,30 @@ await test('component display labels separate structure from visible content', a
     'page label did not use its structural kind fallback',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-edit-section']) === 'Container',
-    'container label did not use its structural kind fallback',
-  )
-  const describedContainer = clone(document.components['comp-edit-section'])
-  describedContainer.common.description = 'Task form'
-  assert(
-    getComponentDisplayLabel(describedContainer) === 'Task form',
+    getComponentDisplayLabel(document.components['comp-edit-section']) === 'Task details form',
     'container label did not use its editor description',
   )
+  const undescribedContainer = clone(document.components['comp-edit-section'])
+  undescribedContainer.common.description = ''
   assert(
-    getComponentDisplayLabel(document.components['comp-name-input']) === 'Name',
+    getComponentDisplayLabel(undescribedContainer) === 'Container',
+    'container label did not preserve its localized fallback',
+  )
+  assert(
+    getComponentDisplayLabel(document.components['comp-task-title-input']) === 'Task title',
     'input label did not use its visible label',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-save-btn']) === 'Save',
+    getComponentDisplayLabel(document.components['comp-save-btn']) === 'Save task',
     'button label did not use its visible label',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-actions']) === 'Container',
-    'container label did not use its kind fallback',
+    getComponentDisplayLabel(document.components['comp-actions']) === 'Task form actions',
+    'container label did not use its editor description',
   )
   assert(
-    getComponentDisplayLabel(document.components['comp-actions'], 'ja') === 'コンテナ',
-    'container label did not use the selected locale',
+    getComponentDisplayLabel(undescribedContainer, 'ja') === 'コンテナ',
+    'container fallback did not use the selected locale',
   )
   assert(
     getComponentDisplayLabel(document.components['comp-edit-page'], 'ja') === 'ページ',
@@ -6098,25 +6404,25 @@ await test('component display labels separate structure from visible content', a
 
   const deepContext = getComponentSelectionContext(document, 'comp-save-btn', 'en')
   assert(
-    deepContext?.screenName === 'Edit User' &&
-      deepContext.targetLabel === 'Save' &&
+    deepContext?.screenName === 'Edit Task' &&
+      deepContext.targetLabel === 'Save task' &&
       deepContext.hierarchy.map(item => item.label).join(' > ') ===
-        'Page > Container > Container > Save',
+        'Page > Task details form > Task form actions > Save task',
     'deep component context did not preserve its screen and real parent hierarchy',
   )
   assert(
     getComponentSelectionContext(
       document,
-      'comp-list-title',
+      'comp-list-loading-alert',
       'en',
       document.screenStates['state-list-loading'],
-    )?.targetLabel === 'Loading users...',
+    )?.targetLabel === 'Loading tasks...',
     'selection context did not use the active state semantic label',
   )
   assert(
     getComponentSelectionContext(document, 'comp-save-btn', 'ja')
       ?.hierarchy.slice(0, -1).map(item => item.label).join(' > ') ===
-      'ページ > コンテナ > コンテナ',
+      'ページ > Task details form > Task form actions',
     'component hierarchy labels did not use the selected locale',
   )
   assert(
@@ -6158,7 +6464,7 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
     'en',
   )
   assert(
-    modalContext?.screenName === 'Edit User' &&
+    modalContext?.screenName === 'Edit Task' &&
       modalContext.hierarchy.map(item => item.label).join(' > ') ===
         `Modal ${modalNumber} > Message`,
     'modal breadcrumb mixed the page tree into its independent hierarchy',
@@ -6255,19 +6561,37 @@ await test('Tree state presentation uses effective values and atomic override re
     createResetComponentOverrideCommand,
   } = await import(moduleUrl(stateOverridesBundle, 'tree-reset-override'))
   const store = await freshStore('tree-effective-state')
+  const initialDocument = store.getState().document
+  const loading = initialDocument.screenStates['state-list-loading']
+  const initialSuccess = initialDocument.screenStates['state-edit-success']
+  store.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: initialSuccess.id,
+    name: initialSuccess.name,
+    description: initialSuccess.description,
+    overrides: {
+      ...initialSuccess.componentOverrides,
+      'comp-task-assignee-select': { value: 'leo-martins' },
+    },
+  }, 'Set effective assignee')
   const document = store.getState().document
-  const loading = document.screenStates['state-list-loading']
   const success = document.screenStates['state-edit-success']
 
   const loadingTitle = resolveEffectiveComponentState(
     document.components['comp-list-title'],
-    loading,
+    {
+      ...loading,
+      componentOverrides: {
+        ...loading.componentOverrides,
+        'comp-list-title': { enabled: false, text: 'Loading tasks...' },
+      },
+    },
   )
   assert(
     loadingTitle.hasOverride &&
-      loadingTitle.component.config.text === 'Loading users...' &&
+      loadingTitle.component.config.text === 'Loading tasks...' &&
       !loadingTitle.component.common.enabled &&
-      getComponentTreeLabel(loadingTitle.component) === 'Loading users...',
+      getComponentTreeLabel(loadingTitle.component) === 'Loading tasks...',
     'Text Tree presentation did not match the Canvas effective state',
   )
   const defaultTitle = resolveEffectiveComponentState(
@@ -6276,32 +6600,32 @@ await test('Tree state presentation uses effective values and atomic override re
   )
   assert(
     !defaultTitle.hasOverride &&
-      defaultTitle.component.config.text === 'User List' &&
+      defaultTitle.component.config.text === 'Team Tasks' &&
       defaultTitle.component.common.enabled,
     'default state incorrectly exposed an override',
   )
 
   const successRole = resolveEffectiveComponentState(
-    document.components['comp-role-select'],
+    document.components['comp-task-assignee-select'],
     success,
   )
   assert(
     successRole.hasOverride &&
-      successRole.component.config.defaultValue === 'admin' &&
-      getComponentTreeLabel(successRole.component) === 'Role: Administrator',
+      successRole.component.config.defaultValue === 'leo-martins' &&
+      getComponentTreeLabel(successRole.component) === 'Assignee: Leo Martins',
     'Select Tree presentation did not resolve the effective option label',
   )
   const textInputWithValue = resolveEffectiveComponentState(
-    document.components['comp-name-input'],
+    document.components['comp-task-title-input'],
     {
       ...success,
       componentOverrides: {
-        'comp-name-input': { value: 'Alex Morgan' },
+       'comp-task-title-input': { value: 'Ship docs' },
       },
     },
   )
   assert(
-    getComponentTreeLabel(textInputWithValue.component) === 'Name: Alex Morgan',
+    getComponentTreeLabel(textInputWithValue.component) === 'Task title: Ship docs',
     'TextInput Tree presentation did not include its effective value',
   )
 
@@ -6310,14 +6634,14 @@ await test('Tree state presentation uses effective values and atomic override re
   const beforeResetHistory = store.getState().history.length
   const reset = createResetComponentOverrideCommand(
     store.getState().effectiveDocument.screenStates[success.id],
-    'comp-role-select',
+    'comp-task-assignee-select',
   )
   assert(reset, 'existing Select override did not produce a reset command')
-  store.getState().dispatch(reset, 'Reset Role override')
+  store.getState().dispatch(reset, 'Reset Assignee override')
   assert(
     store.getState().history.length === beforeResetHistory + 1 &&
       !store.getState().document.screenStates[success.id]
-        .componentOverrides['comp-role-select'] &&
+        .componentOverrides['comp-task-assignee-select'] &&
       store.getState().document.screenStates[success.id]
         .componentOverrides['comp-status-alert'] &&
       store.getState().document.screenStates[success.id]
@@ -6327,57 +6651,69 @@ await test('Tree state presentation uses effective values and atomic override re
   store.getState().undo()
   assert(
     store.getState().document.screenStates[success.id]
-      .componentOverrides['comp-role-select'].value === 'admin',
+      .componentOverrides['comp-task-assignee-select'].value === 'leo-martins',
     'Undo did not restore the reset override',
   )
   store.getState().redo()
   assert(
     !store.getState().document.screenStates[success.id]
-      .componentOverrides['comp-role-select'],
+      .componentOverrides['comp-task-assignee-select'],
     'Redo did not remove the override again',
   )
   const reloaded = await freshStore('tree-effective-state-reload')
   assert(
     !reloaded.getState().document.screenStates[success.id]
-      .componentOverrides['comp-role-select'],
+      .componentOverrides['comp-task-assignee-select'],
     'reset override did not survive reload',
   )
 
   memoryStorage.clear()
   const changeSetStore = await freshStore('tree-reset-change-set')
+  const changeSetSuccess =
+    changeSetStore.getState().document.screenStates['state-edit-success']
+  changeSetStore.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: changeSetSuccess.id,
+    name: changeSetSuccess.name,
+    description: changeSetSuccess.description,
+    overrides: {
+      ...changeSetSuccess.componentOverrides,
+      'comp-task-assignee-select': { value: 'leo-martins' },
+    },
+  }, 'Set effective assignee')
   changeSetStore.getState().setActiveScreen('screen-edit')
   changeSetStore.getState().setActiveState(success.id)
   const resetReview = changeSetStore.getState().beginChangeSet('Reset state override')
   const changeSetReset = createResetComponentOverrideCommand(
     changeSetStore.getState().effectiveDocument.screenStates[success.id],
-    'comp-role-select',
+    'comp-task-assignee-select',
   )
   changeSetStore.getState().dispatchToChangeSet(resetReview.id, changeSetReset)
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
       changeSetStore.getState().activeChangeSet?.operations[0].source === 'agent' &&
       changeSetStore.getState().document.screenStates[success.id]
-        .componentOverrides['comp-role-select'].value === 'admin' &&
+        .componentOverrides['comp-task-assignee-select'].value === 'leo-martins' &&
       !changeSetStore.getState().effectiveDocument.screenStates[success.id]
-        .componentOverrides['comp-role-select'],
+        .componentOverrides['comp-task-assignee-select'],
     'agent reset bypassed active change set preview routing',
   )
   changeSetStore.getState().rejectChangeSet()
   assert(
     changeSetStore.getState().effectiveDocument.screenStates[success.id]
-      .componentOverrides['comp-role-select'].value === 'admin',
+      .componentOverrides['comp-task-assignee-select'].value === 'leo-martins',
     'Reject did not restore the effective override',
   )
   const resetAccept = changeSetStore.getState().beginChangeSet('Accept state override reset')
   const acceptedReset = createResetComponentOverrideCommand(
     changeSetStore.getState().effectiveDocument.screenStates[success.id],
-    'comp-role-select',
+    'comp-task-assignee-select',
   )
   changeSetStore.getState().dispatchToChangeSet(resetAccept.id, acceptedReset)
   changeSetStore.getState().acceptChangeSet()
   assert(
     !changeSetStore.getState().document.screenStates[success.id]
-      .componentOverrides['comp-role-select'],
+      .componentOverrides['comp-task-assignee-select'],
     'Accept did not persist the override reset',
   )
   changeSetStore.getState().dispatch({
@@ -6391,7 +6727,7 @@ await test('Tree state presentation uses effective values and atomic override re
   assert(
     createResetComponentOverrideCommand(
       changeSetStore.getState().effectiveDocument.screenStates['state-edit-default'],
-      'comp-role-select',
+      'comp-task-assignee-select',
     ) === null,
     'default state exposed a reset command without an override',
   )
@@ -6435,91 +6771,108 @@ await test('Inspector keeps base values separate from field-level state override
   store.getState().setActiveScreen('screen-edit')
   store.getState().setActiveState('state-edit-success')
 
+  const initialSuccessState =
+    store.getState().effectiveDocument.screenStates['state-edit-success']
+  store.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: initialSuccessState.id,
+    name: initialSuccessState.name,
+    description: initialSuccessState.description,
+    overrides: {
+      ...initialSuccessState.componentOverrides,
+      'comp-task-assignee-select': { value: 'leo-martins' },
+      'comp-status-alert': {
+        ...initialSuccessState.componentOverrides['comp-status-alert'],
+        message: 'Task saved successfully.',
+      },
+    },
+  }, 'Set state-specific Task values')
   const successState = store.getState().effectiveDocument.screenStates['state-edit-success']
   const addVisibleOverride = createSetComponentOverrideFieldCommand(
     successState,
-    'comp-role-select',
+    'comp-task-assignee-select',
     'visible',
     false,
   )
   assert(addVisibleOverride, 'field override command was not created')
-  store.getState().dispatch(addVisibleOverride, 'Override Role visibility')
+  store.getState().dispatch(addVisibleOverride, 'Override Assignee visibility')
   let roleOverride = store.getState().document.screenStates['state-edit-success']
-    .componentOverrides['comp-role-select']
+    .componentOverrides['comp-task-assignee-select']
   let effectiveRole = resolveEffectiveComponentState(
-    store.getState().document.components['comp-role-select'],
+    store.getState().document.components['comp-task-assignee-select'],
     store.getState().document.screenStates['state-edit-success'],
   )
   assert(
-    store.getState().history.length === 1 &&
-      roleOverride.value === 'admin' &&
+    store.getState().history.length === 2 &&
+      roleOverride.value === 'leo-martins' &&
       roleOverride.visible === false &&
-      store.getState().document.components['comp-role-select'].common.visible === true &&
+      store.getState().document.components['comp-task-assignee-select'].common.visible === true &&
       effectiveRole.component.common.visible === false &&
-      effectiveRole.component.config.defaultValue === 'admin',
+      effectiveRole.component.config.defaultValue === 'leo-martins',
     'field override did not preserve the base value, sibling override, or effective projection',
   )
 
   const resetValue = createSetComponentOverrideFieldCommand(
     store.getState().effectiveDocument.screenStates['state-edit-success'],
-    'comp-role-select',
+    'comp-task-assignee-select',
     'value',
     undefined,
   )
-  store.getState().dispatch(resetValue, 'Use base Role value')
+  store.getState().dispatch(resetValue, 'Use base Assignee value')
   roleOverride = store.getState().document.screenStates['state-edit-success']
-    .componentOverrides['comp-role-select']
+    .componentOverrides['comp-task-assignee-select']
   effectiveRole = resolveEffectiveComponentState(
-    store.getState().document.components['comp-role-select'],
+    store.getState().document.components['comp-task-assignee-select'],
     store.getState().document.screenStates['state-edit-success'],
   )
   assert(
     roleOverride.value === undefined &&
       roleOverride.visible === false &&
-      effectiveRole.component.config.defaultValue === 'member' &&
+      effectiveRole.component.config.defaultValue === 'maya-chen' &&
       !effectiveRole.component.common.visible,
     'field reset removed another override or retained the overridden effective value as base',
   )
   store.getState().undo()
   assert(
     store.getState().document.screenStates['state-edit-success']
-      .componentOverrides['comp-role-select'].value === 'admin',
+    .componentOverrides['comp-task-assignee-select'].value === 'leo-martins',
     'field reset Undo did not restore exactly one operation',
   )
   store.getState().redo()
 
   const textInputValue = createSetComponentOverrideFieldCommand(
     store.getState().effectiveDocument.screenStates['state-edit-success'],
-    'comp-name-input',
+    'comp-task-title-input',
     'value',
-    'State-specific name',
+    'State-specific task',
   )
-  store.getState().dispatch(textInputValue, 'Override Name value')
+  store.getState().dispatch(textInputValue, 'Override Task title value')
   assert(
-    store.getState().document.components['comp-name-input'].config.defaultValue === '' &&
+    store.getState().document.components['comp-task-title-input'].config.defaultValue ===
+        'Launch onboarding checklist' &&
       resolveEffectiveComponentState(
-        store.getState().document.components['comp-name-input'],
+        store.getState().document.components['comp-task-title-input'],
         store.getState().document.screenStates['state-edit-success'],
-      ).component.config.defaultValue === 'State-specific name',
+      ).component.config.defaultValue === 'State-specific task',
     'TextInput value override mutated or replaced its base default value',
   )
   const resetAllName = createResetComponentOverrideCommand(
     store.getState().effectiveDocument.screenStates['state-edit-success'],
-    'comp-name-input',
+    'comp-task-title-input',
   )
-  store.getState().dispatch(resetAllName, 'Reset Name overrides')
+  store.getState().dispatch(resetAllName, 'Reset Task title overrides')
   assert(
     !store.getState().document.screenStates['state-edit-success']
-      .componentOverrides['comp-name-input'],
+      .componentOverrides['comp-task-title-input'],
     'component-level reset did not agree with field-level override storage',
   )
 
   const reloaded = await freshStore('inspector-field-overrides-reload')
   assert(
     reloaded.getState().document.screenStates['state-edit-success']
-      .componentOverrides['comp-role-select'].visible === false &&
+      .componentOverrides['comp-task-assignee-select'].visible === false &&
       reloaded.getState().document.screenStates['state-edit-success']
-        .componentOverrides['comp-role-select'].value === undefined,
+        .componentOverrides['comp-task-assignee-select'].value === undefined,
     'field-level override state did not survive reload',
   )
 
@@ -6527,6 +6880,21 @@ await test('Inspector keeps base values separate from field-level state override
   const changeSetStore = await freshStore('inspector-field-override-change-set')
   changeSetStore.getState().setActiveScreen('screen-edit')
   changeSetStore.getState().setActiveState('state-edit-success')
+  const reviewSuccess =
+    changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
+  changeSetStore.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: reviewSuccess.id,
+    name: reviewSuccess.name,
+    description: reviewSuccess.description,
+    overrides: {
+      ...reviewSuccess.componentOverrides,
+      'comp-status-alert': {
+        ...reviewSuccess.componentOverrides['comp-status-alert'],
+        message: 'Task saved successfully.',
+      },
+    },
+  }, 'Set review baseline message')
   const overrideReview = changeSetStore.getState().beginChangeSet('Edit one override field')
   const changeSet = createSetComponentOverrideFieldCommand(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
@@ -6538,7 +6906,7 @@ await test('Inspector keeps base values separate from field-level state override
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
       changeSetStore.getState().document.screenStates['state-edit-success']
-        .componentOverrides['comp-status-alert'].message === 'User saved successfully.' &&
+        .componentOverrides['comp-status-alert'].message === 'Task saved successfully.' &&
       changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
         .componentOverrides['comp-status-alert'].message === 'Preview-only message',
     'field override bypassed active change set preview routing',
@@ -6546,7 +6914,7 @@ await test('Inspector keeps base values separate from field-level state override
   changeSetStore.getState().rejectChangeSet()
   assert(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
-      .componentOverrides['comp-status-alert'].message === 'User saved successfully.',
+      .componentOverrides['comp-status-alert'].message === 'Task saved successfully.',
     'Reject did not restore the prior field override',
   )
   const overrideAccept = changeSetStore.getState().beginChangeSet('Accept one override field')
@@ -6645,14 +7013,14 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
   const store = await freshStore('inspector-section-markers')
   const base = store.getState().document
   const preview = structuredClone(base)
-  preview.components['comp-name-input'].common.description = 'Changed by AI'
-  preview.components['comp-name-input'].config.placeholder = 'Updated placeholder'
-  preview.components['comp-name-input'].config.validationRules = [{
+  preview.components['comp-task-title-input'].common.description = 'Changed by AI'
+  preview.components['comp-task-title-input'].config.placeholder = 'Updated placeholder'
+  preview.components['comp-task-title-input'].config.validationRules = [{
     id: 'rule-ai',
     type: 'required',
     message: 'Required',
   }]
-  preview.screenStates['state-edit-success'].componentOverrides['comp-name-input'] = {
+  preview.screenStates['state-edit-success'].componentOverrides['comp-task-title-input'] = {
     value: 'Preview name',
   }
   preview.components['comp-actions'].config.gap = 'lg'
@@ -6661,7 +7029,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
   const inputMarkers = inspectorSectionChangeCounts(
     base,
     preview,
-    'comp-name-input',
+    'comp-task-title-input',
     'state-edit-success',
   )
   const layoutMarkers = inspectorSectionChangeCounts(
@@ -6729,18 +7097,18 @@ await test('screen flow projects navigate actions and net review changes', async
   const { selectScreenFlow } = await import(moduleUrl(screenFlowBundle, 'screen-flow'))
   const store = await freshStore('screen-flow')
   const base = structuredClone(store.getState().document)
-  base.events['event-open-active-user'] = {
-    id: 'event-open-active-user',
+  base.events['event-open-launch-task'] = {
+    id: 'event-open-launch-task',
     screenId: 'screen-list',
-    name: 'Open active user',
-    trigger: { type: 'click', componentId: 'comp-list-active' },
+    name: 'Open launch task',
+    trigger: { type: 'click', componentId: 'comp-task-launch-title' },
     actions: [{ type: 'navigate', destinationScreenId: 'screen-edit' }],
   }
-  base.events['event-open-invited-user'] = {
-    id: 'event-open-invited-user',
+  base.events['event-open-docs-task'] = {
+    id: 'event-open-docs-task',
     screenId: 'screen-list',
-    name: 'Open invited user',
-    trigger: { type: 'click', componentId: 'comp-list-invited' },
+    name: 'Open documentation task',
+    trigger: { type: 'click', componentId: 'comp-task-docs-title' },
     actions: [{ type: 'navigate', destinationScreenId: 'screen-edit' }],
   }
   base.events['event-cancel-edit'] = {
@@ -6751,10 +7119,10 @@ await test('screen flow projects navigate actions and net review changes', async
     actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
   }
   base.screens['screen-list'].eventIds = [
-    'event-open-active-user',
-    'event-open-invited-user',
+    'event-open-launch-task',
+    'event-open-docs-task',
   ]
-  base.screens['screen-edit'].eventIds.push('event-cancel-edit')
+  base.screens['screen-edit'].eventIds = ['event-cancel-edit']
   const flow = selectScreenFlow(base, 'en')
   const listToEdit = flow.edges.find(edge =>
     edge.source.screenId === 'screen-list' &&
@@ -6767,14 +7135,14 @@ await test('screen flow projects navigate actions and net review changes', async
   assert(
     flow.nodes.map(node => node.screenId).join(',') === 'screen-list,screen-edit' &&
       flow.nodes.every((node, index) => node.order === index && node.exists) &&
-      listToEdit?.transitions.length === 2 &&
-      listToEdit.transitions[0].eventId === 'event-open-active-user' &&
-      listToEdit.transitions[1].eventId === 'event-open-invited-user' &&
+      listToEdit?.transitions.length === 4 &&
+      listToEdit.transitions[0].eventId === 'event-open-launch-task' &&
+      listToEdit.transitions[1].eventId === 'event-open-docs-task' &&
       listToEdit.transitions.every(transition =>
         transition.actionIndex === 0 &&
         transition.triggerResolved &&
-        transition.target.route === '/users/:id/edit') &&
-      editToList?.transitions.length === 1 &&
+        transition.target.route === '/tasks/:taskId') &&
+      editToList?.transitions.length === 2 &&
       editToList.transitions[0].triggerComponentId === 'comp-cancel-btn',
     'screen flow lost screen order, duplicate edges, routes, triggers, or action order',
   )
@@ -6811,7 +7179,7 @@ await test('screen flow projects navigate actions and net review changes', async
       !unresolvedEdge.target.resolved &&
       unresolvedEdge.target.name === null &&
       unresolvedEdge.target.route === null &&
-      unresolvedEdge.transitions.length === 2,
+      unresolvedEdge.transitions.length === 4,
     'screen flow discarded unresolved navigate targets',
   )
 
@@ -6829,19 +7197,19 @@ await test('screen flow projects navigate actions and net review changes', async
     eventIds: [],
   }
   preview.project.screenIds.push('screen-new')
-  preview.events['event-open-active-user'].actions[0] = {
+  preview.events['event-open-launch-task'].actions[0] = {
     type: 'navigate',
     destinationScreenId: 'screen-list',
   }
-  preview.events['event-open-invited-user'].actions = []
+  preview.events['event-open-docs-task'].actions = []
   const review = selectScreenFlow(preview, 'en', base)
   const changedTransition = review.edges
     .flatMap(edge => edge.transitions)
-    .find(transition => transition.id === 'event-open-active-user:0')
+    .find(transition => transition.id === 'event-open-launch-task:0')
   const removedTransition = review.edges
     .flatMap(edge => edge.transitions)
     .find(transition =>
-      transition.eventId === 'event-open-invited-user' && !transition.exists)
+      transition.eventId === 'event-open-docs-task' && !transition.exists)
   assert(
     review.nodes.find(node => node.screenId === 'screen-edit')?.changeStatus === 'modified' &&
       review.nodes.find(node => node.screenId === 'screen-new')?.changeStatus === 'added' &&
@@ -6856,7 +7224,7 @@ await test('screen flow projects navigate actions and net review changes', async
   const removedPreview = structuredClone(base)
   delete removedPreview.screens['screen-edit']
   removedPreview.project.screenIds = ['screen-list']
-  delete removedPreview.events['event-submit']
+  delete removedPreview.events['event-save-task']
   delete removedPreview.events['event-cancel-edit']
   const removedReview = selectScreenFlow(removedPreview, 'ja', base)
   assert(
@@ -6941,10 +7309,10 @@ await test('screen flow projects navigate actions and net review changes', async
   const mixedEdgePreview = structuredClone(base)
   mixedEdgePreview.screens['screen-edit'].name = 'Edit account'
   mixedEdgePreview.screens['screen-edit'].route = '/accounts/:id/edit'
-  delete mixedEdgePreview.events['event-open-active-user']
+  delete mixedEdgePreview.events['event-open-launch-task']
   mixedEdgePreview.screens['screen-list'].eventIds =
     mixedEdgePreview.screens['screen-list'].eventIds.filter(
-      eventId => eventId !== 'event-open-active-user',
+      eventId => eventId !== 'event-open-launch-task',
     )
   const mixedEdge = selectScreenFlow(mixedEdgePreview, 'en', base).edges.find(edge =>
     edge.source.screenId === 'screen-list' &&
@@ -7128,7 +7496,7 @@ await test('change set review presents sequential diffs for every command type',
   const nestedComponentRows = presentChangeSetOperations(makeChangeSet([
     {
       type: 'updateComponentSpec',
-      componentId: 'comp-name-input',
+      componentId: 'comp-task-title-input',
       patch: {
         common: { visible: false, enabled: false },
         config: {
@@ -7199,7 +7567,7 @@ await test('change set review presents sequential diffs for every command type',
       trigger: { type: 'click', componentId: 'comp-cancel-btn' },
       actions: [
         { type: 'setState', stateId: 'state-edit-saving' },
-        { type: 'callApi', apiOperationId: 'api-save-user' },
+        { type: 'callApi', apiOperationId: 'api-update-task' },
       ],
     },
     {
@@ -7218,7 +7586,7 @@ await test('change set review presents sequential diffs for every command type',
     eventRows[0].changes.some(change =>
       change.field === 'Actions' &&
       change.after.fullText.includes('Set state: Saving') &&
-      change.after.fullText.includes('Call API: PUT /api/users/{id}')
+      change.after.fullText.includes('Call API: PUT /api/tasks/{taskId}')
     ) &&
       eventRows[1].changes.some(change =>
         change.field === 'Trigger' &&
@@ -7228,7 +7596,7 @@ await test('change set review presents sequential diffs for every command type',
       eventRows[1].changes.some(change =>
         change.field === 'Actions' &&
         change.after.fullText.includes('Show alert') &&
-        change.after.fullText.includes('Navigate: User List')
+        change.after.fullText.includes('Navigate: Task List')
       ) &&
       eventRows[1].navigation?.componentId === 'comp-cancel-btn' &&
       eventRows[2].navigation === null,
@@ -7244,7 +7612,7 @@ await test('change set review presents sequential diffs for every command type',
       method: 'POST',
       path: '/api/review',
       requestBindings: [
-        { componentId: 'comp-name-input', targetPath: 'body.name' },
+        { componentId: 'comp-task-title-input', targetPath: 'body.title' },
       ],
       successStateId: 'state-edit-success',
     },
@@ -7255,8 +7623,8 @@ await test('change set review presents sequential diffs for every command type',
       method: 'PATCH',
       path: '/api/review/{id}',
       requestBindings: [
-        { componentId: 'comp-email-input', targetPath: 'body.email' },
-        { componentId: 'comp-role-select', targetPath: 'body.role' },
+        { componentId: 'comp-task-description-input', targetPath: 'body.description' },
+        { componentId: 'comp-task-assignee-select', targetPath: 'body.assigneeId' },
       ],
       successStateId: null,
       errorStateId: 'state-edit-error',
@@ -7266,20 +7634,20 @@ await test('change set review presents sequential diffs for every command type',
   assert(
     apiRows[0].changes.some(change =>
       change.field === 'Request bindings' &&
-      change.after.fullText === 'Name → body.name'
+      change.after.fullText === 'Task title → body.title'
     ) &&
       apiRows[1].changes.some(change =>
         change.field === 'Request bindings' &&
-        change.before.fullText === 'Name → body.name' &&
-        change.after.fullText.includes('Email address → body.email') &&
-        change.after.fullText.includes('Role → body.role')
+        change.before.fullText === 'Task title → body.title' &&
+        change.after.fullText.includes('Description → body.description') &&
+        change.after.fullText.includes('Assignee → body.assigneeId')
       ) &&
       apiRows[1].changes.some(change =>
         change.field === 'Success state' &&
         change.before.text === 'Success' &&
         change.after.text === 'None'
       ) &&
-      apiRows[1].navigation?.componentId === 'comp-email-input' &&
+      apiRows[1].navigation?.componentId === 'comp-task-description-input' &&
       apiRows[2].navigation === null,
     'API review lost binding arrays, null state references, or navigation',
   )
@@ -7389,7 +7757,7 @@ await test('active change set component markers reflect final net effects', asyn
     {
       type: 'updateComponentSpec',
       componentId: 'comp-list-title',
-      patch: { config: { text: 'User List' } },
+      patch: { config: { text: 'Team Tasks' } },
     },
   ]))
   assert(
@@ -7438,16 +7806,16 @@ await test('active change set component markers reflect final net effects', asyn
     description: state.description,
     overrides: {
       ...state.componentOverrides,
-      'comp-name-input': { value: 'Draft name' },
+      'comp-task-title-input': { value: 'Draft name' },
     },
   }]))
   assert(
     stateChanges.statuses.size === 1 &&
-      stateChanges.statuses.get('comp-name-input') === 'modified',
+      stateChanges.statuses.get('comp-task-title-input') === 'modified',
     'state override changes must mark only their component',
   )
 
-  const event = baseDocument.events['event-submit']
+  const event = baseDocument.events['event-save-task']
   const eventChanges = getChangeSetComponentChanges(makeChangeSet([{
     type: 'updateEvent',
     eventId: event.id,
@@ -7461,13 +7829,13 @@ await test('active change set component markers reflect final net effects', asyn
     'event changes must mark the trigger component without unrelated targets',
   )
 
-  const api = baseDocument.apiOperations['api-save-user']
+  const api = baseDocument.apiOperations['api-update-task']
   const apiMetadataOnly = getChangeSetComponentChanges(makeChangeSet([{
     type: 'updateApiOperation',
     operationId: api.id,
     name: `${api.name} updated`,
     method: 'PATCH',
-    path: '/api/users/{id}/review',
+    path: '/api/tasks/{taskId}/review',
     requestBindings: api.requestBindings,
     successStateId: api.successStateId,
     errorStateId: api.errorStateId,
@@ -7484,7 +7852,7 @@ await test('active change set component markers reflect final net effects', asyn
     method: api.method,
     path: api.path,
     requestBindings: api.requestBindings.map(binding =>
-      binding.componentId === 'comp-name-input'
+      binding.componentId === 'comp-task-title-input'
         ? { ...binding, targetPath: 'body.displayName' }
         : binding
     ),
@@ -7493,13 +7861,13 @@ await test('active change set component markers reflect final net effects', asyn
   }]))
   assert(
     apiBindingChanges.statuses.size === 1 &&
-      apiBindingChanges.statuses.get('comp-name-input') === 'modified',
+      apiBindingChanges.statuses.get('comp-task-title-input') === 'modified',
     'API request binding changes must mark the bound component',
   )
 
   const validationChanges = getChangeSetComponentChanges(makeChangeSet([{
     type: 'updateComponentSpec',
-    componentId: 'comp-name-input',
+    componentId: 'comp-task-title-input',
     patch: {
       config: {
         validationRules: [
@@ -7509,7 +7877,7 @@ await test('active change set component markers reflect final net effects', asyn
     },
   }]))
   assert(
-    validationChanges.statuses.get('comp-name-input') === 'modified',
+    validationChanges.statuses.get('comp-task-title-input') === 'modified',
     'validation rules must be included in component config markers',
   )
 
@@ -7521,7 +7889,17 @@ await test('active change set component markers reflect final net effects', asyn
   assert(
     removed.statuses.get('comp-list-section') === 'modified' &&
       removed.removedComponents.map(change => change.componentId).join(',') ===
-        'comp-list-grid,comp-list-active,comp-list-invited',
+        [
+          'comp-list-grid',
+          'comp-task-launch-card',
+          'comp-task-launch-title',
+          'comp-task-launch-meta',
+          'comp-edit-launch-task-btn',
+          'comp-task-docs-card',
+          'comp-task-docs-title',
+          'comp-task-docs-meta',
+          'comp-edit-docs-task-btn',
+        ].join(','),
     'subtree removal must preserve base hierarchy order and mark the surviving parent',
   )
 
@@ -7566,19 +7944,19 @@ await test('central editor screen context follows the effective active screen', 
   store.getState().dispatchToChangeSet(previewChangeSet.id, {
     type: 'updateScreen',
     screenId: 'screen-list',
-    name: 'Preview user list',
-    route: '/preview/users',
+    name: 'Preview task list',
+    route: '/preview/tasks',
   }, 'agent')
   assert(
-    store.getState().document.screens['screen-list'].name === 'User List' &&
-      store.getState().effectiveDocument.screens['screen-list'].name === 'Preview user list' &&
-      store.getState().effectiveDocument.screens['screen-list'].route === '/preview/users',
+    store.getState().document.screens['screen-list'].name === 'Task List' &&
+      store.getState().effectiveDocument.screens['screen-list'].name === 'Preview task list' &&
+      store.getState().effectiveDocument.screens['screen-list'].route === '/preview/tasks',
     'screen context source did not distinguish confirmed and preview values',
   )
 
   store.getState().rejectChangeSet()
   assert(
-    store.getState().effectiveDocument.screens['screen-list'].name === 'User List',
+    store.getState().effectiveDocument.screens['screen-list'].name === 'Task List',
     'reject did not restore the screen context source',
   )
 
@@ -7586,22 +7964,22 @@ await test('central editor screen context follows the effective active screen', 
   store.getState().dispatchToChangeSet(acceptedChangeSet.id, {
     type: 'updateScreen',
     screenId: 'screen-list',
-    name: 'Accepted user list',
-    route: '/accepted/users',
+    name: 'Accepted task list',
+    route: '/accepted/tasks',
   }, 'agent')
   store.getState().acceptChangeSet()
   assert(
-    store.getState().effectiveDocument.screens['screen-list'].name === 'Accepted user list',
+    store.getState().effectiveDocument.screens['screen-list'].name === 'Accepted task list',
     'accept did not retain the effective screen context',
   )
   store.getState().undo()
   assert(
-    store.getState().effectiveDocument.screens['screen-list'].name === 'User List',
+    store.getState().effectiveDocument.screens['screen-list'].name === 'Task List',
     'undo did not update the effective screen context',
   )
   store.getState().redo()
   assert(
-    store.getState().effectiveDocument.screens['screen-list'].route === '/accepted/users',
+    store.getState().effectiveDocument.screens['screen-list'].route === '/accepted/tasks',
     'redo did not update the effective screen route',
   )
 
@@ -7645,9 +8023,30 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-page',
       'comp-list-section',
       'comp-list-title',
+      'comp-list-summary',
+      'comp-create-task-btn',
+      'comp-list-loading-alert',
+      'comp-list-empty-alert',
+      'comp-list-error-alert',
       'comp-list-grid',
-      'comp-list-active',
-      'comp-list-invited',
+      'comp-task-launch-card',
+      'comp-task-launch-title',
+      'comp-task-launch-meta',
+      'comp-edit-launch-task-btn',
+      'comp-task-docs-card',
+      'comp-task-docs-title',
+      'comp-task-docs-meta',
+      'comp-edit-docs-task-btn',
+      'comp-retry-tasks-btn',
+      'comp-create-modal',
+      'comp-create-modal-content',
+      'comp-create-modal-title',
+      'comp-new-task-title-input',
+      'comp-create-task-progress-alert',
+      'comp-create-task-error-alert',
+      'comp-create-modal-actions',
+      'comp-cancel-create-task-btn',
+      'comp-submit-create-task-btn',
     ].join(','),
     'visible Tree order does not follow the expanded hierarchy',
   )
@@ -7667,12 +8066,27 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-page',
       'comp-list-section',
       'comp-list-title',
+      'comp-list-summary',
+      'comp-create-task-btn',
+      'comp-list-loading-alert',
+      'comp-list-empty-alert',
+      'comp-list-error-alert',
       'comp-list-grid',
+      'comp-retry-tasks-btn',
+      'comp-create-modal',
+      'comp-create-modal-content',
+      'comp-create-modal-title',
+      'comp-new-task-title-input',
+      'comp-create-task-progress-alert',
+      'comp-create-task-error-alert',
+      'comp-create-modal-actions',
+      'comp-cancel-create-task-btn',
+      'comp-submit-create-task-btn',
     ].join(',') &&
-      intent('ArrowDown', 'comp-list-title')?.componentId === 'comp-list-grid' &&
-      intent('ArrowUp', 'comp-list-grid')?.componentId === 'comp-list-title' &&
+      intent('ArrowDown', 'comp-list-title')?.componentId === 'comp-list-summary' &&
+      intent('ArrowUp', 'comp-list-grid')?.componentId === 'comp-list-error-alert' &&
       intent('Home', 'comp-list-grid')?.componentId === 'comp-list-page' &&
-      intent('End', 'comp-list-page')?.componentId === 'comp-list-grid',
+      intent('End', 'comp-list-page')?.componentId === 'comp-submit-create-task-btn',
     'Tree previous/next/Home/End navigation does not use visible items',
   )
   assert(
@@ -8184,6 +8598,17 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
     )
   }
 
+  const loadingState = store.getState().document.screenStates['state-list-loading']
+  store.getState().dispatch({
+    type: 'updateScreenState',
+    stateId: loadingState.id,
+    name: loadingState.name,
+    description: loadingState.description,
+    overrides: {
+      ...loadingState.componentOverrides,
+      'comp-list-title': { text: 'Loading tasks...' },
+    },
+  }, 'Set loading title')
   const textRoleReview = store.getState().beginChangeSet('Change text role')
   store.getState().dispatchToChangeSet(textRoleReview.id, {
     type: 'updateComponentSpec',
@@ -8200,7 +8625,7 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
   assert(
     reloaded.getState().document.components['comp-list-title'].config.style === 'heading3' &&
       reloaded.getState().document.screenStates['state-list-loading']
-        .componentOverrides['comp-list-title'].text === 'Loading users...',
+      .componentOverrides['comp-list-title'].text === 'Loading tasks...',
     'Text style or text state override did not survive reload',
   )
 
@@ -8463,8 +8888,8 @@ await test('structural components reject content titles across every write path'
     'Page and modal editor frames do not use contextual editor-only labels',
   )
   assert(
-    baseline.components['comp-list-title'].config.text === 'User List' &&
-      baseline.components['comp-edit-title'].config.text === 'User Details',
+    baseline.components['comp-list-title'].config.text === 'Team Tasks' &&
+      baseline.components['comp-edit-title'].config.text === 'Edit task',
     'sample visible structure was not represented by styled Text children',
   )
 })
@@ -8695,20 +9120,27 @@ await test('Select state values share one validated effective path', async () =>
   memoryStorage.clear()
   const store = await freshStore('select-state-effective')
   const { effectiveComponent } = await import(moduleUrl(selectorsBundle, 'select-state-effective'))
-  const baseSelect = store.getState().document.components['comp-role-select']
-  const successState = store.getState().document.screenStates['state-edit-success']
+  const baseSelect = store.getState().document.components['comp-task-assignee-select']
+  const baseSuccessState = store.getState().document.screenStates['state-edit-success']
+  const successState = {
+    ...baseSuccessState,
+    componentOverrides: {
+      ...baseSuccessState.componentOverrides,
+      'comp-task-assignee-select': { value: 'leo-martins' },
+    },
+  }
 
   assert(
     baseSelect.config.kind === 'select' &&
-      baseSelect.config.defaultValue === 'member' &&
-      baseSelect.config.options.some(option => option.value === 'admin'),
+      baseSelect.config.defaultValue === 'maya-chen' &&
+      baseSelect.config.options.some(option => option.value === 'leo-martins'),
     'sample Select does not define options and a valid default value',
   )
   const effectiveSuccessSelect = effectiveComponent(baseSelect, successState)
   assert(
     effectiveSuccessSelect.config.kind === 'select' &&
-      effectiveSuccessSelect.config.defaultValue === 'admin' &&
-      baseSelect.config.defaultValue === 'member',
+      effectiveSuccessSelect.config.defaultValue === 'leo-martins' &&
+      baseSelect.config.defaultValue === 'maya-chen',
     'Select override did not produce an immutable effective selected value',
   )
 
@@ -8718,21 +9150,21 @@ await test('Select state values share one validated effective path', async () =>
       stateId: 'state-edit-success',
       overrides: {
         ...successState.componentOverrides,
-        'comp-role-select': { value: 'owner' },
+        'comp-task-assignee-select': { value: 'owner' },
       },
     },
     {
       type: 'updateComponentSpec',
-      componentId: 'comp-role-select',
+      componentId: 'comp-task-assignee-select',
       patch: {
         config: {
-          options: [{ value: 'member', label: 'Member' }],
+          options: [{ value: 'leo-martins', label: 'Leo Martins' }],
         },
       },
     },
     {
       type: 'updateComponentSpec',
-      componentId: 'comp-role-select',
+      componentId: 'comp-task-assignee-select',
       patch: { config: { defaultValue: 'owner' } },
     },
   ]
@@ -8751,49 +9183,49 @@ await test('Select state values share one validated effective path', async () =>
     stateId: savingState.id,
     overrides: {
       ...savingState.componentOverrides,
-      'comp-role-select': { value: 'admin' },
+      'comp-task-assignee-select': { value: 'leo-martins' },
     },
   }, 'Set Select state value')
   store.getState().setActiveState(savingState.id)
   const effectiveSavingSelect = effectiveComponent(
-    store.getState().document.components['comp-role-select'],
+    store.getState().document.components['comp-task-assignee-select'],
     store.getState().document.screenStates[savingState.id],
   )
   assert(
     effectiveSavingSelect.config.kind === 'select' &&
-      effectiveSavingSelect.config.defaultValue === 'admin',
+    effectiveSavingSelect.config.defaultValue === 'leo-martins',
     'valid Select state override was not applied',
   )
 
   const reloaded = await freshStore('select-state-effective-reload')
   const reloadedSelect = effectiveComponent(
-    reloaded.getState().document.components['comp-role-select'],
+    reloaded.getState().document.components['comp-task-assignee-select'],
     reloaded.getState().document.screenStates[savingState.id],
   )
   assert(
     reloadedSelect.config.kind === 'select' &&
-      reloadedSelect.config.defaultValue === 'admin',
+      reloadedSelect.config.defaultValue === 'leo-martins',
     'Select state override did not survive reload',
   )
 
   const selectReview = reloaded.getState().beginChangeSet('AI Select override')
   const confirmedSavingValue =
     reloaded.getState().document.screenStates[savingState.id]
-      .componentOverrides['comp-role-select'].value
+      .componentOverrides['comp-task-assignee-select'].value
   reloaded.getState().dispatchToChangeSet(selectReview.id, {
     type: 'updateScreenState',
     stateId: savingState.id,
     overrides: {
       ...reloaded.getState().effectiveDocument.screenStates[savingState.id].componentOverrides,
-      'comp-role-select': { value: 'member' },
+      'comp-task-assignee-select': { value: 'unassigned' },
     },
   })
   assert(
     reloaded.getState().activeChangeSet?.operations.at(-1)?.source === 'agent' &&
       reloaded.getState().document.screenStates[savingState.id]
-        .componentOverrides['comp-role-select'].value === confirmedSavingValue &&
+        .componentOverrides['comp-task-assignee-select'].value === confirmedSavingValue &&
       reloaded.getState().effectiveDocument.screenStates[savingState.id]
-        .componentOverrides['comp-role-select'].value === 'member',
+        .componentOverrides['comp-task-assignee-select'].value === 'unassigned',
     'agent Select override did not remain inside the active change set',
   )
 
@@ -8801,7 +9233,7 @@ await test('Select state values share one validated effective path', async () =>
   const persistedStore = await freshStore('select-invalid-persistence-seed')
   const invalidDocument = clone(persistedStore.getState().document)
   invalidDocument.screenStates['state-edit-success']
-    .componentOverrides['comp-role-select'].value = 'owner'
+    .componentOverrides['comp-task-assignee-select'] = { value: 'owner' }
   memoryStorage.setItem(storageKey, JSON.stringify({ document: invalidDocument }))
   const invalidPersisted = await freshStore('select-invalid-persistence')
   assert(
@@ -8826,7 +9258,7 @@ await test('Select state values share one validated effective path', async () =>
     overrides: {
       'comp-save-btn': { enabled: false },
       'comp-cancel-btn': { enabled: false },
-      'comp-role-select': { value: 'admin' },
+      'comp-task-assignee-select': { value: 'leo-martins' },
     },
   })
   assert(validResult.ok, `valid Select WebMCP override failed: ${JSON.stringify(validResult)}`)
@@ -8840,23 +9272,23 @@ await test('Select state values share one validated effective path', async () =>
       operation: 'update',
       stateId: 'state-edit-saving',
       overrides: {
-        'comp-role-select': { value: 'owner' },
+        'comp-task-assignee-select': { value: 'owner' },
       },
     }],
     ['update_component_spec', {
       ...common,
       expectedChangeSetVersion: 1,
-      componentId: 'comp-role-select',
+      componentId: 'comp-task-assignee-select',
       patch: {
         config: {
-          options: [{ value: 'member', label: 'Member' }],
+          options: [{ value: 'maya-chen', label: 'Maya Chen' }],
         },
       },
     }],
     ['update_component_spec', {
       ...common,
       expectedChangeSetVersion: 1,
-      componentId: 'comp-role-select',
+      componentId: 'comp-task-assignee-select',
       patch: { config: { defaultValue: 'owner' } },
     }],
   ]
@@ -8889,8 +9321,8 @@ await test('Select state values share one validated effective path', async () =>
   const effectiveSelectPreview = createCanvasComponentPreview(effectiveSuccessSelect.config)
   assert(
     effectiveSelectPreview.kind === 'select' &&
-      effectiveSelectPreview.value === 'admin' &&
-      baseSelect.config.defaultValue === 'member',
+      effectiveSelectPreview.value === 'leo-martins' &&
+      baseSelect.config.defaultValue === 'maya-chen',
     'Canvas still bypasses the effective Select config',
   )
   assert(
@@ -8959,7 +9391,7 @@ await test('text drafts commit as one human operation', async () => {
     type: 'updateScreen',
     screenId: 'screen-list',
     name: 'Persisted screen name',
-  }, 'Update screen name: User List')
+  }, 'Update screen name: Task List')
   assert(nameResult, 'screen name draft commit failed')
   const reloaded = await freshStore('text-draft-reload')
   assert(
@@ -8971,11 +9403,11 @@ await test('text drafts commit as one human operation', async () => {
   const duplicateRoute = reloaded.getState().dispatch({
     type: 'updateScreen',
     screenId: 'screen-edit',
-    route: '/users',
-  }, 'Update screen route: Edit User')
+    route: '/tasks',
+  }, 'Update screen route: Edit Task')
   assert(
     !duplicateRoute &&
-      reloaded.getState().document.screens['screen-edit'].route === '/users/:id/edit' &&
+      reloaded.getState().document.screens['screen-edit'].route === '/tasks/:taskId' &&
       reloaded.getState().history.length === historyBeforeInvalidRoute &&
       reloaded.getState().toast?.severity === 'error',
     'duplicate route was reported as a successful text commit',
@@ -9001,8 +9433,8 @@ await test('text drafts commit as one human operation', async () => {
   const invalidChangeSetRoute = reloaded.getState().dispatch({
     type: 'updateScreen',
     screenId: 'screen-edit',
-    route: '/users',
-  }, 'Update screen route: Edit User')
+    route: '/blocked/tasks',
+  }, 'Update screen route: Edit Task')
   assert(
     !invalidChangeSetRoute && reloaded.getState().activeChangeSet?.operations.length === 0,
     'human route edit was added to the active change set',
@@ -9437,8 +9869,8 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   const saveBehavior = getComponentBehavior(document, 'comp-save-btn', 'en')
   assert(
     saveBehavior?.events.length === 1 &&
-      saveBehavior.events[0].name === 'Save button click' &&
-      saveBehavior.events[0].triggerType === 'click' &&
+      saveBehavior.events[0].name === 'Save task' &&
+      saveBehavior.events[0].triggerType === 'submit' &&
       saveBehavior.events[0].configuredByButton &&
       saveBehavior.events[0].triggeredByComponent &&
       saveBehavior.events[0].actions.map(action => action.type).join(',') === 'setState,callApi',
@@ -9451,30 +9883,32 @@ await test('Inspector behavior projection resolves events APIs and validation', 
       setStateAction.state.label === 'Saving' &&
       callApiAction.type === 'callApi' &&
       callApiAction.operation.method === 'PUT' &&
-      callApiAction.operation.path === '/api/users/{id}' &&
-      callApiAction.operation.label === 'Save user' &&
+      callApiAction.operation.path === '/api/tasks/{taskId}' &&
+      callApiAction.operation.label === 'Update task' &&
       callApiAction.operation.successState?.label === 'Success' &&
       callApiAction.operation.errorState?.label === 'Error',
     'event action references were not resolved to readable API and state details',
   )
 
-  const nameBehavior = getComponentBehavior(document, 'comp-name-input', 'en')
+  const nameBehavior = getComponentBehavior(document, 'comp-task-title-input', 'en')
   assert(
-    nameBehavior?.validationRules.length === 2 &&
+    nameBehavior?.validationRules.length === 3 &&
       nameBehavior.validationRules[0].type === 'required' &&
-      nameBehavior.validationRules[0].message === 'Name is required' &&
-      nameBehavior.validationRules[1].type === 'maxLength' &&
-      nameBehavior.validationRules[1].value === 50 &&
-      nameBehavior.validationRules[1].message === 'Enter no more than 50 characters' &&
+      nameBehavior.validationRules[0].message === 'Task title is required' &&
+      nameBehavior.validationRules[1].type === 'minLength' &&
+      nameBehavior.validationRules[1].value === 3 &&
+      nameBehavior.validationRules[2].type === 'maxLength' &&
+      nameBehavior.validationRules[2].value === 80 &&
+      nameBehavior.validationRules[2].message === 'Enter no more than 80 characters' &&
       nameBehavior.apiBindings.length === 1 &&
-      nameBehavior.apiBindings[0].targetPath === 'body.name' &&
+      nameBehavior.apiBindings[0].targetPath === 'body.title' &&
       nameBehavior.apiBindings[0].operation.method === 'PUT',
     'TextInput validation or API request binding projection is incomplete',
   )
-  const roleBehavior = getComponentBehavior(document, 'comp-role-select', 'ja')
+  const roleBehavior = getComponentBehavior(document, 'comp-task-assignee-select', 'ja')
   assert(
     roleBehavior?.validationRules.length === 0 &&
-      roleBehavior.apiBindings[0]?.targetPath === 'body.role',
+      roleBehavior.apiBindings[0]?.targetPath === 'body.assigneeId',
     'Select API request binding was not projected',
   )
   assert(
@@ -9483,7 +9917,7 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   )
 
   const expanded = structuredClone(document)
-  expanded.events['event-submit'].actions.push(
+  expanded.events['event-save-task'].actions.push(
     { type: 'showAlert', componentId: 'comp-status-alert' },
     { type: 'navigate', destinationScreenId: 'screen-list' },
   )
@@ -9504,15 +9938,15 @@ await test('Inspector behavior projection resolves events APIs and validation', 
       expandedSave.events[0].configuredByButton &&
       !expandedSave.events[1].configuredByButton &&
       alertAction.type === 'showAlert' &&
-      alertAction.alert.label === 'User saved successfully.' &&
+      alertAction.alert.label === 'Task updated successfully.' &&
       navigateAction.type === 'navigate' &&
-      navigateAction.screen.label === 'User List' &&
-      navigateAction.screen.route === '/users',
+      navigateAction.screen.label === 'Task List' &&
+      navigateAction.screen.route === '/tasks',
     'action targets or event deduplication failed',
   )
 
   const dangling = structuredClone(expanded)
-  dangling.events['event-submit'].actions = [
+  dangling.events['event-save-task'].actions = [
     { type: 'setState', stateId: 'missing-state' },
     { type: 'callApi', apiOperationId: 'missing-api' },
     { type: 'showAlert', componentId: 'missing-alert' },
@@ -9535,10 +9969,10 @@ await test('Inspector behavior projection resolves events APIs and validation', 
     type: 'bindApiOperation',
     operationId: 'api-proposed',
     screenId: 'screen-edit',
-    name: 'Validate role',
+    name: 'Validate assignee',
     method: 'POST',
-    path: '/api/roles/validate',
-    requestBindings: [{ componentId: 'comp-role-select', targetPath: 'body.role' }],
+    path: '/api/assignees/validate',
+    requestBindings: [{ componentId: 'comp-task-assignee-select', targetPath: 'body.assigneeId' }],
     successStateId: 'state-edit-success',
     errorStateId: 'state-edit-error',
   })
@@ -9553,12 +9987,12 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   assert(
     !getComponentBehavior(
       changeSetStore.getState().document,
-      'comp-role-select',
+      'comp-task-assignee-select',
       'en',
     ).apiBindings.some(binding => binding.operation.id === 'api-proposed') &&
       getComponentBehavior(
         changeSetStore.getState().effectiveDocument,
-        'comp-role-select',
+        'comp-task-assignee-select',
         'en',
       ).apiBindings.some(binding => binding.operation.id === 'api-proposed') &&
       getComponentBehavior(
@@ -9604,16 +10038,16 @@ await test('Event editor saves validated ordered actions as one human operation'
     moduleUrl(componentBehaviorBundle, 'event-editor-context')
   )
   const store = await freshStore('event-editor-history')
-  const original = structuredClone(store.getState().document.events['event-submit'])
+  const original = structuredClone(store.getState().document.events['event-save-task'])
   const editedActions = [
     { type: 'navigate', destinationScreenId: 'screen-list' },
     { type: 'showAlert', componentId: 'comp-status-alert' },
-    { type: 'callApi', apiOperationId: 'api-save-user' },
+    { type: 'callApi', apiOperationId: 'api-update-task' },
     { type: 'setState', stateId: 'state-edit-default' },
   ]
   const updateCommand = {
     type: 'updateEvent',
-    eventId: 'event-submit',
+    eventId: 'event-save-task',
     name: 'Save and return',
     trigger: { type: 'submit', componentId: 'comp-save-btn' },
     actions: editedActions,
@@ -9624,22 +10058,22 @@ await test('Event editor saves validated ordered actions as one human operation'
   assert(
     store.getState().document.revision === beforeRevision + 1 &&
       store.getState().history.length === beforeHistory + 1 &&
-      store.getState().document.events['event-submit'].name === 'Save and return' &&
-      store.getState().document.events['event-submit'].trigger.type === 'submit' &&
-      store.getState().document.events['event-submit'].actions
+      store.getState().document.events['event-save-task'].name === 'Save and return' &&
+      store.getState().document.events['event-save-task'].trigger.type === 'submit' &&
+      store.getState().document.events['event-save-task'].actions
         .map(action => action.type)
         .join(',') === 'navigate,showAlert,callApi,setState',
     'event draft did not commit as one ordered history entry',
   )
   store.getState().undo()
   assert(
-    JSON.stringify(store.getState().document.events['event-submit']) ===
+    JSON.stringify(store.getState().document.events['event-save-task']) ===
       JSON.stringify(original),
     'Undo did not restore the event before editing',
   )
   store.getState().redo()
   assert(
-    store.getState().document.events['event-submit'].name === 'Save and return',
+    store.getState().document.events['event-save-task'].name === 'Save and return',
     'Redo did not restore the edited event',
   )
 
@@ -9650,11 +10084,12 @@ await test('Event editor saves validated ordered actions as one human operation'
   )
   assert(
     context?.events.length === 1 &&
-      context.events[0].event.id === 'event-submit' &&
+      context.events[0].event.id === 'event-save-task' &&
       context.states.every(state => state.id.startsWith('state-edit-')) &&
       context.states.some(state => state.id === 'state-edit-default' && state.isDefault) &&
-      context.apiOperations.map(operation => operation.id).join(',') === 'api-save-user' &&
-      context.alerts.map(alert => alert.id).join(',') === 'comp-status-alert' &&
+      context.apiOperations.map(operation => operation.id).join(',') === 'api-update-task' &&
+      context.alerts.map(alert => alert.id).join(',') ===
+        'comp-saving-alert,comp-status-alert,comp-save-error-alert' &&
       context.screens.map(screen => screen.id).join(',') === 'screen-list,screen-edit',
     'event editor candidates were not restricted or resolved correctly',
   )
@@ -9683,7 +10118,7 @@ await test('Event editor saves validated ordered actions as one human operation'
     }],
     ['non-alert component', {
       ...updateCommand,
-      actions: [{ type: 'showAlert', componentId: 'comp-name-input' }],
+      actions: [{ type: 'showAlert', componentId: 'comp-task-title-input' }],
     }],
     ['unknown command field', {
       ...updateCommand,
@@ -9707,21 +10142,21 @@ await test('Event editor saves validated ordered actions as one human operation'
     changeSetStore.getState().activeChangeSet.operations.length === 1 &&
       changeSetStore.getState().activeChangeSet.operations[0].source === 'agent' &&
       changeSetStore.getState().activeChangeSet.operations[0].command.type === 'updateEvent' &&
-      changeSetStore.getState().document.events['event-submit'].name === original.name &&
-      changeSetStore.getState().effectiveDocument.events['event-submit'].name ===
+      changeSetStore.getState().document.events['event-save-task'].name === original.name &&
+      changeSetStore.getState().effectiveDocument.events['event-save-task'].name ===
         'Save and return',
     'agent event edit did not remain one effective-only change set operation',
   )
   const changeSetReload = await freshStore('event-editor-change-set-reload')
   assert(
     changeSetReload.getState().activeChangeSet?.operations.length === 1 &&
-      changeSetReload.getState().effectiveDocument.events['event-submit'].name ===
+      changeSetReload.getState().effectiveDocument.events['event-save-task'].name ===
         'Save and return',
     'event edit did not survive active change set reload',
   )
   changeSetReload.getState().rejectChangeSet()
   assert(
-    changeSetReload.getState().document.events['event-submit'].name === original.name,
+    changeSetReload.getState().document.events['event-save-task'].name === original.name,
     'Reject did not discard the agent event edit',
   )
 
@@ -9730,7 +10165,7 @@ await test('Event editor saves validated ordered actions as one human operation'
   changeSetReload.getState().acceptChangeSet()
   assert(
     changeSetReload.getState().activeChangeSet === null &&
-      changeSetReload.getState().document.events['event-submit'].name === 'Save and return',
+      changeSetReload.getState().document.events['event-save-task'].name === 'Save and return',
     'Accept did not confirm the agent event edit',
   )
 
@@ -9738,23 +10173,23 @@ await test('Event editor saves validated ordered actions as one human operation'
   const deleteStore = await freshStore('event-editor-delete')
   assert(
     deleteStore.getState().document.components['comp-save-btn'].config.eventId ===
-      'event-submit',
+      'event-save-task',
     'sample button event reference is missing',
   )
   deleteStore.getState().dispatch(
-    { type: 'removeEvent', eventId: 'event-submit' },
+    { type: 'removeEvent', eventId: 'event-save-task' },
     'Delete save event',
   )
   assert(
-    deleteStore.getState().document.events['event-submit'] === undefined &&
+    deleteStore.getState().document.events['event-save-task'] === undefined &&
       deleteStore.getState().document.components['comp-save-btn'].config.eventId === null,
     'event deletion did not clear the event and Button primary reference',
   )
   deleteStore.getState().undo()
   assert(
-    deleteStore.getState().document.events['event-submit']?.name === original.name &&
+    deleteStore.getState().document.events['event-save-task']?.name === original.name &&
       deleteStore.getState().document.components['comp-save-btn'].config.eventId ===
-        'event-submit',
+        'event-save-task',
     'Undo did not restore the deleted event and Button primary reference',
   )
 
@@ -9781,17 +10216,17 @@ await test('API editor commands preserve references and enforce canonical bindin
     moduleUrl(componentBehaviorBundle, 'api-editor-context')
   )
   const store = await freshStore('api-editor-history')
-  const original = structuredClone(store.getState().document.apiOperations['api-save-user'])
-  const originalEvent = structuredClone(store.getState().document.events['event-submit'])
+  const original = structuredClone(store.getState().document.apiOperations['api-update-task'])
+  const originalEvent = structuredClone(store.getState().document.events['event-save-task'])
   const updateCommand = {
     type: 'updateApiOperation',
-    operationId: 'api-save-user',
-    name: 'Save user profile',
+    operationId: 'api-update-task',
+    name: 'Update task details',
     method: 'PATCH',
-    path: '/api/users/{id}/profile/with/a/long/path',
+    path: '/api/tasks/{taskId}/details/with/a/long/path',
     requestBindings: [
-      { componentId: 'comp-role-select', targetPath: 'body.role' },
-      { componentId: 'comp-email-input', targetPath: 'body.contact.email' },
+      { componentId: 'comp-task-assignee-select', targetPath: 'body.assigneeId' },
+      { componentId: 'comp-task-description-input', targetPath: 'body.description' },
     ],
     successStateId: 'state-edit-success',
     errorStateId: null,
@@ -9802,24 +10237,24 @@ await test('API editor commands preserve references and enforce canonical bindin
   assert(
     store.getState().document.revision === beforeRevision + 1 &&
       store.getState().history.length === beforeHistory + 1 &&
-      store.getState().document.apiOperations['api-save-user'].method === 'PATCH' &&
-      store.getState().document.apiOperations['api-save-user'].requestBindings
+      store.getState().document.apiOperations['api-update-task'].method === 'PATCH' &&
+      store.getState().document.apiOperations['api-update-task'].requestBindings
         .map(binding => binding.componentId)
-        .join(',') === 'comp-role-select,comp-email-input' &&
-      JSON.stringify(store.getState().document.events['event-submit']) ===
+        .join(',') === 'comp-task-assignee-select,comp-task-description-input' &&
+      JSON.stringify(store.getState().document.events['event-save-task']) ===
         JSON.stringify(originalEvent),
     'API draft did not commit atomically or changed its callApi reference',
   )
   store.getState().undo()
   assert(
-    JSON.stringify(store.getState().document.apiOperations['api-save-user']) ===
+    JSON.stringify(store.getState().document.apiOperations['api-update-task']) ===
       JSON.stringify(original),
     'Undo did not restore the API operation before editing',
   )
   store.getState().redo()
   assert(
-    store.getState().document.apiOperations['api-save-user'].name ===
-      'Save user profile',
+    store.getState().document.apiOperations['api-update-task'].name ===
+      'Update task details',
     'Redo did not restore the edited API operation',
   )
 
@@ -9829,17 +10264,17 @@ await test('API editor commands preserve references and enforce canonical bindin
     'en',
   )
   const operation = context?.operations.find(candidate =>
-    candidate.operation.id === 'api-save-user',
+    candidate.operation.id === 'api-update-task',
   )
   assert(
     context?.supportsApiEditing === true &&
       context.states.every(state => state.id.startsWith('state-edit-')) &&
       context.inputComponents.map(component => component.id).join(',') ===
-        'comp-name-input,comp-email-input,comp-role-select' &&
+        'comp-task-title-input,comp-task-description-input,comp-task-assignee-select,comp-task-status-select' &&
       operation?.bindings.map(binding => binding.component.label).join(',') ===
-        'Role,Email address' &&
+        'Assignee,Description' &&
       operation.eventReferences.length === 1 &&
-      operation.eventReferences[0].event.id === 'event-submit' &&
+      operation.eventReferences[0].event.id === 'event-save-task' &&
       operation.eventReferences[0].actionCount === 1,
     'API editor candidates, binding labels, or callApi impacts are incomplete',
   )
@@ -9874,15 +10309,15 @@ await test('API editor commands preserve references and enforce canonical bindin
   )
   for (const [label, requestBindings] of [
     ['duplicate component', [
-      { componentId: 'comp-name-input', targetPath: 'body.name' },
-      { componentId: 'comp-name-input', targetPath: 'body.alias' },
+      { componentId: 'comp-task-title-input', targetPath: 'body.name' },
+      { componentId: 'comp-task-title-input', targetPath: 'body.alias' },
     ]],
     ['duplicate target path', [
-      { componentId: 'comp-name-input', targetPath: 'body.name' },
-      { componentId: 'comp-email-input', targetPath: ' body.name ' },
+      { componentId: 'comp-task-title-input', targetPath: 'body.name' },
+      { componentId: 'comp-task-description-input', targetPath: ' body.name ' },
     ]],
     ['empty target path', [
-      { componentId: 'comp-name-input', targetPath: '   ' },
+      { componentId: 'comp-task-title-input', targetPath: '   ' },
     ]],
     ['non-input component', [
       { componentId: 'comp-save-btn', targetPath: 'body.submit' },
@@ -9922,22 +10357,22 @@ await test('API editor commands preserve references and enforce canonical bindin
       changeSetStore.getState().activeChangeSet.operations[0].source === 'agent' &&
       changeSetStore.getState().activeChangeSet.operations[0].command.type ===
         'updateApiOperation' &&
-      changeSetStore.getState().document.apiOperations['api-save-user'].name ===
+      changeSetStore.getState().document.apiOperations['api-update-task'].name ===
         original.name &&
-      changeSetStore.getState().effectiveDocument.apiOperations['api-save-user'].name ===
-        'Save user profile',
+      changeSetStore.getState().effectiveDocument.apiOperations['api-update-task'].name ===
+        'Update task details',
     'agent API edit did not remain one effective-only change set operation',
   )
   const changeSetReload = await freshStore('api-editor-change-set-reload')
   assert(
     changeSetReload.getState().activeChangeSet?.operations.length === 1 &&
-      changeSetReload.getState().effectiveDocument.apiOperations['api-save-user'].name ===
-        'Save user profile',
+      changeSetReload.getState().effectiveDocument.apiOperations['api-update-task'].name ===
+        'Update task details',
     'API edit did not survive active change set reload',
   )
   changeSetReload.getState().rejectChangeSet()
   assert(
-    changeSetReload.getState().document.apiOperations['api-save-user'].name ===
+    changeSetReload.getState().document.apiOperations['api-update-task'].name ===
       original.name,
     'Reject did not discard the agent API edit',
   )
@@ -9946,39 +10381,39 @@ await test('API editor commands preserve references and enforce canonical bindin
   changeSetReload.getState().acceptChangeSet()
   assert(
     changeSetReload.getState().activeChangeSet === null &&
-      changeSetReload.getState().document.apiOperations['api-save-user'].name ===
-        'Save user profile',
+      changeSetReload.getState().document.apiOperations['api-update-task'].name ===
+        'Update task details',
     'Accept did not confirm the agent API edit',
   )
 
   memoryStorage.clear()
   const deleteStore = await freshStore('api-editor-delete')
   deleteStore.getState().dispatch(
-    { type: 'removeApiOperation', operationId: 'api-save-user' },
+    { type: 'removeApiOperation', operationId: 'api-update-task' },
     'Delete save API',
   )
   assert(
-    deleteStore.getState().document.apiOperations['api-save-user'] === undefined &&
-      !deleteStore.getState().document.events['event-submit'].actions.some(
+    deleteStore.getState().document.apiOperations['api-update-task'] === undefined &&
+      !deleteStore.getState().document.events['event-save-task'].actions.some(
         action => action.type === 'callApi',
       ),
     'API deletion did not clear the operation and callApi actions',
   )
   deleteStore.getState().undo()
   assert(
-    deleteStore.getState().document.apiOperations['api-save-user'] !== undefined &&
-      deleteStore.getState().document.events['event-submit'].actions.some(
+    deleteStore.getState().document.apiOperations['api-update-task'] !== undefined &&
+      deleteStore.getState().document.events['event-save-task'].actions.some(
         action => action.type === 'callApi' &&
-          action.apiOperationId === 'api-save-user',
+          action.apiOperationId === 'api-update-task',
       ),
     'Undo did not restore the API operation and callApi actions',
   )
 
   for (const [label, componentId, legacyValue] of [
-    ['text input null', 'comp-email-input', null],
-    ['select null', 'comp-role-select', null],
-    ['text input value', 'comp-email-input', {
-      componentId: 'comp-name-input',
+    ['text input null', 'comp-task-description-input', null],
+    ['select null', 'comp-task-assignee-select', null],
+    ['text input value', 'comp-task-description-input', {
+      componentId: 'comp-task-title-input',
       targetPath: 'body.name',
     }],
   ]) {
@@ -10031,17 +10466,17 @@ await test('Validation rules editor enforces invariants and commits as one human
   )
   const store = await freshStore('validation-rules-history')
   const original = structuredClone(
-    store.getState().document.components['comp-name-input'].config.validationRules,
+    store.getState().document.components['comp-task-title-input'].config.validationRules,
   )
 
   const editedRules = [
-    { id: 'vr-1', type: 'required', message: 'Name is required' },
+    { id: 'vr-1', type: 'required', message: 'Task title is required' },
     { id: 'vr-new', type: 'minLength', value: 2, message: 'Enter at least 2 characters' },
     { id: 'vr-2', type: 'maxLength', value: 80, message: 'Enter no more than 80 characters' },
   ]
   const updateCommand = {
     type: 'updateComponentSpec',
-    componentId: 'comp-name-input',
+    componentId: 'comp-task-title-input',
     patch: { config: { validationRules: editedRules } },
   }
   const beforeRevision = store.getState().document.revision
@@ -10053,7 +10488,7 @@ await test('Validation rules editor enforces invariants and commits as one human
   assert(
     store.getState().document.revision === beforeRevision + 1 &&
       store.getState().history.length === beforeHistory + 1 &&
-      store.getState().document.components['comp-name-input'].config.validationRules
+      store.getState().document.components['comp-task-title-input'].config.validationRules
         .map(rule => `${rule.type}:${rule.value ?? ''}`)
         .join(',') === 'required:,minLength:2,maxLength:80',
     'validation rules draft did not commit as one ordered history entry',
@@ -10061,31 +10496,31 @@ await test('Validation rules editor enforces invariants and commits as one human
   store.getState().undo()
   assert(
     JSON.stringify(
-      store.getState().document.components['comp-name-input'].config.validationRules,
+      store.getState().document.components['comp-task-title-input'].config.validationRules,
     ) === JSON.stringify(original),
     'Undo did not restore validation rules before editing',
   )
   store.getState().redo()
   assert(
-    store.getState().document.components['comp-name-input'].config.validationRules.length === 3,
+    store.getState().document.components['comp-task-title-input'].config.validationRules.length === 3,
     'Redo did not restore the edited validation rules',
   )
 
   const context = getValidationRulesEditorContext(
     store.getState().effectiveDocument,
-    'comp-name-input',
+    'comp-task-title-input',
     'en',
   )
   assert(
     context?.supportsValidationEditing === true &&
-      context.label === 'Name' &&
+      context.label === 'Task title' &&
       context.rules.length === 3,
     'validation rules editor context was not resolved correctly for a textInput',
   )
   assert(
     getValidationRulesEditorContext(
       store.getState().effectiveDocument,
-      'comp-role-select',
+      'comp-task-assignee-select',
       'en',
     )?.supportsValidationEditing === false &&
       getValidationRulesEditorContext(
@@ -10151,7 +10586,7 @@ await test('Validation rules editor enforces invariants and commits as one human
     try {
       applyCommandWithoutRevision(store.getState().document, {
         type: 'updateComponentSpec',
-        componentId: 'comp-name-input',
+        componentId: 'comp-task-title-input',
         patch: { config: { validationRules: rules } },
       })
     } catch {
@@ -10161,15 +10596,15 @@ await test('Validation rules editor enforces invariants and commits as one human
   }
 
   const reordered = [
-    ...store.getState().document.components['comp-name-input'].config.validationRules,
+    ...store.getState().document.components['comp-task-title-input'].config.validationRules,
   ].reverse()
   const reorderedResult = applyCommandWithoutRevision(store.getState().document, {
     type: 'updateComponentSpec',
-    componentId: 'comp-name-input',
+    componentId: 'comp-task-title-input',
     patch: { config: { validationRules: reordered } },
   })
   assert(
-    reorderedResult.components['comp-name-input'].config.validationRules
+    reorderedResult.components['comp-task-title-input'].config.validationRules
       .map(rule => rule.id)
       .join(',') === reordered.map(rule => rule.id).join(','),
     'reordering validation rules did not preserve the new order',
@@ -10184,22 +10619,22 @@ await test('Validation rules editor enforces invariants and commits as one human
       changeSetStore.getState().activeChangeSet.operations[0].source === 'agent' &&
       changeSetStore.getState().activeChangeSet.operations[0].command.type ===
         'updateComponentSpec' &&
-      changeSetStore.getState().document.components['comp-name-input'].config.validationRules
+      changeSetStore.getState().document.components['comp-task-title-input'].config.validationRules
         .length === original.length &&
-      changeSetStore.getState().effectiveDocument.components['comp-name-input'].config
+      changeSetStore.getState().effectiveDocument.components['comp-task-title-input'].config
         .validationRules.length === 3,
     'agent validation rules edit did not remain one effective-only change set operation',
   )
   const changeSetReload = await freshStore('validation-rules-change-set-reload')
   assert(
     changeSetReload.getState().activeChangeSet?.operations.length === 1 &&
-      changeSetReload.getState().effectiveDocument.components['comp-name-input'].config
+      changeSetReload.getState().effectiveDocument.components['comp-task-title-input'].config
         .validationRules.length === 3,
     'validation rules edit did not survive active change set reload',
   )
   changeSetReload.getState().rejectChangeSet()
   assert(
-    changeSetReload.getState().document.components['comp-name-input'].config.validationRules
+    changeSetReload.getState().document.components['comp-task-title-input'].config.validationRules
       .length === original.length,
     'Reject did not discard the agent validation rules edit',
   )
@@ -10208,7 +10643,7 @@ await test('Validation rules editor enforces invariants and commits as one human
   changeSetReload.getState().acceptChangeSet()
   assert(
     changeSetReload.getState().activeChangeSet === null &&
-      changeSetReload.getState().document.components['comp-name-input'].config.validationRules
+      changeSetReload.getState().document.components['comp-task-title-input'].config.validationRules
         .length === 3,
     'Accept did not confirm the agent validation rules edit',
   )
@@ -10351,8 +10786,8 @@ await test('Inspector select controls use unique IDs and visible accessible labe
   const { translate } = await import(moduleUrl(messagesBundle, 'inspector-select-labels'))
   const cases = [
     { componentId: 'comp-list-title', labels: ['inspector.textStyle'] },
-    { componentId: 'comp-name-input', labels: ['inspector.inputType'] },
-    { componentId: 'comp-role-select', labels: ['inspector.defaultValue'] },
+    { componentId: 'comp-task-title-input', labels: ['inspector.inputType'] },
+    { componentId: 'comp-task-assignee-select', labels: ['inspector.defaultValue'] },
     { componentId: 'comp-save-btn', labels: ['inspector.variant'] },
     { componentId: 'comp-status-alert', labels: ['inspector.tone'] },
     {
@@ -10374,7 +10809,7 @@ await test('Inspector select controls use unique IDs and visible accessible labe
       ],
     },
     {
-      componentId: 'comp-delete-modal',
+      componentId: 'comp-discard-modal',
       labels: ['inspector.layout', 'inspector.gap', 'inspector.justify', 'inspector.alignment'],
     },
   ]
@@ -10411,7 +10846,7 @@ await test('Inspector select controls use unique IDs and visible accessible labe
       }
 
       const overrideHtml = renderInspector(
-        'comp-role-select',
+        'comp-task-assignee-select',
         locale,
         1,
         'state-edit-success',
@@ -10478,15 +10913,15 @@ await test('editor landmarks, active states, and canvas roots expose correct sem
       leftPane.querySelectorAll('button[aria-current="page"]').length === 1,
       `${locale} Screen list does not expose exactly one active page`,
     )
-    for (const rootId of ['comp-edit-page', 'comp-delete-modal']) {
+    for (const rootId of ['comp-edit-page', 'comp-discard-modal']) {
       assert(
         document.querySelector(`[data-component-id="${rootId}"]`)?.getAttribute('tabindex') === '-1',
         `${locale} ${rootId} remains a dead stop in the sequential tab order`,
       )
     }
     assert(
-      document.querySelector('[data-component-id="comp-name-input"]')?.getAttribute('tabindex') === '-1' &&
-        !document.querySelector('[data-component-id="comp-name-input"]')?.hasAttribute('role'),
+      document.querySelector('[data-component-id="comp-task-title-input"]')?.getAttribute('tabindex') === '-1' &&
+        !document.querySelector('[data-component-id="comp-task-title-input"]')?.hasAttribute('role'),
       `${locale} review-mode canvas component remains a dead keyboard stop`,
     )
   }
@@ -10534,8 +10969,8 @@ await test('delete confirmation enforces dialog focus and stale-impact behavior'
       ) &&
       JSON.stringify(impactItems) === JSON.stringify([
         'Components removed: 3',
-        'Events removed: 1',
-        'Event actions removed: 2',
+        'Events removed: 2',
+        'Event actions removed: 3',
         'State overrides removed: 3',
       ]),
     'delete dialog has no accessible name, description, or impact details',

@@ -14,7 +14,6 @@ import type {
 import { CHILD_COMPONENT_KINDS } from '../domain/model'
 import { DomainError } from '../domain/errors'
 import { getOwnEntity } from '../domain/entityMap'
-import { getComponentDisplayLabel } from '../domain/componentDisplayLabel'
 import { effectiveComponent } from '../domain/selectors'
 import { createDuplicateComponentCommand } from '../domain/componentDuplication'
 import { presentChangeSetOperations } from '../domain/changeSetPresentation'
@@ -426,126 +425,6 @@ const getComponent: ToolDefinition = {
           operation.requestBindings.some(binding => binding.componentId === componentId),
         ),
       }
-    })
-  },
-}
-
-const getScreenDiagnostics: ToolDefinition = {
-  name: 'get_screen_diagnostics',
-  description:
-    'Find deterministic specification-completeness suggestions for one effective screen. ' +
-    'These warnings and informational items are not domain invariant failures. ' + AGENT_WORKFLOW,
-  annotations: { readOnlyHint: true },
-  inputSchema: {
-    type: 'object',
-    properties: {
-      screenId: {
-        type: 'string',
-        minLength: 1,
-        description: 'Screen to diagnose; omit to use the active screen.',
-      },
-    },
-    required: [],
-    ...CLOSED_OBJECT,
-  },
-  execute(input) {
-    return withFailure(() => {
-      const state = useAppStore.getState()
-      if (state.recoveryState) {
-        throw new DomainError('RECOVERY_REQUIRED', 'Persisted data recovery is required')
-      }
-      const screenId = optionalString(input, 'screenId') ?? state.ui.activeScreenId
-      if (!screenId) throw new DomainError('NOT_FOUND', 'No screen ID or active screen')
-      const screen = getOwnEntity(state.effectiveDocument.screens, screenId)
-      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
-      const document = state.effectiveDocument
-      const components = Object.values(document.components)
-        .filter(component => component.screenId === screenId)
-      const events = screen.eventIds.flatMap(id => {
-        const event = getOwnEntity(document.events, id)
-        return event ? [event] : []
-      })
-      const apiOperations = Object.values(document.apiOperations)
-        .filter(operation => operation.screenId === screenId)
-      const boundComponentIds = new Set(apiOperations.flatMap(
-        operation => operation.requestBindings.map(binding => binding.componentId),
-      ))
-      const diagnostics: Array<{
-        code: string
-        severity: 'warning' | 'info'
-        entityId: string
-        message: string
-      }> = []
-      for (const component of components) {
-        const label = getComponentDisplayLabel(component, 'en')
-        if (
-          (component.config.kind === 'textInput' || component.config.kind === 'select') &&
-          component.config.fieldKey.trim() === ''
-        ) {
-          diagnostics.push({
-            code: 'MISSING_FIELD_KEY',
-            severity: 'warning',
-            entityId: component.id,
-            message: `${label} has no fieldKey, so its submitted value has no stable field name.`,
-          })
-        }
-        if (
-          component.config.kind === 'button' &&
-          component.config.eventId === null &&
-          !events.some(event => event.trigger.componentId === component.id)
-        ) {
-          diagnostics.push({
-            code: 'UNCONNECTED_BUTTON',
-            severity: 'warning',
-            entityId: component.id,
-            message: `${label} has no connected event.`,
-          })
-        }
-        if (
-          (component.config.kind === 'textInput' || component.config.kind === 'select') &&
-          !boundComponentIds.has(component.id)
-        ) {
-          diagnostics.push({
-            code: 'UNBOUND_INPUT',
-            severity: 'info',
-            entityId: component.id,
-            message: `${label} is not used by any API request binding on this screen.`,
-          })
-        }
-      }
-      for (const event of events) {
-        if (event.actions.length === 0) {
-          diagnostics.push({
-            code: 'EVENT_WITHOUT_ACTIONS',
-            severity: 'warning',
-            entityId: event.id,
-            message: `${event.name} has no actions.`,
-          })
-        }
-      }
-      for (const operation of apiOperations) {
-        if (!operation.successStateId) {
-          diagnostics.push({
-            code: 'API_WITHOUT_SUCCESS_STATE',
-            severity: 'info',
-            entityId: operation.id,
-            message: `${operation.name} has no success state.`,
-          })
-        }
-        if (!operation.errorStateId) {
-          diagnostics.push({
-            code: 'API_WITHOUT_ERROR_STATE',
-            severity: 'info',
-            entityId: operation.id,
-            message: `${operation.name} has no error state.`,
-          })
-        }
-      }
-      diagnostics.sort((left, right) =>
-        compareCodeUnits(left.entityId, right.entityId) ||
-        compareCodeUnits(left.code, right.code)
-      )
-      return { screenId, diagnostics }
     })
   },
 }
@@ -1275,7 +1154,6 @@ const connectBehavior: ToolDefinition = {
 export const WEBMCP_TOOLS: ToolDefinition[] = [
   getCurrentScreenContext,
   getComponent,
-  getScreenDiagnostics,
   getPendingChangeSet,
   beginChangeSet,
   changeScreenStructure,

@@ -35,7 +35,7 @@ export function renderApp(locale: Locale): string {
     ...initialState.ui,
     activeScreenId: 'screen-edit',
     activeStateId: 'state-edit-default',
-    selectedComponentId: 'comp-name-input',
+    selectedComponentId: 'comp-task-title-input',
     rightPanelTab: 'inspector',
   }
 
@@ -97,7 +97,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
       ...state.ui,
       activeScreenId: 'screen-edit',
       activeStateId: 'state-edit-success',
-      selectedComponentId: 'comp-name-input',
+      selectedComponentId: 'comp-task-title-input',
       rightPanelTab: 'inspector',
     },
   }))
@@ -121,7 +121,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
         useAppStore.getState().dispatch({
           type: 'updateScreen',
           screenId: 'screen-edit',
-          name: 'Edit User prepared for review',
+          name: 'Edit Task prepared for review',
         }, 'Prepare review-lock regression')
       })
     },

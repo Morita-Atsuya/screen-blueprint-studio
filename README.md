@@ -15,7 +15,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - 複数画面の管理
 - Page、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
 - Page／Container／Modalごとのvertical、horizontal、gridレイアウト設定
-- パレットからの追加、構造ツリー／キャンバスでの並び替え・セクション間移動に対応したdrag & drop
+- パレットからの追加、構造ツリー／キャンバスでの並び替え・Container間移動に対応したdrag & drop
 - Page／Modal root以外のcomponent subtreeを直後へatomicに複製。全状態overrideを引き継ぎ、event／API field bindingは複製しない
 - Page／Modal root以外のcomponent subtreeをアプリ内clipboardへコピーし、選択したcontainer/rootの内側またはleaf直後へatomicに貼り付け。同一画面だけ状態overrideを引き継ぐ
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
@@ -27,10 +27,11 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - 子孫・状態override・event／API参照などへ影響する削除だけを件数付きで確認し、削除直後はToastから安全にUndo
 - `localStorage`への保存、破損データのrecovery UI、保存不能時のJSON退避
 - runtime invariant validationとprototype-chain ID対策
-- 未接続button、actionのないevent、結果stateのないAPI、未binding inputを候補として返す画面診断
-- 10個の型付きWebMCPツール
+- 9個の型付きWebMCPツール
 
 初期sample projectは`COMPONENT_KIND_CATALOG`に定義された全component kindを最低1件含みます。regressionはsample、Palette、runtime validation、Canvas、Tree、Inspector、複製・Copy/Paste、削除・追加、WebMCP schemaのkind集合を正準catalogと照合し、kind追加時の横展開漏れを検出します。
+
+初期sampleはチーム向けタスク管理アプリ **TaskFlow** です。`Task List`には具体的なtask、loading／empty／error状態、POSTへ接続した新規task Modal、Edit／Retry導線があり、`Edit Task`にはtitle、description、assignee、status、validation、Saving／Success／Error／Confirm exit状態、更新API、独立した破棄確認Modalがあります。これは仕様モデルであり、実際のAPI通信は行いません。
 
 ## 人間とAIの共同編集
 
@@ -55,6 +56,19 @@ AIがcurrent modelと直近の破棄記録を再読し、次のchange setを作�
 ```
 
 確定済みの`document`とpreview用の`effectiveDocument`は分離されています。無効なoperation、古いrevision、壊れた参照、型不一致は共通のdomain validationで拒否されます。
+
+### TaskFlow Priorityデモ
+
+デモ前にheaderの`Reset to sample`でTaskFlowを明示的に初期化します。
+
+1. 人間が`Edit Task`のStatusを選択し、エージェントが`get_current_screen_context`でlive selectionと画面一式を読む。
+2. エージェントが`begin_change_set`を開始し、`change_component_structure`でStatus直後に`Priority` Selectを追加する。`fieldKey`は`priority`、optionsはLow／Medium／High、required、defaultはMediumとし、Saving stateでは他の入力と同様に無効化する。
+3. 人間がpreviewと`get_pending_change_set`由来のChangesを確認してAcceptする。
+4. lock解除後、人間が通常UIでoptionsをLow／Normal／Critical、defaultをNormalへ修正する。
+5. エージェントが`get_current_screen_context`を再実行し、人間の修正と既存`api-update-task`を読む。新しいchange setで`connect_behavior`の`updateApi`を使い、API IDを保持したまま`body.priority` bindingを追加する。
+6. 人間が最終previewをAcceptする。reload後もPriorityとbindingは保存される。
+
+このsequenceは、座標操作ではなくlive model、生成ID、optimistic version、review diff、人間の修正結果を次のtool callへ再利用するWebMCP共同作業を示します。
 
 ## 技術スタック
 
@@ -84,6 +98,7 @@ AIがcurrent modelと直近の破棄記録を再読し、次のchange setを作�
 - 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
 - Buttonや入力componentを選択し、Inspectorの「振る舞い」でeventと実行順action、API operationとrequest bindingを編集。field bindingの正準sourceは`ApiOperation.requestBindings`のみ。`textInput`ではvalidation rule（required／minLength／maxLength／pattern／email／custom）を追加・編集・削除・並べ替え
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
+- headerの`Reset to sample`で確認後にTaskFlowへ初期化。通常起動では既存の保存データを上書きせず、active change set中はreset不可
 
 Page／Modal root、別screen、leaf、自分自身・子孫へのdropは理由別に拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。同じ位置へ戻すdropは正常なno-opとしてToast、history、change set operationを生成せず、対象外でdragを終えた場合やEscapeは通常cancelとして扱います。active change setが始まると進行中のdragは安全にcancelされ、反映または破棄まで新しいdragを開始できません。
 drop位置はdrag中だけ挿入line・outlineで示し、無効な位置は別のchromeで識別できます。preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。Containerの`description`はTreeとCanvasでグループを識別するeditor metadataです。
@@ -126,13 +141,13 @@ WebMCP testing対応Chromeで次のflagを有効にし、ブラウザを再起�
 chrome://flags/#enable-webmcp-testing
 ```
 
-アプリを開き、Chrome DevToolsの`Application`内にあるWebMCP表示から10ツールを確認します。登録は各`registerTool()` Promiseを順に待ち、途中失敗時は共通`AbortSignal`で既登録toolを解除してconsole errorを出します。WebMCPは実験的APIのため、ChromeのバージョンによってDevTools上の表示名や場所が変わる場合があります。
+アプリを開き、Chrome DevToolsの`Application`内にあるWebMCP表示から9ツールを確認します。登録は各`registerTool()` Promiseを順に待ち、途中失敗時は共通`AbortSignal`で既登録toolを解除してconsole errorを出します。WebMCPは実験的APIのため、ChromeのバージョンによってDevTools上の表示名や場所が変わる場合があります。
 
 `document.modelContext`が利用できないブラウザでも登録処理は安全にskipされ、**人間向けUIはそのまま利用できます**。
 
 提出前のnative manual smoke:
 
-1. DevToolsで10ツールが登録され、consoleに登録成功が1回だけ出ることを確認する。
+1. DevToolsで9ツールが登録され、consoleに登録成功が1回だけ出ることを確認する。
 2. `get_current_screen_context`を空inputで実行し、effectiveなactive screen一式とconfirmed revisionを読む。
 3. `begin_change_set`へsummaryを渡し、返却されたID、revision、versionを使って`update_component_spec`を1回実行する。
 4. write成功後のversionで`get_pending_change_set`を読み、operation summary/diffと同じ変更のUI previewを確認する。
@@ -142,13 +157,12 @@ chrome://flags/#enable-webmcp-testing
 
 ## WebMCPツール
 
-現在は次の10ツールを登録します。
+現在は次の9ツールを登録します。
 
 | 分類 | ツール | 概要 |
 | --- | --- | --- |
 | Read | `get_current_screen_context` | effectiveなactive screen一式、選択、confirmed revision、compact change set metadataを取得 |
 | Read | `get_component` | ID指定または選択中のコンポーネント詳細を取得 |
-| Read | `get_screen_diagnostics` | 画面仕様の不足候補をseverity/code付きで取得 |
 | Read | `get_pending_change_set` | active change setのoperationとレビュー用summary/diffを取得 |
 | Write | `begin_change_set` | review対象のchange setを開始 |
 | Write | `change_screen_structure` | 画面の追加、更新、削除を変更セットへ追加 |

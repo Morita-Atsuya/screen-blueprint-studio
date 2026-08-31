@@ -19,6 +19,8 @@ const en = {
   'app.recoveryTitle': 'Saved data could not be loaded',
   'app.downloadCorrupted': 'Download corrupted JSON',
   'app.resetSample': 'Reset to sample',
+  'app.resetSampleConfirm':
+    'Replace the current project with the TaskFlow sample? This deletes saved project data on this device.',
   'app.persistenceWarning': 'Changes are not saved on this device. Download the JSON before reloading.',
   'app.downloadCurrent': 'Download current JSON',
   'app.invalidChangeSetDiscarded': 'The pending AI change set could not be restored and was discarded. Confirmed data was preserved.',
@@ -535,6 +537,8 @@ const ja: Record<MessageKey, string> = {
   'app.recoveryTitle': '保存データを読み込めませんでした',
   'app.downloadCorrupted': '壊れたJSONを保存',
   'app.resetSample': 'サンプルで初期化',
+  'app.resetSampleConfirm':
+    '現在のプロジェクトをTaskFlowサンプルに置き換えますか？この端末に保存されたプロジェクトデータは削除されます。',
   'app.persistenceWarning': '変更はこの端末に保存されていません。再読み込み前にJSONをダウンロードしてください。',
   'app.downloadCurrent': '現在のJSONを保存',
   'app.invalidChangeSetDiscarded': '保留中のAI変更セットを復元できなかったため破棄しました。確定データは保護されています。',

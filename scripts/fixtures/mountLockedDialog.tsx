@@ -38,8 +38,8 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
     return (
       <EventDialog
         mode="edit"
-        eventId="event-submit"
-        event={sampleProject.events['event-submit']}
+        eventId="event-save-task"
+        event={sampleProject.events['event-save-task']}
         context={context}
         onClose={onClose}
       />
@@ -49,7 +49,7 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
   if (kind === 'api') {
     const context = getApiEditorContext(sampleProject, 'comp-save-btn')
     const editorOperation = context?.operations.find(
-      candidate => candidate.operation.id === 'api-save-user',
+      candidate => candidate.operation.id === 'api-update-task',
     )
     if (!context || !editorOperation) throw new Error('Missing API editor context')
     return (
@@ -63,7 +63,7 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
     )
   }
 
-  const context = getValidationRulesEditorContext(sampleProject, 'comp-name-input')
+  const context = getValidationRulesEditorContext(sampleProject, 'comp-task-title-input')
   if (!context) throw new Error('Missing validation editor context')
   return (
     <ValidationRulesDialog

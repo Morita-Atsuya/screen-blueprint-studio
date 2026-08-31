@@ -52,7 +52,6 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 - APIと画面項目の対応
 - 権限制御
 - デザイン画像と画面要素の領域マッピング
-- 仕様の完全性診断
 - テスト項目生成
 - Viewer、構造編集、YAML編集、差分表示
 
@@ -147,7 +146,7 @@ WFと仕様書を別々に同期するのではなく、**同じデータモデ�
 ### ワイヤーフレームキャンバス
 
 - コンポーネントの配置、選択、並び替え
-- セクションやコンテナ間の移動
+- Container間の移動
 - 状態別プレビュー
 - 仕様漏れ、AI変更、変更差分のハイライト
 
@@ -179,7 +178,6 @@ Computer Useは画面上の位置をクリックできるが、要素の仕様�
 ```text
 get_current_screen_context
 get_component
-get_screen_diagnostics
 get_pending_change_set
 ```
 
@@ -194,10 +192,9 @@ upsert_screen_state
 connect_behavior
 ```
 
-後続候補となる診断・生成:
+後続候補となる生成:
 
 ```text
-audit_screen_completeness
 generate_acceptance_criteria
 generate_test_cases
 ```
@@ -208,15 +205,14 @@ generate_test_cases
 
 代表的なデモシナリオ:
 
-1. 人間がユーザー編集画面をコンポーネントから組み立てる
-2. 保存ボタンを選択する
-3. 「保存中とAPI失敗時の仕様を追加し、漏れを確認して」とエージェントへ依頼する
-4. エージェントが現在の画面、選択、未保存ドラフトを取得する
-5. `saving`、`saveError`、二重送信防止、APIエラー表示を変更セットへ追加する
-6. 変更箇所がWFと仕様パネルの両方でハイライトされる
-7. 人間が変更セットを破棄し、review lock解除後に通常UIでAlertの位置・内容を直接編集する
-8. エージェントがcurrent modelと破棄記録を再読し、修正方針に沿った次の変更セットを作る
-9. 人間がpreviewを確認して変更セットを反映する
+1. 人間がTaskFlowの`Edit Task`でStatusを選択する
+2. エージェントがeffectiveな画面一式とlive selectionを取得する
+3. エージェントがchange setを開始し、Status直後へrequiredなPriority Select（Low／Medium／High、default Medium）を追加する
+4. 人間が同じUIのpreviewとChangesを確認して反映する
+5. lock解除後、人間が通常UIでoptionsをLow／Normal／Critical、defaultをNormalへ修正する
+6. エージェントがcurrent modelを再読し、生成されたPriority IDと人間の修正を取得する
+7. 次のchange setで既存Update Task APIのIDを保持したまま`body.priority` bindingを追加する
+8. 人間がpreviewを確認して反映する
 
 一回の指示で完成させるのではなく、**人間の視覚判断とエージェントの網羅性・一括更新を交互に使う**ことが重要である。
 
@@ -267,10 +263,10 @@ generate_test_cases
 - コンポーネント追加、選択、並び替え、削除
 - 選択要素の仕様インスペクター
 - 通常、保存中、エラーなどの状態切り替え
-- Event由来の読み取り専用画面遷移Flowと仕様不足候補の診断
+- Event由来の読み取り専用画面遷移Flow
 - エージェント変更の視覚的な区別
 - 変更セットの反映、破棄、Undo
-- 10個の型付きWebMCPツール
+- 9個の型付きWebMCPツール
 - 同じモデルを通常時は人間が直接編集し、review時はエージェント提案としてpreview
 - サンプルプロジェクトと3分以内のデモシナリオ
 - 公開URL、英語説明、OSSライセンス

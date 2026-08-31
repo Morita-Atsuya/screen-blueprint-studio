@@ -40,12 +40,11 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - 通常、保存中、成功、エラーを含む画面状態
 - クリックまたは送信イベント
 - API操作と成功・失敗状態の関連付け
-- WebMCPから取得する仕様完成度の診断候補
 - 同時に1件のAI change set
 - change setの確認、反映、破棄
 - 確定操作のUndo／Redo
 - `localStorage`への保存
-- 10個のWebMCPツール
+- 9個のWebMCPツール
 
 ### 2.2 対象外
 
@@ -532,20 +531,13 @@ interface HistoryEntry {
 
 モデル規模が小さいMVPではsnapshot方式を採用し、逆command生成の複雑さを避ける。undo historyとredo stackはそれぞれ最大50件とし、どちらもreload後には復元しない。
 
-## 9. WebMCP画面診断
+## 9. TaskFlow sampleと共同作業デモ
 
-`get_screen_diagnostics`はdomain invariant違反ではなく、仕様完成度を上げるための候補をeffective screen単位で返す。結果はentity IDとcodeで決定的にsortし、正常な任意設計をerrorと断定しない。
+初期sampleはチーム向けタスク管理`TaskFlow`とする。`Task List`は具体的なtask、Create／Edit／Retry、Default／Loading／Empty／Errorを持ち、Createは独立Modalの入力をPOST operationへ接続する。`Edit Task`はtitle、description、assignee、status、validation、保存・キャンセル、Saving／Success／Error／Confirm exit、独立した破棄確認Modal、Update Task APIを持つ。sampleは仕様モデルであり実通信は行わない。
 
-| Code | Severity | 条件 |
-| --- | --- | --- |
-| `MISSING_FIELD_KEY` | warning | input/selectの安定したfield名が空 |
-| `UNCONNECTED_BUTTON` | warning | buttonに設定またはtriggerされたeventがない |
-| `EVENT_WITHOUT_ACTIONS` | warning | eventのactionsが空 |
-| `API_WITHOUT_SUCCESS_STATE` | info | API操作に成功stateがない |
-| `API_WITHOUT_ERROR_STATE` | info | API操作に失敗stateがない |
-| `UNBOUND_INPUT` | info | input/selectが同screenのAPI request bindingで未使用 |
+Priorityは初期sampleに含めない。デモでは最初のchange setでStatus直後へ`fieldKey: priority`のSelectを追加し、既存入力と同じくSaving stateで無効化する。人間がAccept後に通常UIでoptions/defaultを修正し、エージェントは`get_current_screen_context`を再読して生成IDと人間の修正を取得する。次のchange setで既存Update Task APIのIDを保持した`updateApi`により`body.priority` bindingを追加する。これによりselection、effective document、review lock、生成ID、optimistic version、review diff、人間の修正再利用を一つのstoryで示す。
 
-診断は英語のagent向けmessageを返す。専用の人間向け診断パネル、受け入れ条件生成、test case生成はMVP対象外である。
+既存localStorage documentはsample更新で自動置換しない。headerの明示的なresetだけが確認後にTaskFlowを保存し、active change set中はresetを無効化する。
 
 ## 10. UI設計
 
@@ -612,7 +604,6 @@ AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIで�
 | --- | --- | --- |
 | `get_current_screen_context` | project概要と現在の作業対象を取得 | effective active screenのcomponent/state/event/API一式、revision、selection、compact change set metadata |
 | `get_component` | ID指定または選択中componentの仕様を取得 | component、state override、関連event/API |
-| `get_screen_diagnostics` | 仕様完成度の高信頼候補を取得 | screen ID、severity/code/message付きdiagnostics |
 | `get_pending_change_set` | 未反映の変更セットを取得 | raw AI operations、review用operation summaries/diff、base revision。base document本体は返さない |
 
 ### 11.2 Change set開始
@@ -845,7 +836,7 @@ WebMCP testing対応Chromeでは最後に、実API登録、context read、change
 ### Phase 4: WebMCP
 
 1. TypeScript型定義とfeature detection
-2. 4 read tools
+2. 3 read tools
 3. `begin_change_set`
 4. 5 write tools
 5. WebMCP状態表示とtool handler tests
@@ -873,7 +864,7 @@ WebMCP testing対応Chromeでは最後に、実API登録、context read、change
 7. active change setにはAI operationだけが入り、旧human operationを明示的にinvalidとして扱える
 8. 反映したchange set全体を1回のUndoで戻し、Redoで再適用できる
 9. WebMCP非対応でも人間向けアプリが動作する
-10. WebMCP testing対応Chromeのmanual smokeで10個のtool登録、read、write、UI previewを確認できる
+10. WebMCP testing対応Chromeのmanual smokeで9個のtool登録、read、write、UI previewを確認できる
 11. refresh後も確定モデルとactive change setを復元できる
 12. invalidなWebMCP writeは確定モデルとchange setを変更せず、構造化エラーを返す
 

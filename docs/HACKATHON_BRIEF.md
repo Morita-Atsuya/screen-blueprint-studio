@@ -230,12 +230,14 @@ review lock解除後、人間が通常UIで必要な修正を確定する
 | 時間 | 内容 | 審査項目 |
 | --- | --- | --- |
 | 0:00〜0:20 | 誰の何の問題を解決するか | Potential Impact |
-| 0:20〜0:45 | 人間がアプリを直接操作する | Execution |
-| 0:45〜1:20 | エージェントが複数のWebMCPツールを実行する | WebMCP Leverage |
-| 1:20〜1:45 | 変更が同じUIに現れ、人間が反映または破棄する | Human-agent collaboration |
-| 1:45〜2:20 | lock解除後に人間が通常編集し、エージェントが再読して次の提案を作る | WebMCP Leverage |
-| 2:20〜2:40 | 最終成果と改善量を示す | Potential Impact / Execution |
+| 0:20〜0:45 | TaskFlowのList／Edit、state、Flow、Inspectorを直接操作する | Execution |
+| 0:45〜1:20 | エージェントがselectionを読み、Priority追加change setを作る | WebMCP Leverage |
+| 1:20〜1:45 | Priority previewとChangesを確認し、人間が反映する | Human-agent collaboration |
+| 1:45〜2:20 | lock解除後に人間がPriority options/defaultを直し、エージェントがlive contextを再読する | WebMCP Leverage |
+| 2:20〜2:40 | 既存Update Task APIへ`body.priority` bindingをID保持updateし、反映結果を示す | Potential Impact / Execution |
 | 2:40〜2:55 | DevToolsまたはコードでWebMCP実装を短く示す | WebMCP Leverage |
+
+デモ前はheaderの明示resetでTaskFlowを初期化する。Priorityは初期sampleに存在させず、最初の提案ではLow／Medium／High、default MediumとしてStatus直後へ追加する。人間はAccept後にLow／Normal／Critical、default Normalへ修正する。次の提案は`get_current_screen_context`でその修正と生成IDを再取得し、`connect_behavior`の`updateApi`で既存`api-update-task`へbindingだけを追加する。診断toolや未実装の仕様出力には依存しない。
 
 ## 10. 企画採点テンプレート
 
@@ -260,7 +262,7 @@ Screen Blueprint StudioのReact MVPを実装済みで、現在は提出品質を
 - 複数screen、semantic component tree、state、event、API operationの構造化モデル
 - 確定documentとpreview用effective documentを分離したreviewable change set
 - 人間だけが行う反映・破棄、確定transactionのUndo
-- active screen一括read、review diff、診断、ID保持updateを含む計10 WebMCP tools
+- active screen一括read、review diff、ID保持updateを含む計9 WebMCP tools
 - `localStorage`永続化、破損データrecovery、保存不能時のJSON退避
 - exact runtime validation、参照整合性、prototype-chain ID対策
 - build、Node DOM回帰、実Chrome表示回帰をCIで実行

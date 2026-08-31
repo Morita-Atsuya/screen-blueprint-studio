@@ -1062,6 +1062,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         toast: null,
         pendingDelete: null,
         componentClipboard: null,
+        rejectedRecords: [],
         reviewDraftProtectionIds: [],
         reviewDraftDocument: null,
       })
