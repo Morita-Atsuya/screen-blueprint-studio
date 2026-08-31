@@ -21,34 +21,6 @@
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
-.componentActions {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 7px;
-}
-.componentActionButton {
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 650;
-}
-.componentActionButton:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.componentActionButton:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.componentDeleteButton {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-  color: var(--danger);
-}
 .breadcrumb {
   min-width: 0;
   margin-top: 7px;
@@ -106,15 +78,6 @@
   background: var(--bg-selected);
   color: var(--accent-hover);
   font-weight: 700;
-}
-.hierarchyShortcutHint {
-  margin: 5px 0 0;
-  overflow: hidden;
-  color: var(--text-faint);
-  font-size: 0.66rem;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .section { margin-bottom: 8px; }
 .reviewLock {

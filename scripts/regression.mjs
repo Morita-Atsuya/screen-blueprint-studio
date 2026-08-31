@@ -5345,6 +5345,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
       canvasLockedMenu?.querySelector('[data-component-copy]') &&
       !canvasLockedMenu.querySelector('[data-component-duplicate]') &&
       !canvasLockedMenu.querySelector('[data-component-paste]') &&
+      !canvasLockedMenu.querySelector('[data-component-delete]') &&
       !canvasLockedMenu.querySelector('[data-insert-placement]'),
     'review-mode Canvas pointer context menu or selection is unavailable',
   )
@@ -5388,31 +5389,17 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
       inspectorFieldsets.every(fieldset => fieldset.hasAttribute('disabled')),
     'Inspector left a mutation fieldset enabled',
   )
-  const inspectorCopy = inspector.querySelector('[data-component-copy-inspector]')
-  const inspectorDuplicate = inspector.querySelector('[data-component-duplicate-inspector]')
-  const inspectorDelete = inspector.querySelector('[data-component-delete-inspector]')
   assert(
-    inspectorCopy && !inspectorCopy.hasAttribute('disabled'),
-    'Inspector disabled the non-mutating Copy action',
+    !inspector.querySelector(
+      [
+        '[data-component-copy-inspector]',
+        '[data-component-duplicate-inspector]',
+        '[data-component-paste-inspector]',
+        '[data-component-delete-inspector]',
+      ].join(','),
+    ),
+    'Inspector still exposes component operation buttons',
   )
-  assert(
-    inspectorDuplicate?.hasAttribute('disabled') &&
-      inspectorDelete?.hasAttribute('disabled'),
-    'Inspector mutation actions were not explicitly disabled',
-  )
-  harness.click(inspectorCopy)
-  assert(
-    harness.state().clipboardRootComponentId === 'comp-task-description-input',
-    'Inspector Copy stopped working during review',
-  )
-  const inspectorPaste = inspector.querySelector('[data-component-paste-inspector]')
-  assert(
-    inspectorPaste?.hasAttribute('disabled'),
-    'Inspector Paste stayed enabled after Copy during review',
-  )
-  harness.click(inspectorDuplicate)
-  harness.click(inspectorPaste)
-  harness.click(inspectorDelete)
 
   harness.contextMenu(treeNode)
   const lockedMenu = document.querySelector('[data-component-add-menu]')
@@ -5421,6 +5408,7 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
       lockedMenu.querySelector('[data-component-copy]') &&
       !lockedMenu.querySelector('[data-component-duplicate]') &&
       !lockedMenu.querySelector('[data-component-paste]') &&
+      !lockedMenu.querySelector('[data-component-delete]') &&
       !lockedMenu.querySelector('[data-insert-placement]'),
     'locked context menu exposes mutation actions or hides Copy',
   )
@@ -5752,13 +5740,10 @@ await test('Canvas Containers expose persistent selectable and droppable structu
     empty?.hasAttribute('data-container-component') &&
       nested?.hasAttribute('data-container-component') &&
       inner?.hasAttribute('data-container-component') &&
-      empty.querySelector('[data-container-identity][aria-hidden="true"]')
-        ?.textContent.trim() === 'Empty group' &&
-      nested.querySelector('[data-container-identity][aria-hidden="true"]')
-        ?.textContent.trim() === 'Nested group' &&
-      inner.querySelector('[data-container-identity][aria-hidden="true"]')
-        ?.textContent.trim() === 'Inner group',
-    'empty or nested Containers did not render persistent editor identity',
+      !empty.querySelector('[data-container-identity]') &&
+      !nested.querySelector('[data-container-identity]') &&
+      !inner.querySelector('[data-container-identity]'),
+    'Container descriptions leaked into Canvas content',
   )
   const emptyDropTarget = empty.querySelector(
     '[data-drop-surface="canvas"][data-drop-parent="regression-empty-container"]',
@@ -5768,11 +5753,10 @@ await test('Canvas Containers expose persistent selectable and droppable structu
     'empty horizontal Container did not retain its child drop target',
   )
 
-  const identity = empty.querySelector('[data-container-identity]')
   const surface = document.querySelector('[data-canvas-surface]')
   const beforeIdentityPan = surface.getAttribute('style')
   harness.keyDown(window, ' ', { code: 'Space' })
-  harness.pointer(identity, 'pointerdown', { clientX: 200, clientY: 200 })
+  harness.pointer(empty, 'pointerdown', { clientX: 200, clientY: 200 })
   harness.pointer(window, 'pointermove', { clientX: 230, clientY: 220 })
   harness.pointer(window, 'pointerup', { clientX: 230, clientY: 220 })
   harness.keyUp(window, ' ', { code: 'Space' })
@@ -6133,8 +6117,8 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
     ) &&
       canvasSource.includes('data-hierarchy-shortcut-scope="canvas"') &&
       inspectorSource.includes('data-hierarchy-shortcut-scope="inspector"') &&
-      inspectorSource.includes("t('inspector.hierarchyShortcutHint')"),
-    'hierarchy shortcut scope, DnD guard, or discovery UI was not wired',
+      !inspectorSource.includes('hierarchyShortcutHint'),
+    'hierarchy shortcut scope or DnD guard changed, or the removed hint remains',
   )
 })
 
@@ -6720,6 +6704,7 @@ await test('component add menu resolves valid positions and preserves atomic edi
       menuSource.includes('createAddComponentCommand') &&
       menuSource.includes('data-component-copy') &&
       menuSource.includes('data-component-paste') &&
+      menuSource.includes('data-component-delete') &&
       menuSource.includes('openFromKeyboard') &&
       menuSource.includes("event.key === 'Escape'") &&
       menuSource.includes("event.key === 'Enter' || event.key === ' '") &&
@@ -8623,7 +8608,7 @@ await test('active state descriptions stay in accessible editor chrome', async (
   )
 })
 
-await test('Canvas leaf chrome stays transient while Containers expose structure', async () => {
+await test('Canvas chrome stays transient while Containers expose structural bounds', async () => {
   const canvasSource = readFileSync(
     join(root, 'src/features/canvas/Canvas.tsx'),
     'utf8',
@@ -8642,13 +8627,12 @@ await test('Canvas leaf chrome stays transient while Containers expose structure
 
   assert(
     !canvasSource.includes('COMPONENT_KIND_MESSAGE_KEYS') &&
-      !canvasSource.includes('styles.componentKind') &&
-      canvasSource.includes('<span className={styles.componentLabel}>{displayName}</span>') &&
-      canvasSource.includes(
-        'className={styles.containerIdentity} data-container-identity aria-hidden="true"',
-      ) &&
-      canvasSource.includes('data-container-component='),
-    'Canvas does not separate transient leaf labels from persistent Container identity',
+    !canvasSource.includes('styles.componentKind') &&
+    canvasSource.includes('<span className={styles.componentLabel}>{displayName}</span>') &&
+    !canvasSource.includes('containerIdentity') &&
+    !canvasSource.includes('data-container-identity') &&
+    canvasSource.includes('data-container-component='),
+    'Canvas does not keep all labels transient or leaked Container identity content',
   )
   assert(
     !idleComponentRule.includes('border:') &&
@@ -8671,10 +8655,10 @@ await test('Canvas leaf chrome stays transient while Containers expose structure
       containerRule.includes('min-height: 64px') &&
       containerRule.includes('padding: 10px') &&
       containerRule.includes('border: 1px dashed') &&
-      canvasStyles.includes('.containerIdentity') &&
+      !canvasStyles.includes('.containerIdentity') &&
       canvasStyles.includes("width: 100%") &&
       canvasStyles.includes('@media (forced-colors: active)'),
-    'Container structure has no persistent boundary, empty height, identity, or forced-color fallback',
+    'Container structure lost its persistent boundary, empty height, or forced-color fallback',
   )
   assert(
     canvasSource.includes('hoveredComponentId === component.id') &&

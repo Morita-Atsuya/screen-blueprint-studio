@@ -22,10 +22,6 @@ import {
 import { BehaviorDetails, ValidationDetails } from './BehaviorDetails'
 import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
 import { ChangeOperationList } from '../change-review/ChangeOperationList'
-import {
-  canDuplicateComponent,
-  canPasteComponent,
-} from '../../domain/componentDuplication'
 import { resolveEffectiveComponentState } from '../../domain/selectors'
 import {
   createResetComponentOverrideCommand,
@@ -50,15 +46,10 @@ export function Inspector() {
     effectiveDocument,
     ui,
     dispatch,
-    duplicateComponent,
-    copyComponent,
-    pasteComponent,
-    componentClipboard,
     reviewDraftProtectionIds,
     reviewDraftDocument,
     activeChangeSet,
     setSelectedComponent,
-    requestHumanDelete,
   } = useAppStore()
   const [sectionPreferences, setSectionPreferences] = useState<Record<string, boolean>>({})
   const [validationErrorCounts, setValidationErrorCounts] = useState<Record<string, number>>({})
@@ -119,11 +110,6 @@ export function Inspector() {
   const eventEditor = getEventEditorContext(inspectorDocument, comp.id, locale)
   const apiEditor = getApiEditorContext(inspectorDocument, comp.id, locale)
   const validationEditor = getValidationRulesEditorContext(inspectorDocument, comp.id, locale)
-  const canCopy = Boolean(selectedEffectiveComponent) &&
-    canDuplicateComponent(effectiveDocument, comp.id)
-  const canPaste = Boolean(selectedEffectiveComponent) &&
-    canPasteComponent(effectiveDocument, componentClipboard, comp.id)
-  const canDelete = screen?.rootComponentId !== comp.id
   const hasContent = componentHasContentSection(cfg.kind)
   const hasBehaviorSection = Boolean(
     behavior &&
@@ -278,13 +264,6 @@ export function Inspector() {
             })}
           </ol>
         </nav>
-        <p
-          className={styles.hierarchyShortcutHint}
-          aria-label={t('inspector.hierarchyShortcutHint')}
-          title={t('inspector.hierarchyShortcutHint')}
-        >
-          {t('inspector.hierarchyShortcutHint')}
-        </p>
       </header>
       {activeChangeSet ? (
         <p id="inspector-review-lock" className={styles.reviewLock}>
@@ -297,73 +276,6 @@ export function Inspector() {
         expanded={sectionExpanded('basic')}
         badges={sectionBadges('basic')}
         onToggle={() => toggleSection('basic')}
-        actions={canCopy || canPaste || canDelete ? (
-          <div className={styles.componentActions}>
-            {canCopy ? (
-              <>
-                <button
-                  type="button"
-                  className={styles.componentActionButton}
-                  title={t('inspector.copyTitle')}
-                  aria-label={t('inspector.copyTitle')}
-                  data-component-copy-inspector
-                  onClick={() => copyComponent(comp.id)}
-                >
-                  {t('inspector.copy')}
-                </button>
-                <button
-                  type="button"
-                  className={styles.componentActionButton}
-                  title={t('inspector.duplicateTitle')}
-                  aria-label={t('inspector.duplicateTitle')}
-                  aria-describedby={activeChangeSet ? 'inspector-review-lock' : undefined}
-                  data-component-duplicate-inspector
-                  disabled={Boolean(activeChangeSet)}
-                  onClick={() => duplicateComponent(
-                    comp.id,
-                    t('componentMenu.duplicateHistory'),
-                  )}
-                >
-                  {t('inspector.duplicate')}
-                </button>
-              </>
-            ) : null}
-            {canPaste ? (
-              <button
-                type="button"
-                className={styles.componentActionButton}
-                title={t('inspector.pasteTitle')}
-                aria-label={t('inspector.pasteTitle')}
-                aria-describedby={activeChangeSet ? 'inspector-review-lock' : undefined}
-                data-component-paste-inspector
-                disabled={Boolean(activeChangeSet)}
-                onClick={() => pasteComponent(
-                  comp.id,
-                  t('componentMenu.pasteHistory'),
-                )}
-              >
-                {t('inspector.paste')}
-              </button>
-            ) : null}
-            {canDelete ? (
-              <button
-                type="button"
-                className={`${styles.componentActionButton} ${styles.componentDeleteButton}`}
-                title={t('inspector.deleteTitle')}
-                aria-label={t('inspector.deleteTitle')}
-                aria-describedby={activeChangeSet ? 'inspector-review-lock' : undefined}
-                data-component-delete-inspector
-                disabled={Boolean(activeChangeSet)}
-                onClick={() => requestHumanDelete(
-                  { type: 'removeComponent', componentId: comp.id },
-                  'Delete component',
-                )}
-              >
-                {t('inspector.delete')}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
       >
         <div className={styles.settingsHeading} data-base-settings>
           <p>{t('inspector.baseSettingsDescription')}</p>

@@ -136,6 +136,7 @@ export function StructureTree() {
   const {
     effectiveDocument,
     activeChangeSet,
+    pendingDelete,
     ui,
     setSelectedComponent,
     setRightPanelTab,
@@ -268,9 +269,9 @@ export function StructureTree() {
   useEffect(() => {
     const wasOpen = menuWasOpenRef.current
     menuWasOpenRef.current = componentAddMenu.isOpen
-    if (!wasOpen || componentAddMenu.isOpen || !focusedComponentId) return
+    if (!wasOpen || componentAddMenu.isOpen || pendingDelete || !focusedComponentId) return
     nodeRefs.current.get(focusedComponentId)?.focus()
-  }, [componentAddMenu.isOpen, focusedComponentId])
+  }, [componentAddMenu.isOpen, focusedComponentId, pendingDelete])
 
   useEffect(() => {
     if (!selectedComponentId) {

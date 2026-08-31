@@ -41,13 +41,19 @@ export function DeleteConfirmationDialog() {
 
   useLayoutEffect(() => {
     if (!pendingDelete) return
-    returnFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null
+    const explicitReturnTarget = document.querySelector<HTMLElement>(
+      '[data-delete-return-focus]',
+    )
+    returnFocusRef.current = explicitReturnTarget ??
+      (document.activeElement instanceof HTMLElement ? document.activeElement : null)
     cancelRef.current?.focus()
     return () => {
       requestAnimationFrame(() => {
-        const returnTarget = returnFocusRef.current
+        const markedReturnTarget = document.querySelector<HTMLElement>(
+          '[data-delete-return-focus]',
+        )
+        markedReturnTarget?.removeAttribute('data-delete-return-focus')
+        const returnTarget = markedReturnTarget ?? returnFocusRef.current
         if (returnTarget?.isConnected) {
           returnTarget.focus()
         } else {
@@ -71,6 +77,20 @@ export function DeleteConfirmationDialog() {
 
   if (!pendingDelete) return null
 
+  function cancel() {
+    const explicitReturnTarget = document.querySelector<HTMLElement>(
+      '[data-delete-return-focus]',
+    )
+    cancelPendingDelete()
+    if (explicitReturnTarget) {
+      window.setTimeout(() => {
+        if (explicitReturnTarget.isConnected) {
+          explicitReturnTarget.focus({ preventScroll: true })
+        }
+      }, 0)
+    }
+  }
+
   const activeState = ui.activeStateId
     ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
     : undefined
@@ -89,13 +109,13 @@ export function DeleteConfirmationDialog() {
     <div
       className={styles.backdrop}
       onMouseDown={event => {
-        if (event.target === event.currentTarget) cancelPendingDelete()
+        if (event.target === event.currentTarget) cancel()
       }}
       onKeyDown={event => {
         if (event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
-          cancelPendingDelete()
+          cancel()
           return
         }
         if (event.key === 'Tab') trapDialogFocus(event, dialogRef.current)
@@ -133,7 +153,7 @@ export function DeleteConfirmationDialog() {
             ref={cancelRef}
             type="button"
             className={styles.cancel}
-            onClick={cancelPendingDelete}
+            onClick={cancel}
           >
             {t('common.cancel')}
           </button>

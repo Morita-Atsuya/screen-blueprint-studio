@@ -567,11 +567,6 @@ function CanvasComponent({
           <span className={styles.componentLabel}>{displayName}</span>
         </div>
       ) : null}
-      {component.kind === 'container' ? (
-        <span className={styles.containerIdentity} data-container-identity aria-hidden="true">
-          {displayName}
-        </span>
-      ) : null}
       <ComponentView comp={component} t={t} />
       {isContainer && (
         <SortableContext

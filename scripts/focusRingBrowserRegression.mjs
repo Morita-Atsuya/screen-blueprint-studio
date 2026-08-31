@@ -1267,9 +1267,7 @@ async function run() {
               borderStyle: style.borderStyle,
               borderWidth: style.borderWidth,
               padding: style.padding,
-              identity: element.querySelector(
-                ':scope > [data-container-identity][aria-hidden="true"]'
-              )?.textContent.trim(),
+              hasIdentity: Boolean(element.querySelector('[data-container-identity]')),
             }
           }
           const nestedRect = nested.getBoundingClientRect()
@@ -1304,7 +1302,7 @@ async function run() {
           containerMeasurement.empty.borderStyle === 'dashed' &&
           containerMeasurement.empty.borderWidth === '1px' &&
           containerMeasurement.empty.padding === '10px' &&
-          containerMeasurement.empty.identity === 'Empty browser group' &&
+          !containerMeasurement.empty.hasIdentity &&
           containerMeasurement.emptyDropTarget.exists &&
           containerMeasurement.emptyDropTarget.orientation === 'horizontal' &&
           containerMeasurement.emptyDropTarget.width >=
@@ -1315,8 +1313,8 @@ async function run() {
       assert(
         containerMeasurement.nested.borderStyle === 'dashed' &&
           containerMeasurement.inner.borderStyle === 'dashed' &&
-          containerMeasurement.nested.identity === 'Nested browser group' &&
-          containerMeasurement.inner.identity === 'Inner browser group updated' &&
+          !containerMeasurement.nested.hasIdentity &&
+          !containerMeasurement.inner.hasIdentity &&
           containerMeasurement.nestedIndent > 0,
         `${width}px nested Container hierarchy is not visually distinguishable`,
       )
@@ -1326,6 +1324,25 @@ async function run() {
           containerMeasurement.selectedFocusOverlay.includes('2px') &&
           containerMeasurement.horizontalOverflow === 0,
         `${width}px Container selection, focus, change marker, or overflow regressed`,
+      )
+      const cleanupState = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const inspector = document.querySelector('aside[aria-label="Details"]')
+          return {
+            inspectorActions: Boolean(inspector.querySelector(
+              '[data-component-copy-inspector], [data-component-duplicate-inspector], ' +
+              '[data-component-paste-inspector], [data-component-delete-inspector]'
+            )),
+            hierarchyHint: inspector.textContent.includes('Hierarchy:') ||
+              inspector.textContent.includes('階層移動:'),
+          }
+        })()`,
+        returnByValue: true,
+      })
+      assert(
+        !cleanupState.result.value.inspectorActions &&
+          !cleanupState.result.value.hierarchyHint,
+        `${width}px Inspector still exposes removed actions or hierarchy hint`,
       )
     }
 
@@ -1371,6 +1388,140 @@ async function run() {
     await waitForExpression(
       `!document.querySelector('[data-palette-kind="container"]').disabled`,
       'accepting the review did not unlock Container DnD',
+    )
+    const contextPointResult = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const target = document.querySelector(
+          '[data-component-id="comp-edit-section"]'
+        )
+        const rect = target.getBoundingClientRect()
+        let point = null
+        for (let y = Math.ceil(rect.top); y < Math.floor(rect.bottom) && !point; y += 2) {
+          for (let x = Math.ceil(rect.left); x < Math.floor(rect.right); x += 2) {
+            const owner = document.elementFromPoint(x, y)?.closest('[data-component-id]')
+            if (owner === target) {
+              point = { x, y }
+              break
+            }
+          }
+        }
+        if (!point) return { x: 0, y: 0, componentId: null }
+        return {
+          ...point,
+          componentId: document.elementFromPoint(point.x, point.y)
+            ?.closest('[data-component-id]')?.getAttribute('data-component-id'),
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const contextPoint = contextPointResult.result.value
+    assert(
+      contextPoint.componentId === 'comp-edit-section',
+      'trusted context-menu point did not hit the intended Container: ' +
+        JSON.stringify(contextPoint),
+    )
+    const openContextMenu = async () => {
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        button: 'right',
+        buttons: 2,
+        clickCount: 1,
+        x: contextPoint.x,
+        y: contextPoint.y,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        button: 'right',
+        buttons: 0,
+        clickCount: 1,
+        x: contextPoint.x,
+        y: contextPoint.y,
+      })
+      await waitForExpression(
+        `Boolean(document.querySelector('[data-component-add-menu]'))`,
+        'trusted right-click did not open the component menu',
+      )
+    }
+    await openContextMenu()
+    const initialMenu = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        copy: Boolean(document.querySelector('[data-component-copy]')),
+        duplicate: Boolean(document.querySelector('[data-component-duplicate]')),
+        deleteAction: Boolean(document.querySelector('[data-component-delete]')),
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      initialMenu.result.value.copy &&
+        initialMenu.result.value.duplicate &&
+        initialMenu.result.value.deleteAction,
+      'component context menu lost Copy, Duplicate, or Delete: ' +
+        JSON.stringify(initialMenu.result.value),
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-component-copy]').click()`,
+    })
+    await waitForExpression(
+      `!document.querySelector('[data-component-add-menu]')`,
+      'component Copy did not close its context menu',
+    )
+    await openContextMenu()
+    const clipboardMenu = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        copy: Boolean(document.querySelector('[data-component-copy]')),
+        duplicate: Boolean(document.querySelector('[data-component-duplicate]')),
+        paste: Boolean(document.querySelector('[data-component-paste]')),
+        deleteAction: Boolean(document.querySelector('[data-component-delete]')),
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      Object.values(clipboardMenu.result.value).every(Boolean),
+      'component context menu did not expose all four preserved actions',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-component-delete]').click()`,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-delete-confirmation="component"]') &&
+        document.activeElement ===
+          document.querySelector('[data-delete-confirmation="component"] button')`,
+      'context-menu Delete did not open a focused confirmation dialog',
+    )
+    const deleteDialogState = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        markedComponentId: document.querySelector('[data-delete-return-focus]')
+          ?.getAttribute('data-component-id'),
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      deleteDialogState.result.value.markedComponentId === contextPoint.componentId,
+      'context-menu Delete did not preserve its return-focus marker: ' +
+        JSON.stringify(deleteDialogState.result.value),
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector(
+        '[data-delete-confirmation="component"] button'
+      ).click()`,
+    })
+    await waitForExpression(
+      `!document.querySelector('[data-delete-confirmation]')`,
+      'canceling context-menu Delete did not close the dialog',
+    )
+    const restoredDeleteFocus = await cdp.call('Runtime.evaluate', {
+      expression: `new Promise(resolve => setTimeout(() => resolve({
+          componentId: document.activeElement?.getAttribute('data-component-id'),
+          tag: document.activeElement?.tagName,
+          text: document.activeElement?.textContent?.trim(),
+        }), 50))`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    assert(
+      restoredDeleteFocus.result.value.componentId === contextPoint.componentId,
+      'canceling context-menu Delete did not restore focus to its trigger: ' +
+        JSON.stringify(restoredDeleteFocus.result.value),
     )
     const dragPoints = await cdp.call('Runtime.evaluate', {
       expression: `(() => {
@@ -1493,14 +1644,13 @@ async function run() {
           const source = document.querySelector(
             '[data-component-id="' + componentId + '"]'
           )
-          const sourceTarget = source.querySelector(
-            ':scope > [data-container-identity]'
-          ) ?? source
-          const sourceRect = sourceTarget.getBoundingClientRect()
-          const sourcePoint = {
-            x: sourceRect.left + sourceRect.width / 2,
-            y: sourceRect.top + sourceRect.height / 2,
-          }
+          const sourceRect = source.getBoundingClientRect()
+          const sourcePoint = source.hasAttribute('data-container-component')
+            ? { x: sourceRect.left + 5, y: sourceRect.top + 5 }
+            : {
+                x: sourceRect.left + sourceRect.width / 2,
+                y: sourceRect.top + sourceRect.height / 2,
+              }
           const hit = document.elementFromPoint(sourcePoint.x, sourcePoint.y)
           const targets = ${targetParentId === undefined
             ? '[]'

@@ -66,6 +66,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const pasteComponent = useAppStore(state => state.pasteComponent)
   const componentClipboard = useAppStore(state => state.componentClipboard)
   const setSelectedComponent = useAppStore(state => state.setSelectedComponent)
+  const requestHumanDelete = useAppStore(state => state.requestHumanDelete)
   const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null)
   const [position, setPosition] = useState<MenuPoint | null>(null)
@@ -109,6 +110,9 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const component = openMenu
     ? getOwnEntity(effectiveDocument.components, openMenu.componentId)
     : undefined
+  const screen = component
+    ? getOwnEntity(effectiveDocument.screens, component.screenId)
+    : undefined
   const targets = openMenu && !reviewLocked
     ? resolveComponentInsertTargets(effectiveDocument, openMenu.componentId)
     : []
@@ -120,7 +124,13 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const canPaste = openMenu && !reviewLocked
     ? canPasteComponent(effectiveDocument, componentClipboard, openMenu.componentId)
     : false
-  const hasComponentActions = canCopy || canDuplicate || canPaste
+  const canDelete = Boolean(
+    openMenu &&
+    component &&
+    !reviewLocked &&
+    screen?.rootComponentId !== component.id,
+  )
+  const hasComponentActions = canCopy || canDuplicate || canPaste || canDelete
 
   useEffect(() => {
     if (openMenu && !component) close(false)
@@ -188,6 +198,51 @@ export function useComponentAddMenu(): ComponentAddMenuController {
     if (!openMenu || !canPaste) return
     if (!pasteComponent(openMenu.componentId, t('componentMenu.pasteHistory'))) return
     close()
+  }
+
+  function remove() {
+    if (!openMenu || !canDelete) return
+    const { componentId, trigger } = openMenu
+    const focusScope = trigger.closest<HTMLElement>(
+      '[data-hierarchy-shortcut-scope], [role="tree"]',
+    )
+    const restoreSelectionFocus = () => {
+      window.setTimeout(() => {
+        const selectedId = useAppStore.getState().ui.selectedComponentId
+        const selectedCanvasComponent = selectedId
+          ? focusScope?.querySelector<HTMLElement>(
+              `[data-component-id="${CSS.escape(selectedId)}"]`,
+            )
+          : null
+        const selectedTreeItem = selectedId
+          ? focusScope
+              ?.querySelector<HTMLElement>(
+                `[data-tree-component-id="${CSS.escape(selectedId)}"]`,
+              )
+              ?.closest<HTMLElement>('[role="treeitem"]')
+          : null
+        const rovingTreeItem = focusScope?.matches('[role="tree"]')
+          ? focusScope.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')
+          : null
+        ;(
+          selectedCanvasComponent ??
+          selectedTreeItem ??
+          rovingTreeItem ??
+          (focusScope?.matches('[role="tree"]') ? null : focusScope)
+        )?.focus({ preventScroll: true })
+      }, 0)
+    }
+    close(false)
+    window.setTimeout(() => {
+      trigger.setAttribute('data-delete-return-focus', 'true')
+      if (trigger.isConnected) trigger.focus({ preventScroll: true })
+      const result = requestHumanDelete(
+        { type: 'removeComponent', componentId },
+        'Delete component',
+        restoreSelectionFocus,
+      )
+      if (result !== 'pending') trigger.removeAttribute('data-delete-return-focus')
+    }, 0)
   }
 
   function handleMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -304,6 +359,17 @@ export function useComponentAddMenu(): ComponentAddMenuController {
                             onClick={paste}
                           >
                             {t('componentMenu.paste')}
+                          </button>
+                        ) : null}
+                        {canDelete ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={styles.item}
+                            data-component-delete
+                            onClick={remove}
+                          >
+                            {t('componentMenu.delete')}
                           </button>
                         ) : null}
                         <div className={styles.separator} role="separator" />

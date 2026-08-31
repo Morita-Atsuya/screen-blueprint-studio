@@ -356,20 +356,6 @@
   border-radius: 6px;
 }
 
-.containerIdentity {
-  display: block;
-  width: fit-content;
-  max-width: calc(100% - 28px);
-  margin-bottom: 8px;
-  overflow: hidden;
-  color: var(--text-faint);
-  font-size: 0.65rem;
-  font-weight: 600;
-  line-height: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .emptyContainer > .children {
   min-height: 32px;
 }
@@ -488,9 +474,6 @@
     border-color: CanvasText;
   }
 
-  .containerIdentity {
-    color: CanvasText;
-  }
 }
 
 @media (max-width: 899px) {
