@@ -644,6 +644,7 @@ async function run() {
       expression: `(() => {
         localStorage.setItem('screen-blueprint-studio:v1', ${JSON.stringify(persisted)})
         localStorage.setItem('screen-blueprint-studio:locale:v1', 'en')
+        localStorage.removeItem('screen-blueprint-studio:left-pane-width:v1')
         localStorage.setItem('screen-blueprint-studio:right-pane-width:v1', '300')
         localStorage.setItem('screen-blueprint-studio:left-pane-sections:v1', JSON.stringify({
           screensExpanded: true,
@@ -670,6 +671,7 @@ async function run() {
       deviceScaleFactor: 1,
       mobile: false,
     })
+    let narrowTreeNodeBodyWidth = 0
     for (const locale of ['en', 'ja']) {
       await cdp.call('Runtime.evaluate', {
         expression: `(() => {
@@ -731,19 +733,36 @@ async function run() {
             leftWidth: leftPane.getBoundingClientRect().width,
             leftOverflow: leftPane.scrollWidth - leftPane.clientWidth,
             treeOverflow: tree.scrollWidth - tree.clientWidth,
+            nodeBodyWidth: status.parentElement.getBoundingClientRect().width,
             ariaLevel: node.closest('[role="treeitem"]').getAttribute('aria-level'),
             badgeCount: badges.length,
             badges,
+            resizeLabels: {
+              left: document.querySelector('[data-left-pane-resizer]')
+                ?.getAttribute('aria-label'),
+              right: document.querySelector('[data-right-pane-resizer]')
+                ?.getAttribute('aria-label'),
+            },
           }
         })()`,
         returnByValue: true,
       })
       const badgeMeasurement = badgeResult.result.value
+      if (locale === 'en') narrowTreeNodeBodyWidth = badgeMeasurement.nodeBodyWidth
       assert(
         badgeMeasurement.leftWidth === 220 &&
           badgeMeasurement.leftOverflow <= 1 &&
           badgeMeasurement.treeOverflow <= 1,
         `deep ${locale} Tree badges introduced horizontal overflow`,
+      )
+      assert(
+        badgeMeasurement.resizeLabels.left === (
+          locale === 'en' ? 'Resize project panel' : 'プロジェクトパネルの幅を変更'
+        ) &&
+          badgeMeasurement.resizeLabels.right === (
+            locale === 'en' ? 'Resize specification panel' : '仕様パネルの幅を変更'
+          ),
+        `pane separators do not expose localized labels in ${locale}`,
       )
       assert(
         badgeMeasurement.ariaLevel === '6' &&
@@ -776,6 +795,293 @@ async function run() {
     await waitForExpression(
       `document.documentElement.lang === 'en'`,
       'Tree badge regression did not restore English locale',
+    )
+
+    const leftResizeStart = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const handle = document.querySelector('[data-left-pane-resizer]')
+        const rect = handle.getBoundingClientRect()
+        const leftPane = document.querySelector('aside[aria-label="Project navigation"]')
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          handleWidth: rect.width,
+          leftWidth: leftPane.getBoundingClientRect().width,
+          min: Number(handle.getAttribute('aria-valuemin')),
+          max: Number(handle.getAttribute('aria-valuemax')),
+          now: Number(handle.getAttribute('aria-valuenow')),
+          orientation: handle.getAttribute('aria-orientation'),
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const leftStart = leftResizeStart.result.value
+    assert(
+      leftStart.handleWidth === 7 &&
+        leftStart.leftWidth === 220 &&
+        leftStart.min === 180 &&
+        leftStart.max === 480 &&
+        leftStart.now === 220 &&
+        leftStart.orientation === 'vertical',
+      `left pane separator did not preserve its accessible 220px default: ` +
+        JSON.stringify(leftStart),
+    )
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: leftStart.x,
+      y: leftStart.y,
+    })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      button: 'left',
+      buttons: 1,
+      x: leftStart.x + 120,
+      y: leftStart.y,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '340'`,
+      'left pane pointer resize did not reach 340px',
+    )
+    const activeResize = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        active: document.querySelector('[data-left-pane-resizer]')
+          .getAttribute('data-resizing'),
+        userSelect: getComputedStyle(document.querySelector('#root > *')).userSelect,
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      activeResize.result.value.active === 'true' &&
+        activeResize.result.value.userSelect === 'none',
+      'left pane pointer resize did not expose active feedback or suppress selection',
+    )
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      x: leftStart.x + 120,
+      y: leftStart.y,
+    })
+    const expandedLeft = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const leftPane = document.querySelector('aside[aria-label="Project navigation"]')
+        const rightPane = document.querySelector('aside[aria-label="Details"]')
+        const editor = document.querySelector('main')
+        const handle = document.querySelector('[data-left-pane-resizer]')
+        const status = document.querySelector(
+          '[data-tree-component-id="browser-tree-state-alert"] [data-tree-state-status]'
+        )
+        const viewport = document.querySelector('[data-canvas-viewport]').getBoundingClientRect()
+        const page = document.querySelector('[data-canvas-frame="page"]').getBoundingClientRect()
+        return {
+          leftWidth: leftPane.getBoundingClientRect().width,
+          rightWidth: rightPane.getBoundingClientRect().width,
+          editorWidth: editor.getBoundingClientRect().width,
+          nodeBodyWidth: status.parentElement.getBoundingClientRect().width,
+          stored: localStorage.getItem('screen-blueprint-studio:left-pane-width:v1'),
+          resizing: handle.hasAttribute('data-resizing'),
+          leftOverflow: leftPane.scrollWidth - leftPane.clientWidth,
+          documentOverflow:
+            document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          canvasReachable:
+            page.right > viewport.left + 40 &&
+            page.left < viewport.right - 40 &&
+            page.bottom > viewport.top + 40 &&
+            page.top < viewport.bottom - 40,
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const expanded = expandedLeft.result.value
+    assert(
+      expanded.leftWidth === 340 &&
+        expanded.rightWidth === 300 &&
+        expanded.editorWidth >= 360 &&
+        expanded.nodeBodyWidth >= narrowTreeNodeBodyWidth + 119 &&
+        expanded.stored === '340' &&
+        !expanded.resizing &&
+        expanded.leftOverflow <= 1 &&
+        expanded.documentOverflow === 0 &&
+        expanded.canvasReachable,
+      `left pane expansion broke Tree space, pane bounds, or Canvas reachability: ` +
+        JSON.stringify(expanded),
+    )
+
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-left-pane-resizer]').focus()`,
+    })
+    const pressResizeKey = async (key, shiftKey = false) => {
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key,
+        code: key,
+        modifiers: shiftKey ? 8 : 0,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key,
+        code: key,
+        modifiers: shiftKey ? 8 : 0,
+      })
+    }
+    await pressResizeKey('ArrowLeft')
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '332'`,
+      'left pane ArrowLeft did not narrow by one step',
+    )
+    await pressResizeKey('ArrowRight', true)
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '364'`,
+      'left pane Shift+ArrowRight did not widen by a large step',
+    )
+    await pressResizeKey('Home')
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '180'`,
+      'left pane Home did not use its minimum',
+    )
+    await pressResizeKey('End')
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '480'`,
+      'left pane End did not use its maximum',
+    )
+    const maxLeftHandle = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const handle = document.querySelector('[data-left-pane-resizer]')
+        const rect = handle.getBoundingClientRect()
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      })()`,
+      returnByValue: true,
+    })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: maxLeftHandle.result.value.x,
+      y: maxLeftHandle.result.value.y,
+    })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      button: 'left',
+      buttons: 1,
+      x: maxLeftHandle.result.value.x - 140,
+      y: maxLeftHandle.result.value.y,
+    })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      x: maxLeftHandle.result.value.x - 140,
+      y: maxLeftHandle.result.value.y,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '340'`,
+      'left pane did not restore the persisted smoke width',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getAttribute('aria-valuenow') === '340'`,
+      'left pane preferred width did not survive reload',
+    )
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 899,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
+    await new Promise(resolveWait => setTimeout(resolveWait, 100))
+    const stackedPanes = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const main = document.querySelector('main').parentElement
+        const left = document.querySelector('aside[aria-label="Project navigation"]')
+        const right = document.querySelector('aside[aria-label="Details"]')
+        return {
+          leftHandle: getComputedStyle(
+            document.querySelector('[data-left-pane-resizer]')
+          ).display,
+          rightHandle: getComputedStyle(
+            document.querySelector('[data-right-pane-resizer]')
+          ).display,
+          leftWidth: left.getBoundingClientRect().width,
+          rightWidth: right.getBoundingClientRect().width,
+          mainWidth: main.clientWidth,
+          storedLeft: localStorage.getItem('screen-blueprint-studio:left-pane-width:v1'),
+          overflow:
+            document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const stacked = stackedPanes.result.value
+    assert(
+      stacked.leftHandle === 'none' &&
+        stacked.rightHandle === 'none' &&
+        Math.abs(stacked.leftWidth - stacked.mainWidth) < 1 &&
+        Math.abs(stacked.rightWidth - stacked.mainWidth) < 1 &&
+        stacked.storedLeft === '340' &&
+        stacked.overflow === 0,
+      `899px stacked panes did not hide separators or preserve preference: ` +
+        JSON.stringify(stacked),
+    )
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-left-pane-resizer]')
+        ?.getBoundingClientRect().width === 7 &&
+        document.querySelector('[data-left-pane-resizer]')
+          ?.getAttribute('aria-valuenow') === '340'`,
+      'desktop layout did not restore the preferred left pane width',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-right-pane-resizer]').focus()`,
+    })
+    await pressResizeKey('End')
+    const coupledBounds = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const left = document.querySelector('aside[aria-label="Project navigation"]')
+        const right = document.querySelector('aside[aria-label="Details"]')
+        const editor = document.querySelector('main')
+        const leftHandle = document.querySelector('[data-left-pane-resizer]')
+        const rightHandle = document.querySelector('[data-right-pane-resizer]')
+        return {
+          left: left.getBoundingClientRect().width,
+          right: right.getBoundingClientRect().width,
+          editor: editor.getBoundingClientRect().width,
+          leftMax: Number(leftHandle.getAttribute('aria-valuemax')),
+          rightMax: Number(rightHandle.getAttribute('aria-valuemax')),
+          rightNow: Number(rightHandle.getAttribute('aria-valuenow')),
+          overflow:
+            document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const coupled = coupledBounds.result.value
+    assert(
+      coupled.left === 340 &&
+        coupled.right === coupled.rightMax &&
+        coupled.rightNow === coupled.rightMax &&
+        coupled.editor >= 360 &&
+        coupled.left <= coupled.leftMax &&
+        coupled.overflow === 0,
+      `right pane did not honor dynamic left width and center bounds: ` +
+        JSON.stringify(coupled),
     )
 
     for (const width of [1280, 899, 640]) {

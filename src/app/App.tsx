@@ -13,12 +13,18 @@ import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { useI18n } from '../i18n/I18nProvider'
 import { getOwnEntity } from '../domain/entityMap'
 import {
+  LEFT_PANE_WIDTH_STORAGE_KEY,
+  RIGHT_PANE_WIDTH_STORAGE_KEY,
+  clampLeftPaneWidth,
   clampRightPaneWidth,
+  getLeftPaneWidthBounds,
   getRightPaneWidthBounds,
-  persistRightPaneWidth,
+  paneWidthForKey,
+  persistPaneWidth,
+  resolveInitialLeftPaneWidth,
   resolveInitialRightPaneWidth,
-  rightPaneWidthForKey,
-} from './rightPaneWidth'
+  resolvePaneWidths,
+} from './paneWidths'
 import logoMarkUrl from '../../brand/logo-mark.svg'
 import styles from './App.module.css'
 
@@ -78,15 +84,25 @@ export function App() {
     ? getOwnEntity(effectiveDocument.screens, ui.activeScreenId)
     : undefined
   const [viewportWidth, setViewportWidth] = useState(browserWidth)
-  const [preferredRightPaneWidth, setPreferredRightPaneWidth] = useState(() =>
-    resolveInitialRightPaneWidth(browserStorage(), browserWidth()),
+  const [preferredLeftPaneWidth, setPreferredLeftPaneWidth] = useState(() =>
+    resolveInitialLeftPaneWidth(browserStorage()),
   )
-  const [isResizingRightPane, setIsResizingRightPane] = useState(false)
+  const [preferredRightPaneWidth, setPreferredRightPaneWidth] = useState(() =>
+    resolveInitialRightPaneWidth(browserStorage()),
+  )
+  const [resizingPane, setResizingPane] = useState<'left' | 'right' | null>(null)
   const [editorView, setEditorView] = useState<'screen' | 'flow'>('screen')
-  const rightPaneWidth = clampRightPaneWidth(preferredRightPaneWidth, viewportWidth)
-  const rightPaneBounds = getRightPaneWidthBounds(viewportWidth)
+  const { left: leftPaneWidth, right: rightPaneWidth } = resolvePaneWidths(
+    preferredLeftPaneWidth,
+    preferredRightPaneWidth,
+    viewportWidth,
+  )
+  const leftPaneBounds = getLeftPaneWidthBounds(viewportWidth, rightPaneWidth)
+  const rightPaneBounds = getRightPaneWidthBounds(viewportWidth, leftPaneWidth)
+  const leftPaneWidthRef = useRef(leftPaneWidth)
   const rightPaneWidthRef = useRef(rightPaneWidth)
   const resizeStartRef = useRef<{
+    side: 'left' | 'right'
     pointerId: number
     clientX: number
     width: number
@@ -98,6 +114,10 @@ export function App() {
     globalThis.addEventListener('resize', updateViewportWidth)
     return () => globalThis.removeEventListener('resize', updateViewportWidth)
   }, [])
+
+  useEffect(() => {
+    leftPaneWidthRef.current = leftPaneWidth
+  }, [leftPaneWidth])
 
   useEffect(() => {
     rightPaneWidthRef.current = rightPaneWidth
@@ -114,21 +134,111 @@ export function App() {
     return () => globalThis.removeEventListener('keydown', handleKeyDown)
   }, [dismissToast, toast])
 
-  function updateRightPaneWidth(nextWidth: number, persist = false) {
-    const clamped = clampRightPaneWidth(nextWidth, viewportWidth)
-    rightPaneWidthRef.current = clamped
-    setPreferredRightPaneWidth(clamped)
-    if (persist) persistRightPaneWidth(browserStorage(), clamped)
+  function updatePaneWidth(
+    side: 'left' | 'right',
+    nextWidth: number,
+    persist = false,
+  ) {
+    const clamped = side === 'left'
+      ? clampLeftPaneWidth(nextWidth, viewportWidth, rightPaneWidth)
+      : clampRightPaneWidth(nextWidth, viewportWidth, leftPaneWidth)
+    const storageKey = side === 'left'
+      ? LEFT_PANE_WIDTH_STORAGE_KEY
+      : RIGHT_PANE_WIDTH_STORAGE_KEY
+    if (side === 'left') {
+      leftPaneWidthRef.current = clamped
+      setPreferredLeftPaneWidth(clamped)
+    } else {
+      rightPaneWidthRef.current = clamped
+      setPreferredRightPaneWidth(clamped)
+    }
+    if (persist) persistPaneWidth(browserStorage(), storageKey, clamped)
   }
 
-  function finishRightPaneResize(event: ReactPointerEvent<HTMLDivElement>) {
-    if (resizeStartRef.current?.pointerId !== event.pointerId) return
+  function finishPaneResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = resizeStartRef.current
+    if (!start || start.pointerId !== event.pointerId) return
     resizeStartRef.current = null
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
-    setIsResizingRightPane(false)
-    persistRightPaneWidth(browserStorage(), rightPaneWidthRef.current)
+    setResizingPane(null)
+    persistPaneWidth(
+      browserStorage(),
+      start.side === 'left'
+        ? LEFT_PANE_WIDTH_STORAGE_KEY
+        : RIGHT_PANE_WIDTH_STORAGE_KEY,
+      start.side === 'left' ? leftPaneWidthRef.current : rightPaneWidthRef.current,
+    )
+  }
+
+  function paneResizeHandle(side: 'left' | 'right') {
+    const bounds = side === 'left' ? leftPaneBounds : rightPaneBounds
+    const width = side === 'left' ? leftPaneWidth : rightPaneWidth
+    return (
+      <div
+        className={styles.resizeHandle}
+        data-left-pane-resizer={side === 'left' || undefined}
+        data-right-pane-resizer={side === 'right' || undefined}
+        data-resizing={resizingPane === side || undefined}
+        role="separator"
+        aria-label={t(side === 'left' ? 'app.resizeLeftPane' : 'app.resizeRightPane')}
+        aria-orientation="vertical"
+        aria-valuemin={bounds.min}
+        aria-valuemax={bounds.max}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={event => {
+          if (event.button !== 0) return
+          event.preventDefault()
+          event.stopPropagation()
+          event.currentTarget.setPointerCapture(event.pointerId)
+          resizeStartRef.current = {
+            side,
+            pointerId: event.pointerId,
+            clientX: event.clientX,
+            width,
+          }
+          setResizingPane(side)
+        }}
+        onPointerMove={event => {
+          const start = resizeStartRef.current
+          if (!start || start.side !== side || start.pointerId !== event.pointerId) return
+          const delta = side === 'left'
+            ? event.clientX - start.clientX
+            : start.clientX - event.clientX
+          updatePaneWidth(side, start.width + delta)
+        }}
+        onPointerUp={finishPaneResize}
+        onPointerCancel={finishPaneResize}
+        onLostPointerCapture={event => {
+          const start = resizeStartRef.current
+          if (!start || start.side !== side || start.pointerId !== event.pointerId) return
+          resizeStartRef.current = null
+          setResizingPane(null)
+          persistPaneWidth(
+            browserStorage(),
+            side === 'left'
+              ? LEFT_PANE_WIDTH_STORAGE_KEY
+              : RIGHT_PANE_WIDTH_STORAGE_KEY,
+            side === 'left' ? leftPaneWidthRef.current : rightPaneWidthRef.current,
+          )
+        }}
+        onKeyDown={event => {
+          const nextWidth = paneWidthForKey(
+            side,
+            event.key,
+            width,
+            bounds,
+            event.shiftKey,
+          )
+          if (nextWidth === null) return
+          event.preventDefault()
+          event.stopPropagation()
+          updatePaneWidth(side, nextWidth, true)
+        }}
+      />
+    )
   }
 
   function openScreenView(focusComponentId?: string) {
@@ -183,7 +293,7 @@ export function App() {
   return (
     <EditorDndProvider>
       <EditorKeyboardShortcuts readOnlyEditorView={editorView === 'flow'} />
-      <div className={`${styles.root} ${isResizingRightPane ? styles.resizing : ''}`}>
+      <div className={`${styles.root} ${resizingPane ? styles.resizing : ''}`}>
         <header className={styles.header}>
           <span className={styles.logo}>
             <img
@@ -260,9 +370,15 @@ export function App() {
 
         <div className={styles.main} data-delete-focus-fallback tabIndex={-1}>
           {/* Left panel */}
-          <aside className={styles.left} aria-label={t('app.leftPane')}>
+          <aside
+            className={styles.left}
+            style={{ width: leftPaneWidth }}
+            aria-label={t('app.leftPane')}
+          >
             <LeftPane />
           </aside>
+
+          {paneResizeHandle('left')}
 
           <main
             className={styles.editor}
@@ -339,54 +455,7 @@ export function App() {
             </div>
           </main>
 
-          <div
-            className={styles.resizeHandle}
-            data-right-pane-resizer
-            role="separator"
-            aria-label={t('app.resizeRightPane')}
-            aria-orientation="vertical"
-            aria-valuemin={rightPaneBounds.min}
-            aria-valuemax={rightPaneBounds.max}
-            aria-valuenow={rightPaneWidth}
-            tabIndex={0}
-            onPointerDown={event => {
-              if (event.button !== 0) return
-              event.preventDefault()
-              event.stopPropagation()
-              event.currentTarget.setPointerCapture(event.pointerId)
-              resizeStartRef.current = {
-                pointerId: event.pointerId,
-                clientX: event.clientX,
-                width: rightPaneWidth,
-              }
-              setIsResizingRightPane(true)
-            }}
-            onPointerMove={event => {
-              const start = resizeStartRef.current
-              if (!start || start.pointerId !== event.pointerId) return
-              updateRightPaneWidth(start.width + start.clientX - event.clientX)
-            }}
-            onPointerUp={finishRightPaneResize}
-            onPointerCancel={finishRightPaneResize}
-            onLostPointerCapture={event => {
-              if (resizeStartRef.current?.pointerId !== event.pointerId) return
-              resizeStartRef.current = null
-              setIsResizingRightPane(false)
-              persistRightPaneWidth(browserStorage(), rightPaneWidthRef.current)
-            }}
-            onKeyDown={event => {
-              const nextWidth = rightPaneWidthForKey(
-                event.key,
-                rightPaneWidth,
-                viewportWidth,
-                event.shiftKey,
-              )
-              if (nextWidth === null) return
-              event.preventDefault()
-              event.stopPropagation()
-              updateRightPaneWidth(nextWidth, true)
-            }}
-          />
+          {paneResizeHandle('right')}
 
           {/* Right panel */}
           <aside

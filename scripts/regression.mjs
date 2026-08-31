@@ -81,7 +81,7 @@ const componentDisplayLabelBundle = join(temp, 'componentDisplayLabel.mjs')
 const selectorsBundle = join(temp, 'selectors.mjs')
 const messagesBundle = join(temp, 'messages.mjs')
 const localeBundle = join(temp, 'locale.mjs')
-const rightPaneWidthBundle = join(temp, 'rightPaneWidth.mjs')
+const paneWidthsBundle = join(temp, 'paneWidths.mjs')
 const textDraftBundle = join(temp, 'textDraft.mjs')
 const componentBehaviorBundle = join(temp, 'componentBehavior.mjs')
 const canvasViewportMathBundle = join(temp, 'canvasViewportMath.mjs')
@@ -117,7 +117,7 @@ bundle('src/domain/componentDisplayLabel.ts', componentDisplayLabelBundle)
 bundle('src/domain/selectors.ts', selectorsBundle)
 bundle('src/i18n/messages.ts', messagesBundle)
 bundle('src/i18n/locale.ts', localeBundle)
-bundle('src/app/rightPaneWidth.ts', rightPaneWidthBundle)
+bundle('src/app/paneWidths.ts', paneWidthsBundle)
 bundle('src/components/textDraft.ts', textDraftBundle)
 bundle('src/domain/componentBehavior.ts', componentBehaviorBundle)
 bundle('src/features/canvas/canvasViewportMath.ts', canvasViewportMathBundle)
@@ -9129,17 +9129,27 @@ await test('typed localization resolves and persists JA and EN safely', async ()
   )
 })
 
-await test('right specification pane resizing clamps and persists safely', async () => {
+await test('editor pane resizing shares coherent bounds and persists safely', async () => {
   const {
+    DEFAULT_LEFT_PANE_WIDTH,
     DEFAULT_RIGHT_PANE_WIDTH,
+    LEFT_PANE_WIDTH_STORAGE_KEY,
+    MAX_LEFT_PANE_WIDTH,
+    MIN_EDITOR_WIDTH,
+    MIN_LEFT_PANE_WIDTH,
     MIN_RIGHT_PANE_WIDTH,
+    PANE_RESIZE_HANDLE_WIDTH,
     RIGHT_PANE_WIDTH_STORAGE_KEY,
+    clampLeftPaneWidth,
     clampRightPaneWidth,
+    getLeftPaneWidthBounds,
     getRightPaneWidthBounds,
-    persistRightPaneWidth,
+    paneWidthForKey,
+    persistPaneWidth,
+    resolveInitialLeftPaneWidth,
     resolveInitialRightPaneWidth,
-    rightPaneWidthForKey,
-  } = await import(moduleUrl(rightPaneWidthBundle, 'right-pane-preference'))
+    resolvePaneWidths,
+  } = await import(moduleUrl(paneWidthsBundle, 'pane-preferences'))
   const values = new Map()
   const storage = {
     getItem(key) { return values.get(key) ?? null },
@@ -9147,65 +9157,107 @@ await test('right specification pane resizing clamps and persists safely', async
   }
 
   assert(
-    resolveInitialRightPaneWidth(storage, 1440) === DEFAULT_RIGHT_PANE_WIDTH,
-    'right pane did not use its wider default',
+    resolveInitialLeftPaneWidth(storage) === DEFAULT_LEFT_PANE_WIDTH &&
+      resolveInitialRightPaneWidth(storage) === DEFAULT_RIGHT_PANE_WIDTH,
+    'editor panes did not use their established defaults',
+  )
+  values.set(LEFT_PANE_WIDTH_STORAGE_KEY, '9999')
+  assert(
+    resolveInitialLeftPaneWidth(storage) === MAX_LEFT_PANE_WIDTH,
+    'oversized stored left width was not clamped',
+  )
+  values.set(LEFT_PANE_WIDTH_STORAGE_KEY, '100')
+  assert(
+    resolveInitialLeftPaneWidth(storage) === MIN_LEFT_PANE_WIDTH,
+    'undersized stored left width was not clamped',
+  )
+  values.set(LEFT_PANE_WIDTH_STORAGE_KEY, 'NaN')
+  assert(
+    resolveInitialLeftPaneWidth(storage) === DEFAULT_LEFT_PANE_WIDTH,
+    'invalid stored left width did not fall back safely',
+  )
+  assert(
+    resolveInitialLeftPaneWidth({
+      getItem() { throw new DOMException('Denied', 'SecurityError') },
+    }) === DEFAULT_LEFT_PANE_WIDTH,
+    'left pane storage read failure escaped',
   )
   values.set(RIGHT_PANE_WIDTH_STORAGE_KEY, '9999')
-  assert(
-    resolveInitialRightPaneWidth(storage, 1000) === getRightPaneWidthBounds(1000).max,
-    'oversized stored width was not clamped',
-  )
-  values.set(RIGHT_PANE_WIDTH_STORAGE_KEY, '100')
-  assert(
-    resolveInitialRightPaneWidth(storage, 1000) === MIN_RIGHT_PANE_WIDTH,
-    'undersized stored width was not clamped',
-  )
-  values.set(RIGHT_PANE_WIDTH_STORAGE_KEY, 'NaN')
-  assert(
-    resolveInitialRightPaneWidth(storage, 1440) === DEFAULT_RIGHT_PANE_WIDTH,
-    'invalid stored width did not fall back safely',
+  const oversizedRight = resolvePaneWidths(
+    DEFAULT_LEFT_PANE_WIDTH,
+    resolveInitialRightPaneWidth(storage),
+    1000,
   )
   assert(
-    resolveInitialRightPaneWidth({
-      getItem() { throw new DOMException('Denied', 'SecurityError') },
-    }, 1440) === DEFAULT_RIGHT_PANE_WIDTH,
-    'right pane storage read failure escaped',
+    oversizedRight.right === getRightPaneWidthBounds(1000, oversizedRight.left).max,
+    'oversized stored right width was not clamped by the live layout',
   )
   assert(
-    !persistRightPaneWidth({
+    !persistPaneWidth({
       setItem() { throw new DOMException('Denied', 'SecurityError') },
-    }, 400),
-    'right pane storage write failure escaped',
+    }, LEFT_PANE_WIDTH_STORAGE_KEY, 400),
+    'pane storage write failure escaped',
   )
-  assert(persistRightPaneWidth(storage, 400), 'right pane width was not persisted')
-  assert(values.get(RIGHT_PANE_WIDTH_STORAGE_KEY) === '400', 'persisted width is incorrect')
+  assert(
+    persistPaneWidth(storage, LEFT_PANE_WIDTH_STORAGE_KEY, 340) &&
+      persistPaneWidth(storage, RIGHT_PANE_WIDTH_STORAGE_KEY, 400) &&
+      values.get(LEFT_PANE_WIDTH_STORAGE_KEY) === '340' &&
+      values.get(RIGHT_PANE_WIDTH_STORAGE_KEY) === '400',
+    'pane widths were not persisted under their independent keys',
+  )
 
+  const leftBounds = getLeftPaneWidthBounds(1440, 380)
+  const rightBounds = getRightPaneWidthBounds(1440, 220)
   assert(
-    rightPaneWidthForKey('ArrowLeft', 380, 1440) === 388 &&
-      rightPaneWidthForKey('ArrowRight', 380, 1440) === 372 &&
-      rightPaneWidthForKey('ArrowRight', 380, 1440, true) === 348,
-    'keyboard resize direction or step is incorrect',
+    paneWidthForKey('left', 'ArrowLeft', 220, leftBounds) === 212 &&
+      paneWidthForKey('left', 'ArrowRight', 220, leftBounds) === 228 &&
+      paneWidthForKey('left', 'ArrowRight', 220, leftBounds, true) === 252 &&
+      paneWidthForKey('right', 'ArrowLeft', 380, rightBounds) === 388 &&
+      paneWidthForKey('right', 'ArrowRight', 380, rightBounds) === 372,
+    'left or right keyboard resize direction and step is incorrect',
   )
   assert(
-    rightPaneWidthForKey('Home', 380, 1000) === MIN_RIGHT_PANE_WIDTH &&
-      rightPaneWidthForKey('End', 380, 1000) === getRightPaneWidthBounds(1000).max &&
-      rightPaneWidthForKey('Escape', 380, 1000) === null,
+    paneWidthForKey('left', 'Home', 380, leftBounds) === MIN_LEFT_PANE_WIDTH &&
+      paneWidthForKey('left', 'End', 220, leftBounds) === leftBounds.max &&
+      paneWidthForKey('right', 'Home', 380, rightBounds) === MIN_RIGHT_PANE_WIDTH &&
+      paneWidthForKey('right', 'End', 380, rightBounds) === rightBounds.max &&
+      paneWidthForKey('left', 'Escape', 220, leftBounds) === null,
     'keyboard resize limits or unrelated-key handling is incorrect',
   )
+
+  const constrained = resolvePaneWidths(480, 700, 1280)
   assert(
-    clampRightPaneWidth(380, 900) === getRightPaneWidthBounds(900).max,
-    'viewport resize did not preserve the minimum canvas width',
+    constrained.left >= MIN_LEFT_PANE_WIDTH &&
+      constrained.left <= MAX_LEFT_PANE_WIDTH &&
+      constrained.right >= MIN_RIGHT_PANE_WIDTH &&
+      constrained.left +
+        constrained.right +
+        MIN_EDITOR_WIDTH +
+        PANE_RESIZE_HANDLE_WIDTH * 2 <= 1280 &&
+      clampLeftPaneWidth(9999, 1280, constrained.right) ===
+        getLeftPaneWidthBounds(1280, constrained.right).max &&
+      clampRightPaneWidth(9999, 1280, constrained.left) ===
+        getRightPaneWidthBounds(1280, constrained.left).max,
+    'coupled pane bounds did not preserve the minimum editor width',
+  )
+  assert(
+    resolvePaneWidths(420, 520, 899).left === 420 &&
+      resolvePaneWidths(420, 520, 899).right === 520,
+    'stacked layout discarded preferred pane widths before desktop restoration',
   )
 
   const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
   assert(
-    appSource.includes('role="separator"') &&
+    appSource.includes("paneResizeHandle('left')") &&
+      appSource.includes("paneResizeHandle('right')") &&
+      appSource.includes('data-left-pane-resizer=') &&
+      appSource.includes('data-right-pane-resizer=') &&
       appSource.includes('aria-orientation="vertical"') &&
       appSource.includes('setPointerCapture') &&
-      appSource.includes('onPointerCancel={finishRightPaneResize}') &&
+      appSource.includes('onPointerCancel={finishPaneResize}') &&
       appSource.includes('onLostPointerCapture='),
-    'split-pane separator lacks pointer capture cleanup or accessibility metadata',
+    'shared split-pane separators lack pointer capture cleanup or accessibility metadata',
   )
   assert(
     appStyles.includes('cursor: col-resize') &&
@@ -9215,6 +9267,92 @@ await test('right specification pane resizing clamps and persists safely', async
       appStyles.includes('display: none'),
     'split-pane feedback or stacked responsive behavior is missing',
   )
+
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  Object.defineProperty(globalThis, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: 1280,
+  })
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppBundle, 'pane-resize-dom')
+  )
+  const harness = mountReviewLockApp('en')
+  const leftHandle = document.querySelector('[data-left-pane-resizer]')
+  const rightHandle = document.querySelector('[data-right-pane-resizer]')
+  const leftPane = document.querySelector('aside[aria-label="Project navigation"]')
+  const rightPane = document.querySelector('aside[aria-label="Details"]')
+  assert(
+    leftHandle &&
+      rightHandle &&
+      leftPane.style.width === '220px' &&
+      rightPane.style.width === '380px' &&
+      leftHandle.getAttribute('role') === 'separator' &&
+      leftHandle.getAttribute('aria-orientation') === 'vertical' &&
+      Number(leftHandle.getAttribute('aria-valuemin')) === MIN_LEFT_PANE_WIDTH &&
+      Number(leftHandle.getAttribute('aria-valuemax')) > DEFAULT_LEFT_PANE_WIDTH,
+    'mounted editor did not expose both bounded pane separators',
+  )
+  harness.pointer(leftHandle, 'pointerdown', {
+    pointerId: 71,
+    clientX: 220,
+  })
+  const activeLeftHandle = document.querySelector('[data-left-pane-resizer]')
+  assert(
+    activeLeftHandle.getAttribute('data-resizing') === 'true',
+    'left pane pointer start did not expose active resize feedback',
+  )
+  harness.pointer(
+    document.querySelector('[data-left-pane-resizer]'),
+    'pointercancel',
+    {
+      pointerId: 71,
+      clientX: 220,
+    },
+  )
+  const settledLeftHandle = document.querySelector('[data-left-pane-resizer]')
+  assert(
+    memoryStorage.getItem(LEFT_PANE_WIDTH_STORAGE_KEY) === '220' &&
+      !settledLeftHandle.hasAttribute('data-resizing'),
+    'left pane pointer cancellation did not persist or clean up',
+  )
+  harness.keyDown(settledLeftHandle, 'ArrowRight')
+  assert(
+    leftPane.style.width === '228px' &&
+      memoryStorage.getItem(LEFT_PANE_WIDTH_STORAGE_KEY) === '228',
+    'left pane keyboard resize did not widen and persist',
+  )
+  harness.keyDown(document.querySelector('[data-left-pane-resizer]'), 'ArrowLeft', {
+    shiftKey: true,
+  })
+  assert(leftPane.style.width === '196px', 'left pane large keyboard step is incorrect')
+  harness.keyDown(document.querySelector('[data-left-pane-resizer]'), 'Home')
+  assert(leftPane.style.width === '180px', 'left pane Home did not use its minimum')
+  const endLeftHandle = document.querySelector('[data-left-pane-resizer]')
+  const mountedMax = Number(endLeftHandle.getAttribute('aria-valuemax'))
+  harness.keyDown(endLeftHandle, 'End')
+  assert(
+    leftPane.style.width === `${mountedMax}px` &&
+      Number(rightHandle.getAttribute('aria-valuemax')) <=
+        getRightPaneWidthBounds(1280, mountedMax).max,
+    'left pane End or coupled right bounds are stale',
+  )
+  harness.pointer(rightHandle, 'pointerdown', {
+    pointerId: 72,
+    clientX: 900,
+  })
+  harness.pointer(rightHandle, 'pointercancel', {
+    pointerId: 72,
+    clientX: 850,
+  })
+  assert(
+    memoryStorage.getItem(RIGHT_PANE_WIDTH_STORAGE_KEY) ===
+      rightPane.style.width.replace('px', ''),
+    'right pane pointer cancellation did not use shared cleanup',
+  )
+  harness.unmount()
 })
 
 await test('Changes review UI is contextual to active change sets', async () => {
