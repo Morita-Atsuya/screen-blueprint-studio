@@ -1045,7 +1045,11 @@ async function run() {
       `document.querySelector('[data-left-pane-resizer]')
         ?.getBoundingClientRect().width === 7 &&
         document.querySelector('[data-left-pane-resizer]')
-          ?.getAttribute('aria-valuenow') === '340'`,
+          ?.getAttribute('aria-valuenow') === '340' &&
+        Number(document.querySelector('[data-left-pane-resizer]')
+          ?.getAttribute('aria-valuemax')) >= 340 &&
+        Number(document.querySelector('[data-right-pane-resizer]')
+          ?.getAttribute('aria-valuemax')) > 300`,
       'desktop layout did not restore the preferred left pane width',
     )
     await cdp.call('Runtime.evaluate', {
@@ -1476,205 +1480,276 @@ async function run() {
       )) && !document.querySelector('[data-drag-overlay]')`,
       'successful Container DnD did not persist cleanly across reload',
     )
-    const componentDragPoints = await cdp.call('Runtime.evaluate', {
-      expression: `(() => {
-        const source = document.querySelector(
-          '[data-component-id="comp-task-title-input"]'
-        )
-        const targets = [...document.querySelectorAll(
-          '[data-drop-surface="canvas"][data-drop-parent="browser-empty-container"]'
-        )]
-        const target = targets.at(-1)
-        source.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-        target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-        const sourceRect = source.getBoundingClientRect()
-        const targetRect = target.getBoundingClientRect()
-        return {
-          source: {
+    const componentPoint = async (componentId, targetParentId, targetIndex = -1) => {
+      await waitForExpression(
+        `Boolean(document.querySelector(
+          '[data-component-id=${JSON.stringify(componentId)}]'
+        ))`,
+        `Canvas component ${componentId} did not render before trusted input`,
+      )
+      const result = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const componentId = ${JSON.stringify(componentId)}
+          const source = document.querySelector(
+            '[data-component-id="' + componentId + '"]'
+          )
+          const sourceTarget = source.querySelector(
+            ':scope > [data-container-identity]'
+          ) ?? source
+          const sourceRect = sourceTarget.getBoundingClientRect()
+          const sourcePoint = {
             x: sourceRect.left + sourceRect.width / 2,
             y: sourceRect.top + sourceRect.height / 2,
-          },
-          target: {
-            x: targetRect.left + targetRect.width / 2,
-            y: targetRect.top + targetRect.height / 2,
-          },
-          initialParent: JSON.parse(
-            localStorage.getItem('screen-blueprint-studio:v1')
-          ).document.components['comp-task-title-input'].parentId,
-          draggable: source.getAttribute('data-canvas-draggable'),
-          cursor: getComputedStyle(source).cursor,
-        }
-      })()`,
-      returnByValue: true,
-    })
-    const componentPoints = componentDragPoints.result.value
-    assert(
-      componentPoints.initialParent === 'comp-edit-section' &&
-        componentPoints.draggable === 'true' &&
-        componentPoints.cursor === 'grab',
-      `unlocked Canvas component has no drag affordance: ` +
-        JSON.stringify(componentPoints),
-    )
-    const clickOnlyState = await cdp.call('Runtime.evaluate', {
-      expression: `(async () => {
-        const source = document.querySelector(
-          '[data-component-id="comp-task-title-input"]'
-        )
-        const point = ${JSON.stringify(componentPoints.source)}
-        source.dispatchEvent(new PointerEvent('pointerdown', {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 201,
-          pointerType: 'mouse',
-          isPrimary: true,
-          button: 0,
+          }
+          const hit = document.elementFromPoint(sourcePoint.x, sourcePoint.y)
+          const targets = ${targetParentId === undefined
+            ? '[]'
+            : `[...document.querySelectorAll(
+                '[data-drop-surface="canvas"][data-drop-parent=${JSON.stringify(targetParentId)}]'
+              )]`}
+          const target = targets.length === 0
+            ? null
+            : targets.at(${targetIndex})
+          const targetRect = target?.getBoundingClientRect()
+          return {
+            source: sourcePoint,
+            target: targetRect ? {
+              x: targetRect.left + targetRect.width / 2,
+              y: targetRect.top + targetRect.height / 2,
+            } : {
+              x: sourcePoint.x + 18,
+              y: sourcePoint.y + 9,
+            },
+            hit: {
+              tag: hit?.tagName,
+              componentId: hit?.closest('[data-component-id]')
+                ?.getAttribute('data-component-id'),
+              dragSurface: hit?.closest('[data-drag-surface]')
+                ?.getAttribute('data-drag-surface'),
+            },
+            targetParent: target?.getAttribute('data-drop-parent') ?? null,
+            draggable: source.getAttribute('data-canvas-draggable'),
+            cursor: getComputedStyle(source).cursor,
+          }
+        })()`,
+        returnByValue: true,
+      })
+      return result.result.value
+    }
+
+    const pressTrustedComponent = async (
+      componentId,
+      targetParentId,
+      targetIndex = -1,
+    ) => {
+      const points = await componentPoint(componentId, targetParentId, targetIndex)
+      assert(
+        points.hit.componentId === componentId &&
+          points.hit.dragSurface === 'canvas' &&
+          points.draggable === 'true' &&
+          points.cursor === 'grab' &&
+          (targetParentId === undefined || points.targetParent === targetParentId),
+        `trusted Canvas drag did not start on the production hit target: ` +
+          JSON.stringify({ componentId, points }),
+      )
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+        x: points.source.x,
+        y: points.source.y,
+      })
+      for (const ratio of [0.12, 0.45, 1]) {
+        await cdp.call('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          button: 'left',
           buttons: 1,
-          clientX: point.x,
-          clientY: point.y,
-        }))
-        await new Promise(resolveWait => setTimeout(resolveWait, 100))
-        const whilePressed = {
-          overlay: Boolean(document.querySelector('[data-drag-overlay]')),
-          dragging: source.getAttribute('data-canvas-dragging'),
-        }
-        document.dispatchEvent(new PointerEvent('pointerup', {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 201,
-          pointerType: 'mouse',
-          isPrimary: true,
-          button: 0,
-          buttons: 0,
-          clientX: point.x,
-          clientY: point.y,
-        }))
-        await new Promise(resolveWait => setTimeout(resolveWait, 50))
-        return {
-          whilePressed,
-          afterRelease: {
+          x: points.source.x + (points.target.x - points.source.x) * ratio,
+          y: points.source.y + (points.target.y - points.source.y) * ratio,
+        })
+        await new Promise(resolveWait => setTimeout(resolveWait, 75))
+      }
+      await waitForExpression(
+        `document.querySelector(
+          '[data-component-id=${JSON.stringify(componentId)}]'
+        )?.getAttribute('data-canvas-dragging') === 'true' &&
+          Boolean(document.querySelector('[data-drag-overlay]'))`,
+        `trusted Canvas drag did not activate for ${componentId}`,
+      )
+      const feedback = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const source = document.querySelector(
+            '[data-component-id=${JSON.stringify(componentId)}]'
+          )
+          return {
             overlay: Boolean(document.querySelector('[data-drag-overlay]')),
             dragging: source.getAttribute('data-canvas-dragging'),
-            parentId: JSON.parse(
-              localStorage.getItem('screen-blueprint-studio:v1')
-            ).document.components['comp-task-title-input'].parentId,
-          },
-        }
-      })()`,
-      awaitPromise: true,
-      returnByValue: true,
-    })
-    assert(
-      !clickOnlyState.result.value.whilePressed.overlay &&
-        clickOnlyState.result.value.whilePressed.dragging === null &&
-        !clickOnlyState.result.value.afterRelease.overlay &&
-        clickOnlyState.result.value.afterRelease.dragging === null &&
-        clickOnlyState.result.value.afterRelease.parentId === componentPoints.initialParent,
-      'Canvas component click crossed the pointer drag activation threshold',
-    )
-    await cdp.call('Runtime.evaluate', {
-      expression: `(async () => {
-        const source = document.querySelector(
-          '[data-component-id="comp-task-title-input"]'
-        )
-        const start = ${JSON.stringify(componentPoints.source)}
-        const target = ${JSON.stringify(componentPoints.target)}
-        const pointer = (type, point, buttons) => new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 202,
-          pointerType: 'mouse',
-          isPrimary: true,
-          button: 0,
-          buttons,
-          clientX: point.x,
-          clientY: point.y,
-        })
-        source.dispatchEvent(pointer('pointerdown', start, 1))
-        document.dispatchEvent(pointer(
-          'pointermove',
-          { x: start.x + 10, y: start.y + 10 },
-          1
-        ))
-        await new Promise(resolveWait => setTimeout(resolveWait, 50))
-        document.dispatchEvent(pointer('pointermove', target, 1))
-        await new Promise(resolveWait => setTimeout(resolveWait, 100))
-        return true
-      })()`,
-      awaitPromise: true,
-      returnByValue: true,
-    })
-    const componentDragging = await cdp.call('Runtime.evaluate', {
-      expression: `(() => {
-        const source = document.querySelector(
-          '[data-component-id="comp-task-title-input"]'
-        )
-        return {
-          overlay: Boolean(document.querySelector('[data-drag-overlay]')),
-          dragging: source.getAttribute('data-canvas-dragging'),
-          cursor: getComputedStyle(source).cursor,
-          opacity: getComputedStyle(source).opacity,
-          targetActive: [...document.querySelectorAll(
-            '[data-drop-surface="canvas"][data-drop-parent="browser-empty-container"]'
-          )].some(target => target.className.includes('_over_')),
-        }
-      })()`,
-      returnByValue: true,
-    })
-    assert(
-      componentDragging.result.value.overlay &&
-        componentDragging.result.value.dragging === 'true' &&
-        componentDragging.result.value.cursor === 'grabbing' &&
-        componentDragging.result.value.opacity === '0.3' &&
-        componentDragging.result.value.targetActive,
-      `Canvas component drag did not expose active feedback: ` +
-        JSON.stringify(componentDragging.result.value),
-    )
-    await cdp.call('Runtime.evaluate', {
-      expression: `document.dispatchEvent(new PointerEvent('pointerup', {
-        bubbles: true,
-        cancelable: true,
-        pointerId: 202,
-        pointerType: 'mouse',
-        isPrimary: true,
-        button: 0,
+            cursor: getComputedStyle(source).cursor,
+            opacity: getComputedStyle(source).opacity,
+            targetActive: ${targetParentId === undefined
+              ? 'true'
+              : `[...document.querySelectorAll(
+                  '[data-drop-surface="canvas"][data-drop-parent=${JSON.stringify(targetParentId)}]'
+                )].some(target => target.className.includes('_over_'))`},
+          }
+        })()`,
+        returnByValue: true,
+      })
+      assert(
+        feedback.result.value.overlay &&
+          feedback.result.value.dragging === 'true' &&
+          feedback.result.value.cursor === 'grabbing' &&
+          feedback.result.value.opacity === '0.3' &&
+          feedback.result.value.targetActive,
+        `trusted Canvas drag feedback is incomplete for ${componentId}: ` +
+          JSON.stringify(feedback.result.value),
+      )
+      return points
+    }
+
+    const cancelTrustedComponent = async points => {
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Escape',
+        code: 'Escape',
+        windowsVirtualKeyCode: 27,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Escape',
+        code: 'Escape',
+        windowsVirtualKeyCode: 27,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        button: 'left',
         buttons: 0,
-        clientX: ${componentPoints.target.x},
-        clientY: ${componentPoints.target.y},
-      }))`,
+        clickCount: 1,
+        x: points.target.x,
+        y: points.target.y,
+      })
+      await cdp.call('Page.reload')
+      await waitForExpression(
+        `!document.querySelector('[data-drag-overlay]') &&
+          !document.querySelector('[data-canvas-dragging]') &&
+          Boolean(document.querySelector('[data-canvas-surface]'))`,
+        'trusted Canvas drag cancellation did not clean up',
+      )
+    }
+
+    const releaseTrustedComponent = async points => {
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+        x: points.target.x,
+        y: points.target.y,
+      })
+    }
+
+    const clickPoint = await componentPoint('comp-task-title-input')
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: clickPoint.source.x,
+      y: clickPoint.source.y,
     })
+    await new Promise(resolveWait => setTimeout(resolveWait, 100))
+    const heldClick = await cdp.call('Runtime.evaluate', {
+      expression: `({
+        overlay: Boolean(document.querySelector('[data-drag-overlay]')),
+        dragging: document.querySelector(
+          '[data-component-id="comp-task-title-input"]'
+        ).getAttribute('data-canvas-dragging'),
+      })`,
+      returnByValue: true,
+    })
+    assert(
+      !heldClick.result.value.overlay &&
+        heldClick.result.value.dragging === null,
+      'trusted stationary Canvas press crossed the drag activation threshold',
+    )
     await cdp.call('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       button: 'left',
       buttons: 0,
       clickCount: 1,
-      x: componentPoints.target.x,
-      y: componentPoints.target.y,
+      x: clickPoint.source.x,
+      y: clickPoint.source.y,
     })
-    await new Promise(resolveWait => setTimeout(resolveWait, 150))
-    const componentDropResult = await cdp.call('Runtime.evaluate', {
-      expression: `(() => ({
-        parentId: JSON.parse(
-          localStorage.getItem('screen-blueprint-studio:v1')
-        ).document.components['comp-task-title-input'].parentId,
-        renderedInTarget: Boolean(document.querySelector(
-          '[data-component-id="browser-empty-container"] ' +
-          '[data-component-id="comp-task-title-input"]'
-        )),
-        dragging: document.querySelector(
-          '[data-component-id="comp-task-title-input"]'
-        )?.getAttribute('data-canvas-dragging'),
-        overlay: Boolean(document.querySelector('[data-drag-overlay]')),
-        toast: [...document.querySelectorAll('[role="alert"]')]
-          .map(alert => alert.textContent.trim()),
-      }))()`,
-      returnByValue: true,
-    })
-    assert(
-      componentDropResult.result.value.parentId === 'browser-empty-container' &&
-        componentDropResult.result.value.renderedInTarget &&
-        componentDropResult.result.value.dragging === null,
-      `real Canvas component drag did not move into the target Container: ` +
-        JSON.stringify(componentDropResult.result.value),
+
+    for (const componentId of [
+      'comp-edit-title',
+      'comp-task-title-input',
+      'comp-save-btn',
+      'browser-nested-container',
+    ]) {
+      const points = await pressTrustedComponent(componentId)
+      await cancelTrustedComponent(points)
+    }
+
+    const buttonPoints = await pressTrustedComponent('comp-save-btn', 'comp-actions', 0)
+    await releaseTrustedComponent(buttonPoints)
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-actions'].childIds[0] === 'comp-save-btn'`,
+      'trusted Canvas Button drag did not reorder within its parent',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-actions'].childIds[0] === 'comp-save-btn' &&
+        !document.querySelector('[data-drag-overlay]')`,
+      'trusted Canvas Button reorder did not persist across reload',
+    )
+
+    const inputPoints = await pressTrustedComponent(
+      'comp-task-title-input',
+      'browser-empty-container',
+      -1,
+    )
+    await releaseTrustedComponent(inputPoints)
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-task-title-input'].parentId ===
+          'browser-empty-container'`,
+      'trusted Canvas Input drag did not reparent into the target Container',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-component-id="browser-empty-container"] ' +
+        '[data-component-id="comp-task-title-input"]'
+      )) && !document.querySelector('[data-drag-overlay]')`,
+      'trusted Canvas Input reparent did not persist across reload',
+    )
+
+    const containerPoints = await pressTrustedComponent(
+      'browser-nested-container',
+      'browser-empty-container',
+      -1,
+    )
+    await releaseTrustedComponent(containerPoints)
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['browser-nested-container'].parentId ===
+          'browser-empty-container'`,
+      'trusted Canvas Container drag did not reparent',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-component-id="browser-empty-container"] ' +
+        '[data-component-id="browser-nested-container"]'
+      )) &&
+        JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+          .document.components['comp-actions'].childIds[0] === 'comp-save-btn' &&
+        !document.querySelector('[data-drag-overlay]')`,
+      'trusted Canvas component moves did not persist together across reload',
     )
     await cdp.call('Runtime.evaluate', {
       expression: `(() => {
@@ -1700,54 +1775,62 @@ async function run() {
       )) && !document.querySelector('[data-drag-overlay]')`,
       'post-DnD focus review state did not restore',
     )
+    const lockedPoints = await componentPoint('comp-task-title-input')
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: lockedPoints.source.x,
+      y: lockedPoints.source.y,
+    })
+    for (const distance of [8, 20, 36]) {
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'left',
+        buttons: 1,
+        x: lockedPoints.source.x + distance,
+        y: lockedPoints.source.y + distance / 2,
+      })
+      await new Promise(resolveWait => setTimeout(resolveWait, 50))
+    }
     const lockedCanvasDrag = await cdp.call('Runtime.evaluate', {
-      expression: `(async () => {
+      expression: `(() => {
         const source = document.querySelector(
           '[data-component-id="comp-task-title-input"]'
         )
-        const before = JSON.parse(
-          localStorage.getItem('screen-blueprint-studio:v1')
-        ).document.components['comp-task-title-input'].parentId
-        const rect = source.getBoundingClientRect()
-        const point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-        const pointer = (type, x, y, buttons) => new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 203,
-          pointerType: 'mouse',
-          isPrimary: true,
-          button: 0,
-          buttons,
-          clientX: x,
-          clientY: y,
-        })
-        source.dispatchEvent(pointer('pointerdown', point.x, point.y, 1))
-        document.dispatchEvent(pointer('pointermove', point.x + 30, point.y + 20, 1))
-        await new Promise(resolveWait => setTimeout(resolveWait, 100))
-        const during = {
+        return {
+          parent: JSON.parse(
+            localStorage.getItem('screen-blueprint-studio:v1')
+          ).document.components['comp-task-title-input'].parentId,
           draggable: source.getAttribute('data-canvas-draggable'),
           dragging: source.getAttribute('data-canvas-dragging'),
           cursor: getComputedStyle(source).cursor,
           overlay: Boolean(document.querySelector('[data-drag-overlay]')),
+          hitComponent: document.elementFromPoint(
+            ${lockedPoints.source.x},
+            ${lockedPoints.source.y}
+          )?.closest('[data-component-id]')?.getAttribute('data-component-id'),
         }
-        document.dispatchEvent(pointer('pointerup', point.x + 30, point.y + 20, 0))
-        await new Promise(resolveWait => setTimeout(resolveWait, 50))
-        const after = JSON.parse(
-          localStorage.getItem('screen-blueprint-studio:v1')
-        ).document.components['comp-task-title-input'].parentId
-        return { before, during, after }
       })()`,
-      awaitPromise: true,
       returnByValue: true,
     })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      x: lockedPoints.source.x + 36,
+      y: lockedPoints.source.y + 18,
+    })
     assert(
-      lockedCanvasDrag.result.value.before === 'browser-empty-container' &&
-        lockedCanvasDrag.result.value.after === 'browser-empty-container' &&
-        lockedCanvasDrag.result.value.during.draggable === null &&
-        lockedCanvasDrag.result.value.during.dragging === null &&
-        lockedCanvasDrag.result.value.during.cursor !== 'grab' &&
-        lockedCanvasDrag.result.value.during.cursor !== 'grabbing' &&
-        !lockedCanvasDrag.result.value.during.overlay,
+      lockedCanvasDrag.result.value.parent === 'browser-empty-container' &&
+        lockedCanvasDrag.result.value.hitComponent === 'comp-task-title-input' &&
+        lockedCanvasDrag.result.value.draggable === null &&
+        lockedCanvasDrag.result.value.dragging === null &&
+        lockedCanvasDrag.result.value.cursor !== 'grab' &&
+        lockedCanvasDrag.result.value.cursor !== 'grabbing' &&
+        !lockedCanvasDrag.result.value.overlay,
       `review-locked Canvas exposed or started component dragging: ` +
         JSON.stringify(lockedCanvasDrag.result.value),
     )

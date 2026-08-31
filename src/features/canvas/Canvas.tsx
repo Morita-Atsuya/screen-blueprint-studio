@@ -446,13 +446,17 @@ function CanvasComponent({
           label: displayName,
         }
       : undefined,
-    disabled: { draggable: isRoot || reviewLocked, droppable: true },
+    disabled: {
+      draggable: isRoot || reviewLocked || spacePanActive,
+      droppable: true,
+    },
   })
 
   if (!component) return null
   if (!component.common.visible && !independentRoot) return null
   const isSelected = selectedComponentId === component.id
   const isHovered = hoveredComponentId === component.id
+  const canDrag = !isRoot && !reviewLocked && !spacePanActive
   const isContainer = CONTAINER_KINDS.includes(component.kind)
   const layout = hasLayout(component.config) ? component.config : null
   const dropOrientation = layout?.layout === 'horizontal'
@@ -487,10 +491,10 @@ function CanvasComponent({
       ref={setNodeRef}
       className={[
         styles.comp,
-        !isRoot && !reviewLocked ? styles.draggable : '',
+        canDrag ? styles.draggable : '',
         isSelected ? styles.selected : '',
         isHovered ? styles.hovered : '',
-        isDragging && !reviewLocked ? styles.dragging : '',
+        isDragging && canDrag ? styles.dragging : '',
         component.kind === 'button' ? styles.buttonComponent : '',
         component.kind === 'container' ? styles.containerComponent : '',
         component.kind === 'container' && component.childIds.length === 0
@@ -500,8 +504,8 @@ function CanvasComponent({
         component.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}
       style={style}
-      {...(!isRoot && !reviewLocked ? attributes : {})}
-      {...(!isRoot && !reviewLocked ? listeners : {})}
+      {...(canDrag ? attributes : {})}
+      {...(canDrag ? listeners : {})}
       tabIndex={isRoot || reviewLocked ? -1 : 0}
       aria-label={isRoot || reviewLocked ? displayName : t('canvas.dragAria', { label: displayName })}
       title={reviewLocked && !isRoot ? t('changes.editLocked') : undefined}
@@ -517,37 +521,32 @@ function CanvasComponent({
         onSelect(component.id)
         addMenu.openFromPointer(event, component.id)
       }}
-      onPointerDown={event => {
-        event.stopPropagation()
-        if (spacePanActive || event.button === 1) return
-        if (!isRoot && !reviewLocked) listeners?.onPointerDown?.(event)
-      }}
-      onTouchStart={event => {
-        event.stopPropagation()
-        if (spacePanActive) return
-        if (!isRoot && !reviewLocked) listeners?.onTouchStart?.(event)
-      }}
-      onKeyDown={event => {
+      onKeyDownCapture={event => {
+        const closestComponent = (event.target as HTMLElement)
+          .closest<HTMLElement>('[data-component-id]')
+        if (closestComponent !== event.currentTarget) return
         if (addMenu.openFromKeyboard(event, component.id)) {
           onSelect(component.id)
+          event.stopPropagation()
           return
         }
         if (active) return
-        event.stopPropagation()
-        if (!isRoot && !reviewLocked) listeners?.onKeyDown?.(event)
+        if (event.key !== ' ' && event.key !== 'Enter') event.stopPropagation()
       }}
       onPointerMove={event => {
-        event.stopPropagation()
+        const closestComponent = (event.target as HTMLElement)
+          .closest<HTMLElement>('[data-component-id]')
+        if (closestComponent !== event.currentTarget) return
         if (!isHovered) onHover(component.id)
       }}
       data-component-id={component.id}
       data-editor-hovered={isHovered || undefined}
       data-editor-selected={isSelected || undefined}
       data-component-visible={component.common.visible}
-      data-canvas-draggable={!isRoot && !reviewLocked || undefined}
-      data-canvas-dragging={isDragging && !reviewLocked || undefined}
-      data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}
-      data-drag-component={!isRoot && !reviewLocked ? component.id : undefined}
+      data-canvas-draggable={canDrag || undefined}
+      data-canvas-dragging={isDragging && canDrag || undefined}
+      data-drag-surface={canDrag ? 'canvas' : undefined}
+      data-drag-component={canDrag ? component.id : undefined}
       data-component-change={changeStatus}
       data-container-component={component.kind === 'container' || undefined}
       data-container-empty={

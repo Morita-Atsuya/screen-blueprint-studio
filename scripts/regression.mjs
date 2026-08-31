@@ -8445,31 +8445,31 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
     'Canvas still renders a dedicated drag grip',
   )
   assert(
-    canvasSource.includes('{...(!isRoot && !reviewLocked ? attributes : {})}') &&
-      canvasSource.includes('{...(!isRoot && !reviewLocked ? listeners : {})}') &&
-      canvasSource.includes("!isRoot && !reviewLocked ? styles.draggable : ''") &&
-      canvasSource.includes("isDragging && !reviewLocked ? styles.dragging : ''") &&
+    canvasSource.includes('const canDrag = !isRoot && !reviewLocked && !spacePanActive') &&
+      canvasSource.includes('{...(canDrag ? attributes : {})}') &&
+      canvasSource.includes('{...(canDrag ? listeners : {})}') &&
+      canvasSource.includes('canDrag ? styles.draggable :') &&
+      canvasSource.includes('isDragging && canDrag ? styles.dragging :') &&
       canvasSource.includes('tabIndex={isRoot || reviewLocked ? -1 : 0}') &&
-      canvasSource.includes("data-canvas-draggable={!isRoot && !reviewLocked || undefined}") &&
-      canvasSource.includes(
-        'data-canvas-dragging={isDragging && !reviewLocked || undefined}',
-      ) &&
-      canvasSource.includes("data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}") &&
+      canvasSource.includes('data-canvas-draggable={canDrag || undefined}') &&
+      canvasSource.includes('data-canvas-dragging={isDragging && canDrag || undefined}') &&
+      canvasSource.includes("data-drag-surface={canDrag ? 'canvas' : undefined}") &&
       canvasSource.includes(
         "aria-label={isRoot || reviewLocked ? displayName : t('canvas.dragAria', { label: displayName })}",
       ),
     'non-root Canvas wrappers are not accessible whole-surface drag activators',
   )
   assert(
-    canvasSource.includes('disabled: { draggable: isRoot || reviewLocked, droppable: true }') &&
-      canvasSource.includes('if (!isRoot && !reviewLocked) listeners?.onPointerDown?.(event)') &&
-      canvasSource.includes('if (!isRoot && !reviewLocked) listeners?.onTouchStart?.(event)') &&
-    canvasSource.match(
-      /onKeyDown=\{event => \{[\s\S]*?if \(active\) return\s*event\.stopPropagation\(\)/,
-    ) &&
-    canvasSource.includes('if (!isRoot && !reviewLocked) listeners?.onKeyDown?.(event)') &&
-    canvasSource.match(/onPointerDown=\{event => \{\s*event\.stopPropagation\(\)/),
-    'root gating or nested activator event isolation is missing',
+    canvasSource.includes('draggable: isRoot || reviewLocked || spacePanActive') &&
+      !canvasSource.includes('listeners?.onPointerDown?.(event)') &&
+      !canvasSource.includes('listeners?.onTouchStart?.(event)') &&
+      !canvasSource.includes('listeners?.onKeyDown?.(event)') &&
+      /onKeyDownCapture=\{event => \{[\s\S]*?closest<HTMLElement>\('\[data-component-id\]'\)[\s\S]*?if \(closestComponent !== event\.currentTarget\) return[\s\S]*?addMenu\.openFromKeyboard/.test(
+        canvasSource,
+      ) &&
+      canvasSource.includes("if (event.key !== ' ' && event.key !== 'Enter')") &&
+      !canvasSource.match(/onPointerMove=\{event => \{\s*event\.stopPropagation\(\)/),
+    'Canvas still manually forwards dnd activators or blocks the document pointer sensor',
   )
   assert(
     dndSource.includes('PointerSensor, { activationConstraint: { distance: 5 } }') &&
