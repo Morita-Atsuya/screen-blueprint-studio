@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import Ajv2020 from 'ajv/dist/2020.js'
 import { parseHTML } from 'linkedom'
 
 const root = resolve(import.meta.dirname, '..')
@@ -105,6 +106,7 @@ const renderAppBundle = join(temp, 'renderApp.mjs')
 const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
 const mountDeleteDialogBundle = join(temp, 'mountDeleteDialog.mjs')
 const migratePersistedDataBundle = join(temp, 'migratePersistedData.mjs')
+const canonicalProjectSpecV3Bundle = join(temp, 'canonicalProjectSpecV3.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -137,6 +139,7 @@ bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
 bundle('src/features/inspector/inspectorSections.ts', inspectorSectionsBundle)
 bundle('src/domain/screenFlow.ts', screenFlowBundle)
 bundle('src/persistence/migratePersistedData.ts', migratePersistedDataBundle)
+bundle('src/domain/canonicalProjectSpecV3.ts', canonicalProjectSpecV3Bundle)
 bundle(
   'scripts/fixtures/renderInspector.tsx',
   renderInspectorBundle,
@@ -365,6 +368,277 @@ async function freshStore(caseName) {
   const module = await import(moduleUrl(appStoreBundle, caseName))
   return module.useAppStore
 }
+
+await test('canonical v3 contracts, schema, references, and example stay aligned', async () => {
+  const schemaSource = readFileSync(
+    join(root, 'public/schemas/screen-blueprint-project-v3.schema.json'),
+    'utf8',
+  )
+  const exampleSource = readFileSync(
+    join(root, 'public/examples/screen-blueprint-project-v3.json'),
+    'utf8',
+  )
+  const schema = JSON.parse(schemaSource)
+  const example = JSON.parse(exampleSource)
+  const contracts = await import(moduleUrl(canonicalProjectSpecV3Bundle, 'canonical-v3'))
+  const ajv = new Ajv2020({ allErrors: true, strict: true })
+  const validate = ajv.compile(schema)
+  const isValid = value => validate(value)
+  const validationErrors = () => ajv.errorsText(validate.errors, { separator: '\n' })
+
+  assert(isValid(example), `public v3 example failed its schema:\n${validationErrors()}`)
+  assert(
+    !schemaSource.toLowerCase().includes('revision') &&
+      !exampleSource.toLowerCase().includes('revision'),
+    'canonical v3 schema or example contains workspace version metadata',
+  )
+  const canonicalKeys = [
+    '$schema',
+    'kind',
+    'schemaVersion',
+    'project',
+    'componentDefinitions',
+    'screens',
+    'components',
+    'screenScenarios',
+    'events',
+    'apiOperations',
+  ]
+  assert(
+    JSON.stringify(Object.keys(schema.properties)) === JSON.stringify(canonicalKeys) &&
+      JSON.stringify(schema.required) === JSON.stringify(canonicalKeys) &&
+      JSON.stringify(Object.keys(example)) === JSON.stringify(canonicalKeys),
+    'canonical v3 top-level shape is not exact',
+  )
+  const versionedExample = clone(example)
+  versionedExample.revision = 1
+  assert(!isValid(versionedExample), 'canonical v3 schema accepted revision metadata')
+  assert(
+    JSON.stringify(JSON.parse(JSON.stringify(example))) === JSON.stringify(example),
+    'public v3 example did not round-trip without semantic change',
+  )
+  assert(
+    schema.$id === contracts.CANONICAL_PROJECT_SCHEMA_URL_V3 &&
+      example.$schema === contracts.CANONICAL_PROJECT_SCHEMA_URL_V3 &&
+      schema.properties.$schema.const === contracts.CANONICAL_PROJECT_SCHEMA_URL_V3 &&
+      schema.properties.kind.const === contracts.CANONICAL_PROJECT_KIND_V3 &&
+      schema.properties.schemaVersion.const === contracts.CANONICAL_PROJECT_SCHEMA_VERSION_V3,
+    'canonical v3 identity constants drifted from the public schema or example',
+  )
+
+  const componentKinds = schema.$defs.componentConfig.oneOf.map(
+    branch => branch.properties.kind.const,
+  )
+  const publicPropTypes = [
+    ...schema.$defs.publicProp.oneOf[0].properties.type.enum,
+    schema.$defs.publicProp.oneOf[1].properties.type.const,
+  ]
+  const eventActionTypes = schema.$defs.eventAction.oneOf.map(
+    branch => branch.properties.type.const,
+  )
+  assert(
+    JSON.stringify(componentKinds) === JSON.stringify(contracts.COMPONENT_KINDS_V3) &&
+      JSON.stringify(publicPropTypes) === JSON.stringify(contracts.PUBLIC_PROP_TYPES_V3) &&
+      JSON.stringify(schema.$defs.eventTrigger.properties.type.enum) ===
+        JSON.stringify(contracts.EVENT_TRIGGER_TYPES_V3) &&
+      JSON.stringify(eventActionTypes) === JSON.stringify(contracts.EVENT_ACTION_TYPES_V3) &&
+      JSON.stringify(schema.$defs.apiOperation.properties.method.enum) ===
+        JSON.stringify(contracts.HTTP_METHODS_V3) &&
+      JSON.stringify(schema.$defs.publicPropBinding.properties.field.enum) ===
+        JSON.stringify(contracts.PUBLIC_PROP_FIELDS_V3) &&
+      JSON.stringify(Object.keys(schema.$defs.variantCommonOverride.properties)) ===
+        JSON.stringify(contracts.VARIANT_COMMON_OVERRIDE_FIELDS_V3) &&
+      JSON.stringify(Object.keys(schema.$defs.variantConfigOverride.properties)) ===
+        JSON.stringify(contracts.VARIANT_CONFIG_OVERRIDE_FIELDS_V3),
+    'canonical v3 TypeScript catalogs drifted from JSON Schema',
+  )
+
+  const sourceRef = example.components['shared-header'].source.$ref
+  const resolvedDefinition = contracts.resolveComponentDefinitionRefV3(example, sourceRef)
+  assert(
+    sourceRef === contracts.componentDefinitionRefV3('shared/header') &&
+      contracts.parseComponentDefinitionRefV3(sourceRef) === 'shared/header' &&
+      resolvedDefinition === example.componentDefinitions['shared/header'],
+    'portable source.$ref did not resolve by RFC 6901 escaping to the exact definition',
+  )
+  for (const definitionId of ['percent%id', 'space id', 'hash#id', '日本語', 'a/b~c']) {
+    const candidate = clone(example)
+    const definition = clone(resolvedDefinition)
+    definition.id = definitionId
+    candidate.componentDefinitions[definitionId] = definition
+    const ref = contracts.componentDefinitionRefV3(definitionId)
+    candidate.components['shared-header'].source.$ref = ref
+    assert(
+      isValid(candidate) &&
+        contracts.parseComponentDefinitionRefV3(ref) === definitionId &&
+        contracts.resolveComponentDefinitionRefV3(candidate, ref) ===
+          candidate.componentDefinitions[definitionId],
+      `portable source.$ref did not round-trip URI-fragment ID ${definitionId}: ${ref}`,
+    )
+  }
+  assert(
+    Object.values(example.components)
+        .filter(component => component.nodeType === 'inline').length === 1 &&
+      Object.values(example.components)
+        .filter(component => component.nodeType === 'definitionInstance').length === 1 &&
+      resolvedDefinition.name === 'Shared Header' &&
+      resolvedDefinition.publicProps[0].key === 'title' &&
+      !Object.hasOwn(resolvedDefinition.publicProps[0], 'defaultValue') &&
+      resolvedDefinition.representativeVariantId === 'comfortable' &&
+      example.components['shared-header'].variantId === 'comfortable' &&
+      example.components['shared-header'].props.title === 'Welcome' &&
+      JSON.stringify(resolvedDefinition.publicProps[0].bindings[0].nodePath) ===
+        JSON.stringify(['header-title']) &&
+      resolvedDefinition.publicProps[0].bindings[0].field === 'config.text' &&
+      JSON.stringify(resolvedDefinition.variants.map(variant => variant.name)) ===
+        JSON.stringify(['Comfortable', 'Compact']) &&
+      Object.keys(example.screenScenarios).length === 1 &&
+      example.events['activate-loading'].trigger.target.type === 'definitionNode',
+    'public v3 example does not demonstrate the approved Stage 1 contract',
+  )
+
+  for (const invalidRef of [
+    'https://example.com/components/header.json',
+    '#/componentDefinitions/shared/header',
+    '#/componentDefinitions/shared~2header',
+    '#/componentDefinitions/a%2Fb',
+    '#/componentDefinitions/%41',
+    '#/componentDefinitions/%7E1',
+    '#/componentDefinitions/%FF',
+    '#/componentDefinitions/hash#id',
+    '#/componentDefinitions/space id',
+    '#/componentDefinitions/%E6%97%A5%e6%9c%ac',
+    '#/componentDefinitions/',
+  ]) {
+    const candidate = clone(example)
+    candidate.components['shared-header'].source.$ref = invalidRef
+    assert(!isValid(candidate), `public schema accepted invalid source.$ref ${invalidRef}`)
+    let rejected = false
+    try {
+      contracts.resolveComponentDefinitionRefV3(candidate, invalidRef)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `reference helper accepted invalid source.$ref ${invalidRef}`)
+  }
+  const unresolvedRef = '#/componentDefinitions/missing'
+  let unresolvedRejected = false
+  try {
+    contracts.resolveComponentDefinitionRefV3(example, unresolvedRef)
+  } catch {
+    unresolvedRejected = true
+  }
+  assert(unresolvedRejected, 'reference helper accepted an unresolved local definition reference')
+  const sourceWithSibling = clone(example)
+  sourceWithSibling.components['shared-header'].source.definitionId = 'shared/header'
+  assert(!isValid(sourceWithSibling), 'source accepted a $ref sibling')
+
+  const missingScenarioIds = clone(example)
+  delete missingScenarioIds.screens.home.scenarioIds
+  assert(!isValid(missingScenarioIds), 'screen accepted missing scenarioIds')
+  for (const legacyField of ['defaultStateId', 'stateIds']) {
+    const legacyScreen = clone(example)
+    legacyScreen.screens.home[legacyField] = legacyField === 'stateIds' ? [] : 'base'
+    assert(!isValid(legacyScreen), `screen accepted legacy ${legacyField}`)
+  }
+
+  const publicPropWithDefault = clone(example)
+  publicPropWithDefault.componentDefinitions['shared/header'].publicProps[0].defaultValue = 'Title'
+  assert(!isValid(publicPropWithDefault), 'public prop accepted defaultValue')
+  const nullProp = clone(example)
+  nullProp.components['shared-header'].props.title = null
+  assert(!isValid(nullProp), 'instance prop accepted null instead of inheriting by omission')
+  const missingRepresentative = clone(example)
+  delete missingRepresentative.componentDefinitions['shared/header'].representativeVariantId
+  assert(!isValid(missingRepresentative), 'Definition accepted a missing representative Variant')
+
+  const mismatchedKind = clone(example)
+  mismatchedKind.components['home-page'].config.kind = 'container'
+  assert(!isValid(mismatchedKind), 'inline component accepted mismatched kind and config.kind')
+
+  for (const nodePath of [[], [0], ['header-root', 0]]) {
+    const invalidTarget = clone(example)
+    invalidTarget.events['activate-loading'].trigger.target.nodePath = nodePath
+    assert(
+      !isValid(invalidTarget),
+      `definitionNode target accepted invalid stable-ID nodePath ${JSON.stringify(nodePath)}`,
+    )
+  }
+
+  const forbiddenVariantFields = [
+    'id',
+    'kind',
+    'nodeType',
+    'parentId',
+    'childIds',
+    'source',
+    'variantId',
+    'props',
+    'eventId',
+    'fieldKey',
+    'options',
+    'validationRules',
+  ]
+  for (const field of forbiddenVariantFields) {
+    const invalidVariant = clone(example)
+    invalidVariant.componentDefinitions['shared/header'].variants[0].nodeOverrides[
+      'header-root'
+    ].config[field] = field === 'childIds' ? [] : 'changed'
+    assert(!isValid(invalidVariant), `variant override accepted topology field ${field}`)
+  }
+  const flattenedVariant = clone(example)
+  flattenedVariant.componentDefinitions['shared/header'].variants[0]
+    .nodeOverrides['header-root'].gap = 'sm'
+  assert(!isValid(flattenedVariant), 'variant override accepted a flattened config field')
+  const legacyScenarioShape = clone(example)
+  legacyScenarioShape.screenScenarios.loading.componentOverrides[0].fields = { text: 'Wait' }
+  delete legacyScenarioShape.screenScenarios.loading.componentOverrides[0].override
+  assert(!isValid(legacyScenarioShape), 'Scenario accepted broad or legacy fields shape')
+
+  const reservedIds = [
+    ...new Set([
+      ...Object.getOwnPropertyNames(Object.prototype),
+      '__proto__',
+      'prototype',
+      'constructor',
+    ]),
+  ].sort()
+  assert(
+    JSON.stringify([...schema.$defs.entityId.allOf[1].not.enum].sort()) ===
+      JSON.stringify(reservedIds),
+    'canonical schema reserved entity IDs drifted from runtime protection',
+  )
+  for (const reservedId of reservedIds) {
+    const reservedEntity = clone(example)
+    Object.defineProperty(reservedEntity.components, reservedId, {
+      enumerable: true,
+      value: clone(reservedEntity.components['home-page']),
+    })
+    reservedEntity.components[reservedId].id = reservedId
+    assert(!isValid(reservedEntity), `canonical schema accepted reserved entity ID ${reservedId}`)
+  }
+  const combinations = example.componentDefinitions['shared/header'].variants.map(
+    variant => JSON.stringify(
+      Object.entries(variant.propertyValues).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+  )
+  assert(
+    new Set(combinations).size === combinations.length,
+    'public example variants repeat a property/value combination',
+  )
+  contracts.assertUniqueVariantPropertyCombinationsV3(resolvedDefinition)
+  const duplicateCombination = clone(resolvedDefinition)
+  duplicateCombination.variants[1].propertyValues = clone(
+    duplicateCombination.variants[0].propertyValues,
+  )
+  let duplicateRejected = false
+  try {
+    contracts.assertUniqueVariantPropertyCombinationsV3(duplicateCombination)
+  } catch {
+    duplicateRejected = true
+  }
+  assert(duplicateRejected, 'variant contract accepted a duplicate property/value combination')
+})
 
 await test('schema v1 sections migrate to containers across persisted change set data', async () => {
   memoryStorage.clear()

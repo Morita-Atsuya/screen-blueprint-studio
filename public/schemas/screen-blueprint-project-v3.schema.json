@@ -1,0 +1,854 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morita-atsuya.github.io/screen-blueprint-studio/schemas/screen-blueprint-project-v3.schema.json",
+  "title": "Screen Blueprint Project v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "kind",
+    "schemaVersion",
+    "project",
+    "componentDefinitions",
+    "screens",
+    "components",
+    "screenScenarios",
+    "events",
+    "apiOperations"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://morita-atsuya.github.io/screen-blueprint-studio/schemas/screen-blueprint-project-v3.schema.json"
+    },
+    "kind": { "const": "screen-blueprint-project" },
+    "schemaVersion": { "const": 3 },
+    "project": { "$ref": "#/$defs/project" },
+    "componentDefinitions": { "$ref": "#/$defs/definitionMap" },
+    "screens": { "$ref": "#/$defs/screenMap" },
+    "components": { "$ref": "#/$defs/screenNodeMap" },
+    "screenScenarios": { "$ref": "#/$defs/scenarioMap" },
+    "events": { "$ref": "#/$defs/eventMap" },
+    "apiOperations": { "$ref": "#/$defs/apiMap" }
+  },
+  "$defs": {
+    "entityId": {
+      "allOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "not": {
+            "enum": [
+              "__defineGetter__",
+              "__defineSetter__",
+              "__lookupGetter__",
+              "__lookupSetter__",
+              "__proto__",
+              "constructor",
+              "hasOwnProperty",
+              "isPrototypeOf",
+              "propertyIsEnumerable",
+              "prototype",
+              "toLocaleString",
+              "toString",
+              "valueOf"
+            ]
+          }
+        }
+      ]
+    },
+    "nullableEntityId": {
+      "anyOf": [
+        { "$ref": "#/$defs/entityId" },
+        { "type": "null" }
+      ]
+    },
+    "idArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entityId" },
+      "uniqueItems": true
+    },
+    "nodePath": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Stable definition-local node IDs traversed from inside an instance root. A direct child uses one ID, nested definitions add each local instance/node ID, and the definition root itself uses its rootNodeId.",
+      "items": { "$ref": "#/$defs/entityId" }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "screenIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "screenIds": { "$ref": "#/$defs/idArray" }
+      }
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "route",
+        "rootComponentId",
+        "modalComponentIds",
+        "scenarioIds",
+        "eventIds"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "route": { "type": "string" },
+        "rootComponentId": { "$ref": "#/$defs/entityId" },
+        "modalComponentIds": { "$ref": "#/$defs/idArray" },
+        "scenarioIds": { "$ref": "#/$defs/idArray" },
+        "eventIds": { "$ref": "#/$defs/idArray" }
+      }
+    },
+    "screenMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/entityId" },
+      "additionalProperties": { "$ref": "#/$defs/screen" }
+    },
+    "common": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "visible", "enabled"],
+      "properties": {
+        "description": { "type": "string" },
+        "visible": { "type": "boolean" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "validationRule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "type", "message"],
+          "properties": {
+            "id": { "$ref": "#/$defs/entityId" },
+            "type": { "enum": ["required", "email"] },
+            "message": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "type", "value", "message"],
+          "properties": {
+            "id": { "$ref": "#/$defs/entityId" },
+            "type": { "enum": ["minLength", "maxLength"] },
+            "value": { "type": "integer", "minimum": 0 },
+            "message": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "type", "value", "message"],
+          "properties": {
+            "id": { "$ref": "#/$defs/entityId" },
+            "type": { "const": "pattern" },
+            "value": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "type", "description", "message"],
+          "properties": {
+            "id": { "$ref": "#/$defs/entityId" },
+            "type": { "const": "custom" },
+            "description": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "componentConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "layout", "gap", "columns", "justify", "align", "wrap"],
+          "properties": {
+            "kind": { "const": "page" },
+            "layout": { "enum": ["vertical", "horizontal", "grid"] },
+            "gap": { "enum": ["none", "sm", "md", "lg"] },
+            "columns": { "enum": [1, 2, 3, 4] },
+            "justify": { "enum": ["start", "center", "end", "between"] },
+            "align": { "enum": ["start", "center", "end", "stretch"] },
+            "wrap": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "layout", "gap", "columns", "justify", "align", "wrap"],
+          "properties": {
+            "kind": { "const": "container" },
+            "layout": { "enum": ["vertical", "horizontal", "grid"] },
+            "gap": { "enum": ["none", "sm", "md", "lg"] },
+            "columns": { "enum": [1, 2, 3, 4] },
+            "justify": { "enum": ["start", "center", "end", "between"] },
+            "align": { "enum": ["start", "center", "end", "stretch"] },
+            "wrap": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text", "style"],
+          "properties": {
+            "kind": { "const": "text" },
+            "text": { "type": "string" },
+            "style": { "enum": ["heading1", "heading2", "heading3", "body", "caption"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fieldKey",
+            "label",
+            "inputType",
+            "required",
+            "placeholder",
+            "defaultValue",
+            "validationRules"
+          ],
+          "properties": {
+            "kind": { "const": "textInput" },
+            "fieldKey": { "type": "string" },
+            "label": { "type": "string" },
+            "inputType": { "enum": ["text", "email", "password"] },
+            "required": { "type": "boolean" },
+            "placeholder": { "type": "string" },
+            "defaultValue": { "type": "string" },
+            "validationRules": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/validationRule" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "fieldKey", "label", "required", "options", "defaultValue"],
+          "properties": {
+            "kind": { "const": "select" },
+            "fieldKey": { "type": "string" },
+            "label": { "type": "string" },
+            "required": { "type": "boolean" },
+            "options": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/option" }
+            },
+            "defaultValue": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "label",
+            "variant",
+            "eventId",
+            "confirmationMessage",
+            "preventDoubleSubmit"
+          ],
+          "properties": {
+            "kind": { "const": "button" },
+            "label": { "type": "string" },
+            "variant": { "enum": ["primary", "secondary", "danger"] },
+            "eventId": { "$ref": "#/$defs/nullableEntityId" },
+            "confirmationMessage": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "null" }
+              ]
+            },
+            "preventDoubleSubmit": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "tone", "message"],
+          "properties": {
+            "kind": { "const": "alert" },
+            "tone": { "enum": ["info", "success", "warning", "error"] },
+            "message": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "layout", "gap", "columns", "justify", "align", "wrap"],
+          "properties": {
+            "kind": { "const": "modal" },
+            "layout": { "enum": ["vertical", "horizontal", "grid"] },
+            "gap": { "enum": ["none", "sm", "md", "lg"] },
+            "columns": { "enum": [1, 2, 3, 4] },
+            "justify": { "enum": ["start", "center", "end", "between"] },
+            "align": { "enum": ["start", "center", "end", "stretch"] },
+            "wrap": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "kindMatchesConfig": {
+      "allOf": [
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "page" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "page" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "container" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "container" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "text" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "text" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "textInput" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "textInput" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "select" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "select" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "button" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "button" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "alert" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "alert" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "modal" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "modal" } }, "required": ["kind"] } } }
+        }
+      ]
+    },
+    "definitionSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$ref"],
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "pattern": "^#/componentDefinitions/(?:[A-Za-z0-9._!()*'-]|~[01]|%(?:[01][0-9A-F]|2(?:0|[2-6]|[BC])|3[A-F]|40|5[B-E]|60|7[B-DF])|%(?:C[2-9A-F]|D[0-9A-F])%[89AB][0-9A-F]|%E0%[AB][0-9A-F]%[89AB][0-9A-F]|%E[1-9ABC]%[89AB][0-9A-F]%[89AB][0-9A-F]|%ED%[89][0-9A-F]%[89AB][0-9A-F]|%E[EF]%[89AB][0-9A-F]%[89AB][0-9A-F]|%F0%[9AB][0-9A-F]%[89AB][0-9A-F]%[89AB][0-9A-F]|%F[1-3]%[89AB][0-9A-F]%[89AB][0-9A-F]%[89AB][0-9A-F]|%F4%8[0-9A-F]%[89AB][0-9A-F]%[89AB][0-9A-F])+$"
+        }
+      }
+    },
+    "props": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" }
+        ]
+      }
+    },
+    "inlineScreenNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeType",
+        "id",
+        "screenId",
+        "parentId",
+        "childIds",
+        "kind",
+        "common",
+        "config"
+      ],
+      "properties": {
+        "nodeType": { "const": "inline" },
+        "id": { "$ref": "#/$defs/entityId" },
+        "screenId": { "$ref": "#/$defs/entityId" },
+        "parentId": { "$ref": "#/$defs/nullableEntityId" },
+        "childIds": { "$ref": "#/$defs/idArray" },
+        "kind": {
+          "enum": ["page", "container", "text", "textInput", "select", "button", "alert", "modal"]
+        },
+        "common": { "$ref": "#/$defs/common" },
+        "config": { "$ref": "#/$defs/componentConfig" }
+      },
+      "allOf": [{ "$ref": "#/$defs/kindMatchesConfig" }]
+    },
+    "definitionInstanceScreenNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeType",
+        "id",
+        "screenId",
+        "parentId",
+        "childIds",
+        "source",
+        "variantId",
+        "props"
+      ],
+      "properties": {
+        "nodeType": { "const": "definitionInstance" },
+        "id": { "$ref": "#/$defs/entityId" },
+        "screenId": { "$ref": "#/$defs/entityId" },
+        "parentId": { "$ref": "#/$defs/nullableEntityId" },
+        "childIds": { "type": "array", "maxItems": 0 },
+        "source": { "$ref": "#/$defs/definitionSource" },
+        "variantId": { "$ref": "#/$defs/nullableEntityId" },
+        "props": { "$ref": "#/$defs/props" }
+      }
+    },
+    "screenNode": {
+      "oneOf": [
+        { "$ref": "#/$defs/inlineScreenNode" },
+        { "$ref": "#/$defs/definitionInstanceScreenNode" }
+      ]
+    },
+    "screenNodeMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/entityId" },
+      "additionalProperties": { "$ref": "#/$defs/screenNode" }
+    },
+    "inlineDefinitionNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeType", "id", "parentId", "childIds", "kind", "common", "config"],
+      "properties": {
+        "nodeType": { "const": "inline" },
+        "id": { "$ref": "#/$defs/entityId" },
+        "parentId": { "$ref": "#/$defs/nullableEntityId" },
+        "childIds": { "$ref": "#/$defs/idArray" },
+        "kind": {
+          "enum": ["page", "container", "text", "textInput", "select", "button", "alert", "modal"]
+        },
+        "common": { "$ref": "#/$defs/common" },
+        "config": { "$ref": "#/$defs/componentConfig" }
+      },
+      "allOf": [{ "$ref": "#/$defs/kindMatchesConfig" }]
+    },
+    "nestedDefinitionInstanceNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeType", "id", "parentId", "childIds", "source", "variantId", "props"],
+      "properties": {
+        "nodeType": { "const": "definitionInstance" },
+        "id": { "$ref": "#/$defs/entityId" },
+        "parentId": { "$ref": "#/$defs/nullableEntityId" },
+        "childIds": { "type": "array", "maxItems": 0 },
+        "source": { "$ref": "#/$defs/definitionSource" },
+        "variantId": { "$ref": "#/$defs/nullableEntityId" },
+        "props": { "$ref": "#/$defs/props" }
+      }
+    },
+    "definitionNode": {
+      "oneOf": [
+        { "$ref": "#/$defs/inlineDefinitionNode" },
+        { "$ref": "#/$defs/nestedDefinitionInstanceNode" }
+      ]
+    },
+    "publicPropBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodePath", "field"],
+      "properties": {
+        "nodePath": { "$ref": "#/$defs/nodePath" },
+        "field": {
+          "enum": [
+            "common.description",
+            "common.visible",
+            "common.enabled",
+            "config.layout",
+            "config.gap",
+            "config.columns",
+            "config.justify",
+            "config.align",
+            "config.wrap",
+            "config.text",
+            "config.style",
+            "config.label",
+            "config.inputType",
+            "config.required",
+            "config.placeholder",
+            "config.defaultValue",
+            "config.variant",
+            "config.confirmationMessage",
+            "config.preventDoubleSubmit",
+            "config.tone",
+            "config.message"
+          ]
+        }
+      }
+    },
+    "publicProp": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key", "name", "description", "type", "bindings"],
+          "properties": {
+            "key": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "type": { "enum": ["string", "boolean", "number"] },
+            "bindings": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/publicPropBinding" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key", "name", "description", "type", "values", "bindings"],
+          "properties": {
+            "key": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "type": { "const": "enum" },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string" }
+            },
+            "bindings": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/publicPropBinding" }
+            }
+          }
+        }
+      ]
+    },
+    "variantProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "description", "values"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "variantCommonOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "description": { "type": "string" },
+        "visible": { "type": "boolean" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "variantConfigOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "layout": { "enum": ["vertical", "horizontal", "grid"] },
+        "gap": { "enum": ["none", "sm", "md", "lg"] },
+        "columns": { "enum": [1, 2, 3, 4] },
+        "justify": { "enum": ["start", "center", "end", "between"] },
+        "align": { "enum": ["start", "center", "end", "stretch"] },
+        "wrap": { "type": "boolean" },
+        "text": { "type": "string" },
+        "style": { "enum": ["heading1", "heading2", "heading3", "body", "caption"] },
+        "label": { "type": "string" },
+        "inputType": { "enum": ["text", "email", "password"] },
+        "required": { "type": "boolean" },
+        "placeholder": { "type": "string" },
+        "defaultValue": { "type": "string" },
+        "variant": { "enum": ["primary", "secondary", "danger"] },
+        "confirmationMessage": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "preventDoubleSubmit": { "type": "boolean" },
+        "tone": { "enum": ["info", "success", "warning", "error"] },
+        "message": { "type": "string" }
+      }
+    },
+    "variantNodeOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "common": { "$ref": "#/$defs/variantCommonOverride" },
+        "config": { "$ref": "#/$defs/variantConfigOverride" }
+      }
+    },
+    "componentVariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "propertyValues", "nodeOverrides"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "propertyValues": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        },
+        "nodeOverrides": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/entityId" },
+          "additionalProperties": { "$ref": "#/$defs/variantNodeOverride" }
+        }
+      }
+    },
+    "componentDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "rootNodeId",
+        "nodes",
+        "publicProps",
+        "variantProperties",
+        "variants",
+        "representativeVariantId"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "rootNodeId": { "$ref": "#/$defs/entityId" },
+        "nodes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/entityId" },
+          "additionalProperties": { "$ref": "#/$defs/definitionNode" }
+        },
+        "publicProps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/publicProp" }
+        },
+        "variantProperties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/variantProperty" }
+        },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/componentVariant" }
+        },
+        "representativeVariantId": { "$ref": "#/$defs/nullableEntityId" }
+      }
+    },
+    "definitionMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/entityId" },
+      "additionalProperties": { "$ref": "#/$defs/componentDefinition" }
+    },
+    "componentTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "componentId"],
+          "properties": {
+            "type": { "const": "inline" },
+            "componentId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instanceId", "nodePath"],
+          "properties": {
+            "type": { "const": "definitionNode" },
+            "instanceId": { "$ref": "#/$defs/entityId" },
+            "nodePath": { "$ref": "#/$defs/nodePath" }
+          }
+        }
+      ]
+    },
+    "componentOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "visible": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "text": { "type": "string" },
+        "message": { "type": "string" },
+        "value": { "type": "string" }
+      }
+    },
+    "scenarioOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "override"],
+      "properties": {
+        "target": { "$ref": "#/$defs/componentTarget" },
+        "override": { "$ref": "#/$defs/componentOverride" }
+      }
+    },
+    "screenScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "screenId", "name", "description", "componentOverrides"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "screenId": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "componentOverrides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scenarioOverride" }
+        }
+      }
+    },
+    "scenarioMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/entityId" },
+      "additionalProperties": { "$ref": "#/$defs/screenScenario" }
+    },
+    "eventTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target"],
+      "properties": {
+        "type": { "enum": ["click", "submit"] },
+        "target": { "$ref": "#/$defs/componentTarget" }
+      }
+    },
+    "eventAction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "scenarioId"],
+          "properties": {
+            "type": { "const": "setScenario" },
+            "scenarioId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "clearScenario" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "apiOperationId"],
+          "properties": {
+            "type": { "const": "callApi" },
+            "apiOperationId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target"],
+          "properties": {
+            "type": { "const": "showAlert" },
+            "target": { "$ref": "#/$defs/componentTarget" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "destinationScreenId"],
+          "properties": {
+            "type": { "const": "navigate" },
+            "destinationScreenId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      ]
+    },
+    "screenEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "screenId", "name", "trigger", "actions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "screenId": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "trigger": { "$ref": "#/$defs/eventTrigger" },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/eventAction" }
+        }
+      }
+    },
+    "eventMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/entityId" },
+      "additionalProperties": { "$ref": "#/$defs/screenEvent" }
+    },
+    "fieldBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "targetPath"],
+      "properties": {
+        "source": { "$ref": "#/$defs/componentTarget" },
+        "targetPath": { "type": "string" }
+      }
+    },
+    "apiOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "screenId",
+        "name",
+        "method",
+        "path",
+        "requestBindings",
+        "successScenarioId",
+        "errorScenarioId"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "screenId": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string" },
+        "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+        "path": { "type": "string" },
+        "requestBindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fieldBinding" }
+        },
+        "successScenarioId": { "$ref": "#/$defs/nullableEntityId" },
+        "errorScenarioId": { "$ref": "#/$defs/nullableEntityId" }
+      }
+    },
+    "apiMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/entityId" },
+      "additionalProperties": { "$ref": "#/$defs/apiOperation" }
+    }
+  }
+}

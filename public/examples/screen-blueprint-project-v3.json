@@ -1,0 +1,213 @@
+{
+  "$schema": "https://morita-atsuya.github.io/screen-blueprint-studio/schemas/screen-blueprint-project-v3.schema.json",
+  "kind": "screen-blueprint-project",
+  "schemaVersion": 3,
+  "project": {
+    "id": "example-project",
+    "name": "Shared Header Example",
+    "screenIds": ["home"]
+  },
+  "componentDefinitions": {
+    "shared/header": {
+      "id": "shared/header",
+      "name": "Shared Header",
+      "description": "A reusable product header with selectable spacing.",
+      "rootNodeId": "header-root",
+      "nodes": {
+        "header-root": {
+          "nodeType": "inline",
+          "id": "header-root",
+          "parentId": null,
+          "childIds": ["header-title"],
+          "kind": "container",
+          "common": {
+            "description": "Header layout",
+            "visible": true,
+            "enabled": true
+          },
+          "config": {
+            "kind": "container",
+            "layout": "horizontal",
+            "gap": "md",
+            "columns": 1,
+            "justify": "between",
+            "align": "center",
+            "wrap": false
+          }
+        },
+        "header-title": {
+          "nodeType": "inline",
+          "id": "header-title",
+          "parentId": "header-root",
+          "childIds": [],
+          "kind": "text",
+          "common": {
+            "description": "Product title",
+            "visible": true,
+            "enabled": true
+          },
+          "config": {
+            "kind": "text",
+            "text": "Screen Blueprint",
+            "style": "heading2"
+          }
+        }
+      },
+      "publicProps": [
+        {
+          "key": "title",
+          "name": "Title",
+          "description": "Text displayed as the product title.",
+          "type": "string",
+          "bindings": [
+            {
+              "nodePath": ["header-title"],
+              "field": "config.text"
+            }
+          ]
+        }
+      ],
+      "variantProperties": [
+        {
+          "key": "density",
+          "name": "Density",
+          "description": "Controls spacing without changing the header topology.",
+          "values": ["comfortable", "compact"]
+        }
+      ],
+      "variants": [
+        {
+          "id": "comfortable",
+          "name": "Comfortable",
+          "propertyValues": {
+            "density": "comfortable"
+          },
+          "nodeOverrides": {
+            "header-root": {
+              "config": {
+                "gap": "md"
+              }
+            }
+          }
+        },
+        {
+          "id": "compact",
+          "name": "Compact",
+          "propertyValues": {
+            "density": "compact"
+          },
+          "nodeOverrides": {
+            "header-root": {
+              "config": {
+                "gap": "sm"
+              }
+            }
+          }
+        }
+      ],
+      "representativeVariantId": "comfortable"
+    }
+  },
+  "screens": {
+    "home": {
+      "id": "home",
+      "name": "Home",
+      "route": "/",
+      "rootComponentId": "home-page",
+      "modalComponentIds": [],
+      "scenarioIds": ["loading"],
+      "eventIds": ["activate-loading"]
+    }
+  },
+  "components": {
+    "home-page": {
+      "nodeType": "inline",
+      "id": "home-page",
+      "screenId": "home",
+      "parentId": null,
+      "childIds": ["shared-header"],
+      "kind": "page",
+      "common": {
+        "description": "Home page",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "page",
+        "layout": "vertical",
+        "gap": "lg",
+        "columns": 1,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "shared-header": {
+      "nodeType": "definitionInstance",
+      "id": "shared-header",
+      "screenId": "home",
+      "parentId": "home-page",
+      "childIds": [],
+      "source": {
+        "$ref": "#/componentDefinitions/shared~1header"
+      },
+      "variantId": "comfortable",
+      "props": {
+        "title": "Welcome"
+      }
+    }
+  },
+  "screenScenarios": {
+    "loading": {
+      "id": "loading",
+      "screenId": "home",
+      "name": "Loading",
+      "description": "Shows a meaningful in-progress presentation.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "definitionNode",
+            "instanceId": "shared-header",
+            "nodePath": ["header-title"]
+          },
+          "override": {
+            "text": "Loading…"
+          }
+        }
+      ]
+    }
+  },
+  "events": {
+    "activate-loading": {
+      "id": "activate-loading",
+      "screenId": "home",
+      "name": "Activate loading scenario",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "definitionNode",
+          "instanceId": "shared-header",
+          "nodePath": ["header-title"]
+        }
+      },
+      "actions": [
+        {
+          "type": "setScenario",
+          "scenarioId": "loading"
+        }
+      ]
+    }
+  },
+  "apiOperations": {
+    "load-home": {
+      "id": "load-home",
+      "screenId": "home",
+      "name": "Load home",
+      "method": "GET",
+      "path": "/api/home",
+      "requestBindings": [],
+      "successScenarioId": null,
+      "errorScenarioId": "loading"
+    }
+  }
+}
