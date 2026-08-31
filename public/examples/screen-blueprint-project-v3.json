@@ -113,6 +113,7 @@
       "id": "home",
       "name": "Home",
       "route": "/",
+      "baseDescription": "The signed-in landing experience before an optional scenario is applied.",
       "rootComponentId": "home-page",
       "modalComponentIds": [],
       "scenarioIds": ["loading"],

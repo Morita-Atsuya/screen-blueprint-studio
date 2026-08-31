@@ -312,11 +312,28 @@ export interface ScreenV3 {
   id: CanonicalEntityIdV3
   name: string
   route: string
+  baseDescription: string
   rootComponentId: CanonicalEntityIdV3
   modalComponentIds: CanonicalEntityIdV3[]
   scenarioIds: CanonicalEntityIdV3[]
   eventIds: CanonicalEntityIdV3[]
 }
+
+export const SCREEN_FIELDS_V3 = [
+  'id',
+  'name',
+  'route',
+  'baseDescription',
+  'rootComponentId',
+  'modalComponentIds',
+  'scenarioIds',
+  'eventIds',
+] as const satisfies readonly (keyof ScreenV3)[]
+
+type AssertNoScreenFieldsMissingV3<T extends never> = T
+export type ScreenFieldsMissingFromCatalogV3 = AssertNoScreenFieldsMissingV3<
+  Exclude<keyof ScreenV3, (typeof SCREEN_FIELDS_V3)[number]>
+>
 
 export interface ProjectV3 {
   id: CanonicalEntityIdV3

@@ -29,6 +29,7 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
   const [description, setDescription] = useState(state?.description ?? '')
   const dialogRef = useRef<HTMLElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const descriptionInputRef = useRef<HTMLTextAreaElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(
     typeof document !== 'undefined' &&
       typeof HTMLElement !== 'undefined' &&
@@ -46,7 +47,9 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
     const dialog = dialogRef.current
     const initialFocus = reviewLocked
       ? dialog?.querySelector<HTMLElement>('[data-dialog-review-actions] button')
-      : nameInputRef.current
+      : isDefault
+        ? descriptionInputRef.current
+        : nameInputRef.current
     initialFocus?.focus()
 
     return () => {
@@ -77,11 +80,11 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
         description,
       }, 'Create screen state')
       if (saved) setActiveState(stateId)
-    } else if (state && !isDefault) {
+    } else if (state) {
       saved = dispatch({
         type: 'updateScreenState',
         stateId: state.id,
-        name: name.trim(),
+        ...(isDefault ? {} : { name: name.trim() }),
         description,
       }, 'Update screen state')
     }
@@ -119,6 +122,8 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        data-state-dialog={mode}
+        data-default-state={isDefault || undefined}
       >
         <div className={styles.header}>
           <h2 id={titleId} className={styles.title}>
@@ -162,20 +167,26 @@ export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps
                 required
                 value={name}
                 onChange={event => setName(event.target.value)}
+                readOnly={isDefault}
+                aria-readonly={isDefault}
+                title={isDefault ? t('states.defaultLocked') : undefined}
+                data-state-name
               />
             </label>
             <label className={styles.field}>
               <span>{t('states.description')}</span>
               <textarea
+                ref={descriptionInputRef}
                 rows={3}
                 value={description}
                 onChange={event => setDescription(event.target.value)}
+                data-state-description
               />
             </label>
           </fieldset>
 
           <div className={styles.actions}>
-            {mode === 'edit' ? (
+            {mode === 'edit' && !isDefault ? (
               <button
                 type="button"
                 className={styles.dangerOutline}

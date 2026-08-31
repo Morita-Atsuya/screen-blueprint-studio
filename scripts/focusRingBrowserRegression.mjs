@@ -2653,6 +2653,162 @@ async function run() {
       )`,
       'review lock did not clear before small-text contrast checks',
     )
+
+    for (const toolbarWidth of [1280, 899, 640]) {
+      await cdp.call('Emulation.setDeviceMetricsOverride', {
+        width: toolbarWidth,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      const toolbarGeometry = await cdp.call('Runtime.evaluate', {
+        expression: `(async () => {
+          const stateIds = [
+            'state-edit-default',
+            'state-edit-saving',
+            'state-edit-success',
+            'state-edit-error',
+            'state-edit-confirm-exit',
+          ]
+          const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+          const samples = []
+          for (const stateId of stateIds) {
+            document.querySelector('[data-state-id="' + stateId + '"]').click()
+            await settle()
+            const bar = document.querySelector('[data-state-bar]').getBoundingClientRect()
+            const actions = document.querySelector('[data-state-actions]').getBoundingClientRect()
+            const tabs = [...document.querySelectorAll('[data-state-id]')].map(tab => {
+              const rect = tab.getBoundingClientRect()
+              return { id: tab.dataset.stateId, top: rect.top }
+            })
+            samples.push({
+              stateId,
+              barHeight: bar.height,
+              actionsWidth: actions.width,
+              actionCount: document.querySelectorAll('[data-state-actions] button').length,
+              tabs,
+            })
+          }
+          return samples
+        })()`,
+        awaitPromise: true,
+        returnByValue: true,
+      })
+      const toolbarSamples = toolbarGeometry.result.value
+      const toolbarBaseline = toolbarSamples[0]
+      assert(
+        toolbarSamples.length === 5 &&
+          toolbarSamples.every(sample => (
+            sample.actionCount === 2 &&
+            Math.abs(sample.barHeight - toolbarBaseline.barHeight) < 0.5 &&
+            Math.abs(sample.actionsWidth - toolbarBaseline.actionsWidth) < 0.5 &&
+            sample.tabs.every((tab, index) => (
+              tab.id === toolbarBaseline.tabs[index].id &&
+              Math.abs(tab.top - toolbarBaseline.tabs[index].top) < 0.5
+            ))
+          )),
+        `${toolbarWidth}px active state changes shifted tab rows or toolbar geometry: ` +
+          JSON.stringify(toolbarSamples),
+      )
+    }
+
+    const defaultDialog = await cdp.call('Runtime.evaluate', {
+      expression: `(async () => {
+        document.querySelector('[data-state-id="state-edit-default"]').click()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        const manage = document.querySelector('[data-state-manage]')
+        manage.focus()
+        manage.click()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        const dialog = document.querySelector(
+          '[data-state-dialog="edit"][data-default-state="true"]'
+        )
+        const name = dialog.querySelector('[data-state-name]')
+        const description = dialog.querySelector('[data-state-description]')
+        const result = {
+          opened: Boolean(dialog),
+          nameReadOnly: name.readOnly,
+          deleteCount: dialog.querySelectorAll('[data-state-delete]').length,
+          manageLabel: document.querySelector('[data-state-manage]').getAttribute('aria-label'),
+        }
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          'value'
+        ).set
+        setter.call(description, 'Base edit experience')
+        description.dispatchEvent(new Event('input', { bubbles: true }))
+        dialog.querySelector('button[type="submit"]').click()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        return result
+      })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    assert(
+      defaultDialog.result.value.opened &&
+      defaultDialog.result.value.nameReadOnly &&
+      defaultDialog.result.value.deleteCount === 0 &&
+      defaultDialog.result.value.manageLabel === 'Edit Default',
+      'Default state dialog did not preserve its fixed-name/editable-description contract: ' +
+        JSON.stringify(defaultDialog.result.value),
+    )
+    await waitForExpression(
+      `document.querySelector('[data-state-description]') === null &&
+        document.querySelector('[data-state-bar]').textContent.includes('Base edit experience') &&
+        JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+          .document.screenStates['state-edit-default'].description === 'Base edit experience'`,
+      'Default state description did not save to Canvas and persistence',
+    )
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'z',
+      code: 'KeyZ',
+      windowsVirtualKeyCode: 90,
+      modifiers: 4,
+    })
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'z',
+      code: 'KeyZ',
+      windowsVirtualKeyCode: 90,
+      modifiers: 4,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-state-bar]').textContent.includes(
+          'Task details are ready to edit'
+        )`,
+      'Undo did not restore the previous Default description',
+    )
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'z',
+      code: 'KeyZ',
+      windowsVirtualKeyCode: 90,
+      modifiers: 12,
+    })
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'z',
+      code: 'KeyZ',
+      windowsVirtualKeyCode: 90,
+      modifiers: 12,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-state-bar]').textContent.includes(
+          'Base edit experience'
+        )`,
+      'Redo did not restore the edited Default description',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `document.querySelector('[data-state-id="state-edit-default"][aria-pressed="true"]') &&
+        document.querySelector('[data-state-actions]')?.children.length === 2 &&
+        document.querySelector('[data-state-bar]').textContent.includes(
+          'Base edit experience'
+        )`,
+      'Default description or stable action slots did not survive reload',
+    )
+
     for (const width of [1280, 899, 640]) {
       await cdp.call('Emulation.setDeviceMetricsOverride', {
         width,

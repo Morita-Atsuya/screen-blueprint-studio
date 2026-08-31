@@ -93,9 +93,9 @@ export function Canvas() {
       }}
       onPointerLeave={() => setHoveredComponentId(null)}
     >
-      <div className={styles.stateBar}>
-        <div className={styles.stateToolbar}>
-          <div className={styles.stateTabs}>
+      <div className={styles.stateBar} data-state-bar>
+        <div className={styles.stateToolbar} data-state-toolbar>
+          <div className={styles.stateTabs} data-state-tabs>
             {screen.stateIds.map(stateId => {
               const state = getOwnEntity(effectiveDocument.screenStates, stateId)
               if (!state) return null
@@ -108,14 +108,15 @@ export function Canvas() {
                   aria-pressed={isActive}
                   aria-describedby={isActive ? activeStateDescriptionId : undefined}
                   title={state.id === screen.defaultStateId ? t('states.defaultLocked') : undefined}
+                  data-state-id={state.id}
                 >
                   {state.name}
                 </button>
               )
             })}
           </div>
-          <div className={styles.stateActions}>
-            {activeState && activeState.id !== screen.defaultStateId ? (
+          <div className={styles.stateActions} data-state-actions>
+            {activeState ? (
               <button
                 type="button"
                 className={styles.stateIconBtn}
@@ -126,6 +127,7 @@ export function Canvas() {
                 }}
                 title={activeChangeSet ? t('changes.editLocked') : t('states.manage')}
                 aria-label={t('states.manageAria', { name: activeState?.name ?? '' })}
+                data-state-manage
               >
                 ⋯
               </button>
@@ -140,6 +142,7 @@ export function Canvas() {
               }}
               title={activeChangeSet ? t('changes.editLocked') : t('states.add')}
               aria-label={t('states.add')}
+              data-state-add
             >
               +
             </button>

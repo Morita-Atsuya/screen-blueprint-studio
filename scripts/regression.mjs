@@ -418,6 +418,19 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
     'public v3 example did not round-trip without semantic change',
   )
   assert(
+    JSON.stringify(schema.$defs.screen.required) ===
+      JSON.stringify(contracts.SCREEN_FIELDS_V3) &&
+      JSON.stringify(Object.keys(schema.$defs.screen.properties)) ===
+        JSON.stringify(contracts.SCREEN_FIELDS_V3) &&
+      JSON.stringify(Object.keys(example.screens.home)) ===
+        JSON.stringify(contracts.SCREEN_FIELDS_V3) &&
+      example.screens.home.baseDescription.length > 0,
+    'portable v3 Screen fields drifted across TypeScript, schema, or example',
+  )
+  const missingBaseDescription = clone(example)
+  delete missingBaseDescription.screens.home.baseDescription
+  assert(!isValid(missingBaseDescription), 'portable v3 Screen accepted a missing Base description')
+  assert(
     schema.$id === contracts.CANONICAL_PROJECT_SCHEMA_URL_V3 &&
       example.$schema === contracts.CANONICAL_PROJECT_SCHEMA_URL_V3 &&
       schema.properties.$schema.const === contracts.CANONICAL_PROJECT_SCHEMA_URL_V3 &&
@@ -5112,6 +5125,34 @@ await test('review lock blocks human document mutations and screen management re
       'cleared state overrides left an empty component entry',
     )
 
+    const beforeDefaultDescription = store.getState().document.revision
+    const originalDefaultDescription =
+      store.getState().document.screenStates['state-list-default'].description
+    store.getState().dispatch({
+      type: 'updateScreenState',
+      stateId: 'state-list-default',
+      description: 'Base task-list experience',
+    }, 'Update default state description')
+    assert(
+      store.getState().document.revision === beforeDefaultDescription + 1 &&
+        store.getState().document.screenStates['state-list-default'].name === 'Default' &&
+        store.getState().document.screenStates['state-list-default'].description ===
+          'Base task-list experience',
+      'default state description metadata was not updated without renaming the state',
+    )
+    store.getState().undo()
+    assert(
+      store.getState().document.screenStates['state-list-default'].description ===
+        originalDefaultDescription,
+      'Undo did not restore the default state description',
+    )
+    store.getState().redo()
+    assert(
+      store.getState().document.screenStates['state-list-default'].description ===
+        'Base task-list experience',
+      'Redo did not restore the default state description',
+    )
+
     const beforeDefaultEdit = store.getState().document.revision
     store.getState().dispatch({
       type: 'updateScreenState',
@@ -5132,6 +5173,8 @@ await test('review lock blocks human document mutations and screen management re
     const reloaded = await freshStore('human-state-editing-reload')
     assert(
       reloaded.getState().document.screenStates['state-human-error'].name === 'Request complete' &&
+        reloaded.getState().document.screenStates['state-list-default'].description ===
+          'Base task-list experience' &&
         reloaded.getState().document.revision > initialRevision,
       'state edits were not persisted',
     )
@@ -5451,9 +5494,13 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     'Canvas context menu did not close before continuing review interactions',
   )
 
+  const editSuccessState = document.querySelector('button[aria-label="Edit Success"]')
+  const defaultStateTab = document.querySelector('[data-state-id="state-edit-default"]')
+  harness.click(defaultStateTab)
   const stateMutationButtons = [
     document.querySelector('button[aria-label="Add state"]'),
-    document.querySelector('button[aria-label="Edit Success"]'),
+    document.querySelector('button[aria-label="Edit Default"]'),
+    editSuccessState,
   ]
   assert(
     stateMutationButtons.every(button => button?.disabled),
@@ -11573,11 +11620,13 @@ await test('editor landmarks, active states, and canvas roots expose correct sem
       leftPane: 'Project navigation',
       rightPane: 'Details',
       rightTabs: 'Details view',
+      defaultManage: 'Edit Default',
     }],
     ['ja', {
       leftPane: 'プロジェクトナビゲーション',
       rightPane: '詳細',
       rightTabs: '詳細表示',
+      defaultManage: 'Defaultを編集',
     }],
   ]) {
     const rendered = renderApp(locale)
@@ -11598,6 +11647,15 @@ await test('editor landmarks, active states, and canvas roots expose correct sem
       leftPane.querySelectorAll('button[aria-current="page"]').length === 1,
       `${locale} Screen list does not expose exactly one active page`,
     )
+    const stateActions = document.querySelector('[data-state-actions]')
+    assert(
+      stateActions?.querySelectorAll('button').length === 2 &&
+        stateActions.querySelector('[data-state-manage]')?.hasAttribute('disabled') &&
+        stateActions.querySelector('[data-state-add]')?.hasAttribute('disabled') &&
+        stateActions.querySelector('[data-state-manage]')?.getAttribute('aria-label') ===
+          expected.defaultManage,
+      `${locale} default state does not reserve operable manage and add action slots`,
+    )
     for (const rootId of ['comp-edit-page', 'comp-discard-modal']) {
       assert(
         document.querySelector(`[data-component-id="${rootId}"]`)?.getAttribute('tabindex') === '-1',
@@ -11610,6 +11668,46 @@ await test('editor landmarks, active states, and canvas roots expose correct sem
       `${locale} review-mode canvas component remains a dead keyboard stop`,
     )
   }
+})
+
+await test('mounted default state dialog exposes description without delete', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppBundle, 'default-state-description')
+  )
+  const harness = mountReviewLockApp('en')
+  const defaultTab = document.querySelector('[data-state-id="state-edit-default"]')
+  assert(defaultTab, 'default state tab did not render')
+  harness.click(defaultTab)
+
+  const actions = document.querySelector('[data-state-actions]')
+  const manage = actions?.querySelector('[data-state-manage]')
+  assert(
+    actions?.querySelectorAll('button').length === 2 &&
+      manage?.getAttribute('aria-label') === 'Edit Default',
+    'default state did not keep the stable two-action toolbar',
+  )
+  harness.click(manage)
+  const dialog = document.querySelector('[data-state-dialog="edit"][data-default-state]')
+  const name = dialog?.querySelector('[data-state-name]')
+  const description = dialog?.querySelector('[data-state-description]')
+  assert(
+    dialog &&
+      name?.getAttribute('aria-readonly') === 'true' &&
+      description &&
+      !dialog.querySelector('[data-state-delete]'),
+    'default state dialog did not expose fixed-name metadata without a delete action: ' +
+      JSON.stringify({
+        dialog: Boolean(dialog),
+        dialogDefault: dialog?.getAttribute('data-default-state'),
+        nameReadOnly: name?.getAttribute('aria-readonly'),
+        description: Boolean(description),
+        delete: Boolean(dialog?.querySelector('[data-state-delete]')),
+      }),
+  )
+  harness.unmount()
 })
 
 await test('Japanese state override guidance uses localized product terms', async () => {
