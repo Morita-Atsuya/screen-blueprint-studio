@@ -574,6 +574,171 @@ async function run() {
       ))`,
       'review UI did not render in Chrome',
     )
+
+    for (const width of [1280, 899, 640]) {
+      await cdp.call('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          localStorage.setItem('screen-blueprint-studio:right-pane-width:v1', '520')
+          localStorage.setItem('screen-blueprint-studio:canvas-zoom:v1', '1.5')
+          return true
+        })()`,
+      })
+      await cdp.call('Page.reload')
+      await waitForExpression(
+        `document.querySelector(
+          '[data-canvas-surface][data-viewport-initialized="true"]'
+        )?.getBoundingClientRect().width > 0`,
+        `${width}px Canvas initial fit did not finish`,
+      )
+      const initialFit = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const viewport = document.querySelector('[data-canvas-viewport]')
+          const surface = document.querySelector('[data-canvas-surface]')
+          const frames = document.querySelector('[data-canvas-frames]')
+          const page = document.querySelector('[data-canvas-frame="page"]')
+          const viewportRect = viewport.getBoundingClientRect()
+          const framesRect = frames.getBoundingClientRect()
+          const pageRect = page.getBoundingClientRect()
+          const margin = 47
+          return {
+            viewport: {
+              left: viewportRect.left,
+              top: viewportRect.top,
+              right: viewportRect.right,
+              bottom: viewportRect.bottom,
+            },
+            framesInsideMargin:
+              framesRect.left >= viewportRect.left + margin &&
+              framesRect.top >= viewportRect.top + margin &&
+              framesRect.right <= viewportRect.right - margin &&
+              framesRect.bottom <= viewportRect.bottom - margin,
+            pageInsideViewport:
+              pageRect.left >= viewportRect.left &&
+              pageRect.top >= viewportRect.top &&
+              pageRect.right <= viewportRect.right &&
+              pageRect.bottom <= viewportRect.bottom,
+            scale: new DOMMatrix(getComputedStyle(surface).transform).a,
+            transform: surface.style.transform,
+            panStart: {
+              x: viewportRect.right - 20,
+              y: viewportRect.top + 20,
+            },
+            overflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          }
+        })()`,
+        returnByValue: true,
+      })
+      const fitted = initialFit.result.value
+      assert(fitted.framesInsideMargin, `${width}px initial Canvas frames missed the fit margin`)
+      assert(fitted.pageInsideViewport, `${width}px initial Page frame remained clipped`)
+      assert(fitted.scale < 1.5, `${width}px oversized persisted zoom was not reduced`)
+      assert(fitted.overflow === 0, `${width}px Canvas initial fit introduced document overflow`)
+
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+        x: fitted.panStart.x,
+        y: fitted.panStart.y,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'left',
+        buttons: 1,
+        x: fitted.panStart.x - 60,
+        y: fitted.panStart.y + 20,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+        x: fitted.panStart.x - 60,
+        y: fitted.panStart.y + 20,
+      })
+      const pannedTransform = await cdp.call('Runtime.evaluate', {
+        expression: `document.querySelector('[data-canvas-surface]').style.transform`,
+        returnByValue: true,
+      })
+      assert(
+        pannedTransform.result.value !== fitted.transform,
+        `${width}px real background pointer drag did not pan`,
+      )
+
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+        x: fitted.panStart.x - 60,
+        y: fitted.panStart.y + 20,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'left',
+        buttons: 1,
+        x: fitted.panStart.x,
+        y: fitted.panStart.y,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+        x: fitted.panStart.x,
+        y: fitted.panStart.y,
+      })
+      const restored = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const surface = document.querySelector('[data-canvas-surface]')
+          const viewport = document.querySelector('[data-canvas-viewport]').getBoundingClientRect()
+          const page = document.querySelector('[data-canvas-frame="page"]').getBoundingClientRect()
+          return {
+            transform: surface.style.transform,
+            pageInside:
+              page.left >= viewport.left &&
+              page.top >= viewport.top &&
+              page.right <= viewport.right &&
+              page.bottom <= viewport.bottom,
+          }
+        })()`,
+        returnByValue: true,
+      })
+      assert(
+        restored.result.value.transform !== pannedTransform.result.value &&
+          restored.result.value.pageInside,
+        `${width}px reverse background drag could not recover the Page`,
+      )
+    }
+
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        localStorage.setItem('screen-blueprint-studio:right-pane-width:v1', '300')
+        localStorage.setItem('screen-blueprint-studio:canvas-zoom:v1', '1')
+        return true
+      })()`,
+    })
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
+      ))`,
+      'review UI did not restore after Canvas viewport checks',
+    )
     await cdp.call('Runtime.evaluate', {
       expression: `document.querySelectorAll(
         '[data-editor-view-switch] > button'

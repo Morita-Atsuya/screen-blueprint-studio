@@ -4729,8 +4729,10 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   const otherScreen = screenButtons.find(button => button.textContent.trim() === 'User List')
   harness.click(otherScreen)
   assert(
-    harness.state().activeScreenId === 'screen-list',
-    'review lock incorrectly blocked Screen selection',
+    harness.state().activeScreenId === 'screen-list' &&
+      document.querySelector('[data-canvas-surface]')
+        ?.getAttribute('data-viewport-initialized') === 'true',
+    'review lock blocked Screen selection or left its Canvas viewport uninitialized',
   )
   const finalProtectedSnapshot = harness.protectedSnapshot()
   const protectedBefore = JSON.parse(lockedSnapshot)
@@ -4740,6 +4742,214 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
   assert(
     finalProtectedSnapshot === lockedSnapshot,
     `UI-only review interactions changed protected document state: ${changedProtectedKeys.join(', ')}`,
+  )
+  harness.unmount()
+})
+
+await test('Canvas DOM supports discoverable pan without stealing component or inner-scroll input', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  let nextAnimationFrameId = 1
+  Object.defineProperties(globalThis, {
+    requestAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: () => nextAnimationFrameId++,
+    },
+    cancelAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    },
+  })
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppBundle, 'canvas-pan-gestures')
+  )
+  const harness = mountReviewLockApp('en')
+  const viewport = document.querySelector('[data-canvas-viewport]')
+  const surface = document.querySelector('[data-canvas-surface]')
+  const component = document.querySelector('[data-component-id="comp-name-input"]')
+  const previewInput = component.querySelector('input')
+  assert(
+    viewport &&
+      surface?.getAttribute('data-viewport-initialized') === 'true' &&
+      viewport.querySelector('[data-editor-chrome][role="group"]')
+        ?.getAttribute('title')?.includes('dragging empty canvas'),
+    'Canvas did not expose an initialized, discoverable pan surface',
+  )
+
+  const initialTransform = surface.getAttribute('style')
+  harness.pointer(viewport, 'pointerdown', { clientX: 100, clientY: 100 })
+  assert(viewport.hasAttribute('data-panning'), 'empty-background primary drag did not start pan')
+  harness.pointer(window, 'pointermove', { clientX: 145, clientY: 130 })
+  harness.pointer(window, 'pointerup', { clientX: 145, clientY: 130 })
+  const backgroundPanTransform = surface.getAttribute('style')
+  assert(
+    backgroundPanTransform !== initialTransform && !viewport.hasAttribute('data-panning'),
+    'empty-background primary drag did not move and finish Canvas pan',
+  )
+  harness.click(viewport)
+  assert(
+    harness.state().selectedComponentId === 'comp-name-input',
+    'pan tail click incorrectly cleared Canvas selection',
+  )
+  harness.click(viewport)
+  assert(
+    harness.state().selectedComponentId === null,
+    'stationary empty-background click no longer clears Canvas selection',
+  )
+
+  harness.click(component)
+  const beforeComponentDrag = surface.getAttribute('style')
+  harness.pointer(component, 'pointerdown', { clientX: 240, clientY: 220 })
+  harness.pointer(window, 'pointermove', { clientX: 275, clientY: 245 })
+  harness.pointer(window, 'pointerup', { clientX: 275, clientY: 245 })
+  assert(
+    surface.getAttribute('style') === beforeComponentDrag,
+    'ordinary component primary drag was stolen by Canvas pan',
+  )
+
+  harness.pointer(component, 'pointerdown', {
+    button: 1,
+    buttons: 4,
+    pointerId: 2,
+    clientX: 240,
+    clientY: 220,
+  })
+  harness.pointer(window, 'pointermove', {
+    button: 1,
+    buttons: 4,
+    pointerId: 2,
+    clientX: 270,
+    clientY: 245,
+  })
+  harness.pointer(window, 'pointerup', {
+    button: 1,
+    buttons: 0,
+    pointerId: 2,
+    clientX: 270,
+    clientY: 245,
+  })
+  const middlePanTransform = surface.getAttribute('style')
+  assert(
+    middlePanTransform !== beforeComponentDrag,
+    'middle drag over a component did not pan the Canvas',
+  )
+  const otherComponent = document.querySelector('[data-component-id="comp-email-input"]')
+  harness.click(otherComponent)
+  assert(
+    harness.state().selectedComponentId === 'comp-email-input',
+    'middle pan swallowed the next primary Canvas click',
+  )
+  const zoomControl = viewport.querySelector('button[title="Zoom in"]')
+  harness.pointer(zoomControl, 'pointerdown', {
+    button: 1,
+    buttons: 4,
+    pointerId: 5,
+    clientX: 300,
+    clientY: 280,
+  })
+  harness.pointer(window, 'pointermove', {
+    button: 1,
+    buttons: 4,
+    pointerId: 5,
+    clientX: 320,
+    clientY: 295,
+  })
+  harness.pointer(window, 'pointerup', {
+    button: 1,
+    buttons: 0,
+    pointerId: 5,
+    clientX: 320,
+    clientY: 295,
+  })
+  assert(
+    surface.getAttribute('style') !== middlePanTransform,
+    'middle drag over Canvas controls did not pan',
+  )
+
+  harness.keyDown(window, ' ', { code: 'Space' })
+  assert(viewport.hasAttribute('data-pan-ready'), 'Space did not expose Canvas pan mode')
+  const beforeSpacePan = surface.getAttribute('style')
+  harness.pointer(component, 'pointerdown', {
+    pointerId: 3,
+    clientX: 260,
+    clientY: 230,
+  })
+  harness.pointer(window, 'pointermove', {
+    pointerId: 3,
+    clientX: 280,
+    clientY: 250,
+  })
+  harness.pointer(window, 'pointerup', {
+    pointerId: 3,
+    clientX: 280,
+    clientY: 250,
+  })
+  harness.keyUp(window, ' ', { code: 'Space' })
+  const spacePanTransform = surface.getAttribute('style')
+  assert(spacePanTransform !== beforeSpacePan, 'Space drag over Canvas content did not pan')
+  harness.click(component)
+  assert(
+    surface.getAttribute('style') === spacePanTransform &&
+      harness.state().selectedComponentId === 'comp-email-input',
+    'Space-pan tail click incorrectly changed Canvas selection',
+  )
+  harness.click(component)
+  assert(
+    harness.state().selectedComponentId === 'comp-name-input',
+    'Space-pan click suppression did not clear after the compatibility click',
+  )
+  harness.click(zoomControl)
+  const postSuppressionZoomTransform = surface.getAttribute('style')
+  assert(
+    postSuppressionZoomTransform !== spacePanTransform,
+    'Space-pan click suppression did not clear after the compatibility click',
+  )
+
+  const backgroundWheel = harness.wheel(viewport, { deltaX: 18, deltaY: 24 })
+  const wheelPanTransform = surface.getAttribute('style')
+  assert(
+    backgroundWheel.defaultPrevented && wheelPanTransform !== postSuppressionZoomTransform,
+    'background wheel/trackpad input did not pan the Canvas',
+  )
+  const innerWheel = harness.wheel(previewInput, { deltaY: 60 })
+  assert(
+    !innerWheel.defaultPrevented && surface.getAttribute('style') === wheelPanTransform,
+    'Canvas stole wheel input from a preview component',
+  )
+  const zoomWheel = harness.wheel(previewInput, {
+    ctrlKey: true,
+    deltaY: -100,
+    clientX: 300,
+    clientY: 300,
+  })
+  assert(
+    zoomWheel.defaultPrevented && surface.getAttribute('style') !== wheelPanTransform,
+    'Ctrl/Meta wheel over content no longer zooms at the pointer',
+  )
+
+  harness.pointer(viewport, 'pointerdown', {
+    pointerId: 4,
+    clientX: 100,
+    clientY: 100,
+  })
+  harness.pointer(window, 'pointermove', {
+    pointerId: 4,
+    clientX: 130,
+    clientY: 125,
+  })
+  harness.pointer(window, 'pointercancel', {
+    pointerId: 4,
+    clientX: 130,
+    clientY: 125,
+  })
+  assert(!viewport.hasAttribute('data-panning'), 'pointer cancellation left Canvas pan active')
+  harness.click(viewport)
+  assert(
+    harness.state().selectedComponentId === null,
+    'canceled pan swallowed the next primary Canvas click',
   )
   harness.unmount()
 })
@@ -5461,6 +5671,62 @@ await test('Canvas auto-pan requires a fresh pointer or touch inside the viewpor
   assert(
     !canAutoPanCanvasDrag(pointer('unknown:button', 120, 130)),
     'Unknown drag source enabled Canvas auto-pan',
+  )
+})
+
+await test('Canvas initial transforms fit readable frames without overriding a lower zoom', async () => {
+  const {
+    FIT_MARGIN,
+    MIN_SCALE,
+    computeInitialFrameTransform,
+  } = await import(moduleUrl(canvasViewportMathBundle, 'canvas-initial-transform'))
+  const viewport = { width: 700, height: 600 }
+  const frames = { x: 0, y: 0, width: 1_200, height: 700 }
+  const primaryPage = { x: 0, y: 0, width: 800, height: 700 }
+  const fitted = computeInitialFrameTransform(frames, primaryPage, viewport, 1.5)
+  assert(fitted && fitted.scale < 1.5, 'oversized persisted zoom was not reduced')
+  assert(
+    fitted.pan.x + frames.x * fitted.scale >= FIT_MARGIN - 0.01 &&
+      fitted.pan.x + (frames.x + frames.width) * fitted.scale <=
+        viewport.width - FIT_MARGIN + 0.01 &&
+      fitted.pan.y + frames.y * fitted.scale >= FIT_MARGIN - 0.01 &&
+      fitted.pan.y + (frames.y + frames.height) * fitted.scale <=
+        viewport.height - FIT_MARGIN + 0.01,
+    'readable frame set did not fit inside the initial margin',
+  )
+
+  const lowerZoom = computeInitialFrameTransform(frames, primaryPage, viewport, 0.4)
+  assert(lowerZoom?.scale === 0.4, 'initial fit unnecessarily zoomed in a lower preference')
+
+  const manyModals = { x: 0, y: 0, width: 10_000, height: 700 }
+  const pageFirst = computeInitialFrameTransform(manyModals, primaryPage, viewport, 1)
+  assert(
+    pageFirst &&
+      pageFirst.scale >= MIN_SCALE &&
+      pageFirst.pan.x + primaryPage.x * pageFirst.scale >= FIT_MARGIN - 0.01 &&
+      pageFirst.pan.x + (primaryPage.x + primaryPage.width) * pageFirst.scale <=
+        viewport.width - FIT_MARGIN + 0.01,
+    'extreme modal width did not preserve an operable primary Page',
+  )
+
+  const switchedFrames = { x: 100, y: 20, width: 900, height: 500 }
+  const switchedPage = { x: 100, y: 20, width: 560, height: 500 }
+  const switched = computeInitialFrameTransform(
+    switchedFrames,
+    switchedPage,
+    viewport,
+    fitted.scale,
+  )
+  assert(
+    switched &&
+      switched.pan.x + switchedFrames.x * switched.scale >= FIT_MARGIN - 0.01 &&
+      switched.pan.x + (switchedFrames.x + switchedFrames.width) * switched.scale <=
+        viewport.width - FIT_MARGIN + 0.01,
+    'screen-switch transform did not fit the replacement frame set',
+  )
+  assert(
+    computeInitialFrameTransform(frames, primaryPage, { width: 0, height: 600 }, 1) === null,
+    'zero-size first measurement produced an initialized transform',
   )
 })
 

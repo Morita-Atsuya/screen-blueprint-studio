@@ -86,19 +86,33 @@
   flex: 1;
   overflow: hidden;
   background: var(--bg);
-}
-
-.wireframe[data-pan-ready] {
   cursor: grab;
 }
 
+.wireframe[data-pan-ready],
 .wireframe[data-panning] {
+  user-select: none;
+}
+
+.wireframe[data-pan-ready],
+.wireframe[data-pan-ready] .comp,
+.wireframe[data-pan-ready] .frameLabel {
+  cursor: grab;
+}
+
+.wireframe[data-panning],
+.wireframe[data-panning] .comp,
+.wireframe[data-panning] .frameLabel {
   cursor: grabbing;
 }
 
 .canvasSurface {
   position: relative;
   width: max-content;
+}
+
+.canvasSurface[data-viewport-initialized='false'] {
+  visibility: hidden;
 }
 
 .frames {

@@ -163,12 +163,19 @@ export function Canvas() {
       <div
         className={styles.wireframe}
         ref={viewport.viewportRef}
-        onPointerDown={viewport.handleViewportPointerDown}
+        onPointerDownCapture={viewport.handleViewportPointerDown}
+        data-canvas-viewport
         data-pan-ready={viewport.isSpacePanMode || undefined}
         data-panning={viewport.isPanning || undefined}
       >
-        <div className={styles.canvasSurface} ref={viewport.surfaceRef} style={viewport.transformStyle}>
-          <div className={styles.frames} ref={viewport.framesRef}>
+        <div
+          className={styles.canvasSurface}
+          ref={viewport.surfaceRef}
+          style={viewport.transformStyle}
+          data-canvas-surface
+          data-viewport-initialized={viewport.isInitialized}
+        >
+          <div className={styles.frames} ref={viewport.framesRef} data-canvas-frames>
             <CanvasFrame
               componentId={screen.rootComponentId}
               frameKind="page"
@@ -184,7 +191,6 @@ export function Canvas() {
               viewportScale={viewport.scale}
               spacePanActive={viewport.isSpacePanMode}
               consumeSuppressedClick={viewport.consumeSuppressedClick}
-              beginPan={viewport.handleViewportPointerDown}
               addMenu={componentAddMenu.trigger}
               componentStatuses={componentChanges?.statuses}
             />
@@ -205,7 +211,6 @@ export function Canvas() {
                 viewportScale={viewport.scale}
                 spacePanActive={viewport.isSpacePanMode}
                 consumeSuppressedClick={viewport.consumeSuppressedClick}
-                beginPan={viewport.handleViewportPointerDown}
                 addMenu={componentAddMenu.trigger}
                 componentStatuses={componentChanges?.statuses}
               />
@@ -249,6 +254,7 @@ function CanvasZoomControls({
       className={styles.zoomControls}
       role="group"
       aria-label={t('canvas.zoom.controlsLabel')}
+      title={t('canvas.panHint')}
       data-editor-chrome
       onClick={event => event.stopPropagation()}
       onPointerDown={event => event.stopPropagation()}
@@ -319,7 +325,6 @@ interface CanvasComponentProps {
   viewportScale: number
   spacePanActive: boolean
   consumeSuppressedClick(): boolean
-  beginPan(event: React.PointerEvent<HTMLDivElement>): void
   addMenu: ComponentAddMenuTrigger
   componentStatuses?: ReadonlyMap<EntityId, ComponentChangeStatus>
   independentRoot?: boolean
@@ -345,7 +350,6 @@ function CanvasFrame({
   viewportScale,
   spacePanActive,
   consumeSuppressedClick,
-  beginPan,
   addMenu,
   componentStatuses,
 }: CanvasFrameProps) {
@@ -391,7 +395,6 @@ function CanvasFrame({
         viewportScale={viewportScale}
         spacePanActive={spacePanActive}
         consumeSuppressedClick={consumeSuppressedClick}
-        beginPan={beginPan}
         addMenu={addMenu}
         componentStatuses={componentStatuses}
         independentRoot
@@ -413,7 +416,6 @@ function CanvasComponent({
   viewportScale,
   spacePanActive,
   consumeSuppressedClick,
-  beginPan,
   addMenu,
   componentStatuses,
   independentRoot = false,
@@ -513,10 +515,7 @@ function CanvasComponent({
       }}
       onPointerDown={event => {
         event.stopPropagation()
-        if (spacePanActive) {
-          beginPan(event)
-          return
-        }
+        if (spacePanActive || event.button === 1) return
         if (!isRoot && !reviewLocked) listeners?.onPointerDown?.(event)
       }}
       onTouchStart={event => {
@@ -601,7 +600,6 @@ function CanvasComponent({
                   viewportScale={viewportScale}
                   spacePanActive={spacePanActive}
                   consumeSuppressedClick={consumeSuppressedClick}
-                  beginPan={beginPan}
                   addMenu={addMenu}
                   componentStatuses={componentStatuses}
                 />

@@ -106,15 +106,73 @@ export function computeFitTransform(
   }
 }
 
-/** Re-centers `target` inside `viewport` while keeping `scale` fixed (used when switching screens). */
-export function centerTransform(target: Rect, viewport: Size, scale: number): ViewportTransform {
-  const safeScale = clampScale(scale)
+function isUsableSize(size: Size): boolean {
+  return Number.isFinite(size.width) && size.width > 0 &&
+    Number.isFinite(size.height) && size.height > 0
+}
+
+function isUsableRect(rect: Rect): boolean {
+  return Number.isFinite(rect.x) && Number.isFinite(rect.y) && isUsableSize(rect)
+}
+
+export function computeUnclampedFitScale(
+  target: Rect,
+  viewport: Size,
+  margin = FIT_MARGIN,
+): number | null {
+  if (!isUsableRect(target) || !isUsableSize(viewport)) return null
+  const availableWidth = Math.max(1, viewport.width - margin * 2)
+  const availableHeight = Math.max(1, viewport.height - margin * 2)
+  return Math.min(availableWidth / target.width, availableHeight / target.height)
+}
+
+function positionTarget(
+  target: Rect,
+  viewport: Size,
+  scale: number,
+  margin: number,
+): Point {
+  const scaledWidth = target.width * scale
+  const scaledHeight = target.height * scale
   return {
-    scale: safeScale,
-    pan: {
-      x: viewport.width / 2 - (target.x + target.width / 2) * safeScale,
-      y: viewport.height / 2 - (target.y + target.height / 2) * safeScale,
-    },
+    x: scaledWidth <= viewport.width - margin * 2
+      ? viewport.width / 2 - (target.x + target.width / 2) * scale
+      : margin - target.x * scale,
+    y: scaledHeight <= viewport.height - margin * 2
+      ? viewport.height / 2 - (target.y + target.height / 2) * scale
+      : margin - target.y * scale,
+  }
+}
+
+/**
+ * Builds the first useful view of a screen without overriding a deliberately low zoom.
+ * All frames are fitted when that remains readable; otherwise the primary Page stays
+ * reachable and additional frames can be discovered with pan.
+ */
+export function computeInitialFrameTransform(
+  frames: Rect,
+  primaryPage: Rect,
+  viewport: Size,
+  preferredScale: number,
+  margin = FIT_MARGIN,
+): ViewportTransform | null {
+  const allFramesFitScale = computeUnclampedFitScale(frames, viewport, margin)
+  const primaryFitScale = computeUnclampedFitScale(primaryPage, viewport, margin)
+  if (allFramesFitScale === null || primaryFitScale === null) return null
+
+  const safePreferredScale = clampScale(preferredScale)
+  if (allFramesFitScale >= MIN_SCALE) {
+    const scale = clampScale(Math.min(safePreferredScale, allFramesFitScale))
+    return {
+      scale,
+      pan: positionTarget(frames, viewport, scale, margin),
+    }
+  }
+
+  const scale = clampScale(Math.min(safePreferredScale, primaryFitScale))
+  return {
+    scale,
+    pan: positionTarget(primaryPage, viewport, scale, margin),
   }
 }
 

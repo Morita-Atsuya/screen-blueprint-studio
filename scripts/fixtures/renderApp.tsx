@@ -199,6 +199,19 @@ export function mountReviewLockApp(locale: Locale = 'en') {
         ...init,
       })
     },
+    wheel(
+      target: EventTarget,
+      init: Record<string, unknown> = {},
+    ) {
+      return dispatchEvent(target, 'wheel', {
+        clientX: 100,
+        clientY: 100,
+        deltaX: 0,
+        deltaY: 0,
+        deltaMode: 0,
+        ...init,
+      })
+    },
     unmount() {
       flushSync(() => root.unmount())
       container.remove()

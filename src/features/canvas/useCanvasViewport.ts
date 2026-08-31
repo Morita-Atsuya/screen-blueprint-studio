@@ -7,14 +7,15 @@ import {
   DEFAULT_SCALE,
   MAX_SCALE,
   MIN_SCALE,
+  WHEEL_ZOOM_SENSITIVITY,
   ZOOM_STEP,
   autoPanVelocity,
   canAutoPanCanvasDrag,
-  centerTransform,
   classifyCanvasAutoPanStart,
   clampPanForVisibility,
   clampScale,
   computeFitTransform,
+  computeInitialFrameTransform,
   isActivatableCanvasTarget,
   isEditableCanvasTarget,
   isPointInsideViewport,
@@ -41,6 +42,7 @@ function browserStorage(): Storage | undefined {
 
 interface PanDragState {
   pointerId: number
+  suppressTrailingClick: boolean
   startClientX: number
   startClientY: number
   startPan: Point
@@ -62,6 +64,7 @@ export interface CanvasViewportControls {
   canZoomIn: boolean
   canZoomOut: boolean
   canFitSelection: boolean
+  isInitialized: boolean
   isSpacePanMode: boolean
   isPanning: boolean
   zoomIn(): void
@@ -91,6 +94,15 @@ function measureViewportSize(node: HTMLElement): Size {
   return { width: rect.width, height: rect.height }
 }
 
+function isPanBackgroundTarget(target: EventTarget | null, viewport: HTMLElement): boolean {
+  if (!(target instanceof Element) || !viewport.contains(target)) return false
+  return !target.closest('[data-canvas-frame], [data-component-id], [data-editor-chrome]')
+}
+
+function isEditorChromeTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest('[data-editor-chrome]'))
+}
+
 export function useCanvasViewport({
   activeScreenId,
   selectedComponentId,
@@ -105,6 +117,7 @@ export function useCanvasViewport({
   }))
   const [isSpaceHeld, setSpaceHeld] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   const transformRef = useRef(transform)
   transformRef.current = transform
@@ -115,7 +128,8 @@ export function useCanvasViewport({
 
   const panDragRef = useRef<PanDragState | null>(null)
   const suppressClickRef = useRef(false)
-  const mountedScreenRef = useRef<EntityId | null>(null)
+  const clickSuppressionFrameRef = useRef<number | null>(null)
+  const initializedScreenRef = useRef<EntityId | null>(null)
   const autoPanDragRef = useRef<CanvasAutoPanStart | null>(null)
   const lastPointerRef = useRef<Point | null>(null)
   const autoPanFrameRef = useRef<number | null>(null)
@@ -175,6 +189,10 @@ export function useCanvasViewport({
   const consumeSuppressedClick = useCallback(() => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false
+      if (clickSuppressionFrameRef.current !== null) {
+        cancelAnimationFrame(clickSuppressionFrameRef.current)
+        clickSuppressionFrameRef.current = null
+      }
       return true
     }
     return false
@@ -184,47 +202,66 @@ export function useCanvasViewport({
   const actionsRef = useRef({ zoomIn, zoomOut, resetZoom, fitAll, fitSelection })
   actionsRef.current = { zoomIn, zoomOut, resetZoom, fitAll, fitSelection }
 
-  // Initial centered view: respect the persisted zoom preference, center on first paint.
-  useLayoutEffect(() => {
+  const initializeScreen = useCallback(() => {
     const viewport = viewportRef.current
     const surface = surfaceRef.current
     const frames = framesRef.current
-    if (!viewport || !surface || !frames) return
-    mountedScreenRef.current = activeScreenId
-    const rect = measureLocalRect(frames, surface, transformRef.current.scale)
-    setTransform(current => centerTransform(rect, measureViewportSize(viewport), current.scale))
-    // Runs once on mount only; screen changes are handled by the effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Screen switches keep the current zoom level but recenter on the new screen's frames.
-  useLayoutEffect(() => {
-    if (mountedScreenRef.current === activeScreenId) return
-    mountedScreenRef.current = activeScreenId
-    const viewport = viewportRef.current
-    const surface = surfaceRef.current
-    const frames = framesRef.current
-    if (!viewport || !surface || !frames) return
-    const rect = measureLocalRect(frames, surface, transformRef.current.scale)
-    setTransform(current => centerTransform(rect, measureViewportSize(viewport), current.scale))
+    const primaryPage = frames?.querySelector<HTMLElement>('[data-canvas-frame="page"]')
+    if (!viewport || !surface || !frames || !primaryPage) return false
+    const currentScale = transformRef.current.scale
+    const next = computeInitialFrameTransform(
+      measureLocalRect(frames, surface, currentScale),
+      measureLocalRect(primaryPage, surface, currentScale),
+      measureViewportSize(viewport),
+      currentScale,
+    )
+    if (!next) return false
+    setTransform(next)
+    initializedScreenRef.current = activeScreenId
+    setIsInitialized(true)
+    return true
   }, [activeScreenId])
+
+  // Initial mount and screen switches fit before paint when geometry is ready.
+  useLayoutEffect(() => {
+    initializedScreenRef.current = null
+    if (!initializeScreen()) setIsInitialized(false)
+  }, [activeScreenId, initializeScreen])
 
   // Persist the zoom preference locally (never part of ProjectDocument).
   useLayoutEffect(() => {
     persistScale(browserStorage(), transform.scale)
   }, [transform.scale])
 
-  // Cmd/Ctrl + wheel (and trackpad pinch, which browsers report as ctrlKey wheel) to zoom at the pointer.
+  // Pinch/Cmd/Ctrl+wheel zooms anywhere; ordinary wheel/trackpad gestures pan empty canvas.
   useLayoutEffect(() => {
     const node = viewportRef.current
     if (!node) return
     function handleWheel(event: WheelEvent) {
-      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        const rect = node!.getBoundingClientRect()
+        const anchor: Point = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        const factor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY)
+        setTransform(current => zoomAtPoint(current, current.scale * factor, anchor))
+        return
+      }
+      if (!isPanBackgroundTarget(event.target, node!)) return
       event.preventDefault()
-      const rect = node!.getBoundingClientRect()
-      const anchor: Point = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-      const factor = Math.exp(-event.deltaY * 0.0025)
-      setTransform(current => zoomAtPoint(current, current.scale * factor, anchor))
+      const unit = event.deltaMode === 1
+        ? 16
+        : event.deltaMode === 2
+          ? node!.getBoundingClientRect().height
+          : 1
+      const horizontal = (event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX) * unit
+      const vertical = (event.shiftKey ? 0 : event.deltaY) * unit
+      setTransform(current => ({
+        ...current,
+        pan: {
+          x: current.pan.x - horizontal,
+          y: current.pan.y - vertical,
+        },
+      }))
     }
     node.addEventListener('wheel', handleWheel, { passive: false })
     return () => node.removeEventListener('wheel', handleWheel)
@@ -290,10 +327,19 @@ export function useCanvasViewport({
   }, [])
 
   const handleViewportPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isSpaceHeldRef.current || event.button !== 0) return
+    const viewport = viewportRef.current
+    const isMiddleDrag = event.button === 1
+    const isSpaceDrag = event.button === 0 &&
+      isSpaceHeldRef.current &&
+      !isEditorChromeTarget(event.target)
+    const isBackgroundDrag = event.button === 0 &&
+      viewport !== null &&
+      isPanBackgroundTarget(event.target, viewport)
+    if (!isMiddleDrag && !isSpaceDrag && !isBackgroundDrag) return
     event.preventDefault()
     panDragRef.current = {
       pointerId: event.pointerId,
+      suppressTrailingClick: event.button === 0,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startPan: transformRef.current.pan,
@@ -316,22 +362,51 @@ export function useCanvasViewport({
         pan: { x: drag.startPan.x + dx, y: drag.startPan.y + dy },
       }))
     }
-    function handlePointerUp(event: PointerEvent) {
+    function finishPan(event: PointerEvent, mayProduceClick: boolean) {
       const drag = panDragRef.current
       if (!drag || drag.pointerId !== event.pointerId) return
-      if (drag.moved) suppressClickRef.current = true
+      if (mayProduceClick && drag.moved && drag.suppressTrailingClick) {
+        suppressClickRef.current = true
+        if (clickSuppressionFrameRef.current !== null) {
+          cancelAnimationFrame(clickSuppressionFrameRef.current)
+        }
+        clickSuppressionFrameRef.current = requestAnimationFrame(() => {
+          suppressClickRef.current = false
+          clickSuppressionFrameRef.current = null
+        })
+      }
+      panDragRef.current = null
+      setIsPanning(false)
+    }
+    function handlePointerUp(event: PointerEvent) {
+      finishPan(event, true)
+    }
+    function handlePointerCancel(event: PointerEvent) {
+      finishPan(event, false)
+    }
+    function handleBlur() {
       panDragRef.current = null
       setIsPanning(false)
     }
     window.addEventListener('pointermove', handlePointerMove, { capture: true })
     window.addEventListener('pointerup', handlePointerUp, { capture: true })
-    window.addEventListener('pointercancel', handlePointerUp, { capture: true })
+    window.addEventListener('pointercancel', handlePointerCancel, { capture: true })
+    window.addEventListener('lostpointercapture', handlePointerCancel, { capture: true })
+    window.addEventListener('blur', handleBlur)
     return () => {
       window.removeEventListener('pointermove', handlePointerMove, { capture: true })
       window.removeEventListener('pointerup', handlePointerUp, { capture: true })
-      window.removeEventListener('pointercancel', handlePointerUp, { capture: true })
+      window.removeEventListener('pointercancel', handlePointerCancel, { capture: true })
+      window.removeEventListener('lostpointercapture', handlePointerCancel, { capture: true })
+      window.removeEventListener('blur', handleBlur)
     }
   }, [isPanning])
+
+  useLayoutEffect(() => () => {
+    if (clickSuppressionFrameRef.current !== null) {
+      cancelAnimationFrame(clickSuppressionFrameRef.current)
+    }
+  }, [])
 
   // Custom auto-pan while dragging components: dnd-kit's built-in autoScroll has nothing to
   // scroll now that the viewport clips instead of scrolling, so we translate the pan ourselves.
@@ -467,13 +542,14 @@ export function useCanvasViewport({
   }), [resetAutoPan, updateAutoPanPointer])
   useDndMonitor(dndMonitorListeners)
 
-  // Keep panned content from getting lost entirely when the viewport shrinks (split resize etc.).
+  // Retry deferred first measurement, then keep user-panned content reachable on pane resize.
   useLayoutEffect(() => {
     const viewport = viewportRef.current
     const surface = surfaceRef.current
     const frames = framesRef.current
     if (!viewport || !surface || !frames) return
     const observer = new ResizeObserver(() => {
+      if (initializedScreenRef.current !== activeScreenId && initializeScreen()) return
       const current = transformRef.current
       const rect = measureLocalRect(frames, surface, current.scale)
       const size = measureViewportSize(viewport)
@@ -484,7 +560,7 @@ export function useCanvasViewport({
     })
     observer.observe(viewport)
     return () => observer.disconnect()
-  }, [])
+  }, [activeScreenId, initializeScreen])
 
   const transformStyle = useMemo<CSSProperties>(() => ({
     transform: `translate(${transform.pan.x}px, ${transform.pan.y}px) scale(${transform.scale})`,
@@ -501,6 +577,7 @@ export function useCanvasViewport({
     canZoomIn: transform.scale < MAX_SCALE - 0.001,
     canZoomOut: transform.scale > MIN_SCALE + 0.001,
     canFitSelection: selectedComponentId !== null,
+    isInitialized,
     isSpacePanMode: isSpaceHeld,
     isPanning,
     zoomIn,
