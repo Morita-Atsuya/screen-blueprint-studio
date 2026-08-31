@@ -2362,38 +2362,43 @@ async function run() {
         !document.querySelector('[data-drag-overlay]')`,
       'Tree pointer reorder did not restore cleanly across reload',
     )
-    const contextPointResult = await cdp.call('Runtime.evaluate', {
-      expression: `(() => {
-        const target = document.querySelector(
-          '[data-component-id="comp-edit-section"]'
-        )
-        const rect = target.getBoundingClientRect()
-        let point = null
-        for (let y = Math.ceil(rect.top); y < Math.floor(rect.bottom) && !point; y += 2) {
-          for (let x = Math.ceil(rect.left); x < Math.floor(rect.right); x += 2) {
-            const owner = document.elementFromPoint(x, y)?.closest('[data-component-id]')
-            if (owner === target) {
-              point = { x, y }
-              break
+    const findContextPoint = async () => {
+      const result = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const target = document.querySelector(
+            '[data-component-id="comp-edit-section"]'
+          )
+          const rect = target.getBoundingClientRect()
+          let point = null
+          for (let y = Math.ceil(rect.top); y < Math.floor(rect.bottom) && !point; y += 2) {
+            for (let x = Math.ceil(rect.left); x < Math.floor(rect.right); x += 2) {
+              const owner = document.elementFromPoint(x, y)?.closest('[data-component-id]')
+              if (owner === target) {
+                point = { x, y }
+                break
+              }
             }
           }
-        }
-        if (!point) return { x: 0, y: 0, componentId: null }
-        return {
-          ...point,
-          componentId: document.elementFromPoint(point.x, point.y)
-            ?.closest('[data-component-id]')?.getAttribute('data-component-id'),
-        }
-      })()`,
-      returnByValue: true,
-    })
-    const contextPoint = contextPointResult.result.value
-    assert(
-      contextPoint.componentId === 'comp-edit-section',
-      'trusted context-menu point did not hit the intended Container: ' +
-        JSON.stringify(contextPoint),
-    )
+          if (!point) return { x: 0, y: 0, componentId: null }
+          return {
+            ...point,
+            componentId: document.elementFromPoint(point.x, point.y)
+              ?.closest('[data-component-id]')?.getAttribute('data-component-id'),
+          }
+        })()`,
+        returnByValue: true,
+      })
+      const point = result.result.value
+      assert(
+        point.componentId === 'comp-edit-section',
+        'trusted context-menu point did not hit the intended Container: ' +
+          JSON.stringify(point),
+      )
+      return point
+    }
+    let contextPoint
     const openContextMenu = async () => {
+      contextPoint = await findContextPoint()
       await cdp.call('Input.dispatchMouseEvent', {
         type: 'mousePressed',
         button: 'right',
@@ -2414,6 +2419,7 @@ async function run() {
         `Boolean(document.querySelector('[data-component-add-menu]'))`,
         'trusted right-click did not open the component menu',
       )
+      return contextPoint
     }
     await openContextMenu()
     const initialMenu = await cdp.call('Runtime.evaluate', {
