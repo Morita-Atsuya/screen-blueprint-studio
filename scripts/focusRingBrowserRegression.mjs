@@ -528,6 +528,42 @@ async function run() {
     browserDocument.screenStates['state-edit-success'].componentOverrides[
       'browser-tree-state-alert'
     ] = { message: 'Ready for review' }
+    browserDocument.components['comp-task-docs-title'].config.text =
+      'Refresh the complete API documentation and integration reference'
+    browserDocument.components['browser-horizontal-overflow'] = {
+      id: 'browser-horizontal-overflow',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: Array.from({ length: 6 }, (_, index) => `browser-horizontal-item-${index + 1}`),
+      kind: 'container',
+      common: {
+        description: 'Horizontal overflow regression',
+        visible: true,
+        enabled: true,
+      },
+      config: { ...containerLayout, layout: 'horizontal' },
+    }
+    for (let index = 1; index <= 6; index += 1) {
+      const id = `browser-horizontal-item-${index}`
+      browserDocument.components[id] = {
+        id,
+        screenId: 'screen-list',
+        parentId: 'browser-horizontal-overflow',
+        childIds: [],
+        kind: 'text',
+        common: {
+          description: `Horizontal item ${index}`,
+          visible: true,
+          enabled: true,
+        },
+        config: {
+          kind: 'text',
+          text: `Scrollable item ${index}`,
+          style: 'body',
+        },
+      }
+    }
+    browserDocument.components['comp-list-section'].childIds.push('browser-horizontal-overflow')
     const persisted = JSON.stringify({
       document: browserDocument,
       activeScreenId: 'screen-edit',
@@ -1364,6 +1400,223 @@ async function run() {
           !cleanupState.result.value.hierarchyHint,
         `${width}px Inspector still exposes removed actions or hierarchy hint`,
       )
+
+      const switchScreen = async (name, componentId) => {
+        await cdp.call('Runtime.evaluate', {
+          expression: `(() => {
+            const button = [...document.querySelectorAll('button')].find(
+              candidate => candidate.textContent.trim() === ${JSON.stringify(name)}
+            )
+            button?.click()
+            return Boolean(button)
+          })()`,
+          returnByValue: true,
+        })
+        await waitForExpression(
+          `Boolean(document.querySelector(
+            '[data-component-id=${JSON.stringify(componentId)}]'
+          ))`,
+          `${width}px could not switch to ${name}`,
+        )
+      }
+      const setCanvasZoom = async targetPercent => {
+        await cdp.call('Runtime.evaluate', {
+          expression: `[...document.querySelectorAll('button')].find(
+            button => /^\\d+%$/.test(button.textContent.trim())
+          ).click()`,
+        })
+        await waitForExpression(
+          `[...document.querySelectorAll('button')].some(
+            button => button.textContent.trim() === '100%'
+          )`,
+          `${width}px Canvas zoom did not reset`,
+        )
+        const direction = targetPercent < 100 ? '−' : '+'
+        const stepCount = Math.abs(targetPercent - 100) / 25
+        for (let step = 1; step <= stepCount; step += 1) {
+          const expected = 100 + (targetPercent < 100 ? -25 : 25) * step
+          await cdp.call('Runtime.evaluate', {
+            expression: `(() => {
+              const level = [...document.querySelectorAll('button')].find(
+                button => /^\\d+%$/.test(button.textContent.trim())
+              )
+              ;[...level.parentElement.querySelectorAll('button')].find(
+                button => button.textContent.trim() === ${JSON.stringify(direction)}
+              ).click()
+            })()`,
+          })
+          await waitForExpression(
+            `[...document.querySelectorAll('button')].some(
+              button => button.textContent.trim() === '${expected}%'
+            )`,
+            `${width}px Canvas zoom did not reach ${expected}%`,
+          )
+        }
+      }
+
+      await switchScreen('Task List', 'comp-list-grid')
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const card = document.querySelector('[data-component-id="comp-task-docs-card"]')
+          card.click()
+          card.focus({ preventScroll: true })
+        })()`,
+      })
+      await new Promise(resolveWait => setTimeout(resolveWait, 100))
+      for (const zoomPercent of [50, 100, 200]) {
+        await setCanvasZoom(zoomPercent)
+        const layoutResult = await cdp.call('Runtime.evaluate', {
+          expression: `(() => {
+            const gridComponent = document.querySelector(
+              '[data-component-id="comp-list-grid"]'
+            )
+            const grid = gridComponent.querySelector(
+              ':scope > [data-layout="grid"]'
+            )
+            const horizontalComponent = document.querySelector(
+              '[data-component-id="browser-horizontal-overflow"]'
+            )
+            const horizontal = horizontalComponent.querySelector(
+              ':scope > [data-layout="horizontal"]'
+            )
+            const gridStyle = getComputedStyle(grid)
+            const horizontalStyle = getComputedStyle(horizontal)
+            const gridRect = grid.getBoundingClientRect()
+            const cards = [...grid.children]
+              .map(slot => slot.querySelector(':scope > [data-component-id]'))
+              .filter(Boolean)
+            const endTarget = grid.querySelector(
+              '[data-drop-surface="canvas"][data-drop-parent="comp-list-grid"]' +
+              '[data-drop-position="2"]'
+            )
+            const endRect = endTarget.getBoundingClientRect()
+            horizontal.scrollLeft = horizontal.scrollWidth
+            const selected = document.querySelector(
+              '[data-component-id="comp-task-docs-card"]'
+            )
+            return {
+              zoom: [...document.querySelectorAll('button')].find(
+                button => /^\\d+%$/.test(button.textContent.trim())
+              ).textContent.trim(),
+              grid: {
+                overflowX: gridStyle.overflowX,
+                overflowY: gridStyle.overflowY,
+                clientHeight: grid.clientHeight,
+                scrollHeight: grid.scrollHeight,
+                verticalScrollbarWidth: grid.offsetWidth - grid.clientWidth,
+                endInside:
+                  endRect.top >= gridRect.top - 0.5 &&
+                  endRect.bottom <= gridRect.bottom + 0.5,
+                endCssHeight: getComputedStyle(endTarget).height,
+                rect: {
+                  top: gridRect.top,
+                  bottom: gridRect.bottom,
+                },
+                endRect: {
+                  top: endRect.top,
+                  bottom: endRect.bottom,
+                  height: endRect.height,
+                },
+                cardsFit: cards.every(card => {
+                  const rect = card.getBoundingClientRect()
+                  return rect.top >= gridRect.top - 0.5 &&
+                    rect.bottom <= gridRect.bottom + 0.5 &&
+                    card.scrollHeight <= card.clientHeight
+                }),
+              },
+              horizontal: {
+                overflowX: horizontalStyle.overflowX,
+                overflowY: horizontalStyle.overflowY,
+                clientHeight: horizontal.clientHeight,
+                scrollHeight: horizontal.scrollHeight,
+                scrollWidth: horizontal.scrollWidth,
+                clientWidth: horizontal.clientWidth,
+                scrollLeft: horizontal.scrollLeft,
+              },
+              selected: {
+                marker: getComputedStyle(selected, '::after').boxShadow,
+              },
+              documentOverflow:
+                document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            }
+          })()`,
+          returnByValue: true,
+        })
+        const layout = layoutResult.result.value
+        assert(
+          layout.zoom === `${zoomPercent}%` &&
+            layout.grid.overflowX === 'auto' &&
+            layout.grid.overflowY === 'hidden' &&
+            layout.grid.clientHeight === layout.grid.scrollHeight &&
+            layout.grid.verticalScrollbarWidth === 0 &&
+            layout.grid.endInside &&
+            layout.grid.endCssHeight === '10px' &&
+            layout.grid.cardsFit &&
+            layout.horizontal.overflowX === 'auto' &&
+            layout.horizontal.overflowY === 'hidden' &&
+            layout.horizontal.clientHeight === layout.horizontal.scrollHeight &&
+            layout.horizontal.scrollWidth > layout.horizontal.clientWidth &&
+            layout.horizontal.scrollLeft > 0 &&
+            layout.selected.marker.includes('2px') &&
+            layout.documentOverflow === 0,
+          `${width}px ${zoomPercent}% horizontal/grid overflow geometry regressed: ` +
+            JSON.stringify(layout),
+        )
+      }
+
+      await setCanvasZoom(100)
+      if (width === 1280) {
+        const wheelStart = await cdp.call('Runtime.evaluate', {
+          expression: `(() => {
+            const horizontal = document.querySelector(
+              '[data-component-id="browser-horizontal-overflow"]' +
+              ' > [data-layout="horizontal"]'
+            )
+            horizontal.scrollLeft = 0
+            const rect = horizontal.getBoundingClientRect()
+            return {
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+              transform: document.querySelector('[data-canvas-surface]').style.transform,
+            }
+          })()`,
+          returnByValue: true,
+        })
+        await cdp.call('Input.dispatchMouseEvent', {
+          type: 'mouseWheel',
+          x: wheelStart.result.value.x,
+          y: wheelStart.result.value.y,
+          deltaX: 160,
+          deltaY: 0,
+        })
+        await waitForExpression(
+          `document.querySelector(
+            '[data-component-id="browser-horizontal-overflow"]' +
+            ' > [data-layout="horizontal"]'
+          ).scrollLeft > 0`,
+          'horizontal Container did not consume horizontal wheel input',
+        )
+        const wheelEnd = await cdp.call('Runtime.evaluate', {
+          expression: `(() => ({
+            scrollLeft: document.querySelector(
+              '[data-component-id="browser-horizontal-overflow"]' +
+              ' > [data-layout="horizontal"]'
+            ).scrollLeft,
+            transform: document.querySelector('[data-canvas-surface]').style.transform,
+          }))()`,
+          returnByValue: true,
+        })
+        assert(
+          wheelEnd.result.value.scrollLeft > 0 &&
+            wheelEnd.result.value.transform === wheelStart.result.value.transform,
+          'horizontal content wheel leaked into Canvas pan: ' +
+            JSON.stringify({
+              before: wheelStart.result.value,
+              after: wheelEnd.result.value,
+            }),
+        )
+      }
+      await switchScreen('Edit Task', 'browser-inner-container')
     }
 
     await cdp.call('Emulation.setDeviceMetricsOverride', {
@@ -2053,6 +2306,81 @@ async function run() {
         y: points.target.y,
       })
     }
+
+    await cdp.call('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('button')].find(
+        button => button.textContent.trim() === 'Task List'
+      ).click()`,
+    })
+    await waitForExpression(
+      `Boolean(document.querySelector('[data-component-id="comp-list-grid"]'))`,
+      'Task List did not render before trusted grid DnD',
+    )
+    const gridPoints = await pressTrustedComponent(
+      'comp-task-launch-card',
+      'comp-list-grid',
+      -1,
+    )
+    const draggingGrid = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const grid = document.querySelector(
+          '[data-component-id="comp-list-grid"] > [data-layout="grid"]'
+        )
+        const style = getComputedStyle(grid)
+        const endTarget = [...grid.querySelectorAll(
+          '[data-drop-surface="canvas"][data-drop-parent="comp-list-grid"]'
+        )].at(-1)
+        return {
+          overflowY: style.overflowY,
+          clientHeight: grid.clientHeight,
+          scrollHeight: grid.scrollHeight,
+          endOutcome: endTarget.getAttribute('data-drop-outcome'),
+          endOver: endTarget.className.includes('_over_'),
+          visibleSurfaces: [...document.querySelectorAll('[data-drop-visible="true"]')]
+            .map(zone => zone.getAttribute('data-drop-surface')),
+        }
+      })()`,
+      returnByValue: true,
+    })
+    assert(
+      draggingGrid.result.value.overflowY === 'hidden' &&
+        draggingGrid.result.value.clientHeight === draggingGrid.result.value.scrollHeight &&
+        draggingGrid.result.value.endOutcome === 'allowed' &&
+        draggingGrid.result.value.endOver &&
+        draggingGrid.result.value.visibleSurfaces.length > 0 &&
+        draggingGrid.result.value.visibleSurfaces.every(surface => surface === 'canvas'),
+      'trusted grid drag reintroduced vertical overflow or lost its end target: ' +
+        JSON.stringify(draggingGrid.result.value),
+    )
+    await releaseTrustedComponent(gridPoints)
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-list-grid'].childIds.at(-1) ===
+          'comp-task-launch-card'`,
+      'trusted grid end drop did not persist',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-list-grid'].childIds.at(-1) ===
+          'comp-task-launch-card' &&
+        document.querySelector(
+          '[data-component-id="comp-list-grid"] > [data-layout="grid"]'
+        ).clientHeight === document.querySelector(
+          '[data-component-id="comp-list-grid"] > [data-layout="grid"]'
+        ).scrollHeight &&
+        !document.querySelector('[data-drag-overlay]')`,
+      'trusted grid end drop or scrollbar fix did not survive reload',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('button')].find(
+        button => button.textContent.trim() === 'Edit Task'
+      ).click()`,
+    })
+    await waitForExpression(
+      `Boolean(document.querySelector('[data-component-id="comp-task-title-input"]'))`,
+      'Edit Task did not restore after trusted grid DnD',
+    )
 
     const clickPoint = await componentPoint('comp-task-title-input')
     await cdp.call('Input.dispatchMouseEvent', {

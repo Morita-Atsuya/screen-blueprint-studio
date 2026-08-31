@@ -9083,6 +9083,14 @@ await test('container layouts drive preview, DnD, and palette feedback', async (
     join(root, 'src/features/inspector/Inspector.tsx'),
     'utf8',
   )
+  const horizontalChildrenRule =
+    canvasStyles.match(/[.]horizontalChildren\s*\{([^}]*)\}/)?.[1] ?? ''
+  const wrapChildrenRule =
+    canvasStyles.match(/[.]wrapChildren\s*\{([^}]*)\}/)?.[1] ?? ''
+  const gridChildrenRule =
+    canvasStyles.match(/[.]gridChildren\s*\{([^}]*)\}/)?.[1] ?? ''
+  const gridEndRule =
+    dropZoneStyles.match(/[.]grid[.]end\s*\{([^}]*)\}/)?.[1] ?? ''
   assert(
     canvasSource.includes('horizontalListSortingStrategy') &&
       canvasSource.includes('rectSortingStrategy') &&
@@ -9091,19 +9099,23 @@ await test('container layouts drive preview, DnD, and palette feedback', async (
     'container layout does not select matching sorting, drop orientation, and column settings',
   )
   assert(
-    canvasStyles.includes('.horizontalChildren') &&
-      canvasStyles.includes('flex-direction: row') &&
-      canvasStyles.includes('.gridChildren') &&
-      canvasStyles.includes('grid-template-columns: repeat(var(--layout-columns') &&
-      canvasStyles.includes('gap: var(--layout-gap') &&
-      canvasStyles.includes('overflow-x: auto'),
-    'horizontal and grid layouts are not rendered with gap and narrow-width overflow',
+    horizontalChildrenRule.includes('flex-direction: row') &&
+      horizontalChildrenRule.includes('overflow-x: auto') &&
+      horizontalChildrenRule.includes('overflow-y: hidden') &&
+      wrapChildrenRule.includes('overflow: visible') &&
+      gridChildrenRule.includes('grid-template-columns: repeat(var(--layout-columns') &&
+      gridChildrenRule.includes('overflow-x: auto') &&
+      gridChildrenRule.includes('overflow-y: hidden') &&
+      canvasStyles.includes('gap: var(--layout-gap'),
+    'horizontal and grid layouts do not keep horizontal overflow without vertical scrolling',
   )
   assert(
     dropZoneStyles.includes('.horizontal') &&
       dropZoneStyles.includes('.grid') &&
-      dropZoneStyles.includes('border-left: 2px solid transparent'),
-    'horizontal and grid insertion targets do not use layout-specific indicators',
+      dropZoneStyles.includes('border-left: 2px solid transparent') &&
+      gridEndRule.includes('inset: auto 0 0') &&
+      !gridEndRule.includes('-5px'),
+    'horizontal and grid insertion targets are missing or grid end overflows vertically',
   )
   assert(
     inspectorSource.includes("cfg.kind === 'container'") &&

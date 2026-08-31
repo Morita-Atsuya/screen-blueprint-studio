@@ -383,6 +383,7 @@
 .horizontalChildren {
   flex-direction: row;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .horizontalChildren > .childSlot {
@@ -393,13 +394,14 @@
 
 .wrapChildren {
   flex-wrap: wrap;
-  overflow-x: visible;
+  overflow: visible;
 }
 
 .gridChildren {
   display: grid;
   grid-template-columns: repeat(var(--layout-columns, 2), minmax(min(160px, 70vw), 1fr));
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .gridChildren > .childSlot {

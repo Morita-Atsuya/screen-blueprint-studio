@@ -92,7 +92,7 @@
 
 .grid.end {
   position: absolute;
-  inset: auto 0 -5px;
+  inset: auto 0 0;
   width: auto;
   height: 10px;
   min-height: 0;
