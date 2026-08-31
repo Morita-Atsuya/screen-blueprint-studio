@@ -2452,38 +2452,32 @@ async function run() {
       Object.values(clipboardMenu.result.value).every(Boolean),
       'component context menu did not expose all four preserved actions',
     )
-    const deletePoint = await cdp.call('Runtime.evaluate', {
+    const deleteReady = await cdp.call('Runtime.evaluate', {
       expression: `(() => {
         const button = document.querySelector('[data-component-delete]')
-        button.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-        const rect = button.getBoundingClientRect()
+        button.focus({ preventScroll: true })
         return {
           disabled: button.disabled,
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
+          focused: document.activeElement === button,
         }
       })()`,
       returnByValue: true,
     })
     assert(
-      !deletePoint.result.value.disabled,
-      'context-menu Delete remained disabled after accepting the change set',
+      !deleteReady.result.value.disabled && deleteReady.result.value.focused,
+      'context-menu Delete was not enabled and keyboard focusable after review',
     )
-    await cdp.call('Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      button: 'left',
-      buttons: 1,
-      clickCount: 1,
-      x: deletePoint.result.value.x,
-      y: deletePoint.result.value.y,
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
     })
-    await cdp.call('Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      button: 'left',
-      buttons: 0,
-      clickCount: 1,
-      x: deletePoint.result.value.x,
-      y: deletePoint.result.value.y,
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
     })
     await waitForExpression(
       `document.querySelector('[data-delete-confirmation="component"]') &&
