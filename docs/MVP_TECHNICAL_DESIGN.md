@@ -18,10 +18,10 @@ Screen Blueprint Studioは、意味付きUIコンポーネントから画面を�
 MVPでは次の体験を完成させる。
 
 1. 人間がAIなしでも画面仕様を作成、編集できる
-2. エージェントが現在の画面、選択、未保存状態をWebMCPで取得できる
+2. エージェントが現在のeffective画面一式、選択、revisionをWebMCPで取得できる
 3. エージェントの変更は直接確定せず、同じ画面上のchange setとして表示される
 4. 人間が変更セットを確認し、反映または破棄できる
-5. 人間が破棄理由をエージェントへ伝え、次の変更セットへ反映できる
+5. エージェントがcurrent modelと直近の破棄記録を再読し、次の変更セットへ反映できる
 
 WebMCPは状態管理そのものではなく、アプリ内の読み取り・更新操作をエージェントへ公開する境界である。人間向けUIとWebMCPツールは、同じcommand層と検証処理を使用する。
 
@@ -40,6 +40,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - 通常、保存中、成功、エラーを含む画面状態
 - クリックまたは送信イベント
 - API操作と成功・失敗状態の関連付け
+- WebMCPから取得する仕様完成度の診断候補
 - 同時に1件のAI change set
 - change setの確認、反映、破棄
 - 確定操作のUndo／Redo
@@ -54,7 +55,7 @@ WebMCPは状態管理そのものではなく、アプリ内の読み取り・�
 - 自由描画、リサイズ、ピクセル座標
 - 自由座標を保存する編集可能な画面遷移diagram
 - 権限・ロール別preview
-- 仕様不足の診断、受け入れ条件・テスト観点の生成
+- 受け入れ条件・テスト観点の生成
 - 汎用的な条件式ビルダー
 - 本番コード生成
 - Markdown、PDF出力
@@ -531,43 +532,20 @@ interface HistoryEntry {
 
 モデル規模が小さいMVPではsnapshot方式を採用し、逆command生成の複雑さを避ける。undo historyとredo stackはそれぞれ最大50件とし、どちらもreload後には復元しない。
 
-## 9. 後続機能: 診断
+## 9. WebMCP画面診断
 
-診断はMVPのWebMCP共同編集ループが完成した後に追加する。実装する場合は純粋関数`diagnoseScreen(document, screenId)`とする。
+`get_screen_diagnostics`はdomain invariant違反ではなく、仕様完成度を上げるための候補をeffective screen単位で返す。結果はentity IDとcodeで決定的にsortし、正常な任意設計をerrorと断定しない。
 
-```ts
-interface Diagnostic {
-  id: string;
-  ruleId: string;
-  severity: "error" | "warning" | "info";
-  entityType: "screen" | "component" | "state" | "event" | "apiOperation";
-  entityId: EntityId;
-  path?: string;
-  message: string;
-  suggestion: string;
-}
-```
-
-`id`は`ruleId + entityId + path`から決定的に生成し、再描画後も同じ問題を追跡できるようにする。
-
-### 9.1 診断ルール候補
-
-| Rule ID | Severity | 条件 |
+| Code | Severity | 条件 |
 | --- | --- | --- |
-| `input-label-required` | error | 入力部品のlabelが空 |
-| `field-key-required` | error | 入力部品のfieldKeyが空 |
-| `field-key-unique` | error | fieldKeyが重複 |
-| `required-rule-message` | warning | 必須項目にエラーメッセージがない |
-| `button-event-required` | warning | primary buttonにeventがない |
-| `api-path-required` | error | API操作のpathが空 |
-| `api-result-states-required` | warning | API操作に成功・失敗stateの片方がない |
-| `loading-state-recommended` | warning | APIイベントがあるがloading stateがない |
-| `double-submit-prevention` | warning | API実行buttonで二重送信防止が無効 |
-| `error-feedback-required` | warning | error stateにalertまたはinline errorがない |
-| `orphan-state` | info | どのeventからも到達しないstate |
-| `empty-container` | info | page以外のcontainerが空 |
+| `MISSING_FIELD_KEY` | warning | input/selectの安定したfield名が空 |
+| `UNCONNECTED_BUTTON` | warning | buttonに設定またはtriggerされたeventがない |
+| `EVENT_WITHOUT_ACTIONS` | warning | eventのactionsが空 |
+| `API_WITHOUT_SUCCESS_STATE` | info | API操作に成功stateがない |
+| `API_WITHOUT_ERROR_STATE` | info | API操作に失敗stateがない |
+| `UNBOUND_INPUT` | info | input/selectが同screenのAPI request bindingで未使用 |
 
-将来の診断パネルで項目を選ぶと、対象コンポーネントまたは仕様欄を選択・フォーカスする。
+診断は英語のagent向けmessageを返す。専用の人間向け診断パネル、受け入れ条件生成、test case生成はMVP対象外である。
 
 ## 10. UI設計
 
@@ -589,8 +567,8 @@ interface Diagnostic {
 ### 10.2 左ペイン
 
 - `Screens`: 画面一覧、作成、選択、名称・route変更、削除
-- `Components`: kind別パレット。選択中containerへのクリック追加と任意位置へのdrag追加
-- `Structure`: component tree。leafはlabel／text等から、構造componentはlocalized kindまたはScreen内のframe順からeditor-only表示名を導出し、選択、dragによる並び替え・親変更、矢印移動、削除
+- `Components`: kind別パレット。tree/canvasの任意位置へのdrag追加
+- `Structure`: component tree。leafはlabel／text等から、構造componentはlocalized kindまたはScreen内のframe順からeditor-only表示名を導出し、選択、dragによる並び替え・親変更、削除。選択componentのcontext menuから子または直後へ追加できる
 - `Canvas`: idle時はartboardと仕様上の表示内容だけを描画し、componentのsemantic labelとoutlineはhover／選択／focus時だけflow外のeditor overlayとして表示する。Page／Modal root以外のcomponent面全体をpointerまたはkeyboardで掴み、treeと同じcommandで並び替え・親変更する。pointerは5px移動後にdrag開始し、click selectionと誤dragを分離する。drop中だけ挿入lineまたはoutlineを表示する
 - 追加不可の場合は無効理由を表示
 
@@ -600,7 +578,6 @@ interface Diagnostic {
 - component選択
 - drag中だけ表示する挿入line・outline
 - AI変更箇所にaccent outline
-- 人間がchange set内で修正した箇所には別のmarker
 - 空状態、loading、errorを実際の見た目でpreview
 
 ### 10.4 右ペイン
@@ -617,7 +594,7 @@ UI static copyは型付きJA/EN辞書へ集約し、headerで即時切替する�
 active change setがある場合だけ固定表示する。
 
 - change set summary
-- AI操作数、人間修正数
+- AI操作数
 - `破棄`ボタン
 - `反映`ボタン
 
@@ -627,16 +604,16 @@ AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIで�
 
 ## 11. WebMCPツール
 
-すべてimperative APIの`document.modelContext.registerTool()`で登録する。read toolには`annotations: { readOnlyHint: true }`を指定する。
+すべてimperative APIの`document.modelContext.registerTool()`で登録する。`Promise<undefined>`を順にawaitし、全件成功後だけ成功logを出す。途中失敗時は共通`AbortSignal`をabortして既登録toolを解除し、console errorを出すが人間向けReact UIの起動は継続する。read toolには`annotations: { readOnlyHint: true }`を指定する。
 
 ### 11.1 読み取り
 
 | Tool | 目的 | 主な返却値 |
 | --- | --- | --- |
-| `get_current_screen_context` | project概要と現在の作業対象を取得 | project、screen一覧、active screen、revision、selected component/state、active change set |
+| `get_current_screen_context` | project概要と現在の作業対象を取得 | effective active screenのcomponent/state/event/API一式、revision、selection、compact change set metadata |
 | `get_component` | ID指定または選択中componentの仕様を取得 | component、state override、関連event/API |
-| `get_screen_diagnostics` | fieldKeyなどの軽量な構造診断を取得 | screen ID、diagnostics |
-| `get_pending_change_set` | 未反映の変更セットを取得 | summary、AI operations、diff、base revision |
+| `get_screen_diagnostics` | 仕様完成度の高信頼候補を取得 | screen ID、severity/code/message付きdiagnostics |
+| `get_pending_change_set` | 未反映の変更セットを取得 | raw AI operations、review用operation summaries/diff、base revision。base document本体は返さない |
 
 ### 11.2 Change set開始
 
@@ -654,7 +631,7 @@ active change setがすでに存在する場合は新規作成せず、既存ID�
 | `change_component_structure` | componentの追加、複製、移動、subtree削除 | `changeSetId`, `operation`, operation別のtyped fields |
 | `update_component_spec` | componentの編集可能仕様を更新 | `changeSetId`, `componentId`, typed `patch` |
 | `upsert_screen_state` | 状態の追加、更新、削除 | `changeSetId`, `operation`, state fields |
-| `connect_behavior` | event/API操作の追加、削除 | `changeSetId`, `operation`, eventまたはAPI fields |
+| `connect_behavior` | event/API操作の追加、ID保持更新、削除 | `changeSetId`, `operation`, eventまたはAPI fields |
 
 AIによる更新toolは次を共通要件とする。
 
@@ -697,9 +674,8 @@ AIによる更新toolは次を共通要件とする。
 - React
 - TypeScript strict mode
 - Zustand
-- Vitest
-- React Testing Library
-- CSS Modulesまたは単一の設計token付きCSS
+- Node.js regression harness、Linkedom DOM fixture、実Chrome/CDP regression
+- CSS Modulesと共通設計token
 
 ZustandはReact外のWebMCP execute関数から最新状態を同期取得しやすくするために使用する。domain処理はstoreから独立した純粋関数として実装する。
 
@@ -786,9 +762,9 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - dnd-kitのpointer、touch、keyboard sensorを提供し、Tree drag handleとCanvasのfocus可能なcomponent面にaccessible nameを設定
 - component配置はdomainの共通classifierで`moved`／`no-op`／`invalid(reason)`へ分類する。drop slotから同一parent内の最終indexを正規化してから判定し、no-opではrevision、history、change set version、Toastを変更しない。invalidはroot、self/descendant、children不可、kind制約、別Screen、stale、位置不正、その他domain制約へ型付きで分ける
 - DnD状態は視覚的なline・outlineに加え、選択localeのscreen reader announcementで通知する。moved／no-op／cancelはDnD live region、invalid確定時は理由別error Toastを使い、同じ失敗を二重announceしない
-- キーボードで選択、クリック追加、上下移動、削除、選択解除、Undo／Redoが可能
+- キーボードで選択、context menu追加、DnD、削除、選択解除、Undo／Redoが可能
 - 選択を色だけで示さない
-- change setのAI変更と人間修正を色とlabelの両方で示す
+- change setのAI変更を色とlabelの両方で示す
 - 画面幅1024px以上を主要対象とする
 - 狭い画面では左右ペインをtabへ折りたたむ
 - WebMCP非対応ブラウザでも人間向け機能はすべて利用可能
@@ -827,7 +803,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 
 ### 15.4 WebMCP handler tests
 
-ブラウザAPIそのものではなくtool handlerを直接テストする。
+CIではnative APIそのものではなく、Promise registration stub、tool handler、store、実Chrome上の通常UIをテストする。
 
 - schemaに対応した引数処理
 - read-only toolの返却
@@ -835,7 +811,7 @@ UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`�
 - stale revision拒否
 - tool実行後のstoreとUI相当状態
 
-Chromeでは最後に実API登録、DevTools表示、エージェント実行を手動確認する。
+WebMCP testing対応Chromeでは最後に、実API登録、context read、change set開始、write 1件、UI preview、Human Accept/Rejectを手動確認する。native smoke未実施を自動test成功として扱わない。
 
 ## 16. 実装順序
 
@@ -897,7 +873,7 @@ Chromeでは最後に実API登録、DevTools表示、エージェント実行を
 7. active change setにはAI operationだけが入り、旧human operationを明示的にinvalidとして扱える
 8. 反映したchange set全体を1回のUndoで戻し、Redoで再適用できる
 9. WebMCP非対応でも人間向けアプリが動作する
-10. 10個のtoolがDevToolsで確認でき、型付き入力で実行できる
+10. WebMCP testing対応Chromeのmanual smokeで10個のtool登録、read、write、UI previewを確認できる
 11. refresh後も確定モデルとactive change setを復元できる
 12. invalidなWebMCP writeは確定モデルとchange setを変更せず、構造化エラーを返す
 

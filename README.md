@@ -4,6 +4,8 @@
 
 > **Turn semantic screen blueprints into a shared workspace where humans and AI refine product behavior through reviewable WebMCP change sets.**
 
+[Live demo](https://morita-atsuya.github.io/screen-blueprint-studio/)
+
 Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合わせて画面を構築し、同じ構造化モデルからワイヤーフレーム、画面状態、イベント、API連携を管理するWebアプリです。npm packageおよび想定リポジトリ名は`screen-blueprint-studio`です。
 
 自由描画型のデザインツールではありません。画面をコンポーネントツリーとして定義することで、表示と仕様の乖離を抑えます。人間は通常のUIで直接編集でき、AIエージェントはWebMCPを通じて現在の画面や選択状態を読み取り、安全な変更セットを作成できます。
@@ -25,6 +27,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - 子孫・状態override・event／API参照などへ影響する削除だけを件数付きで確認し、削除直後はToastから安全にUndo
 - `localStorage`への保存、破損データのrecovery UI、保存不能時のJSON退避
 - runtime invariant validationとprototype-chain ID対策
+- 未接続button、actionのないevent、結果stateのないAPI、未binding inputを候補として返す画面診断
 - 10個の型付きWebMCPツール
 
 初期sample projectは`COMPONENT_KIND_CATALOG`に定義された全component kindを最低1件含みます。regressionはsample、Palette、runtime validation、Canvas、Tree、Inspector、複製・Copy/Paste、削除・追加、WebMCP schemaのkind集合を正準catalogと照合し、kind追加時の横展開漏れを検出します。
@@ -43,6 +46,12 @@ AIがchange setへ型付きoperationを追加
 同じUIでpreview
   ↓
 人間が確認し、反映または破棄
+  ↓
+通常UIで人間が必要な修正を直接確定
+  ↓
+AIがcurrent modelと直近の破棄記録を再読し、次のchange setを作成
+  ↓
+人間がpreviewを確認して反映
 ```
 
 確定済みの`document`とpreview用の`effectiveDocument`は分離されています。無効なoperation、古いrevision、壊れた参照、型不一致は共通のdomain validationで拒否されます。
@@ -62,7 +71,7 @@ AIがchange setへ型付きoperationを追加
 
 ## 基本操作
 
-- パレット項目はクリックで選択中containerへ追加、ドラッグでtree/canvasの任意位置へ追加。Modalだけは選択位置に依存せずScreen直下の独立frameとして追加
+- パレット項目をtree/canvasの任意位置へドラッグして追加。選択componentのコンテキストメニューからも追加でき、ModalはScreen直下の独立frameとして追加
 - treeの`⠿` handle、またはcanvas上のPage／Modal root以外のcomponent面全体を掴み、同一container内の並び替えまたは別containerへ移動
 - Inspectorの「レイアウト」でcontainerの方向、間隔、配置、折り返し、grid列数を編集
 - componentを選択して`Delete`/`Backspace`で削除、`Escape`で選択解除
@@ -117,9 +126,19 @@ WebMCP testing対応Chromeで次のflagを有効にし、ブラウザを再起�
 chrome://flags/#enable-webmcp-testing
 ```
 
-アプリを開き、Chrome DevToolsの`Application`内にあるWebMCP表示から登録ツールを確認します。WebMCPは実験的APIのため、ChromeのバージョンによってDevTools上の表示名や場所が変わる場合があります。
+アプリを開き、Chrome DevToolsの`Application`内にあるWebMCP表示から10ツールを確認します。登録は各`registerTool()` Promiseを順に待ち、途中失敗時は共通`AbortSignal`で既登録toolを解除してconsole errorを出します。WebMCPは実験的APIのため、ChromeのバージョンによってDevTools上の表示名や場所が変わる場合があります。
 
 `document.modelContext`が利用できないブラウザでも登録処理は安全にskipされ、**人間向けUIはそのまま利用できます**。
+
+提出前のnative manual smoke:
+
+1. DevToolsで10ツールが登録され、consoleに登録成功が1回だけ出ることを確認する。
+2. `get_current_screen_context`を空inputで実行し、effectiveなactive screen一式とconfirmed revisionを読む。
+3. `begin_change_set`へsummaryを渡し、返却されたID、revision、versionを使って`update_component_spec`を1回実行する。
+4. write成功後のversionで`get_pending_change_set`を読み、operation summary/diffと同じ変更のUI previewを確認する。
+5. 人間向けUIからRejectまたはAcceptし、review lockが解除されることを確認する。
+
+自動回帰はPromise登録stub、schema、handler、store、実Chrome上の通常UIを検証しますが、実験的なnative `document.modelContext`自体はCI Chromeで有効化していません。そのため上記native smokeを実行していない状態を成功扱いしません。
 
 ## WebMCPツール
 
@@ -127,16 +146,16 @@ chrome://flags/#enable-webmcp-testing
 
 | 分類 | ツール | 概要 |
 | --- | --- | --- |
-| Read | `get_current_screen_context` | 現在の画面、状態、選択、revision、change set contextを取得 |
+| Read | `get_current_screen_context` | effectiveなactive screen一式、選択、confirmed revision、compact change set metadataを取得 |
 | Read | `get_component` | ID指定または選択中のコンポーネント詳細を取得 |
-| Read | `get_screen_diagnostics` | 画面の軽量な構造診断を取得 |
-| Read | `get_pending_change_set` | active change setとoperationを取得 |
+| Read | `get_screen_diagnostics` | 画面仕様の不足候補をseverity/code付きで取得 |
+| Read | `get_pending_change_set` | active change setのoperationとレビュー用summary/diffを取得 |
 | Write | `begin_change_set` | review対象のchange setを開始 |
 | Write | `change_screen_structure` | 画面の追加、更新、削除を変更セットへ追加 |
 | Write | `change_component_structure` | コンポーネントの追加、複製、移動、削除を変更セットへ追加 |
 | Write | `update_component_spec` | コンポーネントの共通仕様、種類別設定を変更セットへ追加 |
 | Write | `upsert_screen_state` | 非default状態の作成、更新、削除を変更セットへ追加 |
-| Write | `connect_behavior` | イベント／API operationの接続または削除を変更セットへ追加 |
+| Write | `connect_behavior` | IDを保持したイベント／API operationの作成・更新・削除を変更セットへ追加 |
 
 Readツールには`readOnlyHint`を付与しています。Writeツールはactive change set ID、確定revision、change set versionを検証し、成功したoperationだけをpreviewへ追加します。反映と破棄は人間向けUIに限定しています。
 
