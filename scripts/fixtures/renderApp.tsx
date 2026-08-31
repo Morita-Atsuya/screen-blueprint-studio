@@ -164,6 +164,74 @@ export function mountReviewLockApp(locale: Locale = 'en') {
         useAppStore.getState().setActiveState('state-edit-default')
       })
     },
+    addTreeStateBadgeFixture() {
+      flushSync(() => {
+        const addContainer = (
+          componentId: string,
+          parentId: string,
+          description: string,
+        ) => useAppStore.getState().dispatch({
+          type: 'addComponent',
+          componentId,
+          screenId: 'screen-edit',
+          parentId,
+          kind: 'container',
+          config: {
+            kind: 'container',
+            layout: 'vertical',
+            gap: 'sm',
+            columns: 2,
+            justify: 'start',
+            align: 'stretch',
+            wrap: false,
+          },
+        }, `Add ${description}`)
+        addContainer('regression-tree-level-1', 'comp-edit-section', 'Details group')
+        addContainer('regression-tree-level-2', 'regression-tree-level-1', 'Feedback group')
+        addContainer('regression-tree-level-3', 'regression-tree-level-2', 'Status group')
+        useAppStore.getState().dispatch({
+          type: 'addComponent',
+          componentId: 'regression-tree-state-alert',
+          screenId: 'screen-edit',
+          parentId: 'regression-tree-level-3',
+          kind: 'alert',
+          config: {
+            kind: 'alert',
+            tone: 'info',
+            message: 'Waiting for review',
+          },
+        }, 'Add deep state alert')
+        useAppStore.getState().dispatch({
+          type: 'updateComponentSpec',
+          componentId: 'regression-tree-state-alert',
+          patch: {
+            common: {
+              description: 'Deep review status',
+              visible: false,
+              enabled: false,
+            },
+          },
+        }, 'Set deep state presentation')
+        const success = useAppStore.getState().document.screenStates['state-edit-success']
+        useAppStore.getState().dispatch({
+          type: 'updateScreenState',
+          stateId: success.id,
+          name: success.name,
+          description: success.description,
+          overrides: {
+            ...success.componentOverrides,
+            'regression-tree-state-alert': { message: 'Ready for review' },
+          },
+        }, 'Override deep state alert')
+        useAppStore.getState().setActiveState(success.id)
+        const changeSet = useAppStore.getState().beginChangeSet('Update deep state alert')
+        useAppStore.getState().dispatchToChangeSet(changeSet.id, {
+          type: 'updateComponentSpec',
+          componentId: 'regression-tree-state-alert',
+          patch: { config: { message: 'Agent review pending' } },
+        }, 'agent')
+      })
+    },
     markInnerContainerChanged() {
       flushSync(() => {
         const changeSet = useAppStore.getState().beginChangeSet('Update nested Container')

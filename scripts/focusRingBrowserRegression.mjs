@@ -499,7 +499,35 @@ async function run() {
     browserDocument.components['comp-edit-section'].childIds.push(
       'browser-empty-container',
       'browser-nested-container',
+      'browser-tree-level-1',
     )
+    for (const [id, parentId, childId, description] of [
+      ['browser-tree-level-1', 'comp-edit-section', 'browser-tree-level-2', 'Details group'],
+      ['browser-tree-level-2', 'browser-tree-level-1', 'browser-tree-level-3', 'Feedback group'],
+      ['browser-tree-level-3', 'browser-tree-level-2', 'browser-tree-state-alert', 'Status group'],
+    ]) {
+      browserDocument.components[id] = {
+        id,
+        screenId: 'screen-edit',
+        parentId,
+        childIds: [childId],
+        kind: 'container',
+        common: { description, visible: true, enabled: true },
+        config: containerLayout,
+      }
+    }
+    browserDocument.components['browser-tree-state-alert'] = {
+      id: 'browser-tree-state-alert',
+      screenId: 'screen-edit',
+      parentId: 'browser-tree-level-3',
+      childIds: [],
+      kind: 'alert',
+      common: { description: 'Deep review status', visible: false, enabled: false },
+      config: { kind: 'alert', tone: 'info', message: 'Waiting for review' },
+    }
+    browserDocument.screenStates['state-edit-success'].componentOverrides[
+      'browser-tree-state-alert'
+    ] = { message: 'Ready for review' }
     const persisted = JSON.stringify({
       document: browserDocument,
       activeScreenId: 'screen-edit',
@@ -508,17 +536,29 @@ async function run() {
         summary: 'Edge focus regression',
         baseRevision: browserDocument.revision,
         baseDocument: browserDocument,
-        operations: [{
-          id: 'container-affordance-operation',
-          source: 'agent',
-          command: {
-            type: 'updateComponentSpec',
-            componentId: 'browser-inner-container',
-            patch: { common: { description: 'Inner browser group updated' } },
+        operations: [
+          {
+            id: 'container-affordance-operation',
+            source: 'agent',
+            command: {
+              type: 'updateComponentSpec',
+              componentId: 'browser-inner-container',
+              patch: { common: { description: 'Inner browser group updated' } },
+            },
+            issuedAt: '2025-01-01T00:00:00.000Z',
           },
-          issuedAt: '2025-01-01T00:00:00.000Z',
-        }],
-        version: 1,
+          {
+            id: 'tree-state-badge-operation',
+            source: 'agent',
+            command: {
+              type: 'updateComponentSpec',
+              componentId: 'browser-tree-state-alert',
+              patch: { config: { message: 'Agent review pending' } },
+            },
+            issuedAt: '2025-01-01T00:00:01.000Z',
+          },
+        ],
+        version: 2,
         createdAt: '2025-01-01T00:00:00.000Z',
       },
     })
@@ -622,6 +662,120 @@ async function run() {
         'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
       ))`,
       'review UI did not render in Chrome',
+    )
+
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
+    for (const locale of ['en', 'ja']) {
+      await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const locale = document.querySelector('[data-locale-selector]')
+          const prototype = Object.getOwnPropertyDescriptor(
+            HTMLSelectElement.prototype,
+            'value'
+          )
+          prototype.set.call(locale, '${locale}')
+          locale.dispatchEvent(new Event('change', { bubbles: true }))
+          return true
+        })()`,
+      })
+      await waitForExpression(
+        `document.documentElement.lang === '${locale}'`,
+        `Tree badge locale did not switch to ${locale}`,
+      )
+      await cdp.call('Runtime.evaluate', {
+        expression: `[...document.querySelectorAll('button')].find(
+          button => button.textContent.trim() === 'Success'
+        ).click()`,
+      })
+      await waitForExpression(
+        `document.querySelector(
+          '[data-tree-component-id="browser-tree-state-alert"]'
+        )?.getAttribute('data-state-overridden') === 'true'`,
+        `deep ${locale} Tree state badges did not render`,
+      )
+      const badgeResult = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const leftPane = document.querySelector(
+            'aside[aria-label="${locale === 'en' ? 'Project navigation' : 'プロジェクトナビゲーション'}"]'
+          )
+          const tree = leftPane.querySelector('[role="tree"]')
+          const node = tree.querySelector(
+            '[data-tree-component-id="browser-tree-state-alert"]'
+          )
+          const status = node.querySelector('[data-tree-state-status]')
+          const badges = [...status.children].map(badge => {
+            const style = getComputedStyle(badge)
+            const range = document.createRange()
+            range.selectNodeContents(badge)
+            const lineTops = new Set(
+              [...range.getClientRects()].map(rect => Math.round(rect.top * 10) / 10)
+            )
+            return {
+              text: badge.textContent.trim(),
+              whiteSpace: style.whiteSpace,
+              overflowWrap: style.overflowWrap,
+              lineCount: lineTops.size,
+              height: badge.getBoundingClientRect().height,
+              lineHeight: parseFloat(style.lineHeight),
+              fullTextVisible: badge.scrollWidth <= badge.clientWidth + 1,
+              accessibleName: badge.getAttribute('aria-label'),
+              title: badge.getAttribute('title'),
+            }
+          })
+          return {
+            leftWidth: leftPane.getBoundingClientRect().width,
+            leftOverflow: leftPane.scrollWidth - leftPane.clientWidth,
+            treeOverflow: tree.scrollWidth - tree.clientWidth,
+            ariaLevel: node.closest('[role="treeitem"]').getAttribute('aria-level'),
+            badgeCount: badges.length,
+            badges,
+          }
+        })()`,
+        returnByValue: true,
+      })
+      const badgeMeasurement = badgeResult.result.value
+      assert(
+        badgeMeasurement.leftWidth === 220 &&
+          badgeMeasurement.leftOverflow <= 1 &&
+          badgeMeasurement.treeOverflow <= 1,
+        `deep ${locale} Tree badges introduced horizontal overflow`,
+      )
+      assert(
+        badgeMeasurement.ariaLevel === '6' &&
+          badgeMeasurement.badgeCount === 4 &&
+          badgeMeasurement.badges.every(badge =>
+            badge.whiteSpace === 'nowrap' &&
+            badge.overflowWrap === 'normal' &&
+            badge.lineCount === 1 &&
+            badge.height <= badge.lineHeight + 5 &&
+            badge.fullTextVisible &&
+            badge.accessibleName &&
+            badge.title
+          ),
+        `deep ${locale} Tree badge wrapped or lost accessible text: ` +
+          JSON.stringify(badgeMeasurement.badges),
+      )
+    }
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const locale = document.querySelector('[data-locale-selector]')
+        const prototype = Object.getOwnPropertyDescriptor(
+          HTMLSelectElement.prototype,
+          'value'
+        )
+        prototype.set.call(locale, 'en')
+        locale.dispatchEvent(new Event('change', { bubbles: true }))
+        return true
+      })()`,
+    })
+    await waitForExpression(
+      `document.documentElement.lang === 'en'`,
+      'Tree badge regression did not restore English locale',
     )
 
     for (const width of [1280, 899, 640]) {

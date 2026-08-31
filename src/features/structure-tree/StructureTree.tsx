@@ -510,8 +510,9 @@ function TreeNode({
     ? getOwnEntity(document.components, component.parentId)
     : undefined
   const siblingIndex = parent?.childIds.indexOf(component.id) ?? -1
+  const compactDepth = Math.min(depth, 3) * 16 + Math.max(depth - 3, 0) * 8
   const style: CSSProperties = {
-    paddingLeft: `${8 + depth * 16}px`,
+    paddingInlineStart: `${8 + compactDepth}px`,
     transform: transform
       ? `translate3d(${transform.x}px, ${transform.y}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`
       : undefined,
@@ -566,7 +567,7 @@ function TreeNode({
     >
       <div
         ref={setNodeRef}
-        className={`${styles.node} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
+        className={`${styles.node} ${!isPageRoot ? styles.nodeWithActions : ''} ${isSelected ? styles.selected : ''} ${isDragging ? styles.dragging : ''}`}
         style={style}
         data-state-hidden={isHidden || undefined}
         data-state-disabled={isDisabled || undefined}
@@ -620,7 +621,11 @@ function TreeNode({
             {visibleLabel ? <span className={styles.name} title={visibleLabel}>{visibleLabel}</span> : null}
           </span>
           {hasStateStatus || changeStatus ? (
-            <span className={styles.stateStatus} data-editor-chrome>
+            <span
+              className={styles.stateStatus}
+              data-editor-chrome
+              data-tree-state-status
+            >
               {changeStatus ? (
                 <ComponentChangeBadge
                   status={changeStatus}
@@ -631,6 +636,7 @@ function TreeNode({
               {isHidden ? (
                 <span
                   className={styles.stateBadge}
+                  data-state-badge="hidden"
                   aria-label={t('tree.stateHidden')}
                   title={t('tree.stateHidden')}
                 >
@@ -640,6 +646,7 @@ function TreeNode({
               {isDisabled ? (
                 <span
                   className={styles.stateBadge}
+                  data-state-badge="disabled"
                   aria-label={t('tree.stateDisabled')}
                   title={t('tree.stateDisabled')}
                 >
@@ -650,6 +657,7 @@ function TreeNode({
                 <button
                   type="button"
                   className={`${styles.stateBadge} ${styles.resetOverride}`}
+                  data-state-badge="override"
                   disabled={reviewLocked}
                   aria-label={t('tree.resetOverride', {
                     label: spokenLabel,

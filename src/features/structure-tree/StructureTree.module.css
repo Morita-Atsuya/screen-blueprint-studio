@@ -18,6 +18,7 @@
 .children .dropItem:last-child { margin-bottom: 0; }
 
 .node {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -107,6 +108,9 @@
   align-items: center;
   gap: 6px;
 }
+.nodeWithActions .nodeLabel {
+  padding-inline-end: 68px;
+}
 .kind {
   font-size: 0.72rem;
   color: var(--accent);
@@ -133,6 +137,15 @@
   flex-wrap: wrap;
   gap: 3px;
 }
+.stateStatus > * {
+  flex: 0 0 auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .stateBadge {
   display: inline-flex;
   min-width: 0;
@@ -144,7 +157,6 @@
   color: var(--text-muted);
   font-size: 0.62rem;
   line-height: 1.2;
-  overflow-wrap: anywhere;
 }
 .resetOverride {
   border-color: var(--agent-change-border);
@@ -161,10 +173,13 @@
 }
 
 .nodeActions {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 8px;
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
+  background: inherit;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;

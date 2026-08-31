@@ -6850,6 +6850,52 @@ await test('Tree state presentation uses effective values and atomic override re
   )
 })
 
+await test('Tree state badges remain atomic in deep English and Japanese hierarchies', async () => {
+  for (const locale of ['en', 'ja']) {
+    memoryStorage.clear()
+    installStorage(memoryStorage)
+    const document = installInteractiveDom()
+    const { mountReviewLockApp } = await import(
+      moduleUrl(renderAppBundle, `tree-state-badges-${locale}`)
+    )
+    const harness = mountReviewLockApp(locale)
+    harness.addTreeStateBadgeFixture()
+
+    const node = document.querySelector(
+      '[data-tree-component-id="regression-tree-state-alert"]',
+    )
+    const status = node?.querySelector('[data-tree-state-status]')
+    const stateBadges = [...(status?.querySelectorAll('[data-state-badge]') ?? [])]
+    const changeBadge = status?.querySelector('[data-change-status="modified"]')
+    const expected = locale === 'en'
+      ? ['Hidden', 'Disabled', 'Override ×']
+      : ['非表示', '無効', '上書き ×']
+    assert(
+      node &&
+        node.closest('[role="treeitem"]')?.getAttribute('aria-level') === '6' &&
+        stateBadges.length === 3 &&
+        stateBadges.map(badge => badge.textContent.trim()).join('|') === expected.join('|') &&
+        changeBadge?.textContent.trim() === 'AI ~',
+      `deep ${locale} Tree did not expose all atomic state and AI badges`,
+    )
+    for (const badge of [...stateBadges, changeBadge]) {
+      assert(
+        badge?.getAttribute('aria-label') &&
+          badge.getAttribute('title') &&
+          !badge.textContent.includes('\n'),
+        `deep ${locale} Tree badge lost its full accessible label`,
+      )
+    }
+    assert(
+      status.children.length === 4 &&
+        stateBadges.find(badge => badge.getAttribute('data-state-badge') === 'override')
+          ?.disabled === true,
+      `deep ${locale} Tree badge grouping or review-lock reset state regressed`,
+    )
+    harness.unmount()
+  }
+})
+
 await test('Inspector keeps base values separate from field-level state overrides', async () => {
   memoryStorage.clear()
   const {
