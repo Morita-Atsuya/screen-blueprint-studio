@@ -17,6 +17,8 @@ import { getOwnEntity } from '../domain/entityMap'
 import { getComponentDisplayLabel } from '../domain/componentDisplayLabel'
 import { effectiveComponent } from '../domain/selectors'
 import { createDuplicateComponentCommand } from '../domain/componentDuplication'
+import { presentChangeSetOperations } from '../domain/changeSetPresentation'
+import type { ChangeSet } from '../domain/collaboration'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
@@ -33,8 +35,15 @@ interface ToolDefinition {
   execute: (input: JsonObject) => unknown
 }
 
+interface ModelContextRegisterToolOptions {
+  signal?: AbortSignal
+}
+
 interface ModelContext {
-  registerTool(tool: ToolDefinition): void
+  registerTool(
+    tool: ToolDefinition,
+    options?: ModelContextRegisterToolOptions,
+  ): Promise<undefined>
 }
 
 declare global {
@@ -60,6 +69,10 @@ interface ToolSuccess<T extends JsonObject = JsonObject> {
 type ToolResult<T extends JsonObject = JsonObject> = ToolSuccess<T> | ToolFailure
 
 const CLOSED_OBJECT = { additionalProperties: false } as const
+const AGENT_WORKFLOW =
+  'Workflow: read get_current_screen_context; call begin_change_set; use its changeSetId, ' +
+  'baseRevision, and changeSetVersion in writes; replace expectedChangeSetVersion with every ' +
+  'successful write response; inspect get_pending_change_set. Only a human can Accept or Reject.'
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -209,16 +222,23 @@ function appendCommand(input: JsonObject, command: DomainCommand): JsonObject {
 }
 
 const writeBaseProperties = {
-  changeSetId: { type: 'string', minLength: 1 },
+  changeSetId: {
+    type: 'string',
+    minLength: 1,
+    description: 'ID returned by begin_change_set for the one active agent proposal.',
+  },
   expectedRevision: {
     type: 'integer',
     minimum: 0,
-    description: 'Confirmed document revision. Refresh and retry only after REVISION_CONFLICT.',
+    description:
+      'Confirmed revision returned by begin_change_set. Re-read context after REVISION_CONFLICT.',
   },
   expectedChangeSetVersion: {
     type: 'integer',
     minimum: 0,
-    description: 'Active change set version. Refresh and retry only after REVISION_CONFLICT.',
+    description:
+      'Latest version returned by begin_change_set or the preceding successful write. ' +
+      'Re-read pending state after REVISION_CONFLICT.',
   },
 }
 
@@ -273,9 +293,59 @@ const eventActionSchema = {
   ],
 }
 
+function compactChangeSet(changeSet: ChangeSet | null, includeOperations: boolean): JsonObject | null {
+  if (!changeSet) return null
+  return {
+    id: changeSet.id,
+    summary: changeSet.summary,
+    baseRevision: changeSet.baseRevision,
+    version: changeSet.version,
+    operationCount: changeSet.operations.length,
+    createdAt: changeSet.createdAt,
+    ...(includeOperations
+      ? {
+          operations: changeSet.operations,
+          operationSummaries: presentChangeSetOperations(changeSet, 'en'),
+        }
+      : {}),
+  }
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function activeScreenProjection(screenId: string): JsonObject {
+  const document = useAppStore.getState().effectiveDocument
+  const screen = getOwnEntity(document.screens, screenId)
+  if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+  const byId = <T extends { id: string }>(left: T, right: T) =>
+    compareCodeUnits(left.id, right.id)
+  return {
+    documentView: 'effective',
+    screen,
+    components: Object.values(document.components)
+      .filter(component => component.screenId === screenId)
+      .sort(byId),
+    states: screen.stateIds.flatMap(id => {
+      const state = getOwnEntity(document.screenStates, id)
+      return state ? [state] : []
+    }),
+    events: screen.eventIds.flatMap(id => {
+      const event = getOwnEntity(document.events, id)
+      return event ? [event] : []
+    }),
+    apiOperations: Object.values(document.apiOperations)
+      .filter(operation => operation.screenId === screenId)
+      .sort(byId),
+  }
+}
+
 const getCurrentScreenContext: ToolDefinition = {
   name: 'get_current_screen_context',
-  description: 'Get the confirmed revision and current UI and active change set context.',
+  description:
+    'Start here. Read the effective active screen with all components, states, events, APIs, ' +
+    'current UI selection, confirmed revision, and compact proposal metadata. ' + AGENT_WORKFLOW,
   annotations: { readOnlyHint: true },
   inputSchema: { type: 'object', properties: {}, required: [], ...CLOSED_OBJECT },
   execute() {
@@ -301,20 +371,31 @@ const getCurrentScreenContext: ToolDefinition = {
       activeStateId: state.ui.activeStateId,
       selectedComponentId: state.ui.selectedComponentId,
       revision: state.document.revision,
-      activeChangeSet: state.activeChangeSet,
+      documentView: 'effective',
+      activeChangeSet: compactChangeSet(state.activeChangeSet, false),
       rejectedRecords: state.rejectedRecords,
       screen,
+      activeScreen: screen ? activeScreenProjection(screen.id) : null,
     })
   },
 }
 
 const getComponent: ToolDefinition = {
   name: 'get_component',
-  description: 'Get a component by ID, or the currently selected component when omitted.',
+  description:
+    'Read one effective component and its state override, related events, and API bindings. ' +
+    'Omit componentId to use the human UI selection. Start with get_current_screen_context. ' +
+    AGENT_WORKFLOW,
   annotations: { readOnlyHint: true },
   inputSchema: {
     type: 'object',
-    properties: { componentId: { type: 'string', minLength: 1 } },
+    properties: {
+      componentId: {
+        type: 'string',
+        minLength: 1,
+        description: 'Component to inspect; omit to use the currently selected component.',
+      },
+    },
     required: [],
     ...CLOSED_OBJECT,
   },
@@ -351,11 +432,19 @@ const getComponent: ToolDefinition = {
 
 const getScreenDiagnostics: ToolDefinition = {
   name: 'get_screen_diagnostics',
-  description: 'Return lightweight structural diagnostics for a screen.',
+  description:
+    'Find deterministic specification-completeness suggestions for one effective screen. ' +
+    'These warnings and informational items are not domain invariant failures. ' + AGENT_WORKFLOW,
   annotations: { readOnlyHint: true },
   inputSchema: {
     type: 'object',
-    properties: { screenId: { type: 'string', minLength: 1 } },
+    properties: {
+      screenId: {
+        type: 'string',
+        minLength: 1,
+        description: 'Screen to diagnose; omit to use the active screen.',
+      },
+    },
     required: [],
     ...CLOSED_OBJECT,
   },
@@ -369,21 +458,93 @@ const getScreenDiagnostics: ToolDefinition = {
       if (!screenId) throw new DomainError('NOT_FOUND', 'No screen ID or active screen')
       const screen = getOwnEntity(state.effectiveDocument.screens, screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
-      const diagnostics = Object.values(state.effectiveDocument.components)
+      const document = state.effectiveDocument
+      const components = Object.values(document.components)
         .filter(component => component.screenId === screenId)
-        .flatMap(component => {
-          if (
-            (component.config.kind === 'textInput' || component.config.kind === 'select') &&
-            component.config.fieldKey.trim() === ''
-          ) {
-            return [{
-              code: 'MISSING_FIELD_KEY',
-              entityId: component.id,
-              message: `${getComponentDisplayLabel(component, 'en')} has no fieldKey`,
-            }]
-          }
-          return []
-        })
+      const events = screen.eventIds.flatMap(id => {
+        const event = getOwnEntity(document.events, id)
+        return event ? [event] : []
+      })
+      const apiOperations = Object.values(document.apiOperations)
+        .filter(operation => operation.screenId === screenId)
+      const boundComponentIds = new Set(apiOperations.flatMap(
+        operation => operation.requestBindings.map(binding => binding.componentId),
+      ))
+      const diagnostics: Array<{
+        code: string
+        severity: 'warning' | 'info'
+        entityId: string
+        message: string
+      }> = []
+      for (const component of components) {
+        const label = getComponentDisplayLabel(component, 'en')
+        if (
+          (component.config.kind === 'textInput' || component.config.kind === 'select') &&
+          component.config.fieldKey.trim() === ''
+        ) {
+          diagnostics.push({
+            code: 'MISSING_FIELD_KEY',
+            severity: 'warning',
+            entityId: component.id,
+            message: `${label} has no fieldKey, so its submitted value has no stable field name.`,
+          })
+        }
+        if (
+          component.config.kind === 'button' &&
+          component.config.eventId === null &&
+          !events.some(event => event.trigger.componentId === component.id)
+        ) {
+          diagnostics.push({
+            code: 'UNCONNECTED_BUTTON',
+            severity: 'warning',
+            entityId: component.id,
+            message: `${label} has no connected event.`,
+          })
+        }
+        if (
+          (component.config.kind === 'textInput' || component.config.kind === 'select') &&
+          !boundComponentIds.has(component.id)
+        ) {
+          diagnostics.push({
+            code: 'UNBOUND_INPUT',
+            severity: 'info',
+            entityId: component.id,
+            message: `${label} is not used by any API request binding on this screen.`,
+          })
+        }
+      }
+      for (const event of events) {
+        if (event.actions.length === 0) {
+          diagnostics.push({
+            code: 'EVENT_WITHOUT_ACTIONS',
+            severity: 'warning',
+            entityId: event.id,
+            message: `${event.name} has no actions.`,
+          })
+        }
+      }
+      for (const operation of apiOperations) {
+        if (!operation.successStateId) {
+          diagnostics.push({
+            code: 'API_WITHOUT_SUCCESS_STATE',
+            severity: 'info',
+            entityId: operation.id,
+            message: `${operation.name} has no success state.`,
+          })
+        }
+        if (!operation.errorStateId) {
+          diagnostics.push({
+            code: 'API_WITHOUT_ERROR_STATE',
+            severity: 'info',
+            entityId: operation.id,
+            message: `${operation.name} has no error state.`,
+          })
+        }
+      }
+      diagnostics.sort((left, right) =>
+        compareCodeUnits(left.entityId, right.entityId) ||
+        compareCodeUnits(left.code, right.code)
+      )
       return { screenId, diagnostics }
     })
   },
@@ -391,7 +552,9 @@ const getScreenDiagnostics: ToolDefinition = {
 
 const getPendingChangeSet: ToolDefinition = {
   name: 'get_pending_change_set',
-  description: 'Get the active change set and its AI operations.',
+  description:
+    'Review compact English operation summaries and field diffs for the active agent proposal. ' +
+    'The confirmed document is not duplicated in this response. ' + AGENT_WORKFLOW,
   annotations: { readOnlyHint: true },
   inputSchema: { type: 'object', properties: {}, required: [], ...CLOSED_OBJECT },
   execute() {
@@ -405,7 +568,7 @@ const getPendingChangeSet: ToolDefinition = {
       })
     }
     return success({
-      activeChangeSet: state.activeChangeSet,
+      activeChangeSet: compactChangeSet(state.activeChangeSet, true),
       confirmedRevision: state.document.revision,
       rejectedRecords: state.rejectedRecords,
     })
@@ -414,10 +577,18 @@ const getPendingChangeSet: ToolDefinition = {
 
 const beginChangeSet: ToolDefinition = {
   name: 'begin_change_set',
-  description: 'Begin one review-mode change set.',
+  description:
+    'Begin one agent proposal after reading current context. Returns the ID, confirmed revision, ' +
+    'and version required by every write. Fails while another proposal is active. ' + AGENT_WORKFLOW,
   inputSchema: {
     type: 'object',
-    properties: { summary: { type: 'string', minLength: 1 } },
+    properties: {
+      summary: {
+        type: 'string',
+        minLength: 1,
+        description: 'Concise human-readable intent shown in the review bar.',
+      },
+    },
     required: ['summary'],
     ...CLOSED_OBJECT,
   },
@@ -435,7 +606,8 @@ const beginChangeSet: ToolDefinition = {
 
 const changeScreenStructure: ToolDefinition = {
   name: 'change_screen_structure',
-  description: 'Add, update, or remove a screen in the active change set.',
+  description:
+    'Add, update, or remove a screen in the active agent proposal. ' + AGENT_WORKFLOW,
   inputSchema: {
     oneOf: [
       {
@@ -523,7 +695,9 @@ const changeScreenStructure: ToolDefinition = {
 
 const changeComponentStructure: ToolDefinition = {
   name: 'change_component_structure',
-  description: 'Add, move, duplicate, or remove a component or independent modal root in the active change set.',
+  description:
+    'Add, move, duplicate, or remove a component or independent modal root in the active proposal. ' +
+    AGENT_WORKFLOW,
   inputSchema: {
     oneOf: [
       {
@@ -667,7 +841,9 @@ const changeComponentStructure: ToolDefinition = {
 
 const updateComponentSpec: ToolDefinition = {
   name: 'update_component_spec',
-  description: 'Update a component common spec or kind-specific config in the active change set.',
+  description:
+    'Update a component common spec or kind-specific config in the active proposal. ' +
+    AGENT_WORKFLOW,
   inputSchema: {
     type: 'object',
     properties: {
@@ -732,7 +908,8 @@ const updateComponentSpec: ToolDefinition = {
 
 const upsertScreenState: ToolDefinition = {
   name: 'upsert_screen_state',
-  description: 'Create, update, or remove a named screen state in the active change set.',
+  description:
+    'Create, update, or remove a named screen state in the active proposal. ' + AGENT_WORKFLOW,
   inputSchema: {
     oneOf: [
       {
@@ -839,7 +1016,9 @@ const upsertScreenState: ToolDefinition = {
 
 const connectBehavior: ToolDefinition = {
   name: 'connect_behavior',
-  description: 'Create or remove an event or API operation in the active change set.',
+  description:
+    'Create, update without changing IDs, or remove an event or API operation in the active ' +
+    'proposal. Read the active screen first so references remain valid. ' + AGENT_WORKFLOW,
   inputSchema: {
     oneOf: [
       {
@@ -877,6 +1056,36 @@ const connectBehavior: ToolDefinition = {
         type: 'object',
         properties: {
           ...writeBaseProperties,
+          operation: { const: 'updateEvent' },
+          eventId: { type: 'string', minLength: 1 },
+          name: { type: 'string', minLength: 1 },
+          trigger: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['click', 'submit'] },
+              componentId: { type: 'string', minLength: 1 },
+            },
+            required: ['type', 'componentId'],
+            ...CLOSED_OBJECT,
+          },
+          actions: { type: 'array', items: eventActionSchema },
+        },
+        required: [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'eventId',
+          'name',
+          'trigger',
+          'actions',
+        ],
+        ...CLOSED_OBJECT,
+      },
+      {
+        type: 'object',
+        properties: {
+          ...writeBaseProperties,
           operation: { const: 'bindApi' },
           screenId: { type: 'string', minLength: 1 },
           name: { type: 'string', minLength: 1 },
@@ -899,6 +1108,34 @@ const connectBehavior: ToolDefinition = {
         required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'operationId'],
         ...CLOSED_OBJECT,
       },
+      {
+        type: 'object',
+        properties: {
+          ...writeBaseProperties,
+          operation: { const: 'updateApi' },
+          operationId: { type: 'string', minLength: 1 },
+          name: { type: 'string', minLength: 1 },
+          method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+          path: { type: 'string', minLength: 1 },
+          requestBindings: { type: 'array', items: fieldBindingSchema },
+          successStateId: { type: ['string', 'null'], minLength: 1 },
+          errorStateId: { type: ['string', 'null'], minLength: 1 },
+        },
+        required: [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'operationId',
+          'name',
+          'method',
+          'path',
+          'requestBindings',
+          'successStateId',
+          'errorStateId',
+        ],
+        ...CLOSED_OBJECT,
+      },
     ],
   },
   execute(input) {
@@ -906,6 +1143,18 @@ const connectBehavior: ToolDefinition = {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
       if (operation === 'connectEvent') {
+        requireExactKeys(
+          input,
+          [
+            ...Object.keys(writeBaseProperties),
+            'operation',
+            'screenId',
+            'name',
+            'trigger',
+            'actions',
+          ],
+          'connect_behavior connectEvent input',
+        )
         const trigger = requiredRecord(input, 'trigger') as EventTrigger
         if (!Array.isArray(input.actions)) {
           throw new DomainError('INVALID_REFERENCE', 'actions must be an array')
@@ -918,9 +1167,53 @@ const connectBehavior: ToolDefinition = {
           trigger,
           actions: input.actions as EventAction[],
         }
+      } else if (operation === 'updateEvent') {
+        requireExactKeys(
+          input,
+          [
+            ...Object.keys(writeBaseProperties),
+            'operation',
+            'eventId',
+            'name',
+            'trigger',
+            'actions',
+          ],
+          'connect_behavior updateEvent input',
+        )
+        const trigger = requiredRecord(input, 'trigger') as EventTrigger
+        if (!Array.isArray(input.actions)) {
+          throw new DomainError('INVALID_REFERENCE', 'actions must be an array')
+        }
+        command = {
+          type: 'updateEvent',
+          eventId: requiredString(input, 'eventId'),
+          name: requiredString(input, 'name'),
+          trigger,
+          actions: input.actions as EventAction[],
+        }
       } else if (operation === 'removeEvent') {
+        requireExactKeys(
+          input,
+          [...Object.keys(writeBaseProperties), 'operation', 'eventId'],
+          'connect_behavior removeEvent input',
+        )
         command = { type: 'removeEvent', eventId: requiredString(input, 'eventId') }
       } else if (operation === 'bindApi') {
+        requireExactKeys(
+          input,
+          [
+            ...Object.keys(writeBaseProperties),
+            'operation',
+            'screenId',
+            'name',
+            'method',
+            'path',
+            'requestBindings',
+            'successStateId',
+            'errorStateId',
+          ],
+          'connect_behavior bindApi input',
+        )
         if (input.requestBindings !== undefined && !Array.isArray(input.requestBindings)) {
           throw new DomainError('INVALID_REFERENCE', 'requestBindings must be an array')
         }
@@ -935,7 +1228,41 @@ const connectBehavior: ToolDefinition = {
           successStateId: optionalString(input, 'successStateId'),
           errorStateId: optionalString(input, 'errorStateId'),
         }
+      } else if (operation === 'updateApi') {
+        requireExactKeys(
+          input,
+          [
+            ...Object.keys(writeBaseProperties),
+            'operation',
+            'operationId',
+            'name',
+            'method',
+            'path',
+            'requestBindings',
+            'successStateId',
+            'errorStateId',
+          ],
+          'connect_behavior updateApi input',
+        )
+        if (!Array.isArray(input.requestBindings)) {
+          throw new DomainError('INVALID_REFERENCE', 'requestBindings must be an array')
+        }
+        command = {
+          type: 'updateApiOperation',
+          operationId: requiredString(input, 'operationId'),
+          name: requiredString(input, 'name'),
+          method: requiredString(input, 'method') as HttpMethod,
+          path: requiredString(input, 'path'),
+          requestBindings: input.requestBindings as FieldBinding[],
+          successStateId: requiredNullableString(input, 'successStateId'),
+          errorStateId: requiredNullableString(input, 'errorStateId'),
+        }
       } else if (operation === 'removeApi') {
+        requireExactKeys(
+          input,
+          [...Object.keys(writeBaseProperties), 'operation', 'operationId'],
+          'connect_behavior removeApi input',
+        )
         command = { type: 'removeApiOperation', operationId: requiredString(input, 'operationId') }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported behavior operation: ${operation}`)
@@ -958,11 +1285,25 @@ export const WEBMCP_TOOLS: ToolDefinition[] = [
   connectBehavior,
 ]
 
-export function registerWebMCPTools(): void {
-  if (!document.modelContext) {
+export async function registerWebMCPTools(): Promise<boolean> {
+  const modelContext = document.modelContext
+  if (!modelContext) {
     console.info('[WebMCP] document.modelContext unavailable; human UI remains available')
-    return
+    return false
   }
-  WEBMCP_TOOLS.forEach(tool => document.modelContext!.registerTool(tool))
-  console.info(`[WebMCP] Registered ${WEBMCP_TOOLS.length} tools`)
+  const controller = new AbortController()
+  try {
+    for (const tool of WEBMCP_TOOLS) {
+      await modelContext.registerTool(tool, { signal: controller.signal })
+    }
+    console.info(`[WebMCP] Registered ${WEBMCP_TOOLS.length} tools`)
+    return true
+  } catch (error) {
+    controller.abort(error)
+    console.error(
+      '[WebMCP] Tool registration failed; partial registrations were aborted and human UI remains available',
+      error,
+    )
+    return false
+  }
 }

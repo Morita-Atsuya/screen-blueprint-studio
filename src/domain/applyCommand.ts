@@ -772,6 +772,15 @@ export function applyCommandWithoutRevision(
       event.name = command.name
       event.trigger = command.trigger
       event.actions = command.actions
+      for (const component of Object.values(next.components)) {
+        if (
+          component.config.kind === 'button' &&
+          component.config.eventId === command.eventId &&
+          component.id !== command.trigger.componentId
+        ) {
+          component.config.eventId = null
+        }
+      }
       break
     }
 

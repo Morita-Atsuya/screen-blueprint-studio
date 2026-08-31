@@ -6,8 +6,8 @@ import { AppErrorBoundary } from './app/AppErrorBoundary'
 import { registerWebMCPTools } from './webmcp/tools'
 import { I18nProvider } from './i18n/I18nProvider'
 
-// Register WebMCP tools (feature-detected; no-op if document.modelContext is absent)
-registerWebMCPTools()
+// Registration is feature-detected and fail-visible without blocking the human UI.
+void registerWebMCPTools()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

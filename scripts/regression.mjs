@@ -2677,8 +2677,14 @@ await test('ten tools register and invalid writes fail without adding operations
   assert(tools.length === 10, `expected 10 tools, got ${tools.length}`)
 
   const registered = []
-  document.modelContext = { registerTool: tool => registered.push(tool) }
-  module.registerWebMCPTools()
+  document.modelContext = {
+    registerTool: async tool => {
+      registered.push(tool)
+      return undefined
+    },
+  }
+  const registrationSucceeded = await module.registerWebMCPTools()
+  assert(registrationSucceeded, 'valid Promise registrations reported failure')
   assert(registered.length === 10, `expected 10 registered tools, got ${registered.length}`)
 
   const byName = name => tools.find(tool => tool.name === name)
@@ -2892,6 +2898,14 @@ await test('ten tools register and invalid writes fail without adding operations
     }],
     ['connect_behavior', {
       ...common,
+      operation: 'updateEvent',
+      eventId: 'event-submit',
+      name: 'Cross screen update',
+      trigger: { type: 'click', componentId: 'comp-list-title' },
+      actions: [],
+    }],
+    ['connect_behavior', {
+      ...common,
       operation: 'bindApi',
       screenId: 'screen-list',
       name: 'Ghost API',
@@ -2925,6 +2939,17 @@ await test('ten tools register and invalid writes fail without adding operations
       path: '/cross',
       requestBindings: [{ componentId: 'comp-name-input', targetPath: 'name' }],
     }],
+    ['connect_behavior', {
+      ...common,
+      operation: 'updateApi',
+      operationId: 'api-save-user',
+      name: 'Cross screen API update',
+      method: 'POST',
+      path: '/users',
+      requestBindings: [{ componentId: 'comp-list-title', targetPath: 'name' }],
+      successStateId: null,
+      errorStateId: null,
+    }],
   ]
 
   for (const [toolName, input] of invalidCases) {
@@ -2932,6 +2957,57 @@ await test('ten tools register and invalid writes fail without adding operations
     const result = byName(toolName).execute(input)
     assert(!result.ok && result.error.code, `${toolName} returned a false success`)
     assert(pending().operations.length === before, `${toolName} added an invalid operation`)
+  }
+})
+
+await test('WebMCP registration awaits failures, aborts partial tools, and leaves UI startup available', async () => {
+  const module = await import(moduleUrl(toolsBundle, 'registration-failure'))
+  const active = new Set()
+  const attempted = []
+  const infoMessages = []
+  const errorMessages = []
+  const originalInfo = console.info
+  const originalError = console.error
+  console.info = (...values) => infoMessages.push(values)
+  console.error = (...values) => errorMessages.push(values)
+  try {
+    document.modelContext = {
+      registerTool: async (tool, options) => {
+        attempted.push(tool.name)
+        if (attempted.length === 4) throw new Error('Injected registration failure')
+        active.add(tool.name)
+        options.signal.addEventListener('abort', () => active.delete(tool.name), { once: true })
+        return undefined
+      },
+    }
+    const result = await module.registerWebMCPTools()
+    assert(result === false, 'partial registration returned a false success')
+    assert(attempted.length === 4, 'registration continued after the first rejection')
+    assert(active.size === 0, 'AbortSignal did not clean up partially registered tools')
+    assert(
+      !infoMessages.some(values => String(values[0]).includes('Registered')),
+      'registration logged success after rejection',
+    )
+    assert(
+      errorMessages.length === 1 &&
+        String(errorMessages[0][0]).includes('human UI remains available'),
+      'registration failure was not reported as a visible non-blocking error',
+    )
+
+    document.modelContext = undefined
+    assert(
+      await module.registerWebMCPTools() === false,
+      'missing native API did not remain a non-failing feature detection path',
+    )
+    const mainSource = readFileSync(join(root, 'src/main.tsx'), 'utf8')
+    assert(
+      mainSource.includes('void registerWebMCPTools()') &&
+        mainSource.indexOf('void registerWebMCPTools()') < mainSource.indexOf('createRoot('),
+      'UI startup is coupled to awaiting native tool registration',
+    )
+  } finally {
+    console.info = originalInfo
+    console.error = originalError
   }
 })
 
@@ -2961,6 +3037,22 @@ await test('representative screen/component/state/event/API writes reach the cha
   assert(
     byName('change_screen_structure').inputSchema.oneOf.length === 3,
     'screen structure tool does not expose exactly add, update, and remove',
+  )
+  assert(
+    byName('connect_behavior').inputSchema.oneOf.length === 6,
+    'behavior tool does not expose create, update, and remove for events and APIs',
+  )
+  execute('connect_behavior', {
+    operation: 'updateEvent',
+    eventId: 'event-submit',
+    name: 'Save from form',
+    trigger: { type: 'submit', componentId: 'comp-edit-page' },
+    actions: [{ type: 'callApi', apiOperationId: 'api-save-user' }],
+  })
+  assert(
+    byName('get_component').execute({ componentId: 'comp-save-btn' })
+      .data.component.config.eventId === null,
+    'moving an event trigger retained the old button event reference',
   )
   const context = byName('get_current_screen_context').execute({})
   assert(
@@ -3132,11 +3224,160 @@ await test('representative screen/component/state/event/API writes reach the cha
     actions: [{ type: 'callApi', apiOperationId: addedApiId }],
   })
   const addedEventId = latestCommand().eventId
+  execute('connect_behavior', {
+    operation: 'updateApi',
+    operationId: addedApiId,
+    name: 'Updated list API',
+    method: 'POST',
+    path: '/users/search',
+    requestBindings: [],
+    successStateId: addedStateId,
+    errorStateId: null,
+  })
+  execute('connect_behavior', {
+    operation: 'updateEvent',
+    eventId: addedEventId,
+    name: 'Updated load list',
+    trigger: { type: 'submit', componentId: 'comp-list-page' },
+    actions: [{ type: 'callApi', apiOperationId: addedApiId }],
+  })
+  const updatedContext = byName('get_current_screen_context').execute({})
+  const updatedApi = updatedContext.data.activeScreen.apiOperations
+    .find(operation => operation.id === addedApiId)
+  const updatedEvent = updatedContext.data.activeScreen.events
+    .find(event => event.id === addedEventId)
+  assert(
+    updatedApi?.name === 'Updated list API' &&
+      updatedApi.path === '/users/search' &&
+      updatedEvent?.name === 'Updated load list' &&
+      updatedEvent.actions[0]?.apiOperationId === addedApiId &&
+      updatedContext.data.activeScreen.screen.eventIds.includes(addedEventId),
+    'behavior updates replaced IDs or lost event/API references',
+  )
   execute('connect_behavior', { operation: 'removeEvent', eventId: addedEventId })
   execute('connect_behavior', { operation: 'removeApi', operationId: addedApiId })
   execute('upsert_screen_state', { operation: 'remove', stateId: addedStateId })
 
   assert(pending().operations.length === version, 'operation count and version diverged')
+})
+
+await test('WebMCP reads are compact, discoverable, serializable, and diagnostic', async () => {
+  localStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'agent-read-surfaces'))
+  const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const initialContext = byName('get_current_screen_context').execute({})
+  assert(initialContext.ok, 'initial screen context failed')
+  assert(
+    initialContext.data.documentView === 'effective' &&
+      initialContext.data.activeScreen.documentView === 'effective' &&
+      initialContext.data.activeScreen.screen.id === 'screen-list' &&
+      initialContext.data.activeScreen.components.length > 1 &&
+      Array.isArray(initialContext.data.activeScreen.states) &&
+      Array.isArray(initialContext.data.activeScreen.events) &&
+      Array.isArray(initialContext.data.activeScreen.apiOperations),
+    'active screen context does not provide one complete effective projection',
+  )
+  const begin = byName('begin_change_set').execute({ summary: 'Read surface diagnostics' })
+  assert(begin.ok, 'diagnostic change set failed to begin')
+  let version = begin.data.changeSetVersion
+  const write = input => {
+    const result = byName('connect_behavior').execute({
+      changeSetId: begin.data.changeSetId,
+      expectedRevision: begin.data.baseRevision,
+      expectedChangeSetVersion: version,
+      ...input,
+    })
+    assert(result.ok, `diagnostic fixture write failed: ${JSON.stringify(result)}`)
+    version = result.data.changeSetVersion
+  }
+  write({
+    operation: 'connectEvent',
+    screenId: 'screen-list',
+    name: 'Empty behavior',
+    trigger: { type: 'click', componentId: 'comp-list-title' },
+    actions: [],
+  })
+  write({
+    operation: 'bindApi',
+    screenId: 'screen-list',
+    name: 'Incomplete API',
+    method: 'GET',
+    path: '/incomplete',
+    requestBindings: [],
+  })
+
+  const context = byName('get_current_screen_context').execute({})
+  const pending = byName('get_pending_change_set').execute({})
+  assert(
+    context.ok &&
+      context.data.activeChangeSet.operationCount === 2 &&
+      context.data.activeChangeSet.baseDocument === undefined &&
+      context.data.activeChangeSet.operations === undefined,
+    'context duplicates raw change set document or operations',
+  )
+  assert(
+    pending.ok &&
+      pending.data.activeChangeSet.baseDocument === undefined &&
+      pending.data.activeChangeSet.operations.length === 2 &&
+      pending.data.activeChangeSet.operationSummaries.length === 2 &&
+      pending.data.activeChangeSet.operationSummaries.every(operation =>
+        operation.source === 'agent' &&
+        typeof operation.action === 'string' &&
+        Array.isArray(operation.changes)
+      ),
+    'pending change set omitted raw operations or review-ready compact diffs',
+  )
+  assert(
+    JSON.parse(JSON.stringify(context)).ok && JSON.parse(JSON.stringify(pending)).ok,
+    'WebMCP read results are not JSON serializable',
+  )
+  for (const tool of module.WEBMCP_TOOLS) {
+    assert(
+      tool.description.includes('get_current_screen_context') ||
+        tool.name === 'get_current_screen_context',
+      `${tool.name} does not lead the agent to the workflow entry point`,
+    )
+    if (!tool.annotations?.readOnlyHint) {
+      assert(
+        tool.description.includes('Only a human can Accept or Reject'),
+        `${tool.name} does not explain the human-only review boundary`,
+      )
+    }
+  }
+
+  const sampleDiagnostics = byName('get_screen_diagnostics').execute({
+    screenId: 'screen-edit',
+  })
+  assert(
+    sampleDiagnostics.ok &&
+      sampleDiagnostics.data.diagnostics.some(item =>
+        item.code === 'UNCONNECTED_BUTTON' &&
+        item.severity === 'warning' &&
+        item.entityId === 'comp-cancel-btn'
+      ),
+    'sample diagnostics did not identify the unconnected Cancel button',
+  )
+  const diagnostics = byName('get_screen_diagnostics').execute({
+    screenId: 'screen-list',
+  })
+  const diagnosticKeys = diagnostics.data.diagnostics
+    .map(item => `${item.entityId}:${item.code}`)
+  assert(
+    diagnostics.ok &&
+      diagnostics.data.diagnostics.some(item =>
+        item.code === 'EVENT_WITHOUT_ACTIONS' && item.severity === 'warning'
+      ) &&
+      diagnostics.data.diagnostics.some(item =>
+        item.code === 'API_WITHOUT_SUCCESS_STATE' && item.severity === 'info'
+      ) &&
+      diagnostics.data.diagnostics.some(item =>
+        item.code === 'API_WITHOUT_ERROR_STATE' && item.severity === 'info'
+      ) &&
+      diagnosticKeys.join('|') === [...diagnosticKeys].sort().join('|'),
+    `constructed completeness diagnostics are incomplete or nondeterministic: ${
+      JSON.stringify(diagnostics)
+    }`,
+  )
 })
 
 await test('palette factory and component drops use validated commands', async () => {
@@ -8395,8 +8636,10 @@ await test('AI writes expose only the change set review flow', async () => {
   assert(
     Object.keys(context.data).sort().join(',') === [
       'activeChangeSet',
+      'activeScreen',
       'activeScreenId',
       'activeStateId',
+      'documentView',
       'project',
       'rejectedRecords',
       'revision',
