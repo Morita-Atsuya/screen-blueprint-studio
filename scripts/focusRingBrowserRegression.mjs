@@ -2698,13 +2698,45 @@ async function run() {
         x: points.source.x,
         y: points.source.y,
       })
-      for (const ratio of [0.12, 0.45, 1]) {
+      let currentPoint = {
+        x: points.source.x + 12,
+        y: points.source.y + 6,
+      }
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'left',
+        buttons: 1,
+        x: currentPoint.x,
+        y: currentPoint.y,
+      })
+      await new Promise(resolveWait => setTimeout(resolveWait, 75))
+      if (targetParentId !== undefined) {
+        const visibleTarget = await cdp.call('Runtime.evaluate', {
+          expression: `(() => {
+            const target = document.querySelector(
+              '[data-drop-surface="canvas"]' +
+              '[data-drop-parent=${JSON.stringify(points.targetParent)}]' +
+              '[data-drop-position=${JSON.stringify(points.targetPosition)}]'
+            )
+            target.scrollIntoView({ block: 'center', inline: 'center' })
+            const rect = target.getBoundingClientRect()
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          })()`,
+          returnByValue: true,
+        })
+        points.target = visibleTarget.result.value
+      }
+      for (const ratio of [0.35, 0.7, 1]) {
+        const nextPoint = {
+          x: currentPoint.x + (points.target.x - currentPoint.x) * ratio,
+          y: currentPoint.y + (points.target.y - currentPoint.y) * ratio,
+        }
         await cdp.call('Input.dispatchMouseEvent', {
           type: 'mouseMoved',
           button: 'left',
           buttons: 1,
-          x: points.source.x + (points.target.x - points.source.x) * ratio,
-          y: points.source.y + (points.target.y - points.source.y) * ratio,
+          x: nextPoint.x,
+          y: nextPoint.y,
         })
         await new Promise(resolveWait => setTimeout(resolveWait, 75))
       }
