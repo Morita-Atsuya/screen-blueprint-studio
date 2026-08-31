@@ -116,6 +116,64 @@ export function mountReviewLockApp(locale: Locale = 'en') {
 
   return {
     container,
+    addContainerAffordanceFixture() {
+      flushSync(() => {
+        const add = (
+          componentId: string,
+          parentId: string,
+          description: string,
+          position?: number,
+        ) => useAppStore.getState().dispatch({
+          type: 'addComponent',
+          componentId,
+          screenId: 'screen-edit',
+          parentId,
+          kind: 'container',
+          config: {
+            kind: 'container',
+            layout: 'vertical',
+            gap: 'sm',
+            columns: 2,
+            justify: 'start',
+            align: 'stretch',
+            wrap: false,
+          },
+          position,
+        }, `Add ${description}`)
+        add('regression-empty-container', 'comp-edit-section', 'Empty group')
+        add('regression-nested-container', 'comp-edit-section', 'Nested group')
+        add('regression-inner-container', 'regression-nested-container', 'Inner group')
+        useAppStore.getState().dispatch({
+          type: 'updateComponentSpec',
+          componentId: 'regression-empty-container',
+          patch: {
+            common: { description: 'Empty group' },
+            config: { layout: 'horizontal' },
+          },
+        }, 'Name empty group')
+        useAppStore.getState().dispatch({
+          type: 'updateComponentSpec',
+          componentId: 'regression-nested-container',
+          patch: { common: { description: 'Nested group' } },
+        }, 'Name nested group')
+        useAppStore.getState().dispatch({
+          type: 'updateComponentSpec',
+          componentId: 'regression-inner-container',
+          patch: { common: { description: 'Inner group' } },
+        }, 'Name inner group')
+        useAppStore.getState().setActiveState('state-edit-default')
+      })
+    },
+    markInnerContainerChanged() {
+      flushSync(() => {
+        const changeSet = useAppStore.getState().beginChangeSet('Update nested Container')
+        useAppStore.getState().dispatchToChangeSet(changeSet.id, {
+          type: 'updateComponentSpec',
+          componentId: 'regression-inner-container',
+          patch: { common: { description: 'Inner group updated' } },
+        }, 'agent')
+      })
+    },
     prepareHistory() {
       flushSync(() => {
         useAppStore.getState().dispatch({

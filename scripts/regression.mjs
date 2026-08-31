@@ -5430,6 +5430,98 @@ await test('Canvas DOM supports discoverable pan without stealing component or i
   harness.unmount()
 })
 
+await test('Canvas Containers expose persistent selectable and droppable structure', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  Object.defineProperties(globalThis, {
+    requestAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: () => 1,
+    },
+    cancelAnimationFrame: {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    },
+  })
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppBundle, 'canvas-container-affordance')
+  )
+  const harness = mountReviewLockApp('en')
+  harness.addContainerAffordanceFixture()
+
+  const empty = document.querySelector(
+    '[data-component-id="regression-empty-container"]',
+  )
+  const nested = document.querySelector(
+    '[data-component-id="regression-nested-container"]',
+  )
+  const inner = document.querySelector(
+    '[data-component-id="regression-inner-container"]',
+  )
+  assert(
+    empty?.hasAttribute('data-container-component') &&
+      nested?.hasAttribute('data-container-component') &&
+      inner?.hasAttribute('data-container-component') &&
+      empty.querySelector('[data-container-identity][aria-hidden="true"]')
+        ?.textContent.trim() === 'Empty group' &&
+      nested.querySelector('[data-container-identity][aria-hidden="true"]')
+        ?.textContent.trim() === 'Nested group' &&
+      inner.querySelector('[data-container-identity][aria-hidden="true"]')
+        ?.textContent.trim() === 'Inner group',
+    'empty or nested Containers did not render persistent editor identity',
+  )
+  const emptyDropTarget = empty.querySelector(
+    '[data-drop-surface="canvas"][data-drop-parent="regression-empty-container"]',
+  )
+  assert(
+    emptyDropTarget?.getAttribute('data-drop-orientation') === 'horizontal',
+    'empty horizontal Container did not retain its child drop target',
+  )
+
+  const identity = empty.querySelector('[data-container-identity]')
+  const surface = document.querySelector('[data-canvas-surface]')
+  const beforeIdentityPan = surface.getAttribute('style')
+  harness.keyDown(window, ' ', { code: 'Space' })
+  harness.pointer(identity, 'pointerdown', { clientX: 200, clientY: 200 })
+  harness.pointer(window, 'pointermove', { clientX: 230, clientY: 220 })
+  harness.pointer(window, 'pointerup', { clientX: 230, clientY: 220 })
+  harness.keyUp(window, ' ', { code: 'Space' })
+  assert(
+    surface.getAttribute('style') !== beforeIdentityPan,
+    'persistent Container identity blocked Space-drag panning',
+  )
+
+  harness.click(empty)
+  assert(
+    harness.state().selectedComponentId === 'comp-task-title-input',
+    'Space-drag trailing click was not suppressed on Container identity',
+  )
+  harness.click(empty)
+  assert(
+    harness.state().selectedComponentId === 'regression-empty-container' &&
+      empty.hasAttribute('data-editor-selected'),
+    'clicking the empty Container did not select it',
+  )
+  harness.contextMenu(empty)
+  assert(
+    harness.state().selectedComponentId === 'regression-empty-container' &&
+      document.querySelector('[data-component-add-menu][role="menu"]'),
+    'empty Container did not open its add context menu',
+  )
+
+  harness.keyDown(document, 'Escape', { code: 'Escape' })
+  harness.markInnerContainerChanged()
+  assert(
+    inner.getAttribute('data-component-change') === 'modified' &&
+      inner.querySelector('[data-editor-chrome] [data-change-status]'),
+    'nested Container boundary did not coexist with its change marker',
+  )
+  harness.unmount()
+})
+
 await test('visible Screen and Inspector labels focus their draft controls', async () => {
   for (const locale of ['en', 'ja']) {
     memoryStorage.clear()
@@ -8198,7 +8290,7 @@ await test('active state descriptions stay in accessible editor chrome', async (
   )
 })
 
-await test('Canvas component chrome stays outside the idle preview flow', async () => {
+await test('Canvas leaf chrome stays transient while Containers expose structure', async () => {
   const canvasSource = readFileSync(
     join(root, 'src/features/canvas/Canvas.tsx'),
     'utf8',
@@ -8212,12 +8304,18 @@ await test('Canvas component chrome stays outside the idle preview flow', async 
     'utf8',
   )
   const idleComponentRule = canvasStyles.match(/\.comp \{([^}]*)\}/)?.[1] ?? ''
+  const containerRule =
+    canvasStyles.match(/[.]containerComponent\s*\{([^}]*)\}/)?.[1] ?? ''
 
   assert(
     !canvasSource.includes('COMPONENT_KIND_MESSAGE_KEYS') &&
       !canvasSource.includes('styles.componentKind') &&
-      canvasSource.includes('<span className={styles.componentLabel}>{displayName}</span>'),
-    'Canvas still renders kind labels instead of semantic floating labels',
+      canvasSource.includes('<span className={styles.componentLabel}>{displayName}</span>') &&
+      canvasSource.includes(
+        'className={styles.containerIdentity} data-container-identity aria-hidden="true"',
+      ) &&
+      canvasSource.includes('data-container-component='),
+    'Canvas does not separate transient leaf labels from persistent Container identity',
   )
   assert(
     !idleComponentRule.includes('border:') &&
@@ -8234,6 +8332,16 @@ await test('Canvas component chrome stays outside the idle preview flow', async 
       canvasStyles.includes('.selected > .componentChrome') &&
       canvasStyles.includes('.comp:focus-visible::after'),
     'floating Canvas chrome is not gated by hover, selection, or focus',
+  )
+  assert(
+    containerRule.includes('box-sizing: border-box') &&
+      containerRule.includes('min-height: 64px') &&
+      containerRule.includes('padding: 10px') &&
+      containerRule.includes('border: 1px dashed') &&
+      canvasStyles.includes('.containerIdentity') &&
+      canvasStyles.includes("width: 100%") &&
+      canvasStyles.includes('@media (forced-colors: active)'),
+    'Container structure has no persistent boundary, empty height, identity, or forced-color fallback',
   )
   assert(
     canvasSource.includes('hoveredComponentId === component.id') &&

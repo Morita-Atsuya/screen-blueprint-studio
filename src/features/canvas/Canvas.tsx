@@ -492,6 +492,10 @@ function CanvasComponent({
         isHovered ? styles.hovered : '',
         isDragging ? styles.dragging : '',
         component.kind === 'button' ? styles.buttonComponent : '',
+        component.kind === 'container' ? styles.containerComponent : '',
+        component.kind === 'container' && component.childIds.length === 0
+          ? styles.emptyContainer
+          : '',
         independentRoot && !component.common.visible ? styles.rootStateHidden : '',
         component.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}
@@ -544,6 +548,10 @@ function CanvasComponent({
       data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}
       data-drag-component={!isRoot && !reviewLocked ? component.id : undefined}
       data-component-change={changeStatus}
+      data-container-component={component.kind === 'container' || undefined}
+      data-container-empty={
+        component.kind === 'container' && component.childIds.length === 0 || undefined
+      }
     >
       {changeStatus ? (
         <span className={styles.componentChangeBadge} data-editor-chrome>
@@ -558,6 +566,11 @@ function CanvasComponent({
         <div className={styles.componentChrome} data-editor-chrome>
           <span className={styles.componentLabel}>{displayName}</span>
         </div>
+      ) : null}
+      {component.kind === 'container' ? (
+        <span className={styles.containerIdentity} data-container-identity aria-hidden="true">
+          {displayName}
+        </span>
       ) : null}
       <ComponentView comp={component} t={t} />
       {isContainer && (

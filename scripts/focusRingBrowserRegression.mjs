@@ -460,6 +460,46 @@ async function run() {
       trigger: { type: 'click', componentId: 'comp-cancel-btn' },
       actions: [{ type: 'navigate', destinationScreenId: 'screen-list' }],
     }
+    const containerLayout = {
+      kind: 'container',
+      layout: 'vertical',
+      gap: 'sm',
+      columns: 2,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    }
+    browserDocument.components['browser-empty-container'] = {
+      id: 'browser-empty-container',
+      screenId: 'screen-edit',
+      parentId: 'comp-edit-section',
+      childIds: [],
+      kind: 'container',
+      common: { description: 'Empty browser group', visible: true, enabled: true },
+      config: { ...containerLayout, layout: 'horizontal' },
+    }
+    browserDocument.components['browser-nested-container'] = {
+      id: 'browser-nested-container',
+      screenId: 'screen-edit',
+      parentId: 'comp-edit-section',
+      childIds: ['browser-inner-container'],
+      kind: 'container',
+      common: { description: 'Nested browser group', visible: true, enabled: true },
+      config: containerLayout,
+    }
+    browserDocument.components['browser-inner-container'] = {
+      id: 'browser-inner-container',
+      screenId: 'screen-edit',
+      parentId: 'browser-nested-container',
+      childIds: [],
+      kind: 'container',
+      common: { description: 'Inner browser group', visible: true, enabled: true },
+      config: containerLayout,
+    }
+    browserDocument.components['comp-edit-section'].childIds.push(
+      'browser-empty-container',
+      'browser-nested-container',
+    )
     const persisted = JSON.stringify({
       document: browserDocument,
       activeScreenId: 'screen-edit',
@@ -468,8 +508,17 @@ async function run() {
         summary: 'Edge focus regression',
         baseRevision: browserDocument.revision,
         baseDocument: browserDocument,
-        operations: [],
-        version: 0,
+        operations: [{
+          id: 'container-affordance-operation',
+          source: 'agent',
+          command: {
+            type: 'updateComponentSpec',
+            componentId: 'browser-inner-container',
+            patch: { common: { description: 'Inner browser group updated' } },
+          },
+          issuedAt: '2025-01-01T00:00:00.000Z',
+        }],
+        version: 1,
         createdAt: '2025-01-01T00:00:00.000Z',
       },
     })
@@ -724,6 +773,96 @@ async function run() {
           restored.result.value.pageInside,
         `${width}px reverse background drag could not recover the Page`,
       )
+      await cdp.call('Runtime.evaluate', {
+        expression: `document.querySelector(
+          '[data-component-id="browser-inner-container"]'
+        ).click()`,
+      })
+      await waitForExpression(
+        `document.querySelector(
+          '[data-component-id="browser-inner-container"]'
+        ).hasAttribute('data-editor-selected')`,
+        `${width}px nested Container could not be selected`,
+      )
+      const containerResult = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const empty = document.querySelector(
+            '[data-component-id="browser-empty-container"]'
+          )
+          const nested = document.querySelector(
+            '[data-component-id="browser-nested-container"]'
+          )
+          const inner = document.querySelector(
+            '[data-component-id="browser-inner-container"]'
+          )
+          inner.focus({ preventScroll: true })
+          const describe = element => {
+            const style = getComputedStyle(element)
+            return {
+              offsetHeight: element.offsetHeight,
+              borderStyle: style.borderStyle,
+              borderWidth: style.borderWidth,
+              padding: style.padding,
+              identity: element.querySelector(
+                ':scope > [data-container-identity][aria-hidden="true"]'
+              )?.textContent.trim(),
+            }
+          }
+          const nestedRect = nested.getBoundingClientRect()
+          const innerRect = inner.getBoundingClientRect()
+          const emptyDropTarget = empty.querySelector(
+            '[data-drop-surface="canvas"][data-drop-parent="browser-empty-container"]'
+          )
+          return {
+            empty: describe(empty),
+            nested: describe(nested),
+            inner: describe(inner),
+            nestedIndent: innerRect.left - nestedRect.left,
+            emptyDropTarget: {
+              exists: Boolean(emptyDropTarget),
+              orientation: emptyDropTarget?.getAttribute('data-drop-orientation'),
+              width: emptyDropTarget?.offsetWidth,
+              height: emptyDropTarget?.offsetHeight,
+              expectedWidth: empty.clientWidth - 20,
+            },
+            innerChanged: inner.getAttribute('data-component-change'),
+            changeMarker: Boolean(inner.querySelector('[data-change-status="modified"]')),
+            selectedFocusOverlay: getComputedStyle(inner, '::after').boxShadow,
+            horizontalOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          }
+        })()`,
+        returnByValue: true,
+      })
+      const containerMeasurement = containerResult.result.value
+      assert(
+        containerMeasurement.empty.offsetHeight >= 64 &&
+          containerMeasurement.empty.borderStyle === 'dashed' &&
+          containerMeasurement.empty.borderWidth === '1px' &&
+          containerMeasurement.empty.padding === '10px' &&
+          containerMeasurement.empty.identity === 'Empty browser group' &&
+          containerMeasurement.emptyDropTarget.exists &&
+          containerMeasurement.emptyDropTarget.orientation === 'horizontal' &&
+          containerMeasurement.emptyDropTarget.width >=
+            containerMeasurement.emptyDropTarget.expectedWidth - 1 &&
+          containerMeasurement.emptyDropTarget.height >= 32,
+        `${width}px empty horizontal Container has no persistent full-area drop target`,
+      )
+      assert(
+        containerMeasurement.nested.borderStyle === 'dashed' &&
+          containerMeasurement.inner.borderStyle === 'dashed' &&
+          containerMeasurement.nested.identity === 'Nested browser group' &&
+          containerMeasurement.inner.identity === 'Inner browser group updated' &&
+          containerMeasurement.nestedIndent > 0,
+        `${width}px nested Container hierarchy is not visually distinguishable`,
+      )
+      assert(
+        containerMeasurement.innerChanged === 'modified' &&
+          containerMeasurement.changeMarker &&
+          containerMeasurement.selectedFocusOverlay.includes('2px') &&
+          containerMeasurement.horizontalOverflow === 0,
+        `${width}px Container selection, focus, change marker, or overflow regressed`,
+      )
     }
 
     await cdp.call('Emulation.setDeviceMetricsOverride', {
@@ -745,6 +884,161 @@ async function run() {
         'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
       ))`,
       'review UI did not restore after Canvas viewport checks',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const changes = [...document.querySelectorAll('button')].find(
+          button => button.textContent.trim() === 'Changes'
+        )
+        changes?.click()
+      })()`,
+    })
+    await waitForExpression(
+      `[...document.querySelectorAll('button')].some(
+        button => button.textContent.trim() === 'Accept'
+      )`,
+      'change set Accept action did not render before Container DnD',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('button')].find(
+        button => button.textContent.trim() === 'Accept'
+      ).click()`,
+    })
+    await waitForExpression(
+      `!document.querySelector('[data-palette-kind="container"]').disabled`,
+      'accepting the review did not unlock Container DnD',
+    )
+    const dragPoints = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const source = document.querySelector('[data-palette-kind="container"]')
+          .getBoundingClientRect()
+        const target = document.querySelector(
+          '[data-drop-surface="canvas"][data-drop-parent="browser-empty-container"]'
+        ).getBoundingClientRect()
+        return {
+          source: { x: source.left + source.width / 2, y: source.top + source.height / 2 },
+          target: { x: target.left + target.width / 2, y: target.top + target.height / 2 },
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const { source: dragSource, target: dragTarget } = dragPoints.result.value
+    await cdp.call('Runtime.evaluate', {
+      expression: `(async () => {
+        const source = document.querySelector('[data-palette-kind="container"]')
+        const pointer = (type, x, y, buttons) => new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 101,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: type === 'pointerup' ? 0 : 0,
+          buttons,
+          clientX: x,
+          clientY: y,
+        })
+        source.dispatchEvent(pointer(
+          'pointerdown', ${dragSource.x}, ${dragSource.y}, 1
+        ))
+        document.dispatchEvent(pointer(
+          'pointermove', ${dragSource.x + 10}, ${dragSource.y + 10}, 1
+        ))
+        await new Promise(resolveWait => setTimeout(resolveWait, 50))
+        document.dispatchEvent(pointer(
+          'pointermove', ${dragTarget.x}, ${dragTarget.y}, 1
+        ))
+        await new Promise(resolveWait => setTimeout(resolveWait, 100))
+        return true
+      })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    const dragState = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const point = document.elementFromPoint(${dragTarget.x}, ${dragTarget.y})
+        const target = document.querySelector(
+          '[data-drop-surface="canvas"][data-drop-parent="browser-empty-container"]'
+        )
+        return {
+          pointTag: point?.tagName,
+          pointDropParent: point?.getAttribute('data-drop-parent'),
+          targetOutcome: target?.getAttribute('data-drop-outcome'),
+          targetVisible: target?.getAttribute('data-drop-visible'),
+          targetBorder: getComputedStyle(target).borderTopColor,
+          targetClass: target?.className,
+          dropParentsAtPoint: document.elementsFromPoint(
+            ${dragTarget.x}, ${dragTarget.y}
+          ).map(element => element.getAttribute('data-drop-parent')).filter(Boolean),
+          overlay: Boolean(document.querySelector('[data-drag-overlay]')),
+        }
+      })()`,
+      returnByValue: true,
+    })
+    assert(
+      dragState.result.value.targetClass.includes('_over_') &&
+        dragState.result.value.dropParentsAtPoint.includes('browser-empty-container') &&
+        dragState.result.value.overlay,
+      `empty Container was not the active registered collision target: ` +
+        JSON.stringify(dragState.result.value),
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 101,
+        pointerType: 'mouse',
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: ${dragTarget.x},
+        clientY: ${dragTarget.y},
+      }))`,
+    })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      x: dragTarget.x,
+      y: dragTarget.y,
+    })
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-component-id="browser-empty-container"] [data-container-component]'
+      ))`,
+      `real palette DnD did not add a child inside the empty Container: ` +
+        `${JSON.stringify({ dragPoints: dragPoints.result.value, dragState: dragState.result.value })}`,
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        '[data-component-id="browser-empty-container"] [data-container-component]'
+      )) && !document.querySelector('[data-drag-overlay]')`,
+      'successful Container DnD did not persist cleanly across reload',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const key = 'screen-blueprint-studio:v1'
+        const data = JSON.parse(localStorage.getItem(key))
+        data.activeChangeSet = {
+          id: 'post-dnd-focus-regression',
+          summary: 'Verify edge focus after Container DnD',
+          baseRevision: data.document.revision,
+          baseDocument: data.document,
+          operations: [],
+          version: 0,
+          createdAt: '2025-01-01T00:00:00.000Z',
+        }
+        localStorage.setItem(key, JSON.stringify(data))
+        return true
+      })()`,
+    })
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector(
+        'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
+      ))`,
+      'post-DnD focus review state did not restore',
     )
     await cdp.call('Runtime.evaluate', {
       expression: `document.querySelectorAll(
@@ -979,7 +1273,12 @@ async function run() {
         measurement.headerCount === 2 &&
           measurement.tabCount === 2 &&
           measurement.flowSummaryCount === 1,
-        `${width}px did not render all five edge focus controls`,
+        `${width}px did not render all five edge focus controls: ` +
+          JSON.stringify({
+            headers: measurement.headerCount,
+            tabs: measurement.tabCount,
+            flow: measurement.flowSummaryCount,
+          }),
       )
       assert(
         measurement.flowInitiallyOpen === false &&
