@@ -59,7 +59,8 @@ AIがcurrent modelと直近の破棄記録を再読し、次のchange setを作�
 
 ### TaskFlow Priorityデモ
 
-デモ前にheaderの`Reset to sample`でTaskFlowを明示的に初期化します。
+デモ撮影前の開発者準備として、開発用flagを有効にした起動でTaskFlowを初期化し、
+同じoriginのstorageを保ったままflagなしで再起動します。動画本編には初期化操作を含めません。
 
 1. 人間が`Edit Task`のStatusを選択し、エージェントが`get_current_screen_context`でlive selectionと画面一式を読む。
 2. エージェントが`begin_change_set`を開始し、`change_component_structure`でStatus直後に`Priority` Selectを追加する。`fieldKey`は`priority`、optionsはLow／Medium／High、required、defaultはMediumとし、Saving stateでは他の入力と同様に無効化する。
@@ -98,7 +99,6 @@ AIがcurrent modelと直近の破棄記録を再読し、次のchange setを作�
 - 非default状態でcomponentを選択し、Inspectorの「状態別設定」で表示・有効状態・内容をoverride
 - Buttonや入力componentを選択し、Inspectorの「振る舞い」でeventと実行順action、API operationとrequest bindingを編集。field bindingの正準sourceは`ApiOperation.requestBindings`のみ。`textInput`ではvalidation rule（required／minLength／maxLength／pattern／email／custom）を追加・編集・削除・並べ替え
 - headerの`EN` / `JA`でUI言語を即時切替（選択はlocalStorageへ保存）
-- headerの`Reset to sample`で確認後にTaskFlowへ初期化。通常起動では既存の保存データを上書きせず、active change set中はreset不可
 
 Page／Modal root、別screen、leaf、自分自身・子孫へのdropは理由別に拒否されます。Modal root自体はreparentできませんが、Page treeとModal treeの通常componentは相互に移動できます。同じ位置へ戻すdropは正常なno-opとしてToast、history、change set operationを生成せず、対象外でdragを終えた場合やEscapeは通常cancelとして扱います。active change setが始まると進行中のdragは安全にcancelされ、反映または破棄まで新しいdragを開始できません。
 drop位置はdrag中だけ挿入line・outlineで示し、無効な位置は別のchromeで識別できます。preview上へ説明文やplaceholderを常設しません。画面名は画面一覧・Page frameの識別に使うeditor metadataです。Page／Container／Modalは構造とlayoutだけを持ち、表示する見出し・本文・補足はchildのTextとその表示スタイル、操作文言は各leaf componentで明示します。Containerの`description`はTreeとCanvasでグループを識別するeditor metadataです。
@@ -132,6 +132,28 @@ npm run preview
 標準の場所にない場合は、実行ファイルの絶対pathを`CHROME_PATH`へ設定します。CIも
 同じ順序でbuild後に、固定した`CHROME_PATH`のbrowser versionを確認してから実行します。
 browser回帰のprocess-tree cleanupはmacOS/Linux向けで、Windowsは未対応です。
+
+### 開発用sample初期化
+
+Headerの`Reset to sample`は開発補助であり、通常の`npm run dev`、production build、
+GitHub Pagesでは表示されません。必要な場合だけ、値を厳密に`true`へ設定して起動します。
+
+```bash
+VITE_ENABLE_SAMPLE_RESET=true npm run dev
+```
+
+flagを含むproduction buildが必要な場合は次のように指定します。
+
+```bash
+VITE_ENABLE_SAMPLE_RESET=true npm run build
+```
+
+`.env.example`を`.env.local`へコピーして利用することもできます。未設定、空文字、
+`false`、`1`など、`true`以外の値ではbuttonは表示されません。開発用buttonを表示した場合も、
+active change set中は無効で、実行前の確認と既存データを自動上書きしない契約を維持します。
+
+保存データが壊れた場合に表示されるRecovery画面とApp error fallbackのsample復旧操作は、
+この開発用flagとは独立したユーザー救済であり、常に利用できます。
 
 ## WebMCPをChromeで確認する
 

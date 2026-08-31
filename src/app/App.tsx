@@ -26,6 +26,7 @@ import {
   resolvePaneWidths,
 } from './paneWidths'
 import logoMarkUrl from '../../brand/logo-mark.svg'
+import { BUILD_FEATURE_FLAGS } from '../config/buildFeatureFlags'
 import styles from './App.module.css'
 
 function browserStorage(): Storage | undefined {
@@ -308,16 +309,19 @@ export function App() {
           </span>
           <div className={styles.headerActions}>
             <LanguageSelector />
-            <button
-              className={styles.historyBtn}
-              onClick={confirmResetToSample}
-              disabled={Boolean(activeChangeSet)}
-              title={resetSampleTitle}
-              aria-label={resetSampleTitle}
-              type="button"
-            >
-              ↻ <span className={styles.historyActionText}>{t('app.resetSample')}</span>
-            </button>
+            {BUILD_FEATURE_FLAGS.sampleReset ? (
+              <button
+                className={styles.historyBtn}
+                onClick={confirmResetToSample}
+                disabled={Boolean(activeChangeSet)}
+                title={resetSampleTitle}
+                aria-label={resetSampleTitle}
+                type="button"
+                data-sample-reset
+              >
+                ↻ <span className={styles.historyActionText}>{t('app.resetSample')}</span>
+              </button>
+            ) : null}
             <button
               className={styles.historyBtn}
               onClick={undo}
@@ -325,6 +329,7 @@ export function App() {
               title={undoTitle}
               aria-label={undoTitle}
               type="button"
+              data-history-undo
             >
               ↩ <span className={styles.historyActionText}>{t('app.undo')}</span>
             </button>
@@ -335,6 +340,7 @@ export function App() {
               title={redoTitle}
               aria-label={redoTitle}
               type="button"
+              data-history-redo
             >
               ↪ <span className={styles.historyActionText}>{t('app.redo')}</span>
             </button>

@@ -237,7 +237,7 @@ review lock解除後、人間が通常UIで必要な修正を確定する
 | 2:20〜2:40 | 既存Update Task APIへ`body.priority` bindingをID保持updateし、反映結果を示す | Potential Impact / Execution |
 | 2:40〜2:55 | DevToolsまたはコードでWebMCP実装を短く示す | WebMCP Leverage |
 
-デモ前はheaderの明示resetでTaskFlowを初期化する。Priorityは初期sampleに存在させず、最初の提案ではLow／Medium／High、default MediumとしてStatus直後へ追加する。人間はAccept後にLow／Normal／Critical、default Normalへ修正する。次の提案は`get_current_screen_context`でその修正と生成IDを再取得し、`connect_behavior`の`updateApi`で既存`api-update-task`へbindingだけを追加する。診断toolや未実装の仕様出力には依存しない。
+デモ撮影前は`VITE_ENABLE_SAMPLE_RESET=true npm run dev`で開発用header resetを表示してTaskFlowを初期化し、同じoriginのlocalStorageを保持したままflagなしの`npm run dev`へ再起動する。動画本編にはreset操作を含めない。portable import実装後はsample spec importを事前準備に使える。Priorityは初期sampleに存在させず、最初の提案ではLow／Medium／High、default MediumとしてStatus直後へ追加する。人間はAccept後にLow／Normal／Critical、default Normalへ修正する。次の提案は`get_current_screen_context`でその修正と生成IDを再取得し、`connect_behavior`の`updateApi`で既存`api-update-task`へbindingだけを追加する。診断toolや未実装の仕様出力には依存しない。
 
 ## 10. 企画採点テンプレート
 

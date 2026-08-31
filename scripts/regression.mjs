@@ -101,8 +101,10 @@ const componentPlacementBundle = join(temp, 'componentPlacement.mjs')
 const componentPreviewBundle = join(temp, 'componentPreview.mjs')
 const inspectorSectionsBundle = join(temp, 'inspectorSections.mjs')
 const screenFlowBundle = join(temp, 'screenFlow.mjs')
+const buildFeatureFlagsBundle = join(temp, 'buildFeatureFlags.mjs')
 const renderInspectorBundle = join(temp, 'renderInspector.mjs')
 const renderAppBundle = join(temp, 'renderApp.mjs')
+const renderAppSampleResetBundle = join(temp, 'renderAppSampleReset.mjs')
 const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
 const mountDeleteDialogBundle = join(temp, 'mountDeleteDialog.mjs')
 const migratePersistedDataBundle = join(temp, 'migratePersistedData.mjs')
@@ -138,6 +140,7 @@ bundle('src/domain/componentPlacement.ts', componentPlacementBundle)
 bundle('src/features/canvas/componentPreview.ts', componentPreviewBundle)
 bundle('src/features/inspector/inspectorSections.ts', inspectorSectionsBundle)
 bundle('src/domain/screenFlow.ts', screenFlowBundle)
+bundle('src/config/buildFeatureFlags.ts', buildFeatureFlagsBundle)
 bundle('src/persistence/migratePersistedData.ts', migratePersistedDataBundle)
 bundle('src/domain/canonicalProjectSpecV3.ts', canonicalProjectSpecV3Bundle)
 bundle(
@@ -154,6 +157,16 @@ bundle(
   [
     '--jsx=automatic',
     '--loader:.svg=dataurl',
+    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  ],
+)
+bundle(
+  'scripts/fixtures/renderApp.tsx',
+  renderAppSampleResetBundle,
+  [
+    '--jsx=automatic',
+    '--loader:.svg=dataurl',
+    '--define:import.meta.env.VITE_ENABLE_SAMPLE_RESET="true"',
     "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   ],
 )
@@ -3974,12 +3987,104 @@ await test('TaskFlow reset is explicit and preserves existing saved projects by 
   )
 
   const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const errorBoundarySource = readFileSync(join(root, 'src/app/AppErrorBoundary.tsx'), 'utf8')
+  const pagesWorkflow = readFileSync(join(root, '.github/workflows/pages.yml'), 'utf8')
+  const envExample = readFileSync(join(root, '.env.example'), 'utf8')
+  const viteEnvTypes = readFileSync(join(root, 'src/vite-env.d.ts'), 'utf8')
   assert(
     appSource.includes("window.confirm(t('app.resetSampleConfirm'))") &&
       appSource.includes('disabled={Boolean(activeChangeSet)}') &&
-      appSource.includes('resetToSample()'),
-    'main UI reset is not confirmed or review-locked',
+      appSource.includes('BUILD_FEATURE_FLAGS.sampleReset') &&
+      appSource.includes('resetToSample()') &&
+      appSource.includes("initializeWithRecovery('sample')") &&
+      errorBoundarySource.includes('resetToSample()') &&
+      !pagesWorkflow.includes('VITE_ENABLE_SAMPLE_RESET') &&
+      envExample.includes('VITE_ENABLE_SAMPLE_RESET=true') &&
+      viteEnvTypes.includes('readonly VITE_ENABLE_SAMPLE_RESET?: string'),
+    'sample reset gating lost config typing/example/recovery or leaked into Pages',
   )
+})
+
+await test('sample reset build flag is exact and leaves default UI recovery-safe', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const { parseExactTrueFlag } = await import(
+    moduleUrl(buildFeatureFlagsBundle, 'sample-reset-parser')
+  )
+  for (const value of [undefined, '', 'false', '1', 'TRUE', ' true', 'true ']) {
+    assert(!parseExactTrueFlag(value), `sample reset flag accepted ${JSON.stringify(value)}`)
+  }
+  assert(parseExactTrueFlag('true'), 'sample reset flag rejected exact true')
+
+  const defaultRenderer = await import(moduleUrl(renderAppBundle, 'sample-reset-default'))
+  const defaultMarkup = defaultRenderer.renderApp('en')
+  const { document: defaultDocument } = parseHTML(`<html><body>${defaultMarkup}</body></html>`)
+  const defaultUndo = defaultDocument.querySelector('[data-history-undo]')
+  const defaultRedo = defaultDocument.querySelector('[data-history-redo]')
+  assert(
+    !defaultDocument.querySelector('[data-sample-reset]') &&
+      defaultUndo?.nextElementSibling === defaultRedo,
+    'default build left a sample reset focus stop or gap before Undo/Redo',
+  )
+
+  const recoveryMarkup = defaultRenderer.renderRecoveryApp('en')
+  const { document: recoveryDocument } = parseHTML(`<html><body>${recoveryMarkup}</body></html>`)
+  assert(
+    !recoveryDocument.querySelector('[data-sample-reset]') &&
+      [...recoveryDocument.querySelectorAll('button')]
+        .some(button => button.textContent.trim() === 'Reset to sample'),
+    'flag-disabled Recovery UI lost its always-available sample reset',
+  )
+
+  const flaggedRenderer = await import(
+    moduleUrl(renderAppSampleResetBundle, 'sample-reset-enabled')
+  )
+  const flaggedMarkup = flaggedRenderer.renderApp('en')
+  const { document: flaggedDocument } = parseHTML(`<html><body>${flaggedMarkup}</body></html>`)
+  assert(
+    flaggedDocument.querySelector('[data-sample-reset]')?.hasAttribute('disabled'),
+    'flag-enabled review UI did not render a locked sample reset button',
+  )
+})
+
+await test('flag-enabled sample reset confirms and restores TaskFlow', async () => {
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const document = installInteractiveDom()
+  let confirmationCount = 0
+  Object.defineProperty(globalThis.window, 'confirm', {
+    configurable: true,
+    value: () => {
+      confirmationCount += 1
+      return true
+    },
+  })
+  const { mountReviewLockApp } = await import(
+    moduleUrl(renderAppSampleResetBundle, 'sample-reset-enabled-mounted')
+  )
+  const harness = mountReviewLockApp('en')
+  harness.prepareHistory()
+  const reset = document.querySelector('[data-sample-reset]')
+  assert(
+    reset &&
+      !reset.disabled &&
+      harness.state().historyLength === 1 &&
+      harness.state().editScreenName === 'Edit Task prepared for review',
+    'flag-enabled sample reset fixture did not begin in a modified writable state',
+  )
+  harness.click(reset)
+  assert(
+    confirmationCount === 1 &&
+      harness.state().historyLength === 0 &&
+      harness.state().editScreenName === 'Edit Task',
+    'confirmed flag-enabled sample reset did not restore clean TaskFlow',
+  )
+  harness.beginReview()
+  assert(
+    document.querySelector('[data-sample-reset]')?.disabled,
+    'flag-enabled sample reset remained writable during change-set review',
+  )
+  harness.unmount()
 })
 
 await test('Priority demo reuses human edits and preserves the Update Task API ID', async () => {

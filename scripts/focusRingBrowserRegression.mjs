@@ -664,6 +664,26 @@ async function run() {
       ))`,
       'review UI did not render in Chrome',
     )
+    const defaultHeaderActions = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const undo = document.querySelector('[data-history-undo]')
+        const redo = document.querySelector('[data-history-redo]')
+        return {
+          resetCount: document.querySelectorAll('[data-sample-reset]').length,
+          undoRedoAdjacent: undo?.nextElementSibling === redo,
+          labels: [...document.querySelectorAll('header button')].map(
+            button => button.getAttribute('aria-label')
+          ),
+        }
+      })()`,
+      returnByValue: true,
+    })
+    assert(
+      defaultHeaderActions.result.value.resetCount === 0 &&
+        defaultHeaderActions.result.value.undoRedoAdjacent,
+      'default Chrome build left a reset focus stop or Undo/Redo gap: ' +
+        JSON.stringify(defaultHeaderActions.result.value),
+    )
 
     await cdp.call('Emulation.setDeviceMetricsOverride', {
       width: 1280,
@@ -2652,6 +2672,90 @@ async function run() {
         'aside[aria-label="Details"] [role="group"] > button[aria-pressed]'
       )`,
       'review lock did not clear before small-text contrast checks',
+    )
+    const historyFixture = await cdp.call('Runtime.evaluate', {
+      expression: `(async () => {
+        const down = [...document.querySelectorAll('button')].find(button => (
+          !button.disabled && / down$/.test(button.getAttribute('aria-label') ?? '')
+        ))
+        const node = down?.closest('[data-tree-component-id]')
+        const componentId = node?.dataset.treeComponentId
+        const stored = JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        const parentId = stored.document.components[componentId]?.parentId
+        const originalOrder = stored.document.components[parentId]?.childIds
+        down?.click()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        const movedNode = document.querySelector(
+          '[data-tree-component-id="' + componentId + '"]'
+        )
+        const up = [...movedNode.querySelectorAll('button')].find(button => (
+          !button.disabled && / up$/.test(button.getAttribute('aria-label') ?? '')
+        ))
+        up?.click()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        return { componentId, parentId, originalOrder, movedBack: Boolean(up) }
+      })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    assert(
+      historyFixture.result.value.componentId &&
+        historyFixture.result.value.parentId &&
+        historyFixture.result.value.movedBack,
+      'focus-order regression could not prepare reversible Tree moves',
+    )
+    await waitForExpression(
+      `!document.querySelector('[data-history-undo]').disabled`,
+      'reversible Tree moves did not create Header history',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-history-undo]').click()`,
+    })
+    await waitForExpression(
+      `!document.querySelector('[data-history-undo]').disabled &&
+        !document.querySelector('[data-history-redo]').disabled`,
+      'Undo did not prepare enabled adjacent history controls for focus-order testing',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-locale-selector]').focus()`,
+    })
+    const pressTrustedTab = async () => {
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Tab',
+        code: 'Tab',
+        windowsVirtualKeyCode: 9,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Tab',
+        code: 'Tab',
+        windowsVirtualKeyCode: 9,
+      })
+    }
+    await pressTrustedTab()
+    const firstHistoryFocus = await cdp.call('Runtime.evaluate', {
+      expression: `document.activeElement?.hasAttribute('data-history-undo')`,
+      returnByValue: true,
+    })
+    await pressTrustedTab()
+    const secondHistoryFocus = await cdp.call('Runtime.evaluate', {
+      expression: `document.activeElement?.hasAttribute('data-history-redo')`,
+      returnByValue: true,
+    })
+    assert(
+      firstHistoryFocus.result.value === true && secondHistoryFocus.result.value === true,
+      'default Header Tab order did not move directly from locale to Undo to Redo',
+    )
+    await cdp.call('Runtime.evaluate', {
+      expression: `document.querySelector('[data-history-undo]').click()`,
+    })
+    await waitForExpression(
+      `JSON.stringify(
+          JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+            .document.components[${JSON.stringify(historyFixture.result.value.parentId)}].childIds
+        ) === ${JSON.stringify(JSON.stringify(historyFixture.result.value.originalOrder))}`,
+      'focus-order regression did not restore the original Tree order',
     )
 
     for (const toolbarWidth of [1280, 899, 640]) {

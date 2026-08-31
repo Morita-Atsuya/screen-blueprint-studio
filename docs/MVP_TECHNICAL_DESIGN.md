@@ -537,7 +537,7 @@ interface HistoryEntry {
 
 Priorityは初期sampleに含めない。デモでは最初のchange setでStatus直後へ`fieldKey: priority`のSelectを追加し、既存入力と同じくSaving stateで無効化する。人間がAccept後に通常UIでoptions/defaultを修正し、エージェントは`get_current_screen_context`を再読して生成IDと人間の修正を取得する。次のchange setで既存Update Task APIのIDを保持した`updateApi`により`body.priority` bindingを追加する。これによりselection、effective document、review lock、生成ID、optimistic version、review diff、人間の修正再利用を一つのstoryで示す。
 
-既存localStorage documentはsample更新で自動置換しない。headerの明示的なresetだけが確認後にTaskFlowを保存し、active change set中はresetを無効化する。
+既存localStorage documentはsample更新で自動置換しない。開発時に`VITE_ENABLE_SAMPLE_RESET=true`を明示したbuildだけがheader resetを描画し、確認後にTaskFlowを保存する。active change set中はresetを無効化する。通常起動とGitHub Pagesではheader resetを描画しないが、破損データ向けRecoveryとApp error fallbackのsample復旧は常に維持する。
 
 ## 10. UI設計
 

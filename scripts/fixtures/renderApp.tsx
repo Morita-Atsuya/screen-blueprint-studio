@@ -29,6 +29,7 @@ export function renderApp(locale: Locale): string {
   initialState.document = sampleProject
   initialState.effectiveDocument = sampleProject
   initialState.activeChangeSet = activeChangeSet()
+  initialState.recoveryState = null
   initialState.history = []
   initialState.redoStack = []
   initialState.ui = {
@@ -37,6 +38,25 @@ export function renderApp(locale: Locale): string {
     activeStateId: 'state-edit-default',
     selectedComponentId: 'comp-task-title-input',
     rightPanelTab: 'inspector',
+  }
+
+  return renderToString(
+    <I18nProvider>
+      <App />
+    </I18nProvider>,
+  )
+}
+
+export function renderRecoveryApp(locale: Locale): string {
+  localStorage.setItem(LOCALE_STORAGE_KEY, locale)
+  const initialState = useAppStore.getInitialState()
+  initialState.document = sampleProject
+  initialState.effectiveDocument = sampleProject
+  initialState.activeChangeSet = null
+  initialState.recoveryState = {
+    status: 'invalid',
+    rawData: '{broken',
+    error: 'Saved data is invalid',
   }
 
   return renderToString(
@@ -283,6 +303,8 @@ export function mountReviewLockApp(locale: Locale = 'en') {
         toastKey: state.toast?.message.key ?? null,
         changeSetVersion: state.activeChangeSet?.version ?? null,
         operationCount: state.activeChangeSet?.operations.length ?? null,
+        historyLength: state.history.length,
+        editScreenName: state.document.screens['screen-edit']?.name ?? null,
       }
     },
     click(element: HTMLElement) {
