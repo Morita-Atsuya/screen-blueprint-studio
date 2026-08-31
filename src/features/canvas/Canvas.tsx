@@ -444,6 +444,7 @@ function CanvasComponent({
           componentId: base.id,
           screenId: base.screenId,
           label: displayName,
+          surface: 'canvas',
         }
       : undefined,
     disabled: {

@@ -40,6 +40,7 @@ function validTarget(
 ): ComponentInsertTarget | null {
   const target: ComponentDropData = {
     type: 'component-drop',
+    surface: 'canvas',
     screenId,
     parentId,
     position,

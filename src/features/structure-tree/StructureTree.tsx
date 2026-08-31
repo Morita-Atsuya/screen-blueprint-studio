@@ -488,6 +488,7 @@ function TreeNode({
           componentId: component.id,
           screenId: component.screenId,
           label: spokenLabel,
+          surface: 'tree',
         }
       : undefined,
     disabled: { draggable: isIndependentRoot || reviewLocked, droppable: true },

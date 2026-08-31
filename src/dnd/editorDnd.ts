@@ -9,6 +9,8 @@ import type {
   ComponentPlacementInvalidReason,
 } from '../domain/componentPlacement'
 
+export type EditorDndSurface = 'tree' | 'canvas'
+
 export type EditorDragData =
   | {
       type: 'palette'
@@ -20,10 +22,12 @@ export type EditorDragData =
       componentId: EntityId
       screenId: EntityId
       label: string
+      surface: EditorDndSurface
     }
 
 export interface ComponentDropData {
   type: 'component-drop'
+  surface: EditorDndSurface
   parentId: EntityId
   screenId: EntityId
   position: number
@@ -34,17 +38,34 @@ export type EditorDropOutcome =
   | { status: 'moved'; action: 'add'; parentId: EntityId | null; position: number }
   | { status: 'moved'; action: 'move'; position: number }
   | { status: 'no-op'; position: number }
-  | { status: 'invalid'; reason: ComponentPlacementInvalidReason }
+  | {
+      status: 'invalid'
+      reason: ComponentPlacementInvalidReason | 'surfaceMismatch'
+    }
 
 export function isEditorDragData(value: unknown): value is EditorDragData {
   if (!value || typeof value !== 'object') return false
   const data = value as Partial<EditorDragData>
-  return data.type === 'palette' || data.type === 'component'
+  return data.type === 'palette' || (
+    data.type === 'component' &&
+    (data.surface === 'canvas' || data.surface === 'tree')
+  )
 }
 
 export function isComponentDropData(value: unknown): value is ComponentDropData {
   if (!value || typeof value !== 'object') return false
-  return (value as Partial<ComponentDropData>).type === 'component-drop'
+  const data = value as Partial<ComponentDropData>
+  return data.type === 'component-drop' &&
+    (data.surface === 'canvas' || data.surface === 'tree')
+}
+
+export function isDropSurfaceCompatible(
+  drag: EditorDragData,
+  target: Pick<ComponentDropData, 'surface'>,
+): boolean {
+  return drag.type === 'palette'
+    ? target.surface === 'canvas'
+    : drag.surface === target.surface
 }
 
 export function resolveComponentDrop(
@@ -66,6 +87,9 @@ export function resolveEditorDrop(
   drag: EditorDragData,
   target: ComponentDropData,
 ): EditorDropOutcome {
+  if (!isDropSurfaceCompatible(drag, target)) {
+    return { status: 'invalid', reason: 'surfaceMismatch' }
+  }
   if (drag.type === 'palette') {
     const outcome = classifyPaletteDrop(
       document,

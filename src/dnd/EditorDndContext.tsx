@@ -6,16 +6,17 @@ import {
   PointerSensor,
   TouchSensor,
   closestCenter,
+  defaultKeyboardCoordinateGetter,
   pointerWithin,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
-import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useAppStore } from '../app/appStore'
 import { createAddComponentCommand } from '../features/palette/componentFactory'
 import {
   isComponentDropData,
+  isDropSurfaceCompatible,
   isEditorDragData,
   resolveEditorDrop,
 } from './editorDnd'
@@ -25,7 +26,10 @@ import { useI18n } from '../i18n/I18nProvider'
 import type { MessageKey } from '../i18n/messages'
 import type { ComponentPlacementInvalidReason } from '../domain/componentPlacement'
 
-const DROP_ERROR_KEYS: Record<ComponentPlacementInvalidReason, MessageKey> = {
+const DROP_ERROR_KEYS: Record<
+  ComponentPlacementInvalidReason | 'surfaceMismatch',
+  MessageKey
+> = {
   root: 'errors.dropRoot',
   selfOrDescendant: 'errors.dropDescendant',
   parentCannotContainChildren: 'errors.dropParentLeaf',
@@ -34,6 +38,7 @@ const DROP_ERROR_KEYS: Record<ComponentPlacementInvalidReason, MessageKey> = {
   stale: 'errors.dropStale',
   invalidPosition: 'errors.dropPosition',
   domainValidation: 'errors.dropDomainValidation',
+  surfaceMismatch: 'errors.dropSurfaceMismatch',
 }
 
 type CompletedDropOutcome = EditorDropOutcome | { status: 'cancelled' }
@@ -47,7 +52,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, { coordinateGetter: defaultKeyboardCoordinateGetter }),
   )
 
   useEffect(() => {
@@ -223,6 +228,19 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
         },
       }}
       collisionDetection={collisionArguments => {
+        const drag = collisionArguments.active.data.current
+        if (!isEditorDragData(drag)) return []
+        const compatibleContainers = collisionArguments.droppableContainers.filter(
+          container => {
+            const target = container.data.current
+            return isComponentDropData(target) &&
+              isDropSurfaceCompatible(drag, target)
+          },
+        )
+        const compatibleArguments = {
+          ...collisionArguments,
+          droppableContainers: compatibleContainers,
+        }
         if (collisionArguments.pointerCoordinates) {
           const directDrop = document
             .elementsFromPoint(
@@ -230,19 +248,24 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
               collisionArguments.pointerCoordinates.y,
             )
             .map(element => element.closest<HTMLElement>('[data-editor-drop-id]'))
-            .find((element): element is HTMLElement => element !== null)
+            .find((element): element is HTMLElement => {
+              if (element === null) return false
+              return compatibleContainers.some(
+                container => String(container.id) === element.dataset.editorDropId,
+              )
+            })
           const directId = directDrop?.dataset.editorDropId
           if (directId) return [{ id: directId }]
         }
-        const pointerCollisions = pointerWithin(collisionArguments)
+        const pointerCollisions = pointerWithin(compatibleArguments)
         if (pointerCollisions.length === 0) {
           return collisionArguments.pointerCoordinates
             ? []
-            : closestCenter(collisionArguments)
+            : closestCenter(compatibleArguments)
         }
         return pointerCollisions.sort((left, right) => {
           const depth = (id: string | number) => {
-            let node = collisionArguments.droppableContainers.find(
+            let node = compatibleContainers.find(
               container => container.id === id,
             )?.node.current
             let value = 0

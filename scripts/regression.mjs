@@ -4171,6 +4171,7 @@ await test('palette factory and component drops use validated commands', async (
     'comp-list-title',
     {
       type: 'component-drop',
+      surface: 'canvas',
       parentId: 'comp-list-section',
       screenId: 'screen-list',
       position: 0,
@@ -4614,10 +4615,28 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
   const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'direct-edit-domain'))
   const {
     canAcceptDrop,
+    isComponentDropData,
+    isEditorDragData,
     resolveComponentDrop,
     resolveEditorDrop,
   } = await import(moduleUrl(editorDndBundle, 'invalid-drops'))
   const baseline = store.getState().document
+  assert(
+    !isEditorDragData({
+      type: 'component',
+      componentId: 'comp-task-title-input',
+      screenId: 'screen-edit',
+      label: 'Name',
+    }) &&
+      !isComponentDropData({
+        type: 'component-drop',
+        parentId: 'comp-edit-section',
+        screenId: 'screen-edit',
+        position: 0,
+        label: 'Missing surface',
+      }),
+    'malformed DnD data without a typed surface was accepted',
+  )
 
   let document = applyCommandWithoutRevision(baseline, {
     type: 'moveComponent',
@@ -4758,6 +4777,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     const parent = baseline.components[expected.parentId]
     const resolution = resolveComponentDrop(baseline, expected.componentId, {
       type: 'component-drop',
+      surface: 'canvas',
       parentId: expected.parentId,
       screenId: parent?.screenId ?? 'screen-edit',
       position: expected.position,
@@ -4772,6 +4792,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
 
   const noOpTarget = {
     type: 'component-drop',
+    surface: 'canvas',
     parentId: 'comp-edit-section',
     screenId: 'screen-edit',
     position: 1,
@@ -4780,6 +4801,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
   assert(
     canAcceptDrop(baseline, {
       type: 'component',
+      surface: 'canvas',
       componentId: 'comp-task-title-input',
       screenId: 'screen-edit',
       label: 'Name',
@@ -4804,6 +4826,31 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     ...noOpTarget,
     parentId: 'comp-task-title-input',
   })
+  const crossSurfaceCanvas = resolveEditorDrop(baseline, {
+    type: 'component',
+    surface: 'canvas',
+    componentId: 'comp-task-title-input',
+    screenId: 'screen-edit',
+    label: 'Name',
+  }, {
+    ...noOpTarget,
+    surface: 'tree',
+  })
+  const crossSurfaceTree = resolveEditorDrop(baseline, {
+    type: 'component',
+    surface: 'tree',
+    componentId: 'comp-task-title-input',
+    screenId: 'screen-edit',
+    label: 'Name',
+  }, noOpTarget)
+  const crossSurfacePalette = resolveEditorDrop(baseline, {
+    type: 'palette',
+    kind: 'text',
+    label: 'Text',
+  }, {
+    ...noOpTarget,
+    surface: 'tree',
+  })
   assert(
     paletteAdd.status === 'moved' &&
       paletteAdd.action === 'add' &&
@@ -4812,7 +4859,13 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
       paletteModal.action === 'add' &&
       paletteModal.parentId === null &&
       invalidPaletteParent.status === 'invalid' &&
-      invalidPaletteParent.reason === 'parentCannotContainChildren',
+      invalidPaletteParent.reason === 'parentCannotContainChildren' &&
+      crossSurfaceCanvas.status === 'invalid' &&
+      crossSurfaceCanvas.reason === 'surfaceMismatch' &&
+      crossSurfaceTree.status === 'invalid' &&
+      crossSurfaceTree.reason === 'surfaceMismatch' &&
+      crossSurfacePalette.status === 'invalid' &&
+      crossSurfacePalette.reason === 'surfaceMismatch',
     'palette drops did not use typed placement classification',
   )
 
@@ -5205,12 +5258,55 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
       unlockedCanvasComponent.className.includes('draggable'),
     'Canvas unlocked component has no draggable cursor affordance',
   )
+  const assertVisibleDropSurface = expectedSurface => {
+    const visibleZones = [...document.querySelectorAll('[data-drop-visible="true"]')]
+    assert(
+      visibleZones.length > 0 &&
+        visibleZones.every(
+          zone => zone.getAttribute('data-drop-surface') === expectedSurface,
+        ) &&
+        [...document.querySelectorAll(
+          `[data-drop-surface]:not([data-drop-surface="${expectedSurface}"])`,
+        )].every(
+          zone =>
+            !zone.hasAttribute('data-drop-visible') &&
+            !zone.hasAttribute('data-drop-outcome'),
+        ),
+      `${expectedSurface} drag exposed an opposite-surface drop target`,
+    )
+  }
+
+  const unlockedPalette = document.querySelector('[data-palette-kind="text"]')
+  harness.pointer(unlockedPalette, 'pointerdown', { clientX: 120, clientY: 200 })
+  harness.pointer(document, 'pointermove', { clientX: 132, clientY: 212 })
+  await Promise.resolve()
+  assertVisibleDropSurface('canvas')
+  harness.keyDown(document, 'Escape', { code: 'Escape' })
+
+  harness.pointer(
+    unlockedCanvasComponent,
+    'pointerdown',
+    { clientX: 600, clientY: 400 },
+  )
+  harness.pointer(document, 'pointermove', { clientX: 612, clientY: 412 })
+  await Promise.resolve()
+  assertVisibleDropSurface('canvas')
+  harness.keyDown(document, 'Escape', { code: 'Escape' })
+
+  unlockedTreeHandle.focus()
+  harness.keyDown(unlockedTreeHandle, ' ', { code: 'Space' })
+  await Promise.resolve()
+  assertVisibleDropSurface('tree')
+  harness.keyDown(document, 'Escape', { code: 'Escape' })
+
   harness.pointer(unlockedTreeHandle, 'pointerdown', { clientX: 400, clientY: 300 })
   harness.pointer(
     document,
     'pointermove',
     { clientX: 412, clientY: 312 },
   )
+  await Promise.resolve()
+  assertVisibleDropSurface('tree')
   assert(
     document.selectionClearCount > 0,
     `pointer Tree DnD did not activate its sensor ` +
@@ -8560,9 +8656,12 @@ await test('editor-only drop affordances and internal names stay out of idle UI'
     'visible drop instructions remain in the drop zone',
   )
   assert(
-    dropZoneSource.includes('const showAffordance = validDrag') &&
-      dropZoneSource.includes("data-drop-outcome={validDrag ? accepts ? 'allowed' : 'invalid' : undefined}"),
-    'drop affordances do not distinguish active valid and invalid targets',
+    dropZoneSource.includes('const showAffordance = compatibleSurface') &&
+      dropZoneSource.includes('disabled: validDrag && !compatibleSurface') &&
+      dropZoneSource.includes('data-drop-visible={showAffordance || undefined}') &&
+      dropZoneSource.includes('compatibleSurface ? accepts ?') &&
+      dropZoneSource.includes('isDropSurfaceCompatible'),
+    'drop affordances or registration do not isolate origin and target surfaces',
   )
   assert(
     !inspectorSource.includes('コンポーネント名'),
@@ -8731,9 +8830,12 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
   )
   assert(
     dndSource.includes('PointerSensor, { activationConstraint: { distance: 5 } }') &&
-      dndSource.includes('KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }') &&
-      dndSource.includes("return collisionArguments.pointerCoordinates\n            ? []\n            : closestCenter"),
-    'click separation or keyboard DnD sensor support is missing',
+      dndSource.includes('KeyboardSensor, { coordinateGetter: defaultKeyboardCoordinateGetter }') &&
+      dndSource.includes('compatibleContainers') &&
+      dndSource.includes('isDropSurfaceCompatible(drag, target)') &&
+      dndSource.includes('pointerWithin(compatibleArguments)') &&
+      dndSource.includes('closestCenter(compatibleArguments)'),
+    'click separation, keyboard DnD, or surface-filtered collision support is missing',
   )
   assert(
     canvasStyles.includes('.draggable') &&

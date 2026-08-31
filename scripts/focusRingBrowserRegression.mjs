@@ -1389,6 +1389,223 @@ async function run() {
       `!document.querySelector('[data-palette-kind="container"]').disabled`,
       'accepting the review did not unlock Container DnD',
     )
+    const dispatchTrustedKey = async (
+      key,
+      code,
+      windowsVirtualKeyCode,
+    ) => {
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key,
+        code,
+        windowsVirtualKeyCode,
+      })
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key,
+        code,
+        windowsVirtualKeyCode,
+      })
+    }
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const left = document.querySelector('aside[aria-label="Project navigation"]')
+        for (const button of left.querySelectorAll('h2 button[aria-expanded="true"]')) {
+          const label = button.textContent.trim()
+          if (label.startsWith('Screens') || label.startsWith('Palette')) {
+            button.click()
+          }
+        }
+        left.scrollTop = 0
+        const handle = document.querySelector(
+          '[data-drag-surface="tree"][data-drag-component="comp-edit-summary"]'
+        )
+        handle.focus({ preventScroll: true })
+        return document.activeElement === handle
+      })()`,
+    })
+    await dispatchTrustedKey(' ', 'Space', 32)
+    await waitForExpression(
+      `Boolean(document.querySelector('[data-drag-overlay]'))`,
+      'trusted Tree keyboard drag did not start',
+    )
+    const keyboardTreeSurface = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        visibleSurfaces: [...document.querySelectorAll('[data-drop-visible="true"]')]
+          .map(zone => zone.getAttribute('data-drop-surface')),
+        canvasOutcomes: document.querySelectorAll(
+          '[data-drop-surface="canvas"][data-drop-outcome]'
+        ).length,
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      keyboardTreeSurface.result.value.visibleSurfaces.length > 0 &&
+        keyboardTreeSurface.result.value.visibleSurfaces.every(
+          surface => surface === 'tree'
+        ) &&
+        keyboardTreeSurface.result.value.canvasOutcomes === 0,
+      'trusted Tree keyboard drag exposed Canvas drop targets: ' +
+        JSON.stringify(keyboardTreeSurface.result.value),
+    )
+    for (let step = 0; step < 3; step += 1) {
+      await dispatchTrustedKey('ArrowUp', 'ArrowUp', 38)
+      await new Promise(resolveWait => setTimeout(resolveWait, 75))
+    }
+    const keyboardTreeOver = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        over: [...document.querySelectorAll(
+          '[data-drop-surface="tree"]'
+        )].filter(zone => zone.className.includes('_over_')).map(zone => ({
+          parent: zone.getAttribute('data-drop-parent'),
+          position: zone.getAttribute('data-drop-position'),
+          outcome: zone.getAttribute('data-drop-outcome'),
+        })),
+        live: [...document.querySelectorAll('[role="status"]')]
+          .map(node => node.textContent.trim()).filter(Boolean),
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      keyboardTreeOver.result.value.over.some(
+        target => target.parent === 'comp-edit-section' && target.position === '0'
+      ) &&
+        keyboardTreeOver.result.value.live.some(
+          message => message.includes('Start of')
+        ),
+      'trusted Tree keyboard drag did not resolve the first Tree target: ' +
+        JSON.stringify(keyboardTreeOver.result.value),
+    )
+    await dispatchTrustedKey(' ', 'Space', 32)
+    await new Promise(resolveWait => setTimeout(resolveWait, 250))
+    const keyboardTreeEnd = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        overlay: Boolean(document.querySelector('[data-drag-overlay]')),
+        visibleSurfaces: document.querySelectorAll('[data-drop-visible="true"]').length,
+        order: JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+          .document.components['comp-edit-section'].childIds.slice(0, 3),
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      keyboardTreeEnd.result.value.visibleSurfaces === 0 &&
+        keyboardTreeEnd.result.value.order[0] === 'comp-edit-summary',
+      'trusted Tree keyboard drop did not finish and persist cleanly: ' +
+        JSON.stringify(keyboardTreeEnd.result.value),
+    )
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-edit-section'].childIds[0] ===
+          'comp-edit-summary'`,
+      'trusted Tree keyboard drag did not reorder its component',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector('[data-tree-component-id]')) &&
+        !document.querySelector('[data-drag-overlay]')`,
+      'Tree did not restore after keyboard reorder',
+    )
+    const treePointerPoints = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const treeIds = [...document.querySelectorAll('[data-tree-component-id]')]
+          .map(node => node.getAttribute('data-tree-component-id'))
+        const treeNode = document.querySelector(
+          '[data-tree-component-id="comp-edit-title"]'
+        )
+        const source = treeNode?.closest('[role="treeitem"]')
+          ?.querySelector('[data-drag-surface="tree"]')
+        if (!source) return { treeIds, missingSource: true }
+        source.scrollIntoView({ block: 'center' })
+        const target = document.querySelector(
+          '[data-drop-surface="tree"][data-drop-parent="comp-edit-section"]' +
+          '[data-drop-position="0"]'
+        )
+        const sourceRect = source.getBoundingClientRect()
+        const targetRect = target.getBoundingClientRect()
+        const sourcePoint = {
+          x: sourceRect.left + sourceRect.width / 2,
+          y: sourceRect.top + sourceRect.height / 2,
+        }
+        return {
+          source: sourcePoint,
+          target: {
+            x: targetRect.left + targetRect.width / 2,
+            y: targetRect.top + targetRect.height / 2,
+          },
+          hitSurface: document.elementFromPoint(sourcePoint.x, sourcePoint.y)
+            ?.closest('[data-drag-surface]')?.getAttribute('data-drag-surface'),
+          treeIds,
+        }
+      })()`,
+      returnByValue: true,
+    })
+    const treePoints = treePointerPoints.result.value
+    assert(
+      treePoints.hitSurface === 'tree',
+      'trusted Tree pointer did not hit the drag handle: ' +
+        JSON.stringify(treePoints),
+    )
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: treePoints.source.x,
+      y: treePoints.source.y,
+    })
+    for (const ratio of [0.25, 0.6, 1]) {
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'left',
+        buttons: 1,
+        x: treePoints.source.x +
+          (treePoints.target.x - treePoints.source.x) * ratio,
+        y: treePoints.source.y +
+          (treePoints.target.y - treePoints.source.y) * ratio,
+      })
+      await new Promise(resolveWait => setTimeout(resolveWait, 75))
+    }
+    const pointerTreeSurface = await cdp.call('Runtime.evaluate', {
+      expression: `(() => ({
+        overlay: Boolean(document.querySelector('[data-drag-overlay]')),
+        visibleSurfaces: [...document.querySelectorAll('[data-drop-visible="true"]')]
+          .map(zone => zone.getAttribute('data-drop-surface')),
+        canvasOutcomes: document.querySelectorAll(
+          '[data-drop-surface="canvas"][data-drop-outcome]'
+        ).length,
+      }))()`,
+      returnByValue: true,
+    })
+    assert(
+      pointerTreeSurface.result.value.overlay &&
+        pointerTreeSurface.result.value.visibleSurfaces.length > 0 &&
+        pointerTreeSurface.result.value.visibleSurfaces.every(
+          surface => surface === 'tree'
+        ) &&
+        pointerTreeSurface.result.value.canvasOutcomes === 0,
+      'trusted Tree pointer drag exposed Canvas drop targets: ' +
+        JSON.stringify(pointerTreeSurface.result.value),
+    )
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      x: treePoints.target.x,
+      y: treePoints.target.y,
+    })
+    await waitForExpression(
+      `JSON.parse(localStorage.getItem('screen-blueprint-studio:v1'))
+        .document.components['comp-edit-section'].childIds[0] ===
+          'comp-edit-title'`,
+      'trusted Tree pointer drag did not persist its reorder',
+    )
+    await cdp.call('Page.reload')
+    await waitForExpression(
+      `Boolean(document.querySelector('[data-canvas-surface]')) &&
+        !document.querySelector('[data-drag-overlay]')`,
+      'Tree pointer reorder did not restore cleanly across reload',
+    )
     const contextPointResult = await cdp.call('Runtime.evaluate', {
       expression: `(() => {
         const target = document.querySelector(
@@ -1523,51 +1740,63 @@ async function run() {
       'canceling context-menu Delete did not restore focus to its trigger: ' +
         JSON.stringify(restoredDeleteFocus.result.value),
     )
+    await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const button = [...document.querySelectorAll('h2 button[aria-expanded]')]
+          .find(candidate => candidate.textContent.trim().startsWith('Palette'))
+        if (button?.getAttribute('aria-expanded') === 'false') button.click()
+      })()`,
+    })
+    await waitForExpression(
+      `document.querySelector('[data-palette-kind="container"]')
+        ?.getBoundingClientRect().width > 0`,
+      'Palette did not expand before trusted drag',
+    )
     const dragPoints = await cdp.call('Runtime.evaluate', {
       expression: `(() => {
-        const source = document.querySelector('[data-palette-kind="container"]')
-          .getBoundingClientRect()
+        const sourceElement = document.querySelector('[data-palette-kind="container"]')
+        sourceElement.scrollIntoView({ block: 'center' })
+        const source = sourceElement.getBoundingClientRect()
         const target = document.querySelector(
           '[data-drop-surface="canvas"][data-drop-parent="browser-empty-container"]'
         ).getBoundingClientRect()
+        const sourcePoint = {
+          x: source.left + source.width / 2,
+          y: source.top + source.height / 2,
+        }
         return {
-          source: { x: source.left + source.width / 2, y: source.top + source.height / 2 },
+          source: sourcePoint,
           target: { x: target.left + target.width / 2, y: target.top + target.height / 2 },
+          hitKind: document.elementFromPoint(sourcePoint.x, sourcePoint.y)
+            ?.closest('[data-palette-kind]')?.getAttribute('data-palette-kind'),
         }
       })()`,
       returnByValue: true,
     })
     const { source: dragSource, target: dragTarget } = dragPoints.result.value
-    await cdp.call('Runtime.evaluate', {
-      expression: `(async () => {
-        const source = document.querySelector('[data-palette-kind="container"]')
-        const pointer = (type, x, y, buttons) => new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 101,
-          pointerType: 'mouse',
-          isPrimary: true,
-          button: type === 'pointerup' ? 0 : 0,
-          buttons,
-          clientX: x,
-          clientY: y,
-        })
-        source.dispatchEvent(pointer(
-          'pointerdown', ${dragSource.x}, ${dragSource.y}, 1
-        ))
-        document.dispatchEvent(pointer(
-          'pointermove', ${dragSource.x + 10}, ${dragSource.y + 10}, 1
-        ))
-        await new Promise(resolveWait => setTimeout(resolveWait, 50))
-        document.dispatchEvent(pointer(
-          'pointermove', ${dragTarget.x}, ${dragTarget.y}, 1
-        ))
-        await new Promise(resolveWait => setTimeout(resolveWait, 100))
-        return true
-      })()`,
-      awaitPromise: true,
-      returnByValue: true,
+    assert(
+      dragPoints.result.value.hitKind === 'container',
+      'trusted Palette pointer did not hit its production button: ' +
+        JSON.stringify(dragPoints.result.value),
+    )
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: dragSource.x,
+      y: dragSource.y,
     })
+    for (const ratio of [0.15, 0.5, 1]) {
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'left',
+        buttons: 1,
+        x: dragSource.x + (dragTarget.x - dragSource.x) * ratio,
+        y: dragSource.y + (dragTarget.y - dragSource.y) * ratio,
+      })
+      await new Promise(resolveWait => setTimeout(resolveWait, 75))
+    }
     const dragState = await cdp.call('Runtime.evaluate', {
       expression: `(() => {
         const point = document.elementFromPoint(${dragTarget.x}, ${dragTarget.y})
@@ -1581,6 +1810,11 @@ async function run() {
           targetVisible: target?.getAttribute('data-drop-visible'),
           targetBorder: getComputedStyle(target).borderTopColor,
           targetClass: target?.className,
+          visibleSurfaces: [...document.querySelectorAll('[data-drop-visible="true"]')]
+            .map(zone => zone.getAttribute('data-drop-surface')),
+          oppositeOutcomes: [...document.querySelectorAll(
+            '[data-drop-surface="tree"][data-drop-outcome]'
+          )].length,
           dropParentsAtPoint: document.elementsFromPoint(
             ${dragTarget.x}, ${dragTarget.y}
           ).map(element => element.getAttribute('data-drop-parent')).filter(Boolean),
@@ -1592,23 +1826,13 @@ async function run() {
     assert(
       dragState.result.value.targetClass.includes('_over_') &&
         dragState.result.value.dropParentsAtPoint.includes('browser-empty-container') &&
+        dragState.result.value.visibleSurfaces.length > 0 &&
+        dragState.result.value.visibleSurfaces.every(surface => surface === 'canvas') &&
+        dragState.result.value.oppositeOutcomes === 0 &&
         dragState.result.value.overlay,
       `empty Container was not the active registered collision target: ` +
         JSON.stringify(dragState.result.value),
     )
-    await cdp.call('Runtime.evaluate', {
-      expression: `document.dispatchEvent(new PointerEvent('pointerup', {
-        bubbles: true,
-        cancelable: true,
-        pointerId: 101,
-        pointerType: 'mouse',
-        isPrimary: true,
-        button: 0,
-        buttons: 0,
-        clientX: ${dragTarget.x},
-        clientY: ${dragTarget.y},
-      }))`,
-    })
     await cdp.call('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       button: 'left',
@@ -1737,6 +1961,12 @@ async function run() {
             dragging: source.getAttribute('data-canvas-dragging'),
             cursor: getComputedStyle(source).cursor,
             opacity: getComputedStyle(source).opacity,
+            visibleSurfaces: [...document.querySelectorAll(
+              '[data-drop-visible="true"]'
+            )].map(zone => zone.getAttribute('data-drop-surface')),
+            oppositeOutcomes: [...document.querySelectorAll(
+              '[data-drop-surface="tree"][data-drop-outcome]'
+            )].length,
             targetActive: ${targetParentId === undefined
               ? 'true'
               : `[...document.querySelectorAll(
@@ -1751,6 +1981,11 @@ async function run() {
           feedback.result.value.dragging === 'true' &&
           feedback.result.value.cursor === 'grabbing' &&
           feedback.result.value.opacity === '0.3' &&
+          feedback.result.value.visibleSurfaces.length > 0 &&
+          feedback.result.value.visibleSurfaces.every(
+            surface => surface === 'canvas'
+          ) &&
+          feedback.result.value.oppositeOutcomes === 0 &&
           feedback.result.value.targetActive,
         `trusted Canvas drag feedback is incomplete for ${componentId}: ` +
           JSON.stringify(feedback.result.value),
