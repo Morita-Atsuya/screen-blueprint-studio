@@ -2421,7 +2421,9 @@ async function run() {
           return Boolean(
             menu &&
             getComputedStyle(menu).visibility === 'visible' &&
-            menu.contains(document.activeElement)
+            menu.contains(document.activeElement) &&
+            menu.getAttribute('aria-label') ===
+              'Component actions for Task details form'
           )
         })()`,
         'trusted right-click did not open the component menu',
@@ -2480,17 +2482,29 @@ async function run() {
       !deleteReady.result.value.disabled && deleteReady.result.value.focused,
       'context-menu Delete was not enabled and keyboard focusable after review',
     )
-    await cdp.call('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
+    const deletePointResult = await cdp.call('Runtime.evaluate', {
+      expression: `(() => {
+        const rect = document.querySelector('[data-component-delete]').getBoundingClientRect()
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      })()`,
+      returnByValue: true,
     })
-    await cdp.call('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
+    const deletePoint = deletePointResult.result.value
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+      x: deletePoint.x,
+      y: deletePoint.y,
+    })
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      x: deletePoint.x,
+      y: deletePoint.y,
     })
     await waitForExpression(
       `document.querySelector('[data-delete-confirmation="component"]')
