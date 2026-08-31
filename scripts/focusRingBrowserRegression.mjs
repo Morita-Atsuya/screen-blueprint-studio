@@ -2370,14 +2370,23 @@ async function run() {
           )
           const rect = target.getBoundingClientRect()
           let point = null
-          for (let y = Math.ceil(rect.top); y < Math.floor(rect.bottom) && !point; y += 2) {
-            for (let x = Math.ceil(rect.left); x < Math.floor(rect.right); x += 2) {
+          const centerX = rect.left + rect.width / 2
+          const centerY = rect.top + rect.height / 2
+          const xs = []
+          const ys = []
+          for (let x = Math.ceil(rect.left); x < Math.floor(rect.right); x += 2) xs.push(x)
+          for (let y = Math.ceil(rect.top); y < Math.floor(rect.bottom); y += 2) ys.push(y)
+          xs.sort((a, b) => Math.abs(a - centerX) - Math.abs(b - centerX))
+          ys.sort((a, b) => Math.abs(a - centerY) - Math.abs(b - centerY))
+          for (const y of ys) {
+            for (const x of xs) {
               const owner = document.elementFromPoint(x, y)?.closest('[data-component-id]')
               if (owner === target) {
                 point = { x, y }
                 break
               }
             }
+            if (point) break
           }
           if (!point) return { x: 0, y: 0, componentId: null }
           return {
@@ -2398,6 +2407,17 @@ async function run() {
     }
     let contextPoint
     const openContextMenu = async () => {
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        button: 'none',
+        buttons: 0,
+        x: 1,
+        y: 1,
+      })
+      await cdp.call('Runtime.evaluate', {
+        expression: `new Promise(resolve => setTimeout(resolve, 100))`,
+        awaitPromise: true,
+      })
       contextPoint = await findContextPoint()
       await cdp.call('Input.dispatchMouseEvent', {
         type: 'mousePressed',
