@@ -2416,7 +2416,14 @@ async function run() {
         y: contextPoint.y,
       })
       await waitForExpression(
-        `Boolean(document.querySelector('[data-component-add-menu]'))`,
+        `(() => {
+          const menu = document.querySelector('[data-component-add-menu]')
+          return Boolean(
+            menu &&
+            getComputedStyle(menu).visibility === 'visible' &&
+            menu.contains(document.activeElement)
+          )
+        })()`,
         'trusted right-click did not open the component menu',
       )
       return contextPoint
