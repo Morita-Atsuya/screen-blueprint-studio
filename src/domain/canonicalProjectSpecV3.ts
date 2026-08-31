@@ -22,6 +22,8 @@ export const COMPONENT_KINDS_V3 = [
   'textInput',
   'select',
   'button',
+  'image',
+  'link',
   'modal',
 ] as const
 export type ComponentKindV3 = (typeof COMPONENT_KINDS_V3)[number]
@@ -66,6 +68,13 @@ export const VARIANT_CONFIG_OVERRIDE_FIELDS_V3 = [
   'variant',
   'confirmationMessage',
   'preventDoubleSubmit',
+  'source',
+  'alt',
+  'fit',
+  'aspectRatio',
+  'placeholderStyle',
+  'destination',
+  'openMode',
 ] as const
 
 export type PublicPropValueV3 = string | number | boolean
@@ -177,6 +186,16 @@ export const PUBLIC_PROP_FIELDS_V3 = [
   'config.variant',
   'config.confirmationMessage',
   'config.preventDoubleSubmit',
+  'config.source',
+  'config.alt',
+  'config.fit',
+  'config.aspectRatio',
+  'config.placeholderStyle',
+  'config.destination.screenId',
+  'config.destination.url',
+  'config.destination.resourceId',
+  'config.destination.displayName',
+  'config.openMode',
 ] as const
 export type PublicPropFieldV3 = (typeof PUBLIC_PROP_FIELDS_V3)[number]
 
@@ -203,6 +222,13 @@ export interface VariantConfigOverrideV3 {
   variant?: Extract<ComponentConfig, { kind: 'button' }>['variant']
   confirmationMessage?: string | null
   preventDoubleSubmit?: boolean
+  source?: string
+  alt?: string
+  fit?: Extract<ComponentConfig, { kind: 'image' }>['fit']
+  aspectRatio?: Extract<ComponentConfig, { kind: 'image' }>['aspectRatio']
+  placeholderStyle?: Extract<ComponentConfig, { kind: 'image' }>['placeholderStyle']
+  destination?: Extract<ComponentConfig, { kind: 'link' }>['destination']
+  openMode?: Extract<ComponentConfig, { kind: 'link' }>['openMode']
 }
 
 export interface VariantNodeOverrideV3 {

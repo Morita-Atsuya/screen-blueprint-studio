@@ -71,6 +71,25 @@ export function createDefaultComponentConfig(
         confirmationMessage: null,
         preventDoubleSubmit: false,
       }
+    case 'image':
+      return {
+        kind,
+        source: '',
+        alt: translate(locale, 'defaults.imageAlt'),
+        fit: 'cover',
+        aspectRatio: '16:9',
+        placeholderStyle: 'icon',
+      }
+    case 'link':
+      return {
+        kind,
+        label: translate(locale, 'defaults.linkLabel'),
+        destination: {
+          type: 'external',
+          url: 'https://example.com',
+        },
+        openMode: 'newContext',
+      }
     case 'modal':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
     default:

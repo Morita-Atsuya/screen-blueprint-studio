@@ -16,6 +16,7 @@ import type {
   ScreenState,
   ValidationRule,
 } from './model'
+import { isSafeExternalUrl, isSafePortableUrl } from './portableUrl'
 import { DomainError } from './errors'
 import { isSafeEntityId } from './entityMap'
 
@@ -485,6 +486,67 @@ export function validateComponentConfig(
       nullableString(config.confirmationMessage, `${path}.confirmationMessage`)
       boolean(config.preventDoubleSubmit, `${path}.preventDoubleSubmit`)
       return
+    case 'image':
+      exactKeys(config, ['kind', 'source', 'alt', 'fit', 'aspectRatio', 'placeholderStyle'], [], path)
+      string(config.source, `${path}.source`)
+      if (!isSafePortableUrl(config.source, true)) {
+        fail(`${path}.source`, 'must be empty or a safe relative, HTTP, or HTTPS URL')
+      }
+      string(config.alt, `${path}.alt`)
+      if (config.alt.trim().length === 0) fail(`${path}.alt`, 'must not be empty')
+      enumValue(config.fit, ['contain', 'cover'], `${path}.fit`)
+      enumValue(config.aspectRatio, ['auto', 'square', '4:3', '16:9'], `${path}.aspectRatio`)
+      enumValue(config.placeholderStyle, ['icon', 'skeleton'], `${path}.placeholderStyle`)
+      return
+    case 'link': {
+      exactKeys(config, ['kind', 'label', 'destination', 'openMode'], [], path)
+      string(config.label, `${path}.label`)
+      if (config.label.trim().length === 0) fail(`${path}.label`, 'must not be empty')
+      const destination = record(config.destination, `${path}.destination`)
+      string(destination.type, `${path}.destination.type`)
+      switch (destination.type) {
+        case 'internal':
+          exactKeys(destination, ['type', 'screenId'], [], `${path}.destination`)
+          entityId(destination.screenId, `${path}.destination.screenId`)
+          enumValue(config.openMode, ['sameContext'], `${path}.openMode`)
+          return
+        case 'external':
+          exactKeys(destination, ['type', 'url'], [], `${path}.destination`)
+          string(destination.url, `${path}.destination.url`)
+          if (!isSafeExternalUrl(destination.url)) {
+            fail(`${path}.destination.url`, 'must be an absolute HTTP or HTTPS URL')
+          }
+          enumValue(config.openMode, ['sameContext', 'newContext'], `${path}.openMode`)
+          return
+        case 'resource':
+          exactKeys(
+            destination,
+            ['type', 'resourceId', 'url', 'displayName'],
+            [],
+            `${path}.destination`,
+          )
+          string(destination.resourceId, `${path}.destination.resourceId`)
+          if (destination.resourceId.trim().length === 0) {
+            fail(`${path}.destination.resourceId`, 'must not be empty')
+          }
+          string(destination.url, `${path}.destination.url`)
+          if (!isSafePortableUrl(destination.url)) {
+            fail(`${path}.destination.url`, 'must be a safe relative, HTTP, or HTTPS URL')
+          }
+          string(destination.displayName, `${path}.destination.displayName`)
+          if (destination.displayName.trim().length === 0) {
+            fail(`${path}.destination.displayName`, 'must not be empty')
+          }
+          enumValue(
+            config.openMode,
+            ['sameContext', 'newContext', 'download'],
+            `${path}.openMode`,
+          )
+          return
+        default:
+          fail(`${path}.destination.type`, 'is invalid')
+      }
+    }
     default:
       fail(`${path}.kind`, `is not a supported component kind: ${String(config.kind)}`)
   }

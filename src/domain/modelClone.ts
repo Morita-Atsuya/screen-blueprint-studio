@@ -80,10 +80,13 @@ export function cloneComponentConfig(config: ComponentConfig): ComponentConfig {
           'component config options',
         ),
       }
+    case 'link':
+      return { ...config, destination: { ...config.destination } }
     case 'page':
     case 'container':
     case 'text':
     case 'button':
+    case 'image':
     case 'modal':
       return { ...config }
     default:
@@ -112,6 +115,12 @@ function cloneComponentConfigPatch(patch: ComponentConfigPatch): ComponentConfig
         option => ({ ...option }),
         'component config patch options',
       ),
+    }
+  }
+  if ('destination' in patch && patch.destination !== undefined) {
+    return {
+      ...patch,
+      destination: { ...patch.destination },
     }
   }
   return { ...patch }

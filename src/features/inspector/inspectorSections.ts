@@ -38,6 +38,8 @@ export function componentHasContentSection(kind: ComponentKind): boolean {
     case 'textInput':
     case 'select':
     case 'button':
+    case 'image':
+    case 'link':
       return true
     case 'page':
     case 'container':
@@ -56,6 +58,8 @@ export function componentHasLayoutSection(kind: ComponentKind): boolean {
     case 'textInput':
     case 'select':
     case 'button':
+    case 'image':
+    case 'link':
       return false
   }
 }
@@ -129,6 +133,20 @@ function contentValues(config: ComponentConfig | undefined): Record<string, unkn
         variant: config.variant,
         confirmationMessage: config.confirmationMessage,
         preventDoubleSubmit: config.preventDoubleSubmit,
+      }
+    case 'image':
+      return {
+        source: config.source,
+        alt: config.alt,
+        fit: config.fit,
+        aspectRatio: config.aspectRatio,
+        placeholderStyle: config.placeholderStyle,
+      }
+    case 'link':
+      return {
+        label: config.label,
+        destination: config.destination,
+        openMode: config.openMode,
       }
   }
 }

@@ -61,6 +61,57 @@
         { "type": "null" }
       ]
     },
+    "externalUrl": {
+      "type": "string",
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://(?:localhost|(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])|(?![0-9.]+(?=[:/?#]|$))(?=[^/:?#]*[A-Za-z])[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#][^\\s\\u0000-\\u001F\\u007F\\\\]*)?$"
+    },
+    "portableUrl": {
+      "anyOf": [
+        { "$ref": "#/$defs/externalUrl" },
+        {
+          "type": "string",
+          "pattern": "^(?!\\s)(?!//)(?![A-Za-z][A-Za-z0-9+.-]*:)[^\\u0000-\\u001F\\u007F\\\\]*[^\\s\\u0000-\\u001F\\u007F\\\\]$"
+        }
+      ]
+    },
+    "linkDestination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "screenId"],
+          "properties": {
+            "type": { "const": "internal" },
+            "screenId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "url"],
+          "properties": {
+            "type": { "const": "external" },
+            "url": { "$ref": "#/$defs/externalUrl" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "resourceId", "url", "displayName"],
+          "properties": {
+            "type": { "const": "resource" },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S",
+              "description": "Opaque logical resource identifier; not a catalog reference."
+            },
+            "url": { "$ref": "#/$defs/portableUrl" },
+            "displayName": { "type": "string", "minLength": 1, "pattern": "\\S" }
+          }
+        }
+      ]
+    },
     "idArray": {
       "type": "array",
       "items": { "$ref": "#/$defs/entityId" },
@@ -288,6 +339,45 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "source", "alt", "fit", "aspectRatio", "placeholderStyle"],
+          "properties": {
+            "kind": { "const": "image" },
+            "source": {
+              "anyOf": [
+                { "const": "" },
+                { "$ref": "#/$defs/portableUrl" }
+              ]
+            },
+            "alt": { "type": "string", "minLength": 1, "pattern": "\\S" },
+            "fit": { "enum": ["contain", "cover"] },
+            "aspectRatio": { "enum": ["auto", "square", "4:3", "16:9"] },
+            "placeholderStyle": { "enum": ["icon", "skeleton"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "label", "destination", "openMode"],
+          "properties": {
+            "kind": { "const": "link" },
+            "label": { "type": "string", "minLength": 1, "pattern": "\\S" },
+            "destination": { "$ref": "#/$defs/linkDestination" },
+            "openMode": { "enum": ["sameContext", "newContext", "download"] }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "destination": { "type": "object", "properties": { "type": { "const": "internal" } } } } },
+              "then": { "properties": { "openMode": { "const": "sameContext" } } }
+            },
+            {
+              "if": { "properties": { "destination": { "type": "object", "properties": { "type": { "const": "external" } } } } },
+              "then": { "properties": { "openMode": { "enum": ["sameContext", "newContext"] } } }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["kind", "layout", "gap", "columns", "justify", "align", "wrap"],
           "properties": {
             "kind": { "const": "modal" },
@@ -326,6 +416,14 @@
         {
           "if": { "type": "object", "properties": { "kind": { "const": "button" } }, "required": ["kind"] },
           "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "button" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "image" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "image" } }, "required": ["kind"] } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "link" } }, "required": ["kind"] },
+          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "link" } }, "required": ["kind"] } } }
         },
         {
           "if": { "type": "object", "properties": { "kind": { "const": "modal" } }, "required": ["kind"] },
@@ -375,7 +473,7 @@
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "$ref": "#/$defs/idArray" },
         "kind": {
-          "enum": ["page", "container", "text", "textInput", "select", "button", "modal"]
+          "enum": ["page", "container", "text", "textInput", "select", "button", "image", "link", "modal"]
         },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
@@ -427,7 +525,7 @@
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "$ref": "#/$defs/idArray" },
         "kind": {
-          "enum": ["page", "container", "text", "textInput", "select", "button", "modal"]
+          "enum": ["page", "container", "text", "textInput", "select", "button", "image", "link", "modal"]
         },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
@@ -480,7 +578,17 @@
             "config.defaultValue",
             "config.variant",
             "config.confirmationMessage",
-            "config.preventDoubleSubmit"
+            "config.preventDoubleSubmit",
+            "config.source",
+            "config.alt",
+            "config.fit",
+            "config.aspectRatio",
+            "config.placeholderStyle",
+            "config.destination.screenId",
+            "config.destination.url",
+            "config.destination.resourceId",
+            "config.destination.displayName",
+            "config.openMode"
           ]
         }
       }
@@ -578,8 +686,52 @@
             { "type": "null" }
           ]
         },
-        "preventDoubleSubmit": { "type": "boolean" }
-      }
+        "preventDoubleSubmit": { "type": "boolean" },
+        "source": {
+          "anyOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/portableUrl" }
+          ]
+        },
+        "alt": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "fit": { "enum": ["contain", "cover"] },
+        "aspectRatio": { "enum": ["auto", "square", "4:3", "16:9"] },
+        "placeholderStyle": { "enum": ["icon", "skeleton"] },
+        "destination": { "$ref": "#/$defs/linkDestination" },
+        "openMode": { "enum": ["sameContext", "newContext", "download"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["destination"],
+            "properties": {
+              "destination": {
+                "type": "object",
+                "required": ["type"],
+                "properties": { "type": { "const": "internal" } }
+              }
+            }
+          },
+          "then": { "properties": { "openMode": { "const": "sameContext" } } }
+        },
+        {
+          "if": {
+            "required": ["destination"],
+            "properties": {
+              "destination": {
+                "type": "object",
+                "required": ["type"],
+                "properties": { "type": { "const": "external" } }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "openMode": { "enum": ["sameContext", "newContext"] }
+            }
+          }
+        }
+      ]
     },
     "variantNodeOverride": {
       "type": "object",

@@ -12,6 +12,7 @@ import type {
 import type { ChangeSet } from '../../domain/collaboration'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
+import { isSafeExternalUrl, isSafePortableUrl } from '../../domain/portableUrl'
 import { DraftTextField } from '../../components/DraftTextField'
 import {
   getComponentBehavior,
@@ -106,6 +107,7 @@ export function Inspector() {
   if (!selectionContext) return null
 
   const cfg = comp.config
+  const linkDestination = cfg.kind === 'link' ? cfg.destination : undefined
   const behavior = getComponentBehavior(inspectorDocument, comp.id)
   const eventEditor = getEventEditorContext(inspectorDocument, comp.id)
   const apiEditor = getApiEditorContext(inspectorDocument, comp.id, locale)
@@ -495,6 +497,193 @@ export function Inspector() {
             <input type="checkbox" checked={cfg.preventDoubleSubmit} onChange={e => updateConfig({ preventDoubleSubmit: e.target.checked })} />
             {t('inspector.preventDoubleSubmit')}
           </label>
+        </>
+      )}
+      {cfg.kind === 'image' && (
+        <>
+          <Field label={t('inspector.imageSource')}>{controlId => (
+            <DraftTextField
+              id={controlId}
+              key={`${comp.id}:source`}
+              draftId={`component:${comp.id}:config.source`}
+              ariaLabel={t('inspector.imageSource')}
+              className={styles.input}
+              value={cfg.source}
+              onCommit={source => updateConfig({ source }, 'source')}
+              validate={source =>
+                isSafePortableUrl(source, true) ? null : t('canvas.imageInvalid')}
+            />
+          )}</Field>
+          <Field label={t('inspector.imageAlt')}>{controlId => (
+            <DraftTextField
+              id={controlId}
+              key={`${comp.id}:alt`}
+              draftId={`component:${comp.id}:config.alt`}
+              ariaLabel={t('inspector.imageAlt')}
+              className={styles.input}
+              value={cfg.alt}
+              onCommit={alt => updateConfig({ alt }, 'alt text')}
+              validate={alt => alt.trim().length > 0 ? null : t('errors.requiredValue')}
+            />
+          )}</Field>
+          <Field label={t('inspector.imageFit')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.fit} onChange={event => updateConfig({ fit: event.target.value })}>
+              <option value="contain">{t('inspector.fitContain')}</option>
+              <option value="cover">{t('inspector.fitCover')}</option>
+            </select>
+          )}</Field>
+          <Field label={t('inspector.imageAspectRatio')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.aspectRatio} onChange={event => updateConfig({ aspectRatio: event.target.value })}>
+              <option value="auto">{t('inspector.aspectAuto')}</option>
+              <option value="square">1:1</option>
+              <option value="4:3">4:3</option>
+              <option value="16:9">16:9</option>
+            </select>
+          )}</Field>
+          <Field label={t('inspector.imagePlaceholder')}>{controlId => (
+            <select id={controlId} className={styles.input} value={cfg.placeholderStyle} onChange={event => updateConfig({ placeholderStyle: event.target.value })}>
+              <option value="icon">{t('inspector.placeholderIcon')}</option>
+              <option value="skeleton">{t('inspector.placeholderSkeleton')}</option>
+            </select>
+          )}</Field>
+        </>
+      )}
+      {cfg.kind === 'link' && linkDestination && (
+        <>
+          <Field label={t('inspector.linkLabel')}>{controlId => (
+            <DraftTextField
+              id={controlId}
+              key={`${comp.id}:linkLabel`}
+              draftId={`component:${comp.id}:config.label`}
+              ariaLabel={t('inspector.linkLabel')}
+              className={styles.input}
+              value={cfg.label}
+              onCommit={label => updateConfig({ label }, 'label')}
+              validate={label => label.trim().length > 0 ? null : t('errors.requiredValue')}
+            />
+          )}</Field>
+          <Field label={t('inspector.linkDestinationType')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={linkDestination.type}
+              onChange={event => {
+                const type = event.target.value
+                if (type === 'internal') {
+                  updateConfig({
+                    destination: { type, screenId: screen?.id ?? inspectorDocument.project.screenIds[0] },
+                    openMode: 'sameContext',
+                  }, 'destination')
+                } else if (type === 'external') {
+                  updateConfig({
+                    destination: { type, url: 'https://example.com' },
+                    openMode: 'newContext',
+                  }, 'destination')
+                } else {
+                  updateConfig({
+                    destination: {
+                      type: 'resource',
+                      resourceId: 'resource-1',
+                      url: '/resources/file',
+                      displayName: 'Resource',
+                    },
+                    openMode: 'sameContext',
+                  }, 'destination')
+                }
+              }}
+            >
+              <option value="internal">{t('inspector.linkInternal')}</option>
+              <option value="external">{t('inspector.linkExternal')}</option>
+              <option value="resource">{t('inspector.linkResource')}</option>
+            </select>
+          )}</Field>
+          {linkDestination.type === 'internal' ? (
+            <Field label={t('inspector.linkScreen')}>{controlId => (
+              <select
+                id={controlId}
+                className={styles.input}
+                value={linkDestination.screenId}
+                onChange={event => updateConfig({
+                  destination: { type: 'internal', screenId: event.target.value },
+                }, 'destination')}
+              >
+                {inspectorDocument.project.screenIds.map(screenId => {
+                  const destinationScreen = getOwnEntity(inspectorDocument.screens, screenId)
+                  return destinationScreen
+                    ? <option key={screenId} value={screenId}>{destinationScreen.name}</option>
+                    : null
+                })}
+              </select>
+            )}</Field>
+          ) : (
+            <Field label={t('inspector.linkUrl')}>{controlId => (
+              <DraftTextField
+                id={controlId}
+                key={`${comp.id}:destinationUrl:${linkDestination.type}`}
+                draftId={`component:${comp.id}:config.destination.url`}
+                ariaLabel={t('inspector.linkUrl')}
+                className={styles.input}
+                value={linkDestination.url}
+                onCommit={url => updateConfig({
+                  destination: { ...linkDestination, url },
+                }, 'destination URL')}
+                validate={url => (
+                  linkDestination.type === 'external'
+                    ? isSafeExternalUrl(url)
+                    : isSafePortableUrl(url)
+                ) ? null : t('canvas.imageInvalid')}
+              />
+            )}</Field>
+          )}
+          {linkDestination.type === 'resource' ? (
+            <>
+              <Field label={t('inspector.linkResourceId')}>{controlId => (
+                <DraftTextField
+                  id={controlId}
+                  key={`${comp.id}:resourceId`}
+                  draftId={`component:${comp.id}:config.destination.resourceId`}
+                  ariaLabel={t('inspector.linkResourceId')}
+                  className={styles.input}
+                  value={linkDestination.resourceId}
+                  onCommit={resourceId => updateConfig({
+                    destination: { ...linkDestination, resourceId },
+                  }, 'resource ID')}
+                />
+              )}</Field>
+              <Field label={t('inspector.linkResourceName')}>{controlId => (
+                <DraftTextField
+                  id={controlId}
+                  key={`${comp.id}:resourceName`}
+                  draftId={`component:${comp.id}:config.destination.displayName`}
+                  ariaLabel={t('inspector.linkResourceName')}
+                  className={styles.input}
+                  value={linkDestination.displayName}
+                  onCommit={displayName => updateConfig({
+                    destination: { ...linkDestination, displayName },
+                  }, 'resource name')}
+                />
+              )}</Field>
+            </>
+          ) : null}
+          <Field label={t('inspector.linkOpenMode')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={cfg.openMode}
+              onChange={event => updateConfig({ openMode: event.target.value }, 'open mode')}
+            >
+              <option value="sameContext">{t('inspector.openSameContext')}</option>
+              {linkDestination.type !== 'internal' ? (
+                <option value="newContext">{t('inspector.openNewContext')}</option>
+              ) : null}
+              {linkDestination.type === 'resource' ? (
+                <option value="download">{t('inspector.openDownload')}</option>
+              ) : null}
+            </select>
+          )}</Field>
+          {cfg.openMode === 'download' ? (
+            <p className={styles.reviewLock}>{t('inspector.downloadHelp')}</p>
+          ) : null}
         </>
       )}
         </InspectorSection>

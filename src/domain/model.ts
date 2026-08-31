@@ -43,6 +43,8 @@ export const COMPONENT_KIND_CATALOG = [
   { kind: 'textInput', canContainChildren: false, placement: 'child', canvasContent: true },
   { kind: 'select', canContainChildren: false, placement: 'child', canvasContent: true },
   { kind: 'button', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'image', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'link', canContainChildren: false, placement: 'child', canvasContent: true },
   {
     kind: 'modal',
     canContainChildren: true,
@@ -117,6 +119,15 @@ export const DEFAULT_COMPONENT_LAYOUT: ComponentLayout = {
 }
 
 export type TextStyle = 'heading1' | 'heading2' | 'heading3' | 'body' | 'caption'
+export type ImageFit = 'contain' | 'cover'
+export type ImageAspectRatio = 'auto' | 'square' | '4:3' | '16:9'
+export type ImagePlaceholder = 'icon' | 'skeleton'
+export type OpaqueResourceId = string
+export type LinkDestination =
+  | { type: 'internal'; screenId: EntityId }
+  | { type: 'external'; url: string }
+  | { type: 'resource'; resourceId: OpaqueResourceId; url: string; displayName: string }
+export type LinkOpenMode = 'sameContext' | 'newContext' | 'download'
 
 export type ComponentConfig =
   | ({ kind: 'page' } & ComponentLayout)
@@ -147,6 +158,20 @@ export type ComponentConfig =
       eventId: EntityId | null
       confirmationMessage: string | null
       preventDoubleSubmit: boolean
+    }
+  | {
+      kind: 'image'
+      source: string
+      alt: string
+      fit: ImageFit
+      aspectRatio: ImageAspectRatio
+      placeholderStyle: ImagePlaceholder
+    }
+  | {
+      kind: 'link'
+      label: string
+      destination: LinkDestination
+      openMode: LinkOpenMode
     }
   | ({ kind: 'modal' } & ComponentLayout)
 

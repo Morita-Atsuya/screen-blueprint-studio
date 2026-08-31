@@ -1,10 +1,24 @@
 import type { ComponentKind } from '../domain/model'
 import { assertCompleteComponentKindCoverage } from '../domain/model'
+import { SAFE_EXTERNAL_URL_PATTERN } from '../domain/portableUrl'
 
 const closed = { additionalProperties: false } as const
 const string = { type: 'string' } as const
-const nonEmptyString = { type: 'string', minLength: 1 } as const
+const nonEmptyString = { type: 'string', minLength: 1, pattern: '\\S' } as const
 const nullableString = { type: ['string', 'null'] } as const
+const externalUrl = {
+  type: 'string',
+  pattern: SAFE_EXTERNAL_URL_PATTERN,
+} as const
+const portableUrl = {
+  anyOf: [
+    externalUrl,
+    {
+      type: 'string',
+      pattern: '^(?:$|(?!\\s)(?!//)(?![A-Za-z][A-Za-z0-9+.-]*:)[^\\u0000-\\u001F\\u007F\\\\]*[^\\s\\u0000-\\u001F\\u007F\\\\])$',
+    },
+  ],
+} as const
 
 const layoutProperties = {
   layout: { type: 'string', enum: ['vertical', 'horizontal', 'grid'] },
@@ -146,11 +160,101 @@ const configVariants = [
     required: ['kind', 'label', 'variant', 'eventId', 'confirmationMessage', 'preventDoubleSubmit'],
   },
   {
+    kind: 'image',
+    properties: {
+      kind: { const: 'image' },
+      source: portableUrl,
+      alt: nonEmptyString,
+      fit: { type: 'string', enum: ['contain', 'cover'] },
+      aspectRatio: { type: 'string', enum: ['auto', 'square', '4:3', '16:9'] },
+      placeholderStyle: { type: 'string', enum: ['icon', 'skeleton'] },
+    },
+    required: ['kind', 'source', 'alt', 'fit', 'aspectRatio', 'placeholderStyle'],
+  },
+  {
+    kind: 'link',
+    properties: {
+      kind: { const: 'link' },
+      label: nonEmptyString,
+      destination: {
+        oneOf: [
+          {
+            type: 'object',
+            properties: { type: { const: 'internal' }, screenId: nonEmptyString },
+            required: ['type', 'screenId'],
+            ...closed,
+          },
+          {
+            type: 'object',
+            properties: { type: { const: 'external' }, url: externalUrl },
+            required: ['type', 'url'],
+            ...closed,
+          },
+          {
+            type: 'object',
+            properties: {
+              type: { const: 'resource' },
+              resourceId: {
+                ...nonEmptyString,
+                description: 'Opaque logical resource identifier; not a catalog reference.',
+              },
+              url: {
+                allOf: [portableUrl, { type: 'string', minLength: 1 }],
+              },
+              displayName: nonEmptyString,
+            },
+            required: ['type', 'resourceId', 'url', 'displayName'],
+            ...closed,
+          },
+        ],
+      },
+      openMode: { type: 'string', enum: ['sameContext', 'newContext', 'download'] },
+    },
+    required: ['kind', 'label', 'destination', 'openMode'],
+    allOf: [
+      {
+        if: {
+          required: ['destination'],
+          properties: {
+            destination: {
+              type: 'object',
+              required: ['type'],
+              properties: { type: { const: 'internal' } },
+            },
+          },
+        },
+        then: { properties: { openMode: { const: 'sameContext' } } },
+      },
+      {
+        if: {
+          required: ['destination'],
+          properties: {
+            destination: {
+              type: 'object',
+              required: ['type'],
+              properties: { type: { const: 'external' } },
+            },
+          },
+        },
+        then: {
+          properties: {
+            openMode: { type: 'string', enum: ['sameContext', 'newContext'] },
+          },
+        },
+      },
+    ],
+  },
+  {
     kind: 'modal',
     properties: { kind: { const: 'modal' }, ...layoutProperties },
     required: ['kind', ...layoutRequired],
   },
-] as const satisfies readonly { kind: ComponentKind; properties: object; required: readonly string[] }[]
+] as const satisfies readonly {
+  kind: ComponentKind
+  properties: object
+  required: readonly string[]
+  allOf?: readonly object[]
+}[]
 
 assertCompleteComponentKindCoverage(
   'WebMCP component config schema',
@@ -162,6 +266,7 @@ export const componentConfigSchema = {
     type: 'object',
     properties: variant.properties,
     required: variant.required,
+    ...('allOf' in variant ? { allOf: variant.allOf } : {}),
     ...closed,
   })),
 }
@@ -171,6 +276,7 @@ export const componentConfigPatchSchema = {
     type: 'object',
     properties: variant.properties,
     minProperties: 1,
+    ...('allOf' in variant ? { allOf: variant.allOf } : {}),
     ...closed,
   })),
 }

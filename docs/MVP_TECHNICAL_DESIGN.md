@@ -182,6 +182,8 @@ type ComponentKind =
   | "textInput"
   | "select"
   | "button"
+  | "image"
+  | "link"
   | "modal";
 
 interface ScreenComponent {
@@ -215,6 +217,8 @@ type ComponentConfig =
   | TextInputConfig
   | SelectConfig
   | ButtonConfig
+  | ImageConfig
+  | LinkConfig
   | ModalConfig;
 
 interface ComponentLayout {
@@ -255,10 +259,38 @@ interface ButtonConfig {
   preventDoubleSubmit: boolean;
 }
 
+interface ImageConfig {
+  kind: "image";
+  source: string;
+  alt: string;
+  fit: "contain" | "cover";
+  aspectRatio: "auto" | "square" | "4:3" | "16:9";
+  placeholderStyle: "icon" | "skeleton";
+}
+
+type LinkDestination =
+  | { type: "internal"; screenId: EntityId }
+  | { type: "external"; url: string }
+  | {
+      type: "resource";
+      resourceId: string;
+      url: string;
+      displayName: string;
+    };
+
+interface LinkConfig {
+  kind: "link";
+  label: string;
+  destination: LinkDestination;
+  openMode: "sameContext" | "newContext" | "download";
+}
+
 type ModalConfig = { kind: "modal" } & ComponentLayout;
 ```
 
-`page`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。意味的なグループ名はContainerの`CommonComponentSpec.description`へ保存し、TreeとCanvasのeditor-only識別に使うが、preview contentへは自動描画しない。見出し、本文、補足、状態別feedbackはchildの`text`と`style`で表現し、必要に応じてContainerと組み合わせる。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。
+`page`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。意味的なグループ名はContainerの`CommonComponentSpec.description`へ保存し、TreeとCanvasのeditor-only識別に使うが、preview contentへは自動描画しない。見出し、本文、補足、状態別feedbackはchildの`text`と`style`で表現し、必要に応じてContainerと組み合わせる。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`等のleafで表現する。
+
+`image.source`はportableな相対URLまたはHTTP(S) URL、`alt`はtrim後の非空文字列とする。未設定sourceとnetwork errorはCanvas上の明示placeholderとして扱い、通信失敗をpersistedな仕様エラーへ変換しない。`link.destination`はinternal screen、absolute HTTP(S) external URL、opaque logical resourceを型で分離する。internalは`sameContext`のみ、externalは`sameContext | newContext`、resourceだけが`download`も選べる。resource IDはtop-level catalog参照ではない。新contextは`noopener noreferrer`を必須とし、dangerous scheme、scheme-relative、制御文字、backslash host形式をdomain validationで拒否する。internal Linkから参照されるScreenは、参照解除まで削除できない。
 
 schema version 2では、機能差のなかった旧`section` kindを`container`へ統合した。version 1の保存データは読込時に、component ID、親子関係、共通仕様、layout、revisionを保持したまま決定的に変換する。active change setのbase documentと未確定operation内のcomponent snapshot/configも同じ境界で変換し、変換後の全体を現行runtime validationで検証してから再保存する。壊れた旧データは補正せずRecoveryへ送る。
 

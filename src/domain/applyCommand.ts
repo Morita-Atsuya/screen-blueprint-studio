@@ -171,6 +171,8 @@ function duplicateComponentConfig(
     case 'page':
     case 'container':
     case 'text':
+    case 'image':
+    case 'link':
     case 'modal':
       return copied
     default:
@@ -435,13 +437,26 @@ export function applyCommandWithoutRevision(
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
       if (next.project.screenIds.length <= 1) throw new DomainError('CANNOT_REMOVE_LAST_SCREEN', 'Cannot remove the last screen')
 
-      // Check navigate references from other screens
+      // Check navigation references from other screens.
       for (const event of Object.values(next.events)) {
         if (event.screenId === screenId) continue
         for (const action of event.actions) {
           if (action.type === 'navigate' && action.destinationScreenId === screenId) {
             throw new DomainError('SCREEN_REFERENCED_BY_NAVIGATE', `Screen ${screenId} is referenced by a navigate action`)
           }
+        }
+      }
+      for (const component of Object.values(next.components)) {
+        if (
+          component.screenId !== screenId &&
+          component.config.kind === 'link' &&
+          component.config.destination.type === 'internal' &&
+          component.config.destination.screenId === screenId
+        ) {
+          throw new DomainError(
+            'SCREEN_REFERENCED_BY_LINK',
+            `Screen ${screenId} is referenced by link ${component.id}`,
+          )
         }
       }
 

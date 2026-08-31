@@ -29,7 +29,7 @@ import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import { StateDialog } from './StateDialog'
 import { useCanvasViewport } from './useCanvasViewport'
-import { createCanvasComponentPreview } from './componentPreview'
+import { createCanvasComponentPreview, resolveImagePreviewStatus } from './componentPreview'
 import type { CanvasViewportControls } from './useCanvasViewport'
 import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
@@ -571,7 +571,7 @@ function CanvasComponent({
           <span className={styles.componentLabel}>{displayName}</span>
         </div>
       ) : null}
-      <ComponentView comp={component} t={t} />
+      <ComponentView comp={component} document={document} t={t} />
       {isContainer && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
@@ -652,9 +652,11 @@ function layoutGap(gap: ComponentLayout['gap']): string {
 
 function ComponentView({
   comp,
+  document,
   t,
 }: {
   comp: ScreenComponent
+  document: ProjectDocument
   t: ReturnType<typeof useI18n>['t']
 }) {
   const preview = createCanvasComponentPreview(comp.config)
@@ -707,7 +709,82 @@ function ComponentView({
           {preview.label}
         </button>
       )
+    case 'image':
+      return <ImagePreview key={preview.source} config={preview} t={t} />
+    case 'link': {
+      const destination = preview.destination
+      const href = destination.type === 'internal'
+        ? getOwnEntity(document.screens, destination.screenId)?.route ?? `#${destination.screenId}`
+        : destination.url
+      const newContext = preview.openMode === 'newContext'
+      return (
+        <a
+          className={styles.linkPreview}
+          href={href}
+          target={newContext ? '_blank' : undefined}
+          rel={newContext ? 'noopener noreferrer' : undefined}
+          download={
+            preview.openMode === 'download' && destination.type === 'resource'
+              ? destination.displayName
+              : undefined
+          }
+          onClick={event => event.preventDefault()}
+        >
+          {preview.label}
+        </a>
+      )
+    }
     case 'modal':
       return null
   }
+}
+
+function ImagePreview({
+  config,
+  t,
+}: {
+  config: Extract<ReturnType<typeof createCanvasComponentPreview>, { kind: 'image' }>
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  const [failedSource, setFailedSource] = useState<string | null>(null)
+  const status = resolveImagePreviewStatus(config.source, failedSource)
+  const reason = status === 'missing'
+    ? t('canvas.imageMissing')
+    : status === 'invalid'
+      ? t('canvas.imageInvalid')
+      : status === 'failed'
+        ? t('canvas.imageFailed')
+        : null
+
+  if (reason) {
+    return (
+      <div
+        className={[
+          styles.imagePlaceholder,
+          config.placeholderStyle === 'skeleton' ? styles.imagePlaceholderSkeleton : '',
+        ].join(' ')}
+        role="img"
+        aria-label={`${config.alt}: ${reason}`}
+        data-image-placeholder={
+          status
+        }
+      >
+        {config.placeholderStyle === 'icon' ? <span aria-hidden="true">▧</span> : null}
+        <span>{reason}</span>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      key={config.source}
+      className={`${styles.imagePreview} ${styles[`imageAspect${config.aspectRatio.replace(':', '')}`]}`}
+      src={config.source}
+      alt={config.alt}
+      style={{ objectFit: config.fit }}
+      onError={() => setFailedSource(config.source)}
+      data-image-fit={config.fit}
+      data-image-aspect={config.aspectRatio}
+    />
+  )
 }

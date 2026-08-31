@@ -12,6 +12,8 @@ export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], Messag
   textInput: 'component.textInput',
   select: 'component.select',
   button: 'component.button',
+  image: 'component.image',
+  link: 'component.link',
   modal: 'component.modal',
 }
 
@@ -39,9 +41,12 @@ export function getComponentDisplayLabel(
       return readableText(component.common.description, fallback)
     case 'text':
       return readableText(config.text, fallback)
+    case 'image':
+      return readableText(config.alt, fallback)
     case 'textInput':
     case 'select':
     case 'button':
+    case 'link':
       return readableText(config.label, fallback)
     default:
       return assertNever(config, 'component display label config')

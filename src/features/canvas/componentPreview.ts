@@ -1,5 +1,17 @@
 import { assertNever } from '../../domain/assertNever'
-import type { ComponentConfig, TextStyle } from '../../domain/model'
+import type { ComponentConfig, LinkDestination, LinkOpenMode, TextStyle } from '../../domain/model'
+import { isSafePortableUrl } from '../../domain/portableUrl'
+
+export type ImagePreviewStatus = 'ready' | 'missing' | 'invalid' | 'failed'
+
+export function resolveImagePreviewStatus(
+  source: string,
+  failedSource: string | null,
+): ImagePreviewStatus {
+  if (source.length === 0) return 'missing'
+  if (!isSafePortableUrl(source)) return 'invalid'
+  return failedSource === source ? 'failed' : 'ready'
+}
 
 export type CanvasComponentPreview =
   | {
@@ -35,6 +47,22 @@ export type CanvasComponentPreview =
       rendersContent: true
       label: string
       variant: 'primary' | 'secondary' | 'danger'
+    }
+  | {
+      kind: 'image'
+      rendersContent: true
+      source: string
+      alt: string
+      fit: 'contain' | 'cover'
+      aspectRatio: 'auto' | 'square' | '4:3' | '16:9'
+      placeholderStyle: 'icon' | 'skeleton'
+    }
+  | {
+      kind: 'link'
+      rendersContent: true
+      label: string
+      destination: LinkDestination
+      openMode: LinkOpenMode
     }
 
 function textElement(style: TextStyle): 'h1' | 'h2' | 'h3' | 'p' | 'small' {
@@ -95,6 +123,16 @@ export function createCanvasComponentPreview(
         rendersContent: true,
         label: config.label,
         variant: config.variant,
+      }
+    case 'image':
+      return { ...config, rendersContent: true }
+    case 'link':
+      return {
+        kind: config.kind,
+        rendersContent: true,
+        label: config.label,
+        destination: { ...config.destination },
+        openMode: config.openMode,
       }
     default:
       return assertNever(config, 'Canvas component config')

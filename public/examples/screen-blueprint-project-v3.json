@@ -126,7 +126,7 @@
       "id": "home-page",
       "screenId": "home",
       "parentId": null,
-      "childIds": ["shared-header"],
+      "childIds": ["shared-header", "product-image", "documentation-link"],
       "kind": "page",
       "common": {
         "description": "Home page",
@@ -155,6 +155,49 @@
       "variantId": "comfortable",
       "props": {
         "title": "Welcome"
+      }
+    },
+    "product-image": {
+      "nodeType": "inline",
+      "id": "product-image",
+      "screenId": "home",
+      "parentId": "home-page",
+      "childIds": [],
+      "kind": "image",
+      "common": {
+        "description": "Product workflow illustration",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "image",
+        "source": "./taskflow-board.svg",
+        "alt": "Task board organized into three columns",
+        "fit": "cover",
+        "aspectRatio": "16:9",
+        "placeholderStyle": "icon"
+      }
+    },
+    "documentation-link": {
+      "nodeType": "inline",
+      "id": "documentation-link",
+      "screenId": "home",
+      "parentId": "home-page",
+      "childIds": [],
+      "kind": "link",
+      "common": {
+        "description": "Product documentation",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "link",
+        "label": "Read the documentation",
+        "destination": {
+          "type": "external",
+          "url": "https://github.com/Morita-Atsuya/screen-blueprint-studio"
+        },
+        "openMode": "newContext"
       }
     }
   },

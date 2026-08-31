@@ -530,6 +530,49 @@ async function run() {
     ] = { text: 'Ready for review' }
     browserDocument.components['comp-task-docs-title'].config.text =
       'Refresh the complete API documentation and integration reference'
+    browserDocument.components['browser-resource-link'] = {
+      id: 'browser-resource-link',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: [],
+      kind: 'link',
+      common: {
+        description: 'Downloadable resource regression',
+        visible: true,
+        enabled: true,
+      },
+      config: {
+        kind: 'link',
+        label: 'Download board',
+        destination: {
+          type: 'resource',
+          resourceId: 'opaque-board',
+          url: './examples/taskflow-board.svg',
+          displayName: 'taskflow-board.svg',
+        },
+        openMode: 'download',
+      },
+    }
+    browserDocument.components['browser-broken-image'] = {
+      id: 'browser-broken-image',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: [],
+      kind: 'image',
+      common: {
+        description: 'Broken image regression',
+        visible: true,
+        enabled: true,
+      },
+      config: {
+        kind: 'image',
+        source: './examples/missing-image.png',
+        alt: 'Unavailable illustration',
+        fit: 'contain',
+        aspectRatio: '4:3',
+        placeholderStyle: 'skeleton',
+      },
+    }
     browserDocument.components['browser-horizontal-overflow'] = {
       id: 'browser-horizontal-overflow',
       screenId: 'screen-list',
@@ -563,7 +606,11 @@ async function run() {
         },
       }
     }
-    browserDocument.components['comp-list-section'].childIds.push('browser-horizontal-overflow')
+    browserDocument.components['comp-list-section'].childIds.push(
+      'browser-resource-link',
+      'browser-broken-image',
+      'browser-horizontal-overflow',
+    )
     const persisted = JSON.stringify({
       document: browserDocument,
       activeScreenId: 'screen-edit',
@@ -1455,6 +1502,65 @@ async function run() {
       }
 
       await switchScreen('Task List', 'comp-list-grid')
+      await waitForExpression(
+        `document.querySelector(
+          '[data-component-id="browser-broken-image"] [data-image-placeholder="failed"]'
+        )?.getAttribute('role') === 'img'`,
+        `${width}px broken Image did not expose an accessible failure placeholder`,
+      )
+      const semanticMediaResult = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const image = document.querySelector(
+            '[data-component-id="comp-list-illustration"] img'
+          )
+          const link = document.querySelector(
+            '[data-component-id="comp-list-help-link"] a'
+          )
+          const resource = document.querySelector(
+            '[data-component-id="browser-resource-link"] a'
+          )
+          const failedImage = document.querySelector(
+            '[data-component-id="browser-broken-image"] [data-image-placeholder="failed"]'
+          )
+          const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+          const prevented = link ? !link.dispatchEvent(click) : false
+          return {
+            imageAlt: image?.getAttribute('alt'),
+            imageFit: image?.getAttribute('data-image-fit'),
+            imageAspect: image?.getAttribute('data-image-aspect'),
+            linkTag: link?.tagName,
+            href: link?.getAttribute('href'),
+            target: link?.getAttribute('target'),
+            rel: link?.getAttribute('rel'),
+            tabIndex: link?.tabIndex,
+            prevented,
+            resourceDownload: resource?.getAttribute('download'),
+            resourceTarget: resource?.getAttribute('target'),
+            failedImageLabel: failedImage?.getAttribute('aria-label'),
+            path: location.pathname,
+          }
+        })()`,
+        returnByValue: true,
+      })
+      assert(
+        semanticMediaResult.result.value.imageAlt ===
+            'Task board organized into three columns' &&
+          semanticMediaResult.result.value.imageFit === 'cover' &&
+          semanticMediaResult.result.value.imageAspect === '16:9' &&
+          semanticMediaResult.result.value.linkTag === 'A' &&
+          semanticMediaResult.result.value.target === '_blank' &&
+          semanticMediaResult.result.value.rel === 'noopener noreferrer' &&
+          semanticMediaResult.result.value.tabIndex === 0 &&
+          semanticMediaResult.result.value.prevented &&
+          semanticMediaResult.result.value.resourceDownload === 'taskflow-board.svg' &&
+          semanticMediaResult.result.value.resourceTarget === null &&
+          semanticMediaResult.result.value.failedImageLabel.includes(
+            'Image could not be loaded'
+          ) &&
+          semanticMediaResult.result.value.path === '/',
+        `${width}px semantic Image or Link DOM contract drifted: ` +
+          JSON.stringify(semanticMediaResult.result.value),
+      )
       await cdp.call('Runtime.evaluate', {
         expression: `(() => {
           const card = document.querySelector('[data-component-id="comp-task-docs-card"]')
@@ -1573,6 +1679,7 @@ async function run() {
               ' > [data-layout="horizontal"]'
             )
             horizontal.scrollLeft = 0
+            horizontal.scrollIntoView({ block: 'center', inline: 'center' })
             const rect = horizontal.getBoundingClientRect()
             return {
               x: rect.left + rect.width / 2,

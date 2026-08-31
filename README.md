@@ -13,12 +13,13 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 ## 主な機能
 
 - 複数画面の管理
-- Page、Container、Text、入力、ボタン、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
+- Page、Container、Text、入力、Button、Image、Link、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
 - Page／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・Container間移動に対応したdrag & drop
 - Page／Modal root以外のcomponent subtreeを直後へatomicに複製。全状態overrideを引き継ぎ、event／API field bindingは複製しない
 - Page／Modal root以外のcomponent subtreeをアプリ内clipboardへコピーし、選択したcontainer/rootの内側またはleaf直後へatomicに貼り付け。同一画面だけ状態overrideを引き継ぐ
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
+- Imageのportable URL／必須alt／制約付き表示tokenと、画面・外部URL・論理resourceを区別する安全なLink
 - Inspectorで選択componentのevent／実行順actionと、同screenのAPI operation／request binding／結果state、`textInput`のvalidation ruleを追加・編集・削除・並べ替え
 - 自由に命名できる画面状態と状態別override。Inspectorで基本値・明示override・実効値を分け、field単位またはcomponent単位で基本設定へ戻せる
 - click／submitイベント、画面遷移、状態変更、API呼び出しのモデル化
@@ -222,6 +223,8 @@ Readツールには`readOnlyHint`を付与しています。Writeツールはact
 
 ## 設計ドキュメント
 
+- [User guide (English)](./docs/USER_GUIDE.md)
+- [ユーザーガイド（日本語）](./docs/USER_GUIDE.ja.md)
 - [プロダクト方針](./docs/PRODUCT_DIRECTION.md)
 - [MVP技術設計](./docs/MVP_TECHNICAL_DESIGN.md)
 - [WebMCP Challenge概要・評価基準](./docs/HACKATHON_BRIEF.md)

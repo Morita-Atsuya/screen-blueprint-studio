@@ -42,6 +42,16 @@ export function validateInvariants(doc: ProjectDocument): void {
     if (!hasOwnEntity(screens, comp.screenId)) {
       throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} references non-existent screen ${comp.screenId}`)
     }
+    if (
+      comp.config.kind === 'link' &&
+      comp.config.destination.type === 'internal' &&
+      !hasOwnEntity(screens, comp.config.destination.screenId)
+    ) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Link ${comp.id} references non-existent screen ${comp.config.destination.screenId}`,
+      )
+    }
   }
 
   for (const state of Object.values(doc.screenStates)) {

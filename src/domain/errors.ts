@@ -12,6 +12,7 @@ export type DomainErrorCode =
   | 'CANNOT_REMOVE_ROOT'
   | 'CANNOT_REMOVE_LAST_SCREEN'
   | 'SCREEN_REFERENCED_BY_NAVIGATE'
+  | 'SCREEN_REFERENCED_BY_LINK'
   | 'RECOVERY_REQUIRED'
 
 export class DomainError extends Error {

@@ -75,6 +75,8 @@ export const sampleProject: ProjectDocument = {
       childIds: [
         'comp-list-title',
         'comp-list-summary',
+        'comp-list-illustration',
+        'comp-list-help-link',
         'comp-create-task-btn',
         'comp-list-loading-message',
         'comp-list-empty-message',
@@ -106,6 +108,39 @@ export const sampleProject: ProjectDocument = {
         kind: 'text',
         text: 'Plan, assign, and track the work your team is moving forward.',
         style: 'body',
+      },
+    },
+    'comp-list-illustration': {
+      id: 'comp-list-illustration',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: [],
+      kind: 'image',
+      common: { description: 'Task board overview illustration', visible: true, enabled: true },
+      config: {
+        kind: 'image',
+        source: './examples/taskflow-board.svg',
+        alt: 'Task board organized into three columns',
+        fit: 'cover',
+        aspectRatio: '16:9',
+        placeholderStyle: 'icon',
+      },
+    },
+    'comp-list-help-link': {
+      id: 'comp-list-help-link',
+      screenId: 'screen-list',
+      parentId: 'comp-list-section',
+      childIds: [],
+      kind: 'link',
+      common: { description: 'Open task planning guidance', visible: true, enabled: true },
+      config: {
+        kind: 'link',
+        label: 'Task planning guide',
+        destination: {
+          type: 'external',
+          url: 'https://docs.github.com/issues/tracking-your-work-with-issues',
+        },
+        openMode: 'newContext',
       },
     },
     'comp-create-task-btn': {

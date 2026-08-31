@@ -109,6 +109,9 @@ const mountLockedDialogBundle = join(temp, 'mountLockedDialog.mjs')
 const mountDeleteDialogBundle = join(temp, 'mountDeleteDialog.mjs')
 const migratePersistedDataBundle = join(temp, 'migratePersistedData.mjs')
 const canonicalProjectSpecV3Bundle = join(temp, 'canonicalProjectSpecV3.mjs')
+const portableUrlBundle = join(temp, 'portableUrl.mjs')
+const webMcpSchemasBundle = join(temp, 'webMcpSchemas.mjs')
+const modelCloneBundle = join(temp, 'modelClone.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -143,6 +146,9 @@ bundle('src/domain/screenFlow.ts', screenFlowBundle)
 bundle('src/config/buildFeatureFlags.ts', buildFeatureFlagsBundle)
 bundle('src/persistence/migratePersistedData.ts', migratePersistedDataBundle)
 bundle('src/domain/canonicalProjectSpecV3.ts', canonicalProjectSpecV3Bundle)
+bundle('src/domain/portableUrl.ts', portableUrlBundle)
+bundle('src/webmcp/schemas.ts', webMcpSchemasBundle)
+bundle('src/domain/modelClone.ts', modelCloneBundle)
 bundle(
   'scripts/fixtures/renderInspector.tsx',
   renderInspectorBundle,
@@ -504,7 +510,7 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
   }
   assert(
     Object.values(example.components)
-        .filter(component => component.nodeType === 'inline').length === 1 &&
+        .filter(component => component.nodeType === 'inline').length === 3 &&
       Object.values(example.components)
         .filter(component => component.nodeType === 'definitionInstance').length === 1 &&
       resolvedDefinition.name === 'Shared Header' &&
@@ -519,8 +525,49 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       JSON.stringify(resolvedDefinition.variants.map(variant => variant.name)) ===
         JSON.stringify(['Comfortable', 'Compact']) &&
       Object.keys(example.screenScenarios).length === 1 &&
-      example.events['activate-loading'].trigger.target.type === 'definitionNode',
+      example.events['activate-loading'].trigger.target.type === 'definitionNode' &&
+      example.components['product-image'].config.kind === 'image' &&
+      example.components['product-image'].config.alt.length > 0 &&
+      example.components['documentation-link'].config.destination.type === 'external' &&
+      example.components['documentation-link'].config.openMode === 'newContext',
     'public v3 example does not demonstrate the approved Stage 1 contract',
+  )
+  const unsafeImage = clone(example)
+  unsafeImage.components['product-image'].config.source = 'javascript:alert(1)'
+  const missingAlt = clone(example)
+  missingAlt.components['product-image'].config.alt = ''
+  const whitespaceAlt = clone(example)
+  whitespaceAlt.components['product-image'].config.alt = ' '
+  const incompatibleExternalMode = clone(example)
+  incompatibleExternalMode.components['documentation-link'].config.openMode = 'download'
+  const downloadableResource = clone(example)
+  downloadableResource.components['documentation-link'].config.destination = {
+    type: 'resource',
+    resourceId: 'opaque-report',
+    url: './reports/status.pdf',
+    displayName: 'Status report',
+  }
+  downloadableResource.components['documentation-link'].config.openMode = 'download'
+  const unsafeImageVariant = clone(example)
+  unsafeImageVariant.componentDefinitions['shared/header'].variants[0]
+    .nodeOverrides['header-root'].config.source = 'javascript:alert(1)'
+  const incompatibleLinkVariant = clone(example)
+  incompatibleLinkVariant.componentDefinitions['shared/header'].variants[0]
+    .nodeOverrides['header-root'].config.destination = {
+      type: 'internal',
+      screenId: 'home',
+    }
+  incompatibleLinkVariant.componentDefinitions['shared/header'].variants[0]
+    .nodeOverrides['header-root'].config.openMode = 'newContext'
+  assert(
+    !isValid(unsafeImage) &&
+      !isValid(missingAlt) &&
+      !isValid(whitespaceAlt) &&
+      !isValid(incompatibleExternalMode) &&
+      !isValid(unsafeImageVariant) &&
+      !isValid(incompatibleLinkVariant) &&
+      isValid(downloadableResource),
+    'public v3 Image/Link URL, alt, or open-mode constraints drifted',
   )
 
   for (const invalidRef of [
@@ -597,7 +644,6 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
     'nodeType',
     'parentId',
     'childIds',
-    'source',
     'variantId',
     'props',
     'eventId',
@@ -3826,7 +3872,7 @@ await test('TaskFlow sample is a complete two-screen task specification', async 
   assert(
     [...new Set(Object.values(sampleProject.components).map(component => component.kind))]
       .sort().join(',') ===
-      ['button', 'container', 'modal', 'page', 'select', 'text', 'textInput']
+      ['button', 'container', 'image', 'link', 'modal', 'page', 'select', 'text', 'textInput']
         .sort().join(','),
     'TaskFlow does not exercise all canonical component kinds',
   )
@@ -4562,6 +4608,195 @@ await test('sample and component surfaces cover every canonical component kind',
     'persisted sample project',
     [...new Set(Object.values(persistedComponents).map(component => component.kind))],
   )
+})
+
+await test('semantic Image and Link configs enforce portable URL and destination contracts', async () => {
+  const { validateComponentConfig } = await import(
+    moduleUrl(runtimeValidationBundle, 'semantic-media-validation')
+  )
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'semantic-media-screen-reference')
+  )
+  const { sampleProject } = await import(
+    moduleUrl(sampleProjectBundle, 'semantic-media-sample')
+  )
+  const { resolveImagePreviewStatus } = await import(
+    moduleUrl(componentPreviewBundle, 'semantic-media-image-status')
+  )
+  const {
+    SAFE_EXTERNAL_URL_PATTERN,
+    isSafeExternalUrl,
+    isSafePortableUrl,
+  } = await import(moduleUrl(portableUrlBundle, 'semantic-media-urls'))
+  const { componentConfigSchema } = await import(
+    moduleUrl(webMcpSchemasBundle, 'semantic-media-webmcp-schema')
+  )
+  const { cloneDomainCommand } = await import(
+    moduleUrl(modelCloneBundle, 'semantic-media-command-clone')
+  )
+  const canonicalSchema = JSON.parse(readFileSync(
+    join(root, 'public/schemas/screen-blueprint-project-v3.schema.json'),
+    'utf8',
+  ))
+  assert(
+    canonicalSchema.$defs.externalUrl.pattern === SAFE_EXTERNAL_URL_PATTERN,
+    'canonical external URL pattern drifted from the runtime contract',
+  )
+  const externalCorpus = [
+    ['https://example.com', true],
+    ['HTTP://localhost:4173/path?q=1', true],
+    ['http:foo', false],
+    ['https:/example.com', false],
+    ['https://?', false],
+    ['https://[bad', false],
+    ['https://example.com ', false],
+    ['https://example.com:65535/path', true],
+    ['https://example.com:65536/path', false],
+    ['https://127.0.0.1:4173/path', true],
+    ['https://999.999.999.999', false],
+    ['javascript:alert(1)', false],
+    ['//example.com', false],
+    ['https:\\\\example.com', false],
+  ]
+  const validateExternalSchema = new Ajv2020({ strict: true }).compile(
+    canonicalSchema.$defs.externalUrl,
+  )
+  const validatePortableSchema = new Ajv2020({ strict: true }).compile({
+    $schema: canonicalSchema.$schema,
+    $defs: canonicalSchema.$defs,
+    $ref: '#/$defs/portableUrl',
+  })
+  const portableCorpus = [
+    ['./images/board.png', true],
+    ['../images/board.png', true],
+    ['images/my board.png', true],
+    ['//example.com/image.png', false],
+    [' images/board.png', false],
+    ['images/board.png ', false],
+    ['file:///tmp/image.png', false],
+  ]
+  assert(
+    externalCorpus.every(([value, expected]) =>
+      isSafeExternalUrl(value) === expected &&
+      validateExternalSchema(value) === expected
+    ) &&
+      portableCorpus.every(([value, expected]) =>
+        isSafePortableUrl(value) === expected &&
+        validatePortableSchema(value) === expected
+      ),
+    'runtime and canonical URL acceptance corpus diverged',
+  )
+  const rejects = config => {
+    try {
+      validateComponentConfig(config, config.kind)
+      return false
+    } catch {
+      return true
+    }
+  }
+  const image = {
+    kind: 'image',
+    source: './images/board.png',
+    alt: 'Task board',
+    fit: 'cover',
+    aspectRatio: '16:9',
+    placeholderStyle: 'icon',
+  }
+  const external = {
+    kind: 'link',
+    label: 'Documentation',
+    destination: { type: 'external', url: 'https://example.com/docs' },
+    openMode: 'newContext',
+  }
+  validateComponentConfig(image, 'image')
+  validateComponentConfig(external, 'link')
+  assert(
+    resolveImagePreviewStatus('', null) === 'missing' &&
+      resolveImagePreviewStatus('javascript:alert(1)', null) === 'invalid' &&
+      resolveImagePreviewStatus('./broken.png', './broken.png') === 'failed' &&
+      resolveImagePreviewStatus('./working.png', './broken.png') === 'ready',
+    'Image preview did not distinguish errors or reset failure on source change',
+  )
+  assert(
+    [
+      { ...image, source: 'javascript:alert(1)' },
+      { ...image, source: '//example.com/image.png' },
+      { ...image, source: '\\\\example.com\\image.png' },
+      { ...image, source: './image\u0000.png' },
+      { ...image, alt: ' ' },
+      { ...external, destination: { type: 'external', url: '/relative' } },
+      { ...external, destination: { type: 'external', url: 'data:text/plain,x' } },
+      { ...external, openMode: 'download' },
+      {
+        ...external,
+        destination: { type: 'internal', screenId: 'screen-list' },
+        openMode: 'newContext',
+      },
+    ].every(rejects),
+    'unsafe URL or incompatible Link open mode passed runtime validation',
+  )
+  validateComponentConfig({
+    ...external,
+    destination: {
+      type: 'resource',
+      resourceId: 'opaque-report',
+      url: '../reports/status.pdf',
+      displayName: 'Status report',
+    },
+    openMode: 'download',
+  }, 'link')
+  const validateWebMcpConfig = new Ajv2020({ strict: false }).compile(
+    componentConfigSchema,
+  )
+  assert(
+    validateWebMcpConfig(external) &&
+      !validateWebMcpConfig({ ...image, alt: ' ' }) &&
+      !validateWebMcpConfig({ ...external, label: ' ' }) &&
+      !validateWebMcpConfig({ ...image, source: 'https:/example.com/image.png' }) &&
+      !validateWebMcpConfig({
+        ...external,
+        destination: { type: 'external', url: 'https://?' },
+      }) &&
+      !validateWebMcpConfig({ ...external, openMode: 'download' }) &&
+      !validateWebMcpConfig({
+        ...external,
+        destination: { type: 'internal', screenId: 'screen-list' },
+        openMode: 'newContext',
+      }),
+    'WebMCP schema advertised an incompatible Link open mode',
+  )
+  const callerDestination = { type: 'external', url: 'https://example.com/original' }
+  const clonedCommand = cloneDomainCommand({
+    type: 'updateComponentSpec',
+    componentId: 'comp-list-help-link',
+    patch: { config: { destination: callerDestination } },
+  })
+  callerDestination.url = 'https://example.com/mutated'
+  assert(
+    clonedCommand.patch.config.destination.url === 'https://example.com/original',
+    'Link destination patch retained a caller-owned object',
+  )
+
+  const document = clone(sampleProject)
+  document.components['comp-edit-summary'].kind = 'link'
+  document.components['comp-edit-summary'].config = {
+    kind: 'link',
+    label: 'Back to tasks',
+    destination: { type: 'internal', screenId: 'screen-list' },
+    openMode: 'sameContext',
+  }
+  for (const event of Object.values(document.events)) {
+    event.actions = event.actions.filter(action =>
+      action.type !== 'navigate' || action.destinationScreenId !== 'screen-list'
+    )
+  }
+  let rejectedBrokenLink = false
+  try {
+    applyCommandWithoutRevision(document, { type: 'removeScreen', screenId: 'screen-list' })
+  } catch (error) {
+    rejectedBrokenLink = String(error).includes('referenced by link')
+  }
+  assert(rejectedBrokenLink, 'screen deletion silently left a broken internal Link')
 })
 
 await test('modal roots own independent trees and clean references on removal', async () => {
@@ -6518,7 +6753,7 @@ await test('delete impact analysis follows command cleanup and confirmation thre
     screenId: 'screen-list',
   })
   assert(
-    screen.counts.components === 32 &&
+    screen.counts.components === 34 &&
       screen.counts.states === 7 &&
       screen.counts.stateOverrides === 16 &&
       screen.requiresConfirmation,
@@ -7618,7 +7853,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
     inspectorSectionPreferenceKey,
   } = await import(moduleUrl(inspectorSectionsBundle, 'inspector-sections'))
   const { COMPONENT_KINDS } = await import(moduleUrl(modelBundle, 'inspector-section-kinds'))
-  const contentKinds = new Set(['text', 'textInput', 'select', 'button'])
+  const contentKinds = new Set(['text', 'textInput', 'select', 'button', 'image', 'link'])
   const layoutKinds = new Set(['page', 'container', 'modal'])
 
   for (const kind of COMPONENT_KINDS) {
@@ -8673,6 +8908,8 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-section',
       'comp-list-title',
       'comp-list-summary',
+      'comp-list-illustration',
+      'comp-list-help-link',
       'comp-create-task-btn',
       'comp-list-loading-message',
       'comp-list-loading-message-text',
@@ -8721,6 +8958,8 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-section',
       'comp-list-title',
       'comp-list-summary',
+      'comp-list-illustration',
+      'comp-list-help-link',
       'comp-create-task-btn',
       'comp-list-loading-message',
       'comp-list-loading-message-text',
