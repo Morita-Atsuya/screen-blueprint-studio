@@ -274,15 +274,6 @@ const eventActionSchema = {
     {
       type: 'object',
       properties: {
-        type: { const: 'showAlert' },
-        componentId: { type: 'string', minLength: 1 },
-      },
-      required: ['type', 'componentId'],
-      ...CLOSED_OBJECT,
-    },
-    {
-      type: 'object',
-      properties: {
         type: { const: 'navigate' },
         destinationScreenId: { type: 'string', minLength: 1 },
       },
@@ -417,9 +408,8 @@ const getComponent: ToolDefinition = {
         stateOverride: activeState
           ? getOwnEntity(activeState.componentOverrides, componentId) ?? null
           : null,
-        relatedEvents: Object.values(state.effectiveDocument.events).filter(event =>
-          event.trigger.componentId === componentId ||
-          event.actions.some(action => action.type === 'showAlert' && action.componentId === componentId),
+        relatedEvents: Object.values(state.effectiveDocument.events).filter(
+          event => event.trigger.componentId === componentId,
         ),
         relatedApiOperations: Object.values(state.effectiveDocument.apiOperations).filter(operation =>
           operation.requestBindings.some(binding => binding.componentId === componentId),

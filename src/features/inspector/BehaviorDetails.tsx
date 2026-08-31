@@ -347,13 +347,6 @@ function ActionDetails({ action }: { action: ResolvedEventAction }) {
           <ResultStates operation={action.operation} />
         </div>
       )
-    case 'showAlert':
-      return (
-        <div className={styles.actionContent}>
-          <strong>{t('behavior.action.showAlert')}</strong>
-          <span>{referenceLabel(action.alert, t)}</span>
-        </div>
-      )
     case 'navigate':
       return (
         <div className={styles.actionContent}>

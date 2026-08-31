@@ -43,7 +43,6 @@ export const COMPONENT_KIND_CATALOG = [
   { kind: 'textInput', canContainChildren: false, placement: 'child', canvasContent: true },
   { kind: 'select', canContainChildren: false, placement: 'child', canvasContent: true },
   { kind: 'button', canContainChildren: false, placement: 'child', canvasContent: true },
-  { kind: 'alert', canContainChildren: false, placement: 'child', canvasContent: true },
   {
     kind: 'modal',
     canContainChildren: true,
@@ -149,7 +148,6 @@ export type ComponentConfig =
       confirmationMessage: string | null
       preventDoubleSubmit: boolean
     }
-  | { kind: 'alert'; tone: 'info' | 'success' | 'warning' | 'error'; message: string }
   | ({ kind: 'modal' } & ComponentLayout)
 
 // ============================================================
@@ -175,7 +173,6 @@ export interface ComponentOverride {
   visible?: boolean
   enabled?: boolean
   text?: string
-  message?: string
   value?: string
 }
 
@@ -197,7 +194,6 @@ export type EventTrigger =
 export type EventAction =
   | { type: 'setState'; stateId: EntityId }
   | { type: 'callApi'; apiOperationId: EntityId }
-  | { type: 'showAlert'; componentId: EntityId }
   | { type: 'navigate'; destinationScreenId: EntityId }
 
 export interface ScreenEvent {

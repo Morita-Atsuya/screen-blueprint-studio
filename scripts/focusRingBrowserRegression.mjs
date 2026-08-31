@@ -504,7 +504,7 @@ async function run() {
     for (const [id, parentId, childId, description] of [
       ['browser-tree-level-1', 'comp-edit-section', 'browser-tree-level-2', 'Details group'],
       ['browser-tree-level-2', 'browser-tree-level-1', 'browser-tree-level-3', 'Feedback group'],
-      ['browser-tree-level-3', 'browser-tree-level-2', 'browser-tree-state-alert', 'Status group'],
+      ['browser-tree-level-3', 'browser-tree-level-2', 'browser-tree-state-message', 'Status group'],
     ]) {
       browserDocument.components[id] = {
         id,
@@ -516,18 +516,18 @@ async function run() {
         config: containerLayout,
       }
     }
-    browserDocument.components['browser-tree-state-alert'] = {
-      id: 'browser-tree-state-alert',
+    browserDocument.components['browser-tree-state-message'] = {
+      id: 'browser-tree-state-message',
       screenId: 'screen-edit',
       parentId: 'browser-tree-level-3',
       childIds: [],
-      kind: 'alert',
+      kind: 'text',
       common: { description: 'Deep review status', visible: false, enabled: false },
-      config: { kind: 'alert', tone: 'info', message: 'Waiting for review' },
+      config: { kind: 'text', text: 'Waiting for review', style: 'body' },
     }
     browserDocument.screenStates['state-edit-success'].componentOverrides[
-      'browser-tree-state-alert'
-    ] = { message: 'Ready for review' }
+      'browser-tree-state-message'
+    ] = { text: 'Ready for review' }
     browserDocument.components['comp-task-docs-title'].config.text =
       'Refresh the complete API documentation and integration reference'
     browserDocument.components['browser-horizontal-overflow'] = {
@@ -588,8 +588,8 @@ async function run() {
             source: 'agent',
             command: {
               type: 'updateComponentSpec',
-              componentId: 'browser-tree-state-alert',
-              patch: { config: { message: 'Agent review pending' } },
+              componentId: 'browser-tree-state-message',
+              patch: { config: { text: 'Agent review pending' } },
             },
             issuedAt: '2025-01-01T00:00:01.000Z',
           },
@@ -752,7 +752,7 @@ async function run() {
       })
       await waitForExpression(
         `document.querySelector(
-          '[data-tree-component-id="browser-tree-state-alert"]'
+          '[data-tree-component-id="browser-tree-state-message"]'
         )?.getAttribute('data-state-overridden') === 'true'`,
         `deep ${locale} Tree state badges did not render`,
       )
@@ -763,7 +763,7 @@ async function run() {
           )
           const tree = leftPane.querySelector('[role="tree"]')
           const node = tree.querySelector(
-            '[data-tree-component-id="browser-tree-state-alert"]'
+            '[data-tree-component-id="browser-tree-state-message"]'
           )
           const status = node.querySelector('[data-tree-state-status]')
           const badges = [...status.children].map(badge => {
@@ -930,7 +930,7 @@ async function run() {
         const editor = document.querySelector('main')
         const handle = document.querySelector('[data-left-pane-resizer]')
         const status = document.querySelector(
-          '[data-tree-component-id="browser-tree-state-alert"] [data-tree-state-status]'
+          '[data-tree-component-id="browser-tree-state-message"] [data-tree-state-status]'
         )
         const viewport = document.querySelector('[data-canvas-viewport]').getBoundingClientRect()
         const page = document.querySelector('[data-canvas-frame="page"]').getBoundingClientRect()
@@ -3143,6 +3143,59 @@ async function run() {
           JSON.stringify(toolbarSamples),
       )
     }
+
+    const feedbackStates = await cdp.call('Runtime.evaluate', {
+      expression: `(async () => {
+        const cases = [
+          ['Task List', 'state-list-loading', 'comp-list-loading-message', 'comp-list-loading-message-text', 'Loading tasks...'],
+          ['Task List', 'state-list-empty', 'comp-list-empty-message', 'comp-list-empty-message-text', 'No tasks yet. Create the first task for your team.'],
+          ['Task List', 'state-list-error', 'comp-list-error-message', 'comp-list-error-message-text', 'Could not load tasks. Try again.'],
+          ['Task List', 'state-list-creating', 'comp-create-task-progress-message', 'comp-create-task-progress-message-text', 'Creating task...'],
+          ['Task List', 'state-list-create-error', 'comp-create-task-error-message', 'comp-create-task-error-message-text', 'Could not create the task. Try again.'],
+          ['Edit Task', 'state-edit-saving', 'comp-saving-message', 'comp-saving-message-text', 'Saving task...'],
+          ['Edit Task', 'state-edit-success', 'comp-status-message', 'comp-status-message-text', 'Task updated successfully.'],
+          ['Edit Task', 'state-edit-error', 'comp-save-error-message', 'comp-save-error-message-text', 'Could not update the task. Review the details and try again.'],
+        ]
+        const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+        const results = []
+        let activeScreen = ''
+        for (const [screenName, stateId, containerId, textId, expectedText] of cases) {
+          if (screenName !== activeScreen) {
+            const screenButton = [...document.querySelectorAll('button')].find(button =>
+              button.textContent.trim() === screenName
+            )
+            screenButton?.click()
+            await settle()
+            activeScreen = screenName
+          }
+          document.querySelector('[data-state-id="' + stateId + '"]')?.click()
+          await settle()
+          const container = document.querySelector('[data-component-id="' + containerId + '"]')
+          const text = document.querySelector('[data-component-id="' + textId + '"]')
+          results.push({
+            stateId,
+            containerVisible: container?.getAttribute('data-component-visible'),
+            childOwned: text?.parentElement?.closest('[data-component-id]') === container,
+            actualText: text?.textContent.trim(),
+            expectedText,
+          })
+        }
+        return results
+      })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    assert(
+      feedbackStates.result.value.length === 8 &&
+        feedbackStates.result.value.every(result =>
+          result.containerVisible === 'true' &&
+          result.childOwned &&
+          result.actualText.includes(result.expectedText)
+        ),
+      `TaskFlow feedback states did not render their Container and Text content: ${
+        JSON.stringify(feedbackStates.result.value)
+      }`,
+    )
 
     const defaultDialog = await cdp.call('Runtime.evaluate', {
       expression: `(async () => {

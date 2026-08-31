@@ -235,10 +235,6 @@ export function validateEventAction(
       exactKeys(action, ['type', 'apiOperationId'], [], path)
       entityId(action.apiOperationId, `${path}.apiOperationId`)
       return
-    case 'showAlert':
-      exactKeys(action, ['type', 'componentId'], [], path)
-      entityId(action.componentId, `${path}.componentId`)
-      return
     case 'navigate':
       exactKeys(action, ['type', 'destinationScreenId'], [], path)
       entityId(action.destinationScreenId, `${path}.destinationScreenId`)
@@ -489,11 +485,6 @@ export function validateComponentConfig(
       nullableString(config.confirmationMessage, `${path}.confirmationMessage`)
       boolean(config.preventDoubleSubmit, `${path}.preventDoubleSubmit`)
       return
-    case 'alert':
-      exactKeys(config, ['kind', 'tone', 'message'], [], path)
-      enumValue(config.tone, ['info', 'success', 'warning', 'error'], `${path}.tone`)
-      string(config.message, `${path}.message`)
-      return
     default:
       fail(`${path}.kind`, `is not a supported component kind: ${String(config.kind)}`)
   }
@@ -516,14 +507,12 @@ export function validateComponentOverride(
   const override = record(value, path)
   const optionalKeys = ['visible', 'enabled']
   if (component.kind === 'text') optionalKeys.push('text')
-  if (component.kind === 'alert') optionalKeys.push('message')
   if (component.kind === 'textInput' || component.kind === 'select') optionalKeys.push('value')
   exactKeys(override, [], optionalKeys, path)
 
   if (override.visible !== undefined) boolean(override.visible, `${path}.visible`)
   if (override.enabled !== undefined) boolean(override.enabled, `${path}.enabled`)
   if (override.text !== undefined) string(override.text, `${path}.text`)
-  if (override.message !== undefined) string(override.message, `${path}.message`)
   if (override.value !== undefined) {
     string(override.value, `${path}.value`)
     if (

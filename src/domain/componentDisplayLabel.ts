@@ -12,7 +12,6 @@ export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], Messag
   textInput: 'component.textInput',
   select: 'component.select',
   button: 'component.button',
-  alert: 'component.alert',
   modal: 'component.modal',
 }
 
@@ -44,8 +43,6 @@ export function getComponentDisplayLabel(
     case 'select':
     case 'button':
       return readableText(config.label, fallback)
-    case 'alert':
-      return readableText(config.message, fallback)
     default:
       return assertNever(config, 'component display label config')
   }

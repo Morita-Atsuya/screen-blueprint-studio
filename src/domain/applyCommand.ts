@@ -87,11 +87,6 @@ function cleanupComponentRefs(removedIds: Set<EntityId>, doc: ProjectDocument): 
           component.config.eventId = null
         }
       }
-    } else {
-      event.actions = event.actions.filter(action => {
-        if (action.type === 'showAlert' && removedIds.has(action.componentId)) return false
-        return true
-      })
     }
   }
 
@@ -176,7 +171,6 @@ function duplicateComponentConfig(
     case 'page':
     case 'container':
     case 'text':
-    case 'alert':
     case 'modal':
       return copied
     default:

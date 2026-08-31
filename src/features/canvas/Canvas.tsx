@@ -707,8 +707,6 @@ function ComponentView({
           {preview.label}
         </button>
       )
-    case 'alert':
-      return <div className={`${styles.alert} ${preview.tone === 'info' ? styles.alertInfo : preview.tone === 'success' ? styles.alertSuccess : preview.tone === 'warning' ? styles.alertWarning : styles.alertError}`}>{preview.message}</div>
     case 'modal':
       return null
   }

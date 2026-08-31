@@ -288,16 +288,6 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "tone", "message"],
-          "properties": {
-            "kind": { "const": "alert" },
-            "tone": { "enum": ["info", "success", "warning", "error"] },
-            "message": { "type": "string" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
           "required": ["kind", "layout", "gap", "columns", "justify", "align", "wrap"],
           "properties": {
             "kind": { "const": "modal" },
@@ -336,10 +326,6 @@
         {
           "if": { "type": "object", "properties": { "kind": { "const": "button" } }, "required": ["kind"] },
           "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "button" } }, "required": ["kind"] } } }
-        },
-        {
-          "if": { "type": "object", "properties": { "kind": { "const": "alert" } }, "required": ["kind"] },
-          "then": { "type": "object", "properties": { "config": { "type": "object", "properties": { "kind": { "const": "alert" } }, "required": ["kind"] } } }
         },
         {
           "if": { "type": "object", "properties": { "kind": { "const": "modal" } }, "required": ["kind"] },
@@ -389,7 +375,7 @@
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "$ref": "#/$defs/idArray" },
         "kind": {
-          "enum": ["page", "container", "text", "textInput", "select", "button", "alert", "modal"]
+          "enum": ["page", "container", "text", "textInput", "select", "button", "modal"]
         },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
@@ -441,7 +427,7 @@
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "$ref": "#/$defs/idArray" },
         "kind": {
-          "enum": ["page", "container", "text", "textInput", "select", "button", "alert", "modal"]
+          "enum": ["page", "container", "text", "textInput", "select", "button", "modal"]
         },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
@@ -494,9 +480,7 @@
             "config.defaultValue",
             "config.variant",
             "config.confirmationMessage",
-            "config.preventDoubleSubmit",
-            "config.tone",
-            "config.message"
+            "config.preventDoubleSubmit"
           ]
         }
       }
@@ -594,9 +578,7 @@
             { "type": "null" }
           ]
         },
-        "preventDoubleSubmit": { "type": "boolean" },
-        "tone": { "enum": ["info", "success", "warning", "error"] },
-        "message": { "type": "string" }
+        "preventDoubleSubmit": { "type": "boolean" }
       }
     },
     "variantNodeOverride": {
@@ -703,7 +685,6 @@
         "visible": { "type": "boolean" },
         "enabled": { "type": "boolean" },
         "text": { "type": "string" },
-        "message": { "type": "string" },
         "value": { "type": "string" }
       }
     },
@@ -769,15 +750,6 @@
           "properties": {
             "type": { "const": "callApi" },
             "apiOperationId": { "$ref": "#/$defs/entityId" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "target"],
-          "properties": {
-            "type": { "const": "showAlert" },
-            "target": { "$ref": "#/$defs/componentTarget" }
           }
         },
         {

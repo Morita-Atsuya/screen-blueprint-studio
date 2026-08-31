@@ -71,8 +71,6 @@ export function createDefaultComponentConfig(
         confirmationMessage: null,
         preventDoubleSubmit: false,
       }
-    case 'alert':
-      return { kind, tone: 'info', message: translate(locale, 'defaults.alertMessage') }
     case 'modal':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
     default:

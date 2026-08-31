@@ -337,7 +337,7 @@ export function EventDialog({
   )
 }
 
-const ACTION_TYPES: ActionType[] = ['setState', 'navigate', 'callApi', 'showAlert']
+const ACTION_TYPES: ActionType[] = ['setState', 'navigate', 'callApi']
 
 function createAction(type: ActionType, context: EventEditorContext): EventAction {
   switch (type) {
@@ -347,8 +347,6 @@ function createAction(type: ActionType, context: EventEditorContext): EventActio
       return { type, destinationScreenId: context.screens[0]?.id ?? '' }
     case 'callApi':
       return { type, apiOperationId: context.apiOperations[0]?.id ?? '' }
-    case 'showAlert':
-      return { type, componentId: context.alerts[0]?.id ?? '' }
   }
 }
 
@@ -360,8 +358,6 @@ function hasActionCandidates(type: ActionType, context: EventEditorContext): boo
       return context.screens.length > 0
     case 'callApi':
       return context.apiOperations.length > 0
-    case 'showAlert':
-      return context.alerts.length > 0
   }
 }
 
@@ -376,8 +372,6 @@ function isActionTargetAvailable(
       return context.screens.some(screen => screen.id === action.destinationScreenId)
     case 'callApi':
       return context.apiOperations.some(operation => operation.id === action.apiOperationId)
-    case 'showAlert':
-      return context.alerts.some(alert => alert.id === action.componentId)
   }
 }
 
@@ -455,24 +449,6 @@ function ActionTarget({
               <option key={operation.id} value={operation.id}>
                 {operation.method} {operation.path} — {operation.label}
               </option>
-            ))}
-          </select>
-        </label>
-      )
-    case 'showAlert':
-      return (
-        <label className={styles.compactField}>
-          <span>{t('behavior.target')}</span>
-          <select
-            value={action.componentId}
-            onChange={event => onChange({ ...action, componentId: event.target.value })}
-          >
-            <MissingOption
-              currentId={action.componentId}
-              availableIds={context.alerts.map(alert => alert.id)}
-            />
-            {context.alerts.map(alert => (
-              <option key={alert.id} value={alert.id}>{alert.label}</option>
             ))}
           </select>
         </label>

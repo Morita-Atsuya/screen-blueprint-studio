@@ -128,8 +128,6 @@ function formatAction(document: ProjectDocument, action: EventAction, locale: Lo
       return `${actionLabel}: ${stateLabel(document, action.stateId, locale)}`
     case 'callApi':
       return `${actionLabel}: ${apiLabel(document, action.apiOperationId, locale)}`
-    case 'showAlert':
-      return `${actionLabel}: ${componentLabel(document, action.componentId, locale)}`
     case 'navigate':
       return `${actionLabel}: ${screenLabel(document, action.destinationScreenId, locale)}`
   }
@@ -264,8 +262,6 @@ const FIELD_KEYS: Record<string, MessageKey> = {
   eventId: 'review.field.event',
   confirmationMessage: 'review.field.confirmationMessage',
   preventDoubleSubmit: 'review.field.preventDoubleSubmit',
-  tone: 'review.field.tone',
-  message: 'review.field.message',
   componentOverrides: 'review.field.overrides',
   trigger: 'review.field.trigger',
   actions: 'review.field.actions',
@@ -278,7 +274,6 @@ const FIELD_KEYS: Record<string, MessageKey> = {
   'override.visible': 'review.field.visible',
   'override.enabled': 'review.field.enabled',
   'override.text': 'review.field.text',
-  'override.message': 'review.field.message',
   'override.value': 'review.field.defaultValue',
 }
 

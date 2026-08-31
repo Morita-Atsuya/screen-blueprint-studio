@@ -78,7 +78,7 @@ Screen Blueprint Studioでは、ワイヤーフレーム上の選択、編集中
 - Content: Text（heading／body／caption styles）、Image、Card、Table
 - Form: Text Input、Textarea、Select、Checkbox、Radio、Date Input
 - Action: Button、Link
-- Feedback: Alert、Inline Error、Modal、Toast、Loading、Empty State
+- Feedback patterns: Container + Text、Modal、Toast、Loading、Empty State
 
 配置結果は自由なピクセル座標ではなく、順序と親子関係を持つツリーとして保存する。PageとModalはScreen直下の独立rootとし、ModalをPageの通常レイアウトへ混在させない。
 

@@ -36,12 +36,6 @@ export type CanvasComponentPreview =
       label: string
       variant: 'primary' | 'secondary' | 'danger'
     }
-  | {
-      kind: 'alert'
-      rendersContent: true
-      message: string
-      tone: 'info' | 'success' | 'warning' | 'error'
-    }
 
 function textElement(style: TextStyle): 'h1' | 'h2' | 'h3' | 'p' | 'small' {
   switch (style) {
@@ -101,13 +95,6 @@ export function createCanvasComponentPreview(
         rendersContent: true,
         label: config.label,
         variant: config.variant,
-      }
-    case 'alert':
-      return {
-        kind: config.kind,
-        rendersContent: true,
-        message: config.message,
-        tone: config.tone,
       }
     default:
       return assertNever(config, 'Canvas component config')

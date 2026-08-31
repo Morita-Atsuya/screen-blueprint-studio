@@ -182,7 +182,6 @@ type ComponentKind =
   | "textInput"
   | "select"
   | "button"
-  | "alert"
   | "modal";
 
 interface ScreenComponent {
@@ -216,7 +215,6 @@ type ComponentConfig =
   | TextInputConfig
   | SelectConfig
   | ButtonConfig
-  | AlertConfig
   | ModalConfig;
 
 interface ComponentLayout {
@@ -257,16 +255,10 @@ interface ButtonConfig {
   preventDoubleSubmit: boolean;
 }
 
-interface AlertConfig {
-  kind: "alert";
-  tone: "info" | "success" | "warning" | "error";
-  message: string;
-}
-
 type ModalConfig = { kind: "modal" } & ComponentLayout;
 ```
 
-`page`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。意味的なグループ名はContainerの`CommonComponentSpec.description`へ保存し、TreeとCanvasのeditor-only識別に使うが、preview contentへは自動描画しない。見出し、本文、補足はchildの`text`と`style`で表現する。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`、`alert`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。
+`page`、`container`、`modal`だけが`ComponentLayout`を持つ。これらの構造componentは構造と配置だけを担い、表示文字列を自身のconfigへ持たない。意味的なグループ名はContainerの`CommonComponentSpec.description`へ保存し、TreeとCanvasのeditor-only識別に使うが、preview contentへは自動描画しない。見出し、本文、補足、状態別feedbackはchildの`text`と`style`で表現し、必要に応じてContainerと組み合わせる。`style`はHTML tagではなく、画面仕様上のvisual／semantic roleであり、Canvas内部で適切なsemantic elementへmapする。操作固有文言は`button`、`textInput`、`select`等のleafで表現する。将来`list`等の構造kindを追加する場合も同じ原則を適用する。
 
 schema version 2では、機能差のなかった旧`section` kindを`container`へ統合した。version 1の保存データは読込時に、component ID、親子関係、共通仕様、layout、revisionを保持したまま決定的に変換する。active change setのbase documentと未確定operation内のcomponent snapshot/configも同じ境界で変換し、変換後の全体を現行runtime validationで検証してから再保存する。壊れた旧データは補正せずRecoveryへ送る。
 
@@ -324,7 +316,6 @@ type EventTrigger =
 type EventAction =
   | { type: "setState"; stateId: EntityId }
   | { type: "callApi"; apiOperationId: EntityId }
-  | { type: "showAlert"; componentId: EntityId }
   | { type: "navigate"; destinationScreenId: EntityId };
 
 interface ScreenEvent {
@@ -336,7 +327,7 @@ interface ScreenEvent {
 }
 ```
 
-actionは配列順に実行される仕様としてInspectorへ表示し、`setState`は同screenのstate、`navigate`は任意screen、`callApi`は同screenの既存operation、`showAlert`は同screenのAlertから選択して、eventとactionを追加・編集・削除・並べ替えできる。編集dialogはlocal draftをSave時に1 commandとして確定する。`trigger.componentId`をcomponentとeventの正準な関連として扱い、Buttonの`eventId`は任意のprimary annotationに限定する。同じeventを両方が指しても一覧へ重複表示せず、event削除時はButton側の参照も解除する。API operationの編集は別機能とする。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
+actionは配列順に実行される仕様としてInspectorへ表示し、`setState`は同screenのstate、`navigate`は任意screen、`callApi`は同screenの既存operationから選択して、eventとactionを追加・編集・削除・並べ替えできる。状態別feedbackはContainerとTextのvisibility／text overrideで表現し、eventから対象stateへ切り替える。編集dialogはlocal draftをSave時に1 commandとして確定する。`trigger.componentId`をcomponentとeventの正準な関連として扱い、Buttonの`eventId`は任意のprimary annotationに限定する。同じeventを両方が指しても一覧へ重複表示せず、event削除時はButton側の参照も解除する。API operationの編集は別機能とする。MVPでは実際の外部APIを呼び出さない。ワイヤーフレーム上のpreviewでは`setState`と`navigate`を実行できる。
 
 ### 5.6 API操作
 

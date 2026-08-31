@@ -13,7 +13,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 ## 主な機能
 
 - 複数画面の管理
-- Page、Container、入力、ボタン、Alert、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
+- Page、Container、Text、入力、ボタン、Modalなどの意味的コンポーネント。ModalはPage外の独立frameとして管理
 - Page／Container／Modalごとのvertical、horizontal、gridレイアウト設定
 - パレットからの追加、構造ツリー／キャンバスでの並び替え・Container間移動に対応したdrag & drop
 - Page／Modal root以外のcomponent subtreeを直後へatomicに複製。全状態overrideを引き継ぎ、event／API field bindingは複製しない
@@ -21,7 +21,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 - コンポーネントパレット、構造ツリー、ワイヤーフレームキャンバス、仕様インスペクター
 - Inspectorで選択componentのevent／実行順actionと、同screenのAPI operation／request binding／結果state、`textInput`のvalidation ruleを追加・編集・削除・並べ替え
 - 自由に命名できる画面状態と状態別override。Inspectorで基本値・明示override・実効値を分け、field単位またはcomponent単位で基本設定へ戻せる
-- click／submitイベント、画面遷移、状態変更、Alert表示、API呼び出しのモデル化
+- click／submitイベント、画面遷移、状態変更、API呼び出しのモデル化
 - API operationと画面項目、成功／失敗状態の関連付け
 - 人間による通常編集、確定操作のUndo／Redo
 - 子孫・状態override・event／API参照などへ影響する削除だけを件数付きで確認し、削除直後はToastから安全にUndo
@@ -31,7 +31,7 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントを組み合�
 
 初期sample projectは`COMPONENT_KIND_CATALOG`に定義された全component kindを最低1件含みます。regressionはsample、Palette、runtime validation、Canvas、Tree、Inspector、複製・Copy/Paste、削除・追加、WebMCP schemaのkind集合を正準catalogと照合し、kind追加時の横展開漏れを検出します。
 
-初期sampleはチーム向けタスク管理アプリ **TaskFlow** です。`Task List`には具体的なtask、loading／empty／error状態、POSTへ接続した新規task Modal、Edit／Retry導線があり、`Edit Task`にはtitle、description、assignee、status、validation、Saving／Success／Error／Confirm exit状態、更新API、独立した破棄確認Modalがあります。これは仕様モデルであり、実際のAPI通信は行いません。
+初期sampleはチーム向けタスク管理アプリ **TaskFlow** です。`Task List`には具体的なtask、ContainerとTextで構成したloading／empty／error表示、POSTへ接続した新規task Modal、Edit／Retry導線があり、`Edit Task`にはtitle、description、assignee、status、validation、Saving／Success／Error／Confirm exit状態、更新API、独立した破棄確認Modalがあります。これは仕様モデルであり、実際のAPI通信は行いません。
 
 ## 人間とAIの共同編集
 

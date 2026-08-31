@@ -211,19 +211,19 @@ export function mountReviewLockApp(locale: Locale = 'en') {
         addContainer('regression-tree-level-3', 'regression-tree-level-2', 'Status group')
         useAppStore.getState().dispatch({
           type: 'addComponent',
-          componentId: 'regression-tree-state-alert',
+          componentId: 'regression-tree-state-message',
           screenId: 'screen-edit',
           parentId: 'regression-tree-level-3',
-          kind: 'alert',
+          kind: 'text',
           config: {
-            kind: 'alert',
-            tone: 'info',
-            message: 'Waiting for review',
+            kind: 'text',
+            text: 'Waiting for review',
+            style: 'body',
           },
-        }, 'Add deep state alert')
+        }, 'Add deep state message')
         useAppStore.getState().dispatch({
           type: 'updateComponentSpec',
-          componentId: 'regression-tree-state-alert',
+          componentId: 'regression-tree-state-message',
           patch: {
             common: {
               description: 'Deep review status',
@@ -240,15 +240,15 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           description: success.description,
           overrides: {
             ...success.componentOverrides,
-            'regression-tree-state-alert': { message: 'Ready for review' },
+            'regression-tree-state-message': { text: 'Ready for review' },
           },
-        }, 'Override deep state alert')
+        }, 'Override deep state message')
         useAppStore.getState().setActiveState(success.id)
-        const changeSet = useAppStore.getState().beginChangeSet('Update deep state alert')
+        const changeSet = useAppStore.getState().beginChangeSet('Update deep state message')
         useAppStore.getState().dispatchToChangeSet(changeSet.id, {
           type: 'updateComponentSpec',
-          componentId: 'regression-tree-state-alert',
-          patch: { config: { message: 'Agent review pending' } },
+          componentId: 'regression-tree-state-message',
+          patch: { config: { text: 'Agent review pending' } },
         }, 'agent')
       })
     },

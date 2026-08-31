@@ -1679,7 +1679,7 @@ await test('domain commands isolate every nested payload from returned documents
     stateId: 'state-edit-saving',
     overrides: {
       'comp-save-btn': { enabled: false },
-      'comp-status-alert': { visible: true, message: 'Saving' },
+      'comp-status-message-text': { visible: true, text: 'Saving' },
     },
   }
   const updatedState = applyCommandWithoutRevision(sampleProject, updateStateCommand)
@@ -1687,7 +1687,7 @@ await test('domain commands isolate every nested payload from returned documents
     updatedState,
     document => document.screenStates['state-edit-saving'].componentOverrides,
     () => {
-      updateStateCommand.overrides['comp-status-alert'].message = 'Mutated'
+      updateStateCommand.overrides['comp-status-message-text'].text = 'Mutated'
       delete updateStateCommand.overrides['comp-save-btn']
     },
     'updateScreenState overrides',
@@ -1722,7 +1722,7 @@ await test('domain commands isolate every nested payload from returned documents
     name: 'Updated event',
     trigger: { type: 'submit', componentId: 'comp-edit-section' },
     actions: [
-      { type: 'showAlert', componentId: 'comp-status-alert' },
+      { type: 'setState', stateId: 'state-edit-success' },
       { type: 'callApi', apiOperationId: 'api-update-task' },
     ],
   }
@@ -1732,7 +1732,7 @@ await test('domain commands isolate every nested payload from returned documents
     document => document.events['event-save-task'],
     () => {
       updateEventCommand.trigger.componentId = 'comp-actions'
-      updateEventCommand.actions[0].componentId = 'comp-task-title-input'
+      updateEventCommand.actions[0].stateId = 'state-edit-error'
       updateEventCommand.actions.length = 0
     },
     'updateEvent transaction payload',
@@ -2824,63 +2824,43 @@ await test('state and screen removal clean API/event references', async () => {
   )
 })
 
-await test('alert target removal filters only matching showAlert actions', async () => {
+await test('non-trigger component removal preserves event actions', async () => {
   memoryStorage.clear()
-  const store = await freshStore('show-alert-cleanup')
-  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'show-alert-cleanup-domain'))
+  const store = await freshStore('event-cleanup')
+  const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'event-cleanup-domain'))
   let document = store.getState().document
 
-  for (const alertId of ['alert-one', 'alert-two']) {
-    document = applyCommandWithoutRevision(document, {
-      type: 'addComponent',
-      componentId: alertId,
-      screenId: 'screen-edit',
-      parentId: 'comp-edit-section',
-      kind: 'alert',
-      config: { kind: 'alert', tone: 'error', message: alertId },
-    })
-  }
   document = applyCommandWithoutRevision(document, {
     type: 'connectEvent',
-    eventId: 'event-mixed-alerts',
+    eventId: 'event-mixed-actions',
     screenId: 'screen-edit',
-    name: 'Mixed alert event',
+    name: 'Mixed action event',
     trigger: { type: 'click', componentId: 'comp-save-btn' },
     actions: [
-      { type: 'showAlert', componentId: 'alert-one' },
       { type: 'setState', stateId: 'state-edit-saving' },
-      { type: 'showAlert', componentId: 'alert-two' },
       { type: 'navigate', destinationScreenId: 'screen-list' },
     ],
   })
   document = applyCommandWithoutRevision(document, {
     type: 'updateComponentSpec',
     componentId: 'comp-save-btn',
-    patch: { config: { eventId: 'event-mixed-alerts' } },
+    patch: { config: { eventId: 'event-mixed-actions' } },
   })
   document = applyCommandWithoutRevision(document, {
     type: 'removeComponent',
-    componentId: 'alert-one',
+    componentId: 'comp-edit-summary',
   })
 
-  const event = document.events['event-mixed-alerts']
-  assert(event !== undefined, 'alert target removal deleted the event')
-  assert(
-    event.actions.some(action => action.type === 'showAlert' && action.componentId === 'alert-two'),
-    'unrelated showAlert action was removed',
-  )
-  assert(
-    !event.actions.some(action => action.type === 'showAlert' && action.componentId === 'alert-one'),
-    'removed alert showAlert action was retained',
-  )
+  const event = document.events['event-mixed-actions']
+  assert(event !== undefined, 'non-trigger component removal deleted the event')
   assert(event.actions.some(action => action.type === 'setState'), 'setState action was removed')
   assert(event.actions.some(action => action.type === 'navigate'), 'navigate action was removed')
   assert(
-    document.components['comp-save-btn'].config.eventId === 'event-mixed-alerts',
+    document.components['comp-save-btn'].config.eventId === 'event-mixed-actions',
     'button event binding was cleared',
   )
   assert(
-    document.screens['screen-edit'].eventIds.includes('event-mixed-alerts'),
+    document.screens['screen-edit'].eventIds.includes('event-mixed-actions'),
     'screen event ID was removed',
   )
 
@@ -2888,9 +2868,9 @@ await test('alert target removal filters only matching showAlert actions', async
     type: 'removeComponent',
     componentId: 'comp-save-btn',
   })
-  assert(document.events['event-mixed-alerts'] === undefined, 'trigger removal retained the event')
+  assert(document.events['event-mixed-actions'] === undefined, 'trigger removal retained the event')
   assert(
-    !document.screens['screen-edit'].eventIds.includes('event-mixed-alerts'),
+    !document.screens['screen-edit'].eventIds.includes('event-mixed-actions'),
     'trigger removal retained screen event ID',
   )
 })
@@ -2921,14 +2901,6 @@ await test('event actions and API bindings reject cross-screen references', asyn
   const { applyCommandWithoutRevision } = await import(moduleUrl(domainBundle, 'same-screen-domain'))
   let document = store.getState().document
 
-  document = applyCommandWithoutRevision(document, {
-    type: 'addComponent',
-    componentId: 'edit-alert',
-    screenId: 'screen-edit',
-    parentId: 'comp-edit-page',
-    kind: 'alert',
-    config: { kind: 'alert', tone: 'error', message: 'Failed' },
-  })
   document = applyCommandWithoutRevision(document, {
     type: 'bindApiOperation',
     operationId: 'edit-api',
@@ -3126,14 +3098,6 @@ await test('event actions and API bindings reject cross-screen references', asyn
       name: 'Cross API',
       trigger: { type: 'click', componentId: 'comp-list-title' },
       actions: [{ type: 'callApi', apiOperationId: 'edit-api' }],
-    },
-    {
-      type: 'connectEvent',
-      eventId: 'cross-alert',
-      screenId: 'screen-list',
-      name: 'Cross alert',
-      trigger: { type: 'click', componentId: 'comp-list-title' },
-      actions: [{ type: 'showAlert', componentId: 'edit-alert' }],
     },
     {
       type: 'bindApiOperation',
@@ -3561,8 +3525,9 @@ await test('representative screen/component/state/event/API writes reach the cha
   assert(
     stateSchema.oneOf[0].properties.kind === undefined &&
       stateSchema.oneOf[1].properties.kind === undefined &&
-      !stateSchema.oneOf[0].required.includes('kind'),
-    'WebMCP state schema still exposes a state kind',
+      !stateSchema.oneOf[0].required.includes('kind') &&
+      !JSON.stringify(stateSchema).includes('"message"'),
+    'WebMCP state schema exposes a removed state kind or message override',
   )
   const componentSchema = byName('change_component_structure').inputSchema
   assert(
@@ -3847,6 +3812,7 @@ await test('TaskFlow sample is a complete two-screen task specification', async 
   const { sampleProject } = await import(moduleUrl(sampleProjectBundle, 'taskflow-completeness'))
   const { validateInvariants } = await import(moduleUrl(invariantsBundle, 'taskflow-completeness'))
   const { selectScreenFlow } = await import(moduleUrl(screenFlowBundle, 'taskflow-completeness'))
+  const { effectiveComponent } = await import(moduleUrl(selectorsBundle, 'taskflow-completeness'))
 
   validateInvariants(sampleProject)
   assert(
@@ -3860,7 +3826,7 @@ await test('TaskFlow sample is a complete two-screen task specification', async 
   assert(
     [...new Set(Object.values(sampleProject.components).map(component => component.kind))]
       .sort().join(',') ===
-      ['alert', 'button', 'container', 'modal', 'page', 'select', 'text', 'textInput']
+      ['button', 'container', 'modal', 'page', 'select', 'text', 'textInput']
         .sort().join(','),
     'TaskFlow does not exercise all canonical component kinds',
   )
@@ -3870,6 +3836,29 @@ await test('TaskFlow sample is a complete two-screen task specification', async 
     ),
     'Priority must remain absent until the WebMCP demo',
   )
+  for (const [stateId, containerId, textId, expectedText] of [
+    ['state-list-loading', 'comp-list-loading-message', 'comp-list-loading-message-text', 'Loading tasks...'],
+    ['state-list-empty', 'comp-list-empty-message', 'comp-list-empty-message-text', 'No tasks yet. Create the first task for your team.'],
+    ['state-list-error', 'comp-list-error-message', 'comp-list-error-message-text', 'Could not load tasks. Try again.'],
+    ['state-list-creating', 'comp-create-task-progress-message', 'comp-create-task-progress-message-text', 'Creating task...'],
+    ['state-list-create-error', 'comp-create-task-error-message', 'comp-create-task-error-message-text', 'Could not create the task. Try again.'],
+    ['state-edit-saving', 'comp-saving-message', 'comp-saving-message-text', 'Saving task...'],
+    ['state-edit-success', 'comp-status-message', 'comp-status-message-text', 'Task updated successfully.'],
+    ['state-edit-error', 'comp-save-error-message', 'comp-save-error-message-text', 'Could not update the task. Review the details and try again.'],
+  ]) {
+    const state = sampleProject.screenStates[stateId]
+    const container = effectiveComponent(sampleProject.components[containerId], state)
+    const text = effectiveComponent(sampleProject.components[textId], state)
+    assert(
+      container.config.kind === 'container' &&
+        container.common.visible &&
+        container.childIds.length === 1 &&
+        container.childIds[0] === textId &&
+        text.config.kind === 'text' &&
+        text.config.text === expectedText,
+      `${stateId} does not preserve its Container and Text feedback`,
+    )
+  }
 
   for (const screen of Object.values(sampleProject.screens)) {
     assert(
@@ -5191,14 +5180,16 @@ await test('review lock blocks human document mutations and screen management re
         effectiveText.common.enabled === false,
       'state override was not reflected in the effective component',
     )
-    const successAlert = effectiveComponent(
-      store.getState().document.components['comp-status-alert'],
+    const successMessage = effectiveComponent(
+      store.getState().document.components['comp-status-message'],
       store.getState().document.screenStates['state-edit-success'],
     )
+    const successMessageText =
+      store.getState().document.components['comp-status-message-text']
     assert(
-      successAlert.common.visible === true &&
-        successAlert.config.message === 'Task updated successfully.',
-      'alert visibility or message override was not reflected in the preview',
+      successMessage.common.visible === true &&
+        successMessageText.config.text === 'Task updated successfully.',
+      'message visibility or text content was not reflected in the preview',
     )
     const savingState = store.getState().document.screenStates['state-edit-saving']
     store.getState().dispatch({
@@ -6527,7 +6518,7 @@ await test('delete impact analysis follows command cleanup and confirmation thre
     screenId: 'screen-list',
   })
   assert(
-    screen.counts.components === 27 &&
+    screen.counts.components === 32 &&
       screen.counts.states === 7 &&
       screen.counts.stateOverrides === 16 &&
       screen.requiresConfirmation,
@@ -7025,7 +7016,7 @@ await test('component display labels separate structure from visible content', a
   assert(
     getComponentSelectionContext(
       document,
-      'comp-list-loading-alert',
+      'comp-list-loading-message-text',
       'en',
       document.screenStates['state-list-loading'],
     )?.targetLabel === 'Loading tasks...',
@@ -7062,29 +7053,29 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
     'en',
   )
   store.getState().dispatch(modalCommand, 'Add Modal')
-  const alertCommand = createAddComponentCommand(
+  const textCommand = createAddComponentCommand(
     store.getState().effectiveDocument,
     'screen-edit',
     modalCommand.componentId,
-    'alert',
+    'text',
     'en',
   )
-  store.getState().dispatch(alertCommand, 'Add Alert')
+  store.getState().dispatch(textCommand, 'Add Text')
   const modalContext = getComponentSelectionContext(
     store.getState().effectiveDocument,
-    alertCommand.componentId,
+    textCommand.componentId,
     'en',
   )
   assert(
     modalContext?.screenName === 'Edit Task' &&
       modalContext.hierarchy.map(item => item.label).join(' > ') ===
-        `Modal ${modalNumber} > Message`,
+        `Modal ${modalNumber} > Text`,
     'modal breadcrumb mixed the page tree into its independent hierarchy',
   )
 
   store.getState().setActiveScreen('screen-edit')
   const historyBeforeSelection = store.getState().history.length
-  store.getState().setSelectedComponent(alertCommand.componentId)
+  store.getState().setSelectedComponent(textCommand.componentId)
   assert(
     store.getState().history.length === historyBeforeSelection,
     'breadcrumb-style selection created a document history operation',
@@ -7100,7 +7091,7 @@ await test('Inspector hierarchy handles modal roots and reconciled selection wit
   store.getState().undo()
   assert(
     store.getState().ui.selectedComponentId === null &&
-      store.getState().document.components[alertCommand.componentId],
+      store.getState().document.components[textCommand.componentId],
     'Undo restored a dangling selection instead of only restoring the hierarchy',
   )
 
@@ -7255,7 +7246,7 @@ await test('Tree state presentation uses effective values and atomic override re
       !store.getState().document.screenStates[success.id]
         .componentOverrides['comp-task-assignee-select'] &&
       store.getState().document.screenStates[success.id]
-        .componentOverrides['comp-status-alert'] &&
+        .componentOverrides['comp-status-message'] &&
       store.getState().document.screenStates[success.id]
         .componentOverrides['comp-actions'],
     'reset was not one operation or removed unrelated component overrides',
@@ -7382,7 +7373,7 @@ await test('Tree state badges remain atomic in deep English and Japanese hierarc
     harness.addTreeStateBadgeFixture()
 
     const node = document.querySelector(
-      '[data-tree-component-id="regression-tree-state-alert"]',
+      '[data-tree-component-id="regression-tree-state-message"]',
     )
     const status = node?.querySelector('[data-tree-state-status]')
     const stateBadges = [...(status?.querySelectorAll('[data-state-badge]') ?? [])]
@@ -7439,9 +7430,9 @@ await test('Inspector keeps base values separate from field-level state override
     overrides: {
       ...initialSuccessState.componentOverrides,
       'comp-task-assignee-select': { value: 'leo-martins' },
-      'comp-status-alert': {
-        ...initialSuccessState.componentOverrides['comp-status-alert'],
-        message: 'Task saved successfully.',
+      'comp-status-message-text': {
+        ...initialSuccessState.componentOverrides['comp-status-message-text'],
+        text: 'Task saved successfully.',
       },
     },
   }, 'Set state-specific Task values')
@@ -7547,46 +7538,46 @@ await test('Inspector keeps base values separate from field-level state override
     description: reviewSuccess.description,
     overrides: {
       ...reviewSuccess.componentOverrides,
-      'comp-status-alert': {
-        ...reviewSuccess.componentOverrides['comp-status-alert'],
-        message: 'Task saved successfully.',
+      'comp-status-message-text': {
+        ...reviewSuccess.componentOverrides['comp-status-message-text'],
+        text: 'Task saved successfully.',
       },
     },
   }, 'Set review baseline message')
   const overrideReview = changeSetStore.getState().beginChangeSet('Edit one override field')
   const changeSet = createSetComponentOverrideFieldCommand(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
-    'comp-status-alert',
-    'message',
+    'comp-status-message-text',
+    'text',
     'Preview-only message',
   )
   changeSetStore.getState().dispatchToChangeSet(overrideReview.id, changeSet)
   assert(
     changeSetStore.getState().activeChangeSet?.operations.length === 1 &&
       changeSetStore.getState().document.screenStates['state-edit-success']
-        .componentOverrides['comp-status-alert'].message === 'Task saved successfully.' &&
+        .componentOverrides['comp-status-message-text'].text === 'Task saved successfully.' &&
       changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
-        .componentOverrides['comp-status-alert'].message === 'Preview-only message',
+        .componentOverrides['comp-status-message-text'].text === 'Preview-only message',
     'field override bypassed active change set preview routing',
   )
   changeSetStore.getState().rejectChangeSet()
   assert(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success']
-      .componentOverrides['comp-status-alert'].message === 'Task saved successfully.',
+      .componentOverrides['comp-status-message-text'].text === 'Task saved successfully.',
     'Reject did not restore the prior field override',
   )
   const overrideAccept = changeSetStore.getState().beginChangeSet('Accept one override field')
   const accepted = createSetComponentOverrideFieldCommand(
     changeSetStore.getState().effectiveDocument.screenStates['state-edit-success'],
-    'comp-status-alert',
-    'message',
+    'comp-status-message-text',
+    'text',
     'Accepted message',
   )
   changeSetStore.getState().dispatchToChangeSet(overrideAccept.id, accepted)
   changeSetStore.getState().acceptChangeSet()
   assert(
     changeSetStore.getState().document.screenStates['state-edit-success']
-      .componentOverrides['comp-status-alert'].message === 'Accepted message',
+      .componentOverrides['comp-status-message-text'].text === 'Accepted message',
     'Accept did not persist the field override',
   )
 
@@ -7627,7 +7618,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
     inspectorSectionPreferenceKey,
   } = await import(moduleUrl(inspectorSectionsBundle, 'inspector-sections'))
   const { COMPONENT_KINDS } = await import(moduleUrl(modelBundle, 'inspector-section-kinds'))
-  const contentKinds = new Set(['text', 'textInput', 'select', 'button', 'alert'])
+  const contentKinds = new Set(['text', 'textInput', 'select', 'button'])
   const layoutKinds = new Set(['page', 'container', 'modal'])
 
   for (const kind of COMPONENT_KINDS) {
@@ -8234,7 +8225,7 @@ await test('change set review presents sequential diffs for every command type',
       name: 'Cancel review updated',
       trigger: { type: 'submit', componentId: 'comp-cancel-btn' },
       actions: [
-        { type: 'showAlert', componentId: 'comp-status-alert' },
+        { type: 'setState', stateId: 'state-edit-error' },
         { type: 'navigate', destinationScreenId: 'screen-list' },
       ],
     },
@@ -8253,7 +8244,7 @@ await test('change set review presents sequential diffs for every command type',
       ) &&
       eventRows[1].changes.some(change =>
         change.field === 'Actions' &&
-        change.after.fullText.includes('Show alert') &&
+        change.after.fullText.includes('Set state: Error') &&
         change.after.fullText.includes('Navigate: Task List')
       ) &&
       eventRows[1].navigation?.componentId === 'comp-cancel-btn' &&
@@ -8683,9 +8674,12 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-title',
       'comp-list-summary',
       'comp-create-task-btn',
-      'comp-list-loading-alert',
-      'comp-list-empty-alert',
-      'comp-list-error-alert',
+      'comp-list-loading-message',
+      'comp-list-loading-message-text',
+      'comp-list-empty-message',
+      'comp-list-empty-message-text',
+      'comp-list-error-message',
+      'comp-list-error-message-text',
       'comp-list-grid',
       'comp-task-launch-card',
       'comp-task-launch-title',
@@ -8700,8 +8694,10 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-create-modal-content',
       'comp-create-modal-title',
       'comp-new-task-title-input',
-      'comp-create-task-progress-alert',
-      'comp-create-task-error-alert',
+      'comp-create-task-progress-message',
+      'comp-create-task-progress-message-text',
+      'comp-create-task-error-message',
+      'comp-create-task-error-message-text',
       'comp-create-modal-actions',
       'comp-cancel-create-task-btn',
       'comp-submit-create-task-btn',
@@ -8726,23 +8722,28 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-title',
       'comp-list-summary',
       'comp-create-task-btn',
-      'comp-list-loading-alert',
-      'comp-list-empty-alert',
-      'comp-list-error-alert',
+      'comp-list-loading-message',
+      'comp-list-loading-message-text',
+      'comp-list-empty-message',
+      'comp-list-empty-message-text',
+      'comp-list-error-message',
+      'comp-list-error-message-text',
       'comp-list-grid',
       'comp-retry-tasks-btn',
       'comp-create-modal',
       'comp-create-modal-content',
       'comp-create-modal-title',
       'comp-new-task-title-input',
-      'comp-create-task-progress-alert',
-      'comp-create-task-error-alert',
+      'comp-create-task-progress-message',
+      'comp-create-task-progress-message-text',
+      'comp-create-task-error-message',
+      'comp-create-task-error-message-text',
       'comp-create-modal-actions',
       'comp-cancel-create-task-btn',
       'comp-submit-create-task-btn',
     ].join(',') &&
       intent('ArrowDown', 'comp-list-title')?.componentId === 'comp-list-summary' &&
-      intent('ArrowUp', 'comp-list-grid')?.componentId === 'comp-list-error-alert' &&
+      intent('ArrowUp', 'comp-list-grid')?.componentId === 'comp-list-error-message-text' &&
       intent('Home', 'comp-list-grid')?.componentId === 'comp-list-page' &&
       intent('End', 'comp-list-page')?.componentId === 'comp-submit-create-task-btn',
     'Tree previous/next/Home/End navigation does not use visible items',
@@ -10767,7 +10768,6 @@ await test('Inspector behavior projection resolves events APIs and validation', 
 
   const expanded = structuredClone(document)
   expanded.events['event-save-task'].actions.push(
-    { type: 'showAlert', componentId: 'comp-status-alert' },
     { type: 'navigate', destinationScreenId: 'screen-list' },
   )
   expanded.events['event-second'] = {
@@ -10779,15 +10779,12 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   }
   expanded.screens['screen-edit'].eventIds.push('event-second')
   const expandedSave = getComponentBehavior(expanded, 'comp-save-btn', 'en')
-  const alertAction = expandedSave.events[0].actions[2]
-  const navigateAction = expandedSave.events[0].actions[3]
+  const navigateAction = expandedSave.events[0].actions[2]
   assert(
     expandedSave.events.length === 2 &&
       new Set(expandedSave.events.map(event => event.id)).size === 2 &&
       expandedSave.events[0].configuredByButton &&
       !expandedSave.events[1].configuredByButton &&
-      alertAction.type === 'showAlert' &&
-      alertAction.alert.label === 'Task updated successfully.' &&
       navigateAction.type === 'navigate' &&
       navigateAction.screen.label === 'Task List' &&
       navigateAction.screen.route === '/tasks',
@@ -10798,15 +10795,13 @@ await test('Inspector behavior projection resolves events APIs and validation', 
   dangling.events['event-save-task'].actions = [
     { type: 'setState', stateId: 'missing-state' },
     { type: 'callApi', apiOperationId: 'missing-api' },
-    { type: 'showAlert', componentId: 'missing-alert' },
     { type: 'navigate', destinationScreenId: 'missing-screen' },
   ]
   const danglingActions = getComponentBehavior(dangling, 'comp-save-btn', 'en').events[0].actions
   assert(
     danglingActions[0].state.label === null &&
       danglingActions[1].operation.label === null &&
-      danglingActions[2].alert.label === null &&
-      danglingActions[3].screen.label === null &&
+      danglingActions[2].screen.label === null &&
       danglingActions.every(action => JSON.stringify(action).includes('missing-')),
     'dangling behavior references were silently blanked or threw',
   )
@@ -10870,7 +10865,7 @@ await test('Inspector behavior projection resolves events APIs and validation', 
     'utf8',
   )
   assert(
-    inspectorSource.includes('getComponentBehavior(inspectorDocument, comp.id, locale)') &&
+    inspectorSource.includes('getComponentBehavior(inspectorDocument, comp.id)') &&
       inspectorSource.includes('eventEditor={eventEditor}') &&
       detailsSource.includes('data-behavior-specification') &&
       detailsSource.includes('missingReference(operation.id, t)'),
@@ -10890,7 +10885,6 @@ await test('Event editor saves validated ordered actions as one human operation'
   const original = structuredClone(store.getState().document.events['event-save-task'])
   const editedActions = [
     { type: 'navigate', destinationScreenId: 'screen-list' },
-    { type: 'showAlert', componentId: 'comp-status-alert' },
     { type: 'callApi', apiOperationId: 'api-update-task' },
     { type: 'setState', stateId: 'state-edit-default' },
   ]
@@ -10911,7 +10905,7 @@ await test('Event editor saves validated ordered actions as one human operation'
       store.getState().document.events['event-save-task'].trigger.type === 'submit' &&
       store.getState().document.events['event-save-task'].actions
         .map(action => action.type)
-        .join(',') === 'navigate,showAlert,callApi,setState',
+        .join(',') === 'navigate,callApi,setState',
     'event draft did not commit as one ordered history entry',
   )
   store.getState().undo()
@@ -10937,8 +10931,6 @@ await test('Event editor saves validated ordered actions as one human operation'
       context.states.every(state => state.id.startsWith('state-edit-')) &&
       context.states.some(state => state.id === 'state-edit-default' && state.isDefault) &&
       context.apiOperations.map(operation => operation.id).join(',') === 'api-update-task' &&
-      context.alerts.map(alert => alert.id).join(',') ===
-        'comp-saving-alert,comp-status-alert,comp-save-error-alert' &&
       context.screens.map(screen => screen.id).join(',') === 'screen-list,screen-edit',
     'event editor candidates were not restricted or resolved correctly',
   )
@@ -10965,9 +10957,9 @@ await test('Event editor saves validated ordered actions as one human operation'
       ...updateCommand,
       actions: [{ type: 'callApi', apiOperationId: 'missing-api' }],
     }],
-    ['non-alert component', {
+    ['unsupported action', {
       ...updateCommand,
-      actions: [{ type: 'showAlert', componentId: 'comp-task-title-input' }],
+      actions: [{ type: 'unsupportedAction' }],
     }],
     ['unknown command field', {
       ...updateCommand,
@@ -11638,7 +11630,6 @@ await test('Inspector select controls use unique IDs and visible accessible labe
     { componentId: 'comp-task-title-input', labels: ['inspector.inputType'] },
     { componentId: 'comp-task-assignee-select', labels: ['inspector.defaultValue'] },
     { componentId: 'comp-save-btn', labels: ['inspector.variant'] },
-    { componentId: 'comp-status-alert', labels: ['inspector.tone'] },
     {
       componentId: 'comp-list-page',
       labels: ['inspector.layout', 'inspector.gap', 'inspector.justify', 'inspector.alignment'],

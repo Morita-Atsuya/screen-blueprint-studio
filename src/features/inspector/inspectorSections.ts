@@ -38,7 +38,6 @@ export function componentHasContentSection(kind: ComponentKind): boolean {
     case 'textInput':
     case 'select':
     case 'button':
-    case 'alert':
       return true
     case 'page':
     case 'container':
@@ -57,7 +56,6 @@ export function componentHasLayoutSection(kind: ComponentKind): boolean {
     case 'textInput':
     case 'select':
     case 'button':
-    case 'alert':
       return false
   }
 }
@@ -132,8 +130,6 @@ function contentValues(config: ComponentConfig | undefined): Record<string, unkn
         confirmationMessage: config.confirmationMessage,
         preventDoubleSubmit: config.preventDoubleSubmit,
       }
-    case 'alert':
-      return { tone: config.tone, message: config.message }
   }
 }
 
@@ -147,11 +143,7 @@ function behaviorProjection(document: ProjectDocument, componentId: EntityId): u
   return {
     buttonEventId: component.config.kind === 'button' ? component.config.eventId : null,
     events: Object.values(document.events)
-      .filter(event =>
-        event.trigger.componentId === componentId ||
-        event.actions.some(action =>
-          action.type === 'showAlert' && action.componentId === componentId),
-      )
+      .filter(event => event.trigger.componentId === componentId)
       .sort((left, right) => left.id.localeCompare(right.id)),
     apiBindings: Object.values(document.apiOperations)
       .flatMap(operation => operation.requestBindings

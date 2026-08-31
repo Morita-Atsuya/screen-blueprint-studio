@@ -451,13 +451,6 @@
 .btnSecondary { background: var(--bg-hover); color: var(--text-muted); border: 1px solid var(--border); }
 .btnDanger { background: var(--danger); color: white; }
 
-/* Alert */
-.alert { padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; border: 1px solid; }
-.alertInfo { background: #eff6ff; border-color: #bfdbfe; color: var(--info); }
-.alertSuccess { background: #ecfdf5; border-color: #a7f3d0; color: var(--success); }
-.alertWarning { background: #fffbeb; border-color: #fde68a; color: var(--warning); }
-.alertError { background: #fef2f2; border-color: #fecaca; color: var(--danger); }
-
 /* Modal */
 .modalFrame > .comp {
   width: 100%;

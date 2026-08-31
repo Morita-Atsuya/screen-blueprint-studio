@@ -106,8 +106,8 @@ export function Inspector() {
   if (!selectionContext) return null
 
   const cfg = comp.config
-  const behavior = getComponentBehavior(inspectorDocument, comp.id, locale)
-  const eventEditor = getEventEditorContext(inspectorDocument, comp.id, locale)
+  const behavior = getComponentBehavior(inspectorDocument, comp.id)
+  const eventEditor = getEventEditorContext(inspectorDocument, comp.id)
   const apiEditor = getApiEditorContext(inspectorDocument, comp.id, locale)
   const validationEditor = getValidationRulesEditorContext(inspectorDocument, comp.id, locale)
   const hasContent = componentHasContentSection(cfg.kind)
@@ -497,29 +497,6 @@ export function Inspector() {
           </label>
         </>
       )}
-      {cfg.kind === 'alert' && (
-        <>
-          <Field label={t('inspector.tone')}>{controlId => (
-            <select id={controlId} className={styles.input} value={cfg.tone} onChange={e => updateConfig({ tone: e.target.value })}>
-              <option value="info">{t('inspector.toneInfo')}</option>
-              <option value="success">{t('inspector.toneSuccess')}</option>
-              <option value="warning">{t('inspector.toneWarning')}</option>
-              <option value="error">{t('inspector.toneError')}</option>
-            </select>
-          )}</Field>
-          <Field label={t('inspector.message')}>{controlId => (
-            <DraftTextField
-              id={controlId}
-              key={`${comp.id}:message`}
-              draftId={`component:${comp.id}:config.message`}
-              ariaLabel={t('inspector.message')}
-              className={styles.input}
-              value={cfg.message}
-              onCommit={message => updateConfig({ message }, 'message')}
-            />
-          )}</Field>
-        </>
-      )}
         </InspectorSection>
       ) : null}
       {componentHasLayoutSection(cfg.kind) && (cfg.kind === 'page' ||
@@ -907,7 +884,7 @@ function formatOverrideValue(
 }
 
 function overrideContent(component: ScreenComponent, effective: ScreenComponent): {
-  key: 'text' | 'message' | 'value'
+  key: 'text' | 'value'
   labelKey: MessageKey
   baseValue: string
   effectiveValue: string
@@ -921,14 +898,6 @@ function overrideContent(component: ScreenComponent, effective: ScreenComponent)
       labelKey: 'overrides.text',
       baseValue: config.text,
       effectiveValue: effectiveConfig.text,
-    }
-  }
-  if (config.kind === 'alert' && effectiveConfig.kind === 'alert') {
-    return {
-      key: 'message',
-      labelKey: 'overrides.message',
-      baseValue: config.message,
-      effectiveValue: effectiveConfig.message,
     }
   }
   if (config.kind === 'textInput' && effectiveConfig.kind === 'textInput') {

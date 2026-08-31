@@ -73,20 +73,7 @@ function componentEventRelations(document: ProjectDocument, componentId: EntityI
     .filter(event => event.trigger.componentId === componentId)
     .sort((left, right) => left.id.localeCompare(right.id))
 
-  const alertTargets = Object.values(document.events)
-    .flatMap(event =>
-      event.actions.flatMap((action, index) =>
-        action.type === 'showAlert' && action.componentId === componentId
-          ? [{ eventId: event.id, actionIndex: index }]
-          : []
-      ),
-    )
-    .sort((left, right) =>
-      left.eventId.localeCompare(right.eventId) ||
-      left.actionIndex - right.actionIndex
-    )
-
-  return { triggered, alertTargets }
+  return { triggered }
 }
 
 function componentApiBindings(document: ProjectDocument, componentId: EntityId) {

@@ -146,15 +146,6 @@ const configVariants = [
     required: ['kind', 'label', 'variant', 'eventId', 'confirmationMessage', 'preventDoubleSubmit'],
   },
   {
-    kind: 'alert',
-    properties: {
-      kind: { const: 'alert' },
-      tone: { type: 'string', enum: ['info', 'success', 'warning', 'error'] },
-      message: string,
-    },
-    required: ['kind', 'tone', 'message'],
-  },
-  {
     kind: 'modal',
     properties: { kind: { const: 'modal' }, ...layoutProperties },
     required: ['kind', ...layoutRequired],
@@ -201,11 +192,6 @@ export const componentOverridesSchema = {
       {
         type: 'object',
         properties: { ...commonOverrideProperties, text: string },
-        ...closed,
-      },
-      {
-        type: 'object',
-        properties: { ...commonOverrideProperties, message: string },
         ...closed,
       },
       {

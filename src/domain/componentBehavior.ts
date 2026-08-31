@@ -32,7 +32,6 @@ export interface ResolvedApiReference extends ResolvedReference {
 export type ResolvedEventAction =
   | { type: 'setState'; state: ResolvedReference }
   | { type: 'callApi'; operation: ResolvedApiReference }
-  | { type: 'showAlert'; alert: ResolvedReference }
   | { type: 'navigate'; screen: ResolvedScreenReference }
 
 export interface ComponentBehaviorEvent {
@@ -78,7 +77,6 @@ export interface EventEditorContext {
   states: EventEditorStateOption[]
   screens: ResolvedScreenReference[]
   apiOperations: ResolvedApiReference[]
-  alerts: ResolvedReference[]
 }
 
 export interface ApiEditorOperation {
@@ -146,18 +144,12 @@ function resolveApi(
 function resolveAction(
   document: ProjectDocument,
   action: EventAction,
-  locale: Locale,
 ): ResolvedEventAction {
   switch (action.type) {
     case 'setState':
       return { type: action.type, state: resolveState(document, action.stateId) }
     case 'callApi':
       return { type: action.type, operation: resolveApi(document, action.apiOperationId) }
-    case 'showAlert':
-      return {
-        type: action.type,
-        alert: resolveComponent(document, action.componentId, locale),
-      }
     case 'navigate': {
       const screen = getOwnEntity(document.screens, action.destinationScreenId)
       return {
@@ -193,7 +185,6 @@ function componentEvents(
 export function getComponentBehavior(
   document: ProjectDocument,
   componentId: EntityId,
-  locale: Locale = 'en',
 ): ComponentBehaviorProjection | null {
   const component = getOwnEntity(document.components, componentId)
   if (!component) return null
@@ -207,7 +198,7 @@ export function getComponentBehavior(
       component.config.eventId === event.id
     ),
     triggeredByComponent: true,
-    actions: event.actions.map(action => resolveAction(document, action, locale)),
+    actions: event.actions.map(action => resolveAction(document, action)),
   }))
 
   const validationRules = component.config.kind === 'textInput'
@@ -237,7 +228,6 @@ export function getComponentBehavior(
 export function getEventEditorContext(
   document: ProjectDocument,
   componentId: EntityId,
-  locale: Locale = 'en',
 ): EventEditorContext | null {
   const component = getOwnEntity(document.components, componentId)
   if (!component) return null
@@ -277,9 +267,6 @@ export function getEventEditorContext(
     apiOperations: Object.values(document.apiOperations)
       .filter(operation => operation.screenId === screen.id)
       .map(operation => resolveApi(document, operation.id)),
-    alerts: Object.values(document.components)
-      .filter(candidate => candidate.screenId === screen.id && candidate.kind === 'alert')
-      .map(candidate => resolveComponent(document, candidate.id, locale)),
   }
 }
 

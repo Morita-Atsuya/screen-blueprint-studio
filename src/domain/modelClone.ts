@@ -84,7 +84,6 @@ export function cloneComponentConfig(config: ComponentConfig): ComponentConfig {
     case 'container':
     case 'text':
     case 'button':
-    case 'alert':
     case 'modal':
       return { ...config }
     default:
@@ -143,7 +142,6 @@ export function cloneEventAction(action: EventAction): EventAction {
   switch (action.type) {
     case 'setState':
     case 'callApi':
-    case 'showAlert':
     case 'navigate':
       return { ...action }
     default:

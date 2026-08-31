@@ -22,7 +22,6 @@ export const COMPONENT_KINDS_V3 = [
   'textInput',
   'select',
   'button',
-  'alert',
   'modal',
 ] as const
 export type ComponentKindV3 = (typeof COMPONENT_KINDS_V3)[number]
@@ -37,7 +36,6 @@ export const EVENT_ACTION_TYPES_V3 = [
   'setScenario',
   'clearScenario',
   'callApi',
-  'showAlert',
   'navigate',
 ] as const
 export type EventActionTypeV3 = (typeof EVENT_ACTION_TYPES_V3)[number]
@@ -68,8 +66,6 @@ export const VARIANT_CONFIG_OVERRIDE_FIELDS_V3 = [
   'variant',
   'confirmationMessage',
   'preventDoubleSubmit',
-  'tone',
-  'message',
 ] as const
 
 export type PublicPropValueV3 = string | number | boolean
@@ -181,8 +177,6 @@ export const PUBLIC_PROP_FIELDS_V3 = [
   'config.variant',
   'config.confirmationMessage',
   'config.preventDoubleSubmit',
-  'config.tone',
-  'config.message',
 ] as const
 export type PublicPropFieldV3 = (typeof PUBLIC_PROP_FIELDS_V3)[number]
 
@@ -209,8 +203,6 @@ export interface VariantConfigOverrideV3 {
   variant?: Extract<ComponentConfig, { kind: 'button' }>['variant']
   confirmationMessage?: string | null
   preventDoubleSubmit?: boolean
-  tone?: Extract<ComponentConfig, { kind: 'alert' }>['tone']
-  message?: string
 }
 
 export interface VariantNodeOverrideV3 {
@@ -281,7 +273,6 @@ export type EventActionV3 =
   | { type: 'setScenario'; scenarioId: CanonicalEntityIdV3 }
   | { type: 'clearScenario' }
   | { type: 'callApi'; apiOperationId: CanonicalEntityIdV3 }
-  | { type: 'showAlert'; target: ComponentTargetRefV3 }
   | { type: 'navigate'; destinationScreenId: CanonicalEntityIdV3 }
 
 export interface ScreenEventV3 {

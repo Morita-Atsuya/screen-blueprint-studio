@@ -146,15 +146,6 @@ export function validateInvariants(doc: ProjectDocument): void {
           throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} API action belongs to a different screen`)
         }
       }
-      if (action.type === 'showAlert') {
-        const alert = getOwnEntity(components, action.componentId)
-        if (!alert) {
-          throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} action references non-existent alert component ${action.componentId}`)
-        }
-        if (alert.screenId !== event.screenId || alert.kind !== 'alert') {
-          throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} showAlert action must reference an alert on the same screen`)
-        }
-      }
       if (action.type === 'navigate' && !hasOwnEntity(screens, action.destinationScreenId)) {
         throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} action references non-existent destination screen ${action.destinationScreenId}`)
       }
