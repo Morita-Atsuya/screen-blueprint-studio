@@ -487,10 +487,10 @@ function CanvasComponent({
       ref={setNodeRef}
       className={[
         styles.comp,
-        !isRoot ? styles.draggable : '',
+        !isRoot && !reviewLocked ? styles.draggable : '',
         isSelected ? styles.selected : '',
         isHovered ? styles.hovered : '',
-        isDragging ? styles.dragging : '',
+        isDragging && !reviewLocked ? styles.dragging : '',
         component.kind === 'button' ? styles.buttonComponent : '',
         component.kind === 'container' ? styles.containerComponent : '',
         component.kind === 'container' && component.childIds.length === 0
@@ -545,6 +545,7 @@ function CanvasComponent({
       data-editor-selected={isSelected || undefined}
       data-component-visible={component.common.visible}
       data-canvas-draggable={!isRoot && !reviewLocked || undefined}
+      data-canvas-dragging={isDragging && !reviewLocked || undefined}
       data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}
       data-drag-component={!isRoot && !reviewLocked ? component.id : undefined}
       data-component-change={changeStatus}

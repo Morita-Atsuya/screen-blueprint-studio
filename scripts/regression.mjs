@@ -4926,6 +4926,11 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
       !unlockedCanvasRoot.hasAttribute('role'),
     'Canvas unlocked component or root semantics are incomplete',
   )
+  assert(
+    unlockedCanvasComponent.hasAttribute('data-canvas-draggable') &&
+      unlockedCanvasComponent.className.includes('draggable'),
+    'Canvas unlocked component has no draggable cursor affordance',
+  )
   harness.pointer(unlockedTreeHandle, 'pointerdown', { clientX: 400, clientY: 300 })
   harness.pointer(
     document,
@@ -5035,9 +5040,12 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     canvasComponent &&
       !canvasComponent.hasAttribute('data-canvas-draggable') &&
       !canvasComponent.hasAttribute('data-drag-surface') &&
+      !canvasComponent.hasAttribute('data-canvas-dragging') &&
       canvasComponent.getAttribute('tabindex') === '-1' &&
-      !canvasComponent.hasAttribute('role'),
-    'Canvas component remains draggable or a dead keyboard stop during review',
+      !canvasComponent.hasAttribute('role') &&
+      !canvasComponent.className.includes('draggable') &&
+      !canvasComponent.className.includes('dragging'),
+    'Canvas component retains drag semantics or cursor affordance during review',
   )
   const lockedCanvasRoot = document.querySelector('[data-component-id="comp-edit-page"]')
   assert(
@@ -5050,6 +5058,11 @@ await test('mounted App review lock blocks mutations while preserving UI-only in
     harness.pointer(window, 'pointermove', { clientX: 180, clientY: 180 })
     harness.pointer(window, 'pointerup', { clientX: 180, clientY: 180 })
   })
+  assert(
+    !document.querySelector('[data-drag-overlay]') &&
+      !canvasComponent.hasAttribute('data-canvas-dragging'),
+    'locked Canvas pointer movement started visual drag feedback',
+  )
   const canvasMenuTarget = document.querySelector('[data-component-id="comp-task-assignee-select"]')
   harness.contextMenu(canvasMenuTarget)
   const canvasLockedMenu = document.querySelector('[data-component-add-menu]')
@@ -8434,8 +8447,13 @@ await test('Canvas component surfaces are isolated accessible drag activators', 
   assert(
     canvasSource.includes('{...(!isRoot && !reviewLocked ? attributes : {})}') &&
       canvasSource.includes('{...(!isRoot && !reviewLocked ? listeners : {})}') &&
+      canvasSource.includes("!isRoot && !reviewLocked ? styles.draggable : ''") &&
+      canvasSource.includes("isDragging && !reviewLocked ? styles.dragging : ''") &&
       canvasSource.includes('tabIndex={isRoot || reviewLocked ? -1 : 0}') &&
       canvasSource.includes("data-canvas-draggable={!isRoot && !reviewLocked || undefined}") &&
+      canvasSource.includes(
+        'data-canvas-dragging={isDragging && !reviewLocked || undefined}',
+      ) &&
       canvasSource.includes("data-drag-surface={!isRoot && !reviewLocked ? 'canvas' : undefined}") &&
       canvasSource.includes(
         "aria-label={isRoot || reviewLocked ? displayName : t('canvas.dragAria', { label: displayName })}",
