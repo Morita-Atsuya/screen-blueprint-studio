@@ -1,5 +1,7 @@
 # WebMCP Challenge 企画・評価基準
 
+> 内部planning文書（日本語のみ）。公開product documentationには含めない。
+
 最終確認日: 2026-08-27（JST）
 
 この文書は、OpenAI WebMCP Challenge向けの企画判断、実装方針、提出要件をリポジトリ内で共有するための作業用まとめである。規約と日程について矛盾がある場合は、必ず [Devpost Official Rules](https://webmcp.devpost.com/rules) と主催者の最新告知を優先する。

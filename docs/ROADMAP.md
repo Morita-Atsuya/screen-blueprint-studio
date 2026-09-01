@@ -1,6 +1,6 @@
 # Screen Blueprint Studio product roadmap
 
-[日本語](./ROADMAP.ja.md)
+[日本語](./ROADMAP.ja.md) · [Product overview](../README.md) · [User guide](./USER_GUIDE.md) · [Portable specification](./PORTABLE_SPEC.md)
 
 Last updated: September 1, 2026
 
@@ -14,11 +14,11 @@ Screen Blueprint Studio helps product managers, designers, engineers, and QA tea
 
 - **Describe data-driven lists with Collections.** Define a row or card once and show how it repeats for a set of items rather than duplicating each entry by hand. This keeps list screens compact and makes it clear which values come from the current item.
 
-- **Record user actions and API behavior.** Attach events to controls, order the resulting actions, connect form fields to API requests, and show the screen state for success or failure. Designers, engineers, and QA can review what a Save button is expected to do from the same screen specification.
+- **Record user actions and API behavior.** Attach events to controls, order the resulting actions, connect form or current Collection item values to API requests and navigation parameters, and show the screen state for success or failure. Designers, engineers, and QA can review what a Save button or list action is expected to do from the same screen specification.
 
 - **Create specifications that resemble the intended interface.** Add images and safe links, arrange content with vertical, horizontal, or grid layouts, and place overlays or frame-fixed elements with constrained settings. Teams can communicate realistic structure and navigation without relying on pixel-perfect free drawing.
 
-- **Keep people in control of AI changes with WebMCP.** An AI agent can read the screen and current selection, then propose a reviewable set of changes in the application. A person previews the result and accepts or rejects it before the saved project changes.
+- **Give people and AI one shared workspace.** People arrange and inspect the whole screen visually, while an AI agent uses named, typed WebMCP operations to read the same live screen and selection or propose structured changes. The proposal appears as an application change set that a person can preview and apply or discard.
 
 ## Planned enhancements
 

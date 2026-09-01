@@ -1,41 +1,104 @@
 # Screen Blueprint Studio ユーザーガイド
 
-[English](./USER_GUIDE.md)
+[English](./USER_GUIDE.md) · [製品概要](../README.ja.md) · [ポータブル仕様](./PORTABLE_SPEC.ja.md) · [ロードマップ](./ROADMAP.ja.md)
 
-## 意味的な画像とリンク
+## 作業画面を理解する
 
-装飾ではなく画面仕様の一部となる画像には **Image** を使います。portableな相対URLまたはHTTP(S)の絶対URL、内容を表す代替テキストを設定し、制約付きの表示方法、縦横比、プレースホルダーtokenを選択します。source未設定とnetwork読込失敗は、明示的なwireframe placeholderとして区別して表示されます。
+エディタには4つの主な操作領域があります。
 
-**Link** は、アプリ内画面、外部HTTP(S) URL、論理リソースへの遷移を表します。表示ラベルとリンク先は独立して指定します。アプリ内画面は同じcontext、外部URLは同じcontextまたは新しいcontext、リソースはそれらに加えてdownloadを要求できます。ただし、browserや配信serverがdownload要求を無視する場合があります。resource IDはopaqueな論理識別子であり、project内のresource catalogへの参照ではありません。
+- **Palette**には意味を持つcomponentと、利用可能なShared Component Definitionが表示されます。
+- **Tree**には、独立したModal rootとCollection境界を含むcanonicalな画面階層が表示されます。
+- **Canvas**には、現在のScreenとScenarioが編集可能なwireframeとして表示されます。
+- **Inspector**では、選択したScreen、component、解決済みDefinition node、state、Event、APIの仕様を編集します。
 
-危険なURL scheme、scheme-relative URL、制御文字、backslashで外部hostとして解釈され得る形式は拒否します。新しいcontextで開くLinkには`noopener noreferrer`を付与します。Canvasではanchorのfocusと意味論を維持し、wireframe編集中の実navigationだけを抑止します。
+Screen一覧では、Screenの追加、名前変更、選択、削除を行います。表示tabを使うと、Screen editor、navigation Flow、Shared Component Definitionを切り替えられます。Canvas上部のstate controlでは、loading、empty、saving、success、errorなどの名前付きScenarioを作成・選択できます。
 
-## Componentの配置
+Paletteの項目をTreeまたはCanvasへdragします。既存のroot以外のcomponentは、並べ替えたり、対応するContainer、Page、Modal間で移動したりできます。無効なparent、descendant、sizing contextは黙って補正せず、理由を示して拒否されます。
 
-すべてのComponentはportableな配置modeを持ちます。**Flow** は親layoutに参加します。**Overlay** はlayout領域を占有せず、immediate logical parent内の9点anchorを使います。**フレーム端固定（Sticky edge）** はCSSのdocument stickyではありません。layout領域を占有せず、所属するPageまたはModal frameの上端／下端に留まります。**フレームviewport** は同じowning frame内の9点anchorを使い、frameのscroll contentとは分離して留まります。
+人が確定したproject編集にはUndoとRedoを利用できます。Text fieldは入力中の内容をlocal draftとして保持し、用途に応じてEnterまたはfocus移動で1つの操作として確定します。Escapeで未確定のtext draftを取り消せます。
 
-Insetは`none`、`xs`、`sm`、`md`、`lg` tokenで指定し、aligned edgeから必ず内側へ離します。raw pixel、負のoffset、仕様上のz-indexは扱いません。中央axisのinsetは`none`固定です。見た目の重なり順はplacement layerとcanonical sibling orderで決まりますが、Tree階層、selection、behavior target、copy/paste、drag-and-dropはcanonical component identityとparent/index順を維持します。
+## 意味のあるComponentで画面を作る
 
-## 制約付きComponentサイズ
+現行releaseはPage、Container、Text、Text Input、Select、Button、Image、Link、Collection、Modalに対応します。PageはScreen rootです。ModalはScreenが所有する独立frameです。Container、Page、Modalではvertical、horizontal、grid layoutを選べます。
 
-root以外のComponentでは、配置セクションからportableなinline sizeを指定できます。**自動** は親layoutの既定動作、**内容に合わせる** は利用可能な幅を上限に内容の固有幅、**利用可能な幅を埋める** はinline方向の利用可能幅を使います。最小幅と最大幅には`xs`から`xl`までの順序付きtokenを使い、最小幅を最大幅より大きくすることはできません。
+構造componentのdescriptionは、TreeとCanvasでgroupを識別するeditor metadataです。画面に表示する見出しや文章はText componentへ記録します。ButtonとLinkでは、表示labelをbehaviorやdestinationとは分けて管理します。
 
-Gridは1〜12本の明示的な等幅trackを持ち、flow childは親のカラム数までspanできます。狭いframeでもtrackは自動折り畳みされず、横overflowを維持します。横方向flow childでは0〜3の伸長比と縮小の許可／防止を指定できます。正の伸長比には「利用可能な幅を埋める」と「縮小を許可」が必要で、flex basisは0です。縦方向とflow外のcontext値はneutral固定です。rootのサイズは固定され、サイズを無効にする構造変更やdrag-and-dropは補正せず拒否されます。
+### ImageとLink
 
-## 共有コンポーネント
+装飾ではなく画面仕様の一部となる画像には**Image**を使います。portableな相対URLまたはHTTP(S)の絶対URL、内容を表すalt text、制約付きfit、aspect ratio、placeholder styleを設定します。source未設定とnetwork読込失敗は、明示的なwireframe placeholderとして表示されます。
 
-同じ意味的subtreeを複数画面で同期したい場合は、**Component Definition**を使います。Definitionはstableなlocal node、Baseデザイン、型付き公開プロパティ、任意のVariantを所有します。画面側のDefinition **Instance**が持つのは、選択Variant、明示した公開プロパティ値、外側のplacementとsizingだけです。Definitionを編集すると、すべてのInstanceへ即時反映されます。
+**Link**は、アプリ内Screen、外部HTTP(S) URL、論理resourceへのnavigationを表します。アプリ内Screenは同じcontext、外部URLは同じcontextまたは新しいcontextで開けます。Resource linkはdownloadを要求できますが、browserやserverが無視する場合があります。Resource IDはopaqueな識別子であり、project-level asset catalogへの参照ではありません。
 
-メイン表示の**定義**から、Definitionの作成、名前・説明の変更、複製、構造確認、対応node fieldの公開プロパティ化、Variant上書きの追加を行えます。Instanceの値は、Definition Base、選択Variant、明示したInstanceプロパティ、active Scenario上書きの固定順で解決されます。Variantが変更できるのは対応fieldだけで、node identityやtopologyは変更しません。
+危険なURL scheme、scheme-relative URL、制御文字、backslashでhostとして解釈され得る形式は拒否します。新しいcontextで開くLinkには`noopener noreferrer`を付与します。CanvasではLinkのfocusを維持し、wireframe編集中の実navigationだけを抑止します。
 
-Paletteには利用可能なDefinitionが表示されます。Instance境界を選択すると、Variant、公開プロパティ、placement、sizingを編集できます。内部の解決済みnodeを選択すると、stableなInstanceとnode pathのidentityを確認し、Scenario targetとして利用し、元Definitionへ移動できます。解決済みnodeのBase fieldは直接編集できません。
+## Placementとsizingを設定する
 
-inline subtreeからDefinitionを抽出したり、通常のInstanceをinline componentへ戻したりできます。どちらもUndo 1回分のatomic操作で、関係するScenario、Event、API targetをrewriteして振る舞いを維持します。画面InstanceまたはネストしたDefinition参照が残るDefinitionの削除は拒否され、定義画面に影響件数を表示します。Definitionのネストは循環しないgraphに限定され、展開数にも上限があります。
+すべてのcomponentは制約付きのplacement modeを持ちます。
 
-## コレクション
+- **Flow**は親layoutに参加します。
+- **Overlay**はlayout flowから外れ、immediate logical parent内の9点anchorを使います。
+- **Sticky edge**はlayout flowから外れ、所属するPageまたはModal frameの上端／下端に留まります。CSSのdocument-stickyではありません。
+- **Frame viewport**は所属frameの9点anchorを使い、scrollするframe contentとは分離して留まります。
 
-**Collection**は、制限付きのcanonical preview sliceから1つのComponent Definitionを繰り返します。項目Definition、preview object、stableなitem key用JSON Pointerを指定します。response items pathはAPI response body基準、item key、公開プロパティbinding、Variant rule、visibility ruleは各item基準です。値の欠損と明示的な`null`は区別されます。
+Insetは`none`、`xs`、`sm`、`md`、`lg` tokenで指定し、aligned edgeから必ず内側へ離します。raw pixel、負のoffset、仕様上のz-indexは扱いません。見た目の重なり順はplacement layerとcanonical sibling orderで決まります。Tree order、selection、behavior target、copy/paste、drag and dropはstableなcanonical identityを使い続けます。
 
-各preview itemは、Definition Base、最終Variant 1つ、itemからbindした公開プロパティの順で完成したDefinitionへ解決されます。Variantは最初に一致したexact scalar case、rule fallback、item template Variantの順で1つだけ選ばれます。visibilityもexact scalar ruleで、一致時とfallbackの表示結果を明示します。Canvasはscreen-owned child componentを追加せずに解決済みitemを反復し、TreeはcanonicalなCollection境界を維持します。Event/API targetはCollection IDとstableなDefinition-local node pathを使います。
+Root以外のcomponentではinline sizingも指定できます。**Auto**は親layoutの既定動作、**Fit content**は利用可能な幅を上限に内容の固有幅、**Fill**はinline方向の利用可能幅を使います。最小幅と最大幅には`xs`から`xl`までの順序付きtokenを使い、最小幅を最大幅より大きくすることはできません。
 
-preview exampleはCanvasで使う選択済みsliceであり、API response contractの二重正準ではありません。上限は20 object、32 KiB、nest 8階層です。item keyは一意なstringまたはnumberでなければなりません。Collectionが参照中のDefinitionは削除できません。参照中のAPI operationを削除すると、preview sliceを保ったままCollectionのdata sourceが明示的に切断されます。
+Gridは1〜12本の明示的な等幅trackを持ち、各flow childは親のtrack数までspanできます。狭いframeでもtrackは自動で折り畳まれず、横overflowを維持します。Horizontal-flow childでは0〜3のgrow ratioとshrinkの許可／防止を指定できます。正のgrow ratioにはFillとAllow shrinkが必要です。Verticalまたはflow外のcontextではgrowとshrinkをneutralに保ちます。Root sizingは固定です。
+
+## Shared Componentを再利用する
+
+同じ意味を持つsubtreeを複数Screenで同期したい場合は、**Component Definition**を使います。Definitionはstableなlocal node、base design、typed public property、任意のVariantを所有します。Screen上のDefinition **Instance**は、選択Variant、明示したpublic-property value、外側のplacementとsizingを持ちます。Definitionを編集すると、すべてのInstanceへ即時反映されます。
+
+**Definitions**では、Definitionの作成、名前・説明の変更、複製、構造確認、対応node fieldのpublic property化、Variant overrideの追加を行えます。Instanceの値は次の順で解決されます。
+
+1. Definition base
+2. 選択された最終Variant
+3. 明示したInstance public-property value
+4. active Scenario override
+
+Variantが変更できるのは対応fieldだけで、node identityやtopologyは変えません。
+
+Paletteには利用可能なDefinitionが表示されます。Instance境界を選択すると、Variant、public property、placement、sizingを編集できます。内部の解決済みnodeを選択すると、stableなInstanceとnode pathのtargetを確認し、behaviorまたはScenario overrideを設定し、元Definitionを開けます。解決済みnodeのbase fieldは直接編集できません。
+
+Inline subtreeからDefinitionを抽出したり、通常のInstanceをinline componentへ戻したりできます。どちらもUndo 1回分のatomic操作で、関係するScenario、Event、API targetをrewriteします。Screen Instanceまたはnested Definition referenceが利用中のDefinitionは削除できず、Definitions表示に影響が示されます。Definitionのnestは循環せず、展開上限を守る必要があります。
+
+## Collectionで一覧を記述する
+
+**Collection**は、制限付きのpreview sliceから1つのDefinitionを繰り返します。Item Definition、preview object、stableなitem key用JSON Pointerを設定します。Response items pathはAPI response body基準です。Item key、public-property binding、Variant rule、visibility rule、behavior item valueは各item基準です。値の欠損と明示的な`null`は区別されます。
+
+各preview itemは、Definition base、最終Variant 1つ、itemからbindしたpublic propertyの順で完成したDefinitionへ解決されます。Variantは最初に一致したexact scalar case、rule fallback、item-template Variantの順で選ばれます。Visibilityもexact scalar ruleで、一致時とfallbackの結果を明示します。
+
+CanvasはScreen-owned componentのcopyを追加せずに解決済みitemを繰り返します。TreeにはcanonicalなCollection境界を1つだけ表示します。どのpreview itemでも内部nodeをclickすると、Collection IDとstableなDefinition-local node pathで識別される共通template targetを選択します。Inspectorには全itemへ適用されることが表示され、EventとAPI behaviorを確認できます。Preview item順序やruntime DOM IDはtargetとして保存しません。
+
+Preview dataの上限は20 object、32 KiB、nest 8階層です。Item keyは一意なstringまたはnumberへ解決される必要があります。Collectionが利用中のDefinitionは削除できません。参照中のAPI operationを削除すると、preview sliceを保ったままCollection data sourceを明示的に切断します。
+
+## Event、navigation、APIを接続する
+
+対応するcomponentまたはresolved targetを選択し、Inspectorの**動作**を開きます。Eventはclickまたはsubmit triggerと、順序付きactionを持ちます。ActionはScenarioの設定／解除、API operationの呼び出し、別Screenへのnavigationを行います。
+
+Navigationには名前付きroute／query parameterを設定できます。各parameterはliteral scalarを使えます。TriggerがCollection item nodeの場合は、RFC 6901 JSON Pointerで現在のitemも参照できます。
+
+API operationはmethod、path、request binding、任意のsuccess／error Scenarioを記録します。Request bindingは、`path.taskId`や`body.title`のような既存target pathへ次の値を接続します。
+
+- 同じScreen上のText InputまたはSelect target
+- literal JSON scalar
+- JSON Pointerで参照した現在のCollection item
+
+Item valueは、Event targetによって1つのCollection contextが決まる場合だけ有効です。Pointerの欠損、scalarが必要な箇所でのobject、type mismatch、複数Collection contextの混在は、default値へ置き換えずvalidation errorとして表示します。
+
+Text Inputでは、required、最小／最大長、pattern、email形式、記述式custom requirementの順序付きvalidation ruleも設定できます。
+
+## WebMCPでAIと作業する
+
+人は視覚的なworkspaceを使い、AI agentは名前と型を持つ11個のWebMCP toolを使います。どちらも同じlive Screen、selection、resolved component、state、Event、APIを読み取ります。
+
+AIのwriteはchange setを開始します。Operationはeffective previewとChanges panelへ表示され、確定projectはまだ変わりません。Review中はdocumentを変更するcontrol、drag and drop、Undo、Redoがlockされますが、selection、inspection、Canvasのpan／zoom、Flowは利用できます。Proposalを反映すると確定history 1件になり、破棄するとprojectは変更されません。
+
+WebMCPには対応する実験版Chromeが必要です。`document.modelContext`がないbrowserではtool registrationをskipし、人向けeditorはすべて利用できます。設定とtool一覧は[開発ガイド](./DEVELOPMENT.ja.md)を参照してください。
+
+## 保存と現在の制約
+
+Workspaceはbrowserの`localStorage`へcacheされます。確定document、revision、active context、作業中のchange setを含みます。不正な保存dataは黙って初期化せず、recovery画面を開きます。Storage writeに失敗した場合は状態を表示し、JSON recovery downloadを利用できます。
+
+現行製品には通常のJSON／YAML import／export UIがありません。Recovery downloadは一般的なproject-file workflowではありません。Fileによる共有、より幅広いcustom specification、編集を伴わないreview modeは[ロードマップ](./ROADMAP.ja.md)で予定しています。

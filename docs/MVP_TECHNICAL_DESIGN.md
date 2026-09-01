@@ -1,5 +1,7 @@
 # Screen Blueprint Studio MVP 技術設計
 
+> 内部planning文書（日本語のみ）。公開product documentationには含めない。
+
 最終更新: 2026-08-27（JST）
 
 ステータス: **MVP実装の基準設計**

@@ -1,5 +1,7 @@
 # Screen Blueprint Studio プロダクト方針・引き継ぎ
 
+> 内部planning文書（日本語のみ）。公開product documentationには含めない。
+
 最終更新: 2026-08-27（JST）
 
 ステータス: **この方向でWebMCP Challenge向けアプリを作成する**
