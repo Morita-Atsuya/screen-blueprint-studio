@@ -1,6 +1,6 @@
 # Portable specification v3
 
-[日本語](./PORTABLE_SPEC.ja.md) · [Product overview](../README.md) · [Public JSON Schema](../public/schemas/screen-blueprint-project-v3.schema.json) · [Canonical example](../public/examples/screen-blueprint-project-v3.json)
+[日本語](../ja/PORTABLE_SPEC.md) · [Product overview](../../README.md) · [Public JSON Schema](../../public/schemas/screen-blueprint-project-v3.schema.json) · [Canonical example](../../public/examples/screen-blueprint-project-v3.json)
 
 ## Purpose
 
@@ -34,8 +34,8 @@ The application keeps those operational values in a workspace envelope stored in
 - Schema version: `3`
 - Kind: `screen-blueprint-project`
 - Schema URL: <https://morita-atsuya.github.io/screen-blueprint-studio/schemas/screen-blueprint-project-v3.schema.json>
-- Repository schema: [`public/schemas/screen-blueprint-project-v3.schema.json`](../public/schemas/screen-blueprint-project-v3.schema.json)
-- Repository example: [`public/examples/screen-blueprint-project-v3.json`](../public/examples/screen-blueprint-project-v3.json)
+- Repository schema: [`public/schemas/screen-blueprint-project-v3.schema.json`](../../public/schemas/screen-blueprint-project-v3.schema.json)
+- Repository example: [`public/examples/screen-blueprint-project-v3.json`](../../public/examples/screen-blueprint-project-v3.json)
 
 The public Schema and example are developer-facing contract artifacts. In the current release, the product UI does **not** import or export JSON or YAML project files. File-based sharing and validated import/export are planned on the [roadmap](./ROADMAP.md).
 

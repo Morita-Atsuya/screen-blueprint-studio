@@ -9559,7 +9559,7 @@ await test('screen flow projects navigate actions and net review changes', async
     'utf8',
   )
   const technicalDesign = readFileSync(
-    join(root, 'docs/MVP_TECHNICAL_DESIGN.md'),
+    join(root, 'docs/ja/internal/MVP_TECHNICAL_DESIGN.md'),
     'utf8',
   )
   assert(
@@ -12220,7 +12220,10 @@ await test('AI writes expose only the change set review flow', async () => {
   const appStoreSource = readFileSync(join(root, 'src/app/appStore.ts'), 'utf8')
   const appStyles = readFileSync(join(root, 'src/app/App.module.css'), 'utf8')
   const toolsSource = readFileSync(join(root, 'src/webmcp/tools.ts'), 'utf8')
-  const designSource = readFileSync(join(root, 'docs/MVP_TECHNICAL_DESIGN.md'), 'utf8')
+  const designSource = readFileSync(
+    join(root, 'docs/ja/internal/MVP_TECHNICAL_DESIGN.md'),
+    'utf8',
+  )
   const readmeSource = readFileSync(join(root, 'README.md'), 'utf8')
   const readmeJaSource = readFileSync(join(root, 'README.ja.md'), 'utf8')
   const obsoleteMode = ['auto', '-apply'].join('')

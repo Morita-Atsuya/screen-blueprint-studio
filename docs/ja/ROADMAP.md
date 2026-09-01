@@ -1,6 +1,6 @@
 # Screen Blueprint Studio プロダクトロードマップ
 
-[English](./ROADMAP.md) · [製品概要](../README.ja.md) · [ユーザーガイド](./USER_GUIDE.ja.md) · [ポータブル仕様](./PORTABLE_SPEC.ja.md)
+[English](../en/ROADMAP.md) · [製品概要](../../README.ja.md) · [ユーザーガイド](./USER_GUIDE.md) · [ポータブル仕様](./PORTABLE_SPEC.md)
 
 最終更新: 2026年9月1日
 

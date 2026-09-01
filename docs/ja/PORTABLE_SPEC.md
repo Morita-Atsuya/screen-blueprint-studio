@@ -1,6 +1,6 @@
 # ポータブル仕様 v3
 
-[English](./PORTABLE_SPEC.md) · [製品概要](../README.ja.md) · [公開JSON Schema](../public/schemas/screen-blueprint-project-v3.schema.json) · [Canonical example](../public/examples/screen-blueprint-project-v3.json)
+[English](../en/PORTABLE_SPEC.md) · [製品概要](../../README.ja.md) · [公開JSON Schema](../../public/schemas/screen-blueprint-project-v3.schema.json) · [Canonical example](../../public/examples/screen-blueprint-project-v3.json)
 
 ## 目的
 
@@ -34,10 +34,10 @@ Editor revision、active screen、active Scenario、selection、Undo history、a
 - Schema version: `3`
 - Kind: `screen-blueprint-project`
 - Schema URL: <https://morita-atsuya.github.io/screen-blueprint-studio/schemas/screen-blueprint-project-v3.schema.json>
-- Repository schema: [`public/schemas/screen-blueprint-project-v3.schema.json`](../public/schemas/screen-blueprint-project-v3.schema.json)
-- Repository example: [`public/examples/screen-blueprint-project-v3.json`](../public/examples/screen-blueprint-project-v3.json)
+- Repository schema: [`public/schemas/screen-blueprint-project-v3.schema.json`](../../public/schemas/screen-blueprint-project-v3.schema.json)
+- Repository example: [`public/examples/screen-blueprint-project-v3.json`](../../public/examples/screen-blueprint-project-v3.json)
 
-公開Schemaとexampleは開発者向けの契約資料です。現行releaseの製品UIには、JSON／YAML project fileの読み込み・書き出し機能が**ありません**。fileによる共有とvalidation付きimport／exportは[ロードマップ](./ROADMAP.ja.md)で予定しています。
+公開Schemaとexampleは開発者向けの契約資料です。現行releaseの製品UIには、JSON／YAML project fileの読み込み・書き出し機能が**ありません**。fileによる共有とvalidation付きimport／exportは[ロードマップ](./ROADMAP.md)で予定しています。
 
 ## 主要概念
 
@@ -129,4 +129,4 @@ Runtimeは構造と意味の両方を検証します。
 
 値の欠損と明示的な`null`は区別します。Copy、duplicate、extract、detach、deleteでは、依存するIDとtargetをatomicにrewriteするか、操作を拒否します。未対応または不正なdataを黙って削除しません。
 
-現行v3 modelは意図的にguidedであり、記載したstandard kindとbehaviorだけを受け付けます。他のcomponentやbehaviorを非実行のcustom specificationとして保持する機能は、[ロードマップ](./ROADMAP.ja.md)で予定しています。
+現行v3 modelは意図的にguidedであり、記載したstandard kindとbehaviorだけを受け付けます。他のcomponentやbehaviorを非実行のcustom specificationとして保持する機能は、[ロードマップ](./ROADMAP.md)で予定しています。

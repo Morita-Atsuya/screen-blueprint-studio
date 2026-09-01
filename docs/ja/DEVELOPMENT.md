@@ -1,6 +1,6 @@
 # Screen Blueprint Studio 開発ガイド
 
-[English](./DEVELOPMENT.md) · [製品概要](../README.ja.md) · [ポータブル仕様](./PORTABLE_SPEC.ja.md)
+[English](../en/DEVELOPMENT.md) · [製品概要](../../README.ja.md) · [ポータブル仕様](./PORTABLE_SPEC.md)
 
 ## 必要な環境とセットアップ
 
@@ -61,7 +61,7 @@ Chromeが標準の場所にない場合は、実行ファイルを`CHROME_PATH`�
 └── vite.config.ts
 ```
 
-canonical document modelとidentity ruleは[ポータブル仕様ガイド](./PORTABLE_SPEC.ja.md)を参照してください。
+canonical document modelとidentity ruleは[ポータブル仕様ガイド](./PORTABLE_SPEC.md)を参照してください。
 
 ## 開発専用のsample reset
 

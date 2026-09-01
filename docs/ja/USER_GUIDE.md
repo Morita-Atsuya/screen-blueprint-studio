@@ -1,6 +1,6 @@
 # Screen Blueprint Studio ユーザーガイド
 
-[English](./USER_GUIDE.md) · [製品概要](../README.ja.md) · [ポータブル仕様](./PORTABLE_SPEC.ja.md) · [ロードマップ](./ROADMAP.ja.md)
+[English](../en/USER_GUIDE.md) · [製品概要](../../README.ja.md) · [ポータブル仕様](./PORTABLE_SPEC.md) · [ロードマップ](./ROADMAP.md)
 
 ## 作業画面を理解する
 
@@ -95,10 +95,10 @@ Text Inputでは、required、最小／最大長、pattern、email形式、記�
 
 最初の有効なAI writeは、change set作成とoperation追加をatomicに行います。後続writeは同じproposalへ追加され、最初のwriteが失敗した場合は空のreview lockを残しません。Operationはeffective previewとChanges panelへ表示され、確定projectはまだ変わりません。Review中はdocumentを変更するcontrol、drag and drop、Undo、Redoがlockされますが、selection、inspection、Canvasのpan／zoom、Flowは利用できます。Proposalを反映すると確定history 1件になり、破棄するとprojectは変更されません。
 
-WebMCPには対応する実験版Chromeが必要です。`document.modelContext`がないbrowserではtool registrationをskipし、人向けeditorはすべて利用できます。設定とtool一覧は[開発ガイド](./DEVELOPMENT.ja.md)を参照してください。
+WebMCPには対応する実験版Chromeが必要です。`document.modelContext`がないbrowserではtool registrationをskipし、人向けeditorはすべて利用できます。設定とtool一覧は[開発ガイド](./DEVELOPMENT.md)を参照してください。
 
 ## 保存と現在の制約
 
 Workspaceはbrowserの`localStorage`へcacheされます。確定document、revision、active context、作業中のchange setを含みます。不正な保存dataは黙って初期化せず、recovery画面を開きます。Storage writeに失敗した場合は状態を表示し、JSON recovery downloadを利用できます。
 
-現行製品には通常のJSON／YAML import／export UIがありません。Recovery downloadは一般的なproject-file workflowではありません。Fileによる共有、より幅広いcustom specification、編集を伴わないreview modeは[ロードマップ](./ROADMAP.ja.md)で予定しています。
+現行製品には通常のJSON／YAML import／export UIがありません。Recovery downloadは一般的なproject-file workflowではありません。Fileによる共有、より幅広いcustom specification、編集を伴わないreview modeは[ロードマップ](./ROADMAP.md)で予定しています。

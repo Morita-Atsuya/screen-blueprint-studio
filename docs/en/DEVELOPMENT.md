@@ -1,6 +1,6 @@
 # Developing Screen Blueprint Studio
 
-[日本語](./DEVELOPMENT.ja.md) · [Product overview](../README.md) · [Portable specification](./PORTABLE_SPEC.md)
+[日本語](../ja/DEVELOPMENT.md) · [Product overview](../../README.md) · [Portable specification](./PORTABLE_SPEC.md)
 
 ## Requirements and setup
 

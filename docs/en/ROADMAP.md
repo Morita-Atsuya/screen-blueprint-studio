@@ -1,6 +1,6 @@
 # Screen Blueprint Studio product roadmap
 
-[日本語](./ROADMAP.ja.md) · [Product overview](../README.md) · [User guide](./USER_GUIDE.md) · [Portable specification](./PORTABLE_SPEC.md)
+[日本語](../ja/ROADMAP.md) · [Product overview](../../README.md) · [User guide](./USER_GUIDE.md) · [Portable specification](./PORTABLE_SPEC.md)
 
 Last updated: September 1, 2026
 

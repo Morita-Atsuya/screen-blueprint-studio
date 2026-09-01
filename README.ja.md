@@ -41,14 +41,14 @@ npm install
 npm run dev
 ```
 
-コマンド、browser regression、WebMCP対応Chromeの設定、contribution時の確認事項は[開発ガイド](./docs/DEVELOPMENT.ja.md)を参照してください。
+コマンド、browser regression、WebMCP対応Chromeの設定、contribution時の確認事項は[開発ガイド](./docs/ja/DEVELOPMENT.md)を参照してください。
 
 ## 公開ドキュメント
 
-- [User guide](./docs/USER_GUIDE.md) / [ユーザーガイド](./docs/USER_GUIDE.ja.md)
-- [Portable specification v3](./docs/PORTABLE_SPEC.md) / [ポータブル仕様 v3](./docs/PORTABLE_SPEC.ja.md)
-- [Development guide](./docs/DEVELOPMENT.md) / [開発ガイド](./docs/DEVELOPMENT.ja.md)
-- [Product roadmap](./docs/ROADMAP.md) / [プロダクトロードマップ](./docs/ROADMAP.ja.md)
+- [User guide](./docs/en/USER_GUIDE.md) / [ユーザーガイド](./docs/ja/USER_GUIDE.md)
+- [Portable specification v3](./docs/en/PORTABLE_SPEC.md) / [ポータブル仕様 v3](./docs/ja/PORTABLE_SPEC.md)
+- [Development guide](./docs/en/DEVELOPMENT.md) / [開発ガイド](./docs/ja/DEVELOPMENT.md)
+- [Product roadmap](./docs/en/ROADMAP.md) / [プロダクトロードマップ](./docs/ja/ROADMAP.md)
 - [公開JSON Schema](./public/schemas/screen-blueprint-project-v3.schema.json)
 - [Canonical v3 example](./public/examples/screen-blueprint-project-v3.json)
 
@@ -56,7 +56,7 @@ npm run dev
 
 プロジェクトは現在browserの`localStorage`に保存され、製品UIにはJSON／YAMLの読み込み・書き出し機能がまだありません。エディタが扱えるcomponentとbehaviorは定義済みの種類に限られ、Canvasは操作可能なprototype playerではなく編集画面です。WebMCPには対応する実験版Chromeが必要ですが、人向けの編集UIはWebMCPなしでも利用できます。
 
-project file、より幅広い仕様表現、専用review modeの予定は[プロダクトロードマップ](./docs/ROADMAP.ja.md)を参照してください。
+project file、より幅広い仕様表現、専用review modeの予定は[プロダクトロードマップ](./docs/ja/ROADMAP.md)を参照してください。
 
 ## ライセンス
 

@@ -41,14 +41,14 @@ npm install
 npm run dev
 ```
 
-See the [development guide](./docs/DEVELOPMENT.md) for commands, browser regression, WebMCP-enabled Chrome setup, and contribution checks.
+See the [development guide](./docs/en/DEVELOPMENT.md) for commands, browser regression, WebMCP-enabled Chrome setup, and contribution checks.
 
 ## Public documentation
 
-- [User guide](./docs/USER_GUIDE.md) / [ユーザーガイド](./docs/USER_GUIDE.ja.md)
-- [Portable specification v3](./docs/PORTABLE_SPEC.md) / [ポータブル仕様 v3](./docs/PORTABLE_SPEC.ja.md)
-- [Development guide](./docs/DEVELOPMENT.md) / [開発ガイド](./docs/DEVELOPMENT.ja.md)
-- [Product roadmap](./docs/ROADMAP.md) / [プロダクトロードマップ](./docs/ROADMAP.ja.md)
+- [User guide](./docs/en/USER_GUIDE.md) / [ユーザーガイド](./docs/ja/USER_GUIDE.md)
+- [Portable specification v3](./docs/en/PORTABLE_SPEC.md) / [ポータブル仕様 v3](./docs/ja/PORTABLE_SPEC.md)
+- [Development guide](./docs/en/DEVELOPMENT.md) / [開発ガイド](./docs/ja/DEVELOPMENT.md)
+- [Product roadmap](./docs/en/ROADMAP.md) / [プロダクトロードマップ](./docs/ja/ROADMAP.md)
 - [Public JSON Schema](./public/schemas/screen-blueprint-project-v3.schema.json)
 - [Canonical v3 example](./public/examples/screen-blueprint-project-v3.json)
 
@@ -56,7 +56,7 @@ See the [development guide](./docs/DEVELOPMENT.md) for commands, browser regress
 
 Projects are currently kept in browser `localStorage`; the product does not yet provide JSON or YAML import/export UI. The editor supports a defined set of component and behavior types, and the Canvas is an editing surface rather than an interactive prototype player. WebMCP support also depends on a compatible experimental Chrome build, while the human editing interface works without WebMCP.
 
-See the [product roadmap](./docs/ROADMAP.md) for planned project files, broader specification coverage, and a dedicated review mode.
+See the [product roadmap](./docs/en/ROADMAP.md) for planned project files, broader specification coverage, and a dedicated review mode.
 
 ## License
 

@@ -1,6 +1,6 @@
 # Screen Blueprint Studio user guide
 
-[日本語](./USER_GUIDE.ja.md) · [Product overview](../README.md) · [Portable specification](./PORTABLE_SPEC.md) · [Roadmap](./ROADMAP.md)
+[日本語](../ja/USER_GUIDE.md) · [Product overview](../../README.md) · [Portable specification](./PORTABLE_SPEC.md) · [Roadmap](./ROADMAP.md)
 
 ## Understand the workspace
 
