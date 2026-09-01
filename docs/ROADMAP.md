@@ -4,28 +4,44 @@
 
 Last updated: September 1, 2026
 
-Screen Blueprint Studio turns semantic UI components into a shared source of truth for wireframes, screen states, behaviors, API bindings, and reviewable human–AI changes. It models screens as structured specifications rather than free-form drawings, keeps visual editing and behavior aligned through one portable model, and gives people explicit control over AI-authored changes. The editor does not render or execute raw CSS, arbitrary HTML, or JavaScript expressions from specifications.
+Screen Blueprint Studio helps product managers, designers, engineers, and QA teams agree on how web screens should look and behave before and during implementation. Teams can build a visual screen blueprint and keep layouts, states, reusable UI, data-driven lists, user actions, and API results together, reducing drift between wireframes and written specifications.
 
 ## Available in this release
 
-- A three-pane workspace for screen structure, a wireframe canvas, and specification inspection.
-- Multiple screens with Page and Modal roots, semantic components, reusable layout primitives, constrained placement, and portable sizing tokens.
-- Shared Components with typed public properties and variants for placing validated, reusable instances across screens.
-- Collection modeling for repeated, item-driven screen content with semantic selection and specification editing.
-- Screen states with component-level overrides for visibility, enabled state, content, and values.
-- Ordered `click` and `submit` behaviors that can change state, call an API operation, or navigate to another screen.
-- API operations with request field bindings and success or error state outcomes.
-- Safe semantic Image and Link specifications for portable URLs, internal screens, external URLs, and logical resources.
-- Direct human editing, undo/redo, local persistence and recovery, subtree duplication, copy/paste, and validated drag-and-drop.
-- Typed WebMCP tools that share the live screen, selection, and effective document with an AI agent. Agent writes remain in a reviewable change set until a person accepts or rejects them.
+- **Design multi-screen flows and states.** Create and connect multiple screens, then show how each one looks in states such as default, loading, empty, saving, success, or error. This makes review scenarios visible without maintaining a separate wireframe for every state.
+
+- **Manage shared UI and variants in one place.** Define recurring interface sections as Shared Components, choose which properties users may customize, and provide variants for approved alternatives. A team can update a common header or form section once instead of fixing copies on every screen.
+
+- **Describe data-driven lists with Collections.** Define a row or card once and show how it repeats for a set of items rather than duplicating each entry by hand. This keeps list screens compact and makes it clear which values come from the current item.
+
+- **Record user actions and API behavior.** Attach events to controls, order the resulting actions, connect form fields to API requests, and show the screen state for success or failure. Designers, engineers, and QA can review what a Save button is expected to do from the same screen specification.
+
+- **Create specifications that resemble the intended interface.** Add images and safe links, arrange content with vertical, horizontal, or grid layouts, and place overlays or frame-fixed elements with constrained settings. Teams can communicate realistic structure and navigation without relying on pixel-perfect free drawing.
+
+- **Keep people in control of AI changes with WebMCP.** An AI agent can read the screen and current selection, then propose a reviewable set of changes in the application. A person previews the result and accepts or rejects it before the saved project changes.
 
 ## Planned enhancements
 
-Planned enhancements extend portability and behavior modeling without turning the studio into a code editor:
+### Project files for sharing and version control
 
-- **Portable JSON/YAML import and export** for moving complete projects between environments and reviewing them in version control.
-- An **open-world specification model** with typed standard cases for references, validation, and WebMCP operations. Standard conveniences include `component`, `item`, `route`, `query`, and `literal` ValueSources; `load` and `change` triggers; back, external navigation, resource, and scroll actions; and HTTP status-specific API outcomes.
-- A **custom specification fallback** for HTML/UI components, triggers, actions, conditions, and value sources that do not yet have a standard type. Custom entries retain `name`, `description`, `input`, `output`, `example`, and `implementation notes`, remain visible in the studio, and round-trip without being rejected as unknown enum values. They are descriptive specifications, not executable HTML or JavaScript.
-- **Improved interaction preview** for clearer feedback across screen states, collection items, navigation, and API outcomes while keeping editing and preview contexts clearly separated.
+Projects currently live in browser storage, which makes them harder to move between environments, reuse in another project, or review alongside code changes.
 
-Roadmap scope may be refined as each capability is designed, but portability, typed standard cases with an open-world fallback, and human review remain the product boundary.
+JSON and YAML import and export will make a complete project available as a file. The application will validate imported files and preserve the information needed to continue editing.
+
+For example, a team could export a checkout flow, commit it to Git to review the exact changes, import it on another computer, or reuse it as the starting point for a related product.
+
+### Describe any interface behavior
+
+The current editor provides guided choices for the components, triggers, actions, and API results it already understands. Product-specific controls or less common behavior may not fit those choices, and a screen specification should not lose important details simply because the editor does not yet provide a dedicated field.
+
+Common cases will continue to have structured choices, reference checks, validation, and WebMCP support. When a component, trigger, action, condition, or data source has no built-in type, users will still be able to record its name, description, conditions, inputs, expected results, examples, and implementation notes. The studio will keep and display that information when the project is saved, reopened, imported, or exported instead of rejecting it as an unknown type. These entries describe intended behavior; they do not run arbitrary HTML or JavaScript.
+
+Examples include loading data when a screen opens, searching again when a Select value changes, passing the current list row ID to an API, using a URL parameter in displayed content, going back, opening an external page, downloading a file, scrolling to a section, or showing different states for 403 and 404 responses. These are guided examples, not a limit on what teams can document.
+
+### Review interactions without editing
+
+The canvas is optimized for editing, so reviewing a multi-step interaction currently requires people to interpret separate states and behavior settings while taking care not to change the specification.
+
+A separate review mode will let people follow interactions with mock data while editing controls remain unavailable. It will present the recorded path through screens, overlays, actions, and API outcomes without connecting to a real backend or running arbitrary JavaScript.
+
+For example, a reviewer could press a Delete button, inspect the confirmation modal, and follow both the successful API result and the error result. Product, engineering, and QA teams could then discuss the same interaction without changing the blueprint.
