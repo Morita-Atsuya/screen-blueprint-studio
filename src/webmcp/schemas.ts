@@ -23,7 +23,7 @@ const portableUrl = {
 const layoutProperties = {
   layout: { type: 'string', enum: ['vertical', 'horizontal', 'grid'] },
   gap: { type: 'string', enum: ['none', 'sm', 'md', 'lg'] },
-  columns: { type: 'integer', enum: [1, 2, 3, 4] },
+  columns: { type: 'integer', minimum: 1, maximum: 12 },
   justify: { type: 'string', enum: ['start', 'center', 'end', 'between'] },
   align: { type: 'string', enum: ['start', 'center', 'end', 'stretch'] },
   wrap: { type: 'boolean' },
@@ -96,6 +96,59 @@ export const componentPlacementSchema = {
       ...closed,
     })),
   ],
+} as const
+
+export const componentSizingSchema = {
+  type: 'object',
+  properties: {
+    inlineSize: { type: 'string', enum: ['auto', 'content', 'fill'] },
+    minWidth: { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg', 'xl'] },
+    maxWidth: { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg', 'xl'] },
+    gridSpan: { type: 'integer', minimum: 1, maximum: 12 },
+    grow: { type: 'integer', minimum: 0, maximum: 3 },
+    shrink: { type: 'string', enum: ['allow', 'prevent'] },
+  },
+  required: ['inlineSize', 'minWidth', 'maxWidth', 'gridSpan', 'grow', 'shrink'],
+  allOf: [
+    ...(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((minWidth, index, tokens) => ({
+      if: {
+        properties: { minWidth: { const: minWidth } },
+        required: ['minWidth'],
+      },
+      then: {
+        properties: {
+          maxWidth: { type: 'string', enum: ['none', ...tokens.slice(index)] },
+        },
+      },
+    })),
+    {
+      if: {
+        properties: { grow: { type: 'integer', minimum: 1 } },
+        required: ['grow'],
+      },
+      then: {
+        properties: {
+          inlineSize: { const: 'fill' },
+          shrink: { const: 'allow' },
+        },
+      },
+    },
+  ],
+  ...closed,
+} as const
+
+export const rootComponentSizingSchema = {
+  type: 'object',
+  properties: {
+    inlineSize: { const: 'fill' },
+    minWidth: { const: 'none' },
+    maxWidth: { const: 'none' },
+    gridSpan: { const: 1 },
+    grow: { const: 0 },
+    shrink: { const: 'allow' },
+  },
+  required: ['inlineSize', 'minWidth', 'maxWidth', 'gridSpan', 'grow', 'shrink'],
+  ...closed,
 } as const
 
 const validationRuleSchema = {

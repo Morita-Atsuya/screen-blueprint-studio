@@ -248,6 +248,13 @@ const FIELD_KEYS: Record<string, MessageKey> = {
   justify: 'review.field.justify',
   align: 'review.field.align',
   wrap: 'review.field.wrap',
+  inlineSize: 'review.field.inlineSize',
+  minWidth: 'review.field.minWidth',
+  maxWidth: 'review.field.maxWidth',
+  gridSpan: 'review.field.gridSpan',
+  grow: 'review.field.grow',
+  shrink: 'review.field.shrink',
+  placement: 'review.field.placement',
   text: 'review.field.text',
   style: 'review.field.textStyle',
   fieldKey: 'review.field.fieldKey',
@@ -364,6 +371,9 @@ function addComponentFields(
     if (field === 'kind') continue
     addChange(changes, field, undefined, value, afterDocument, afterDocument, locale)
   }
+  for (const [field, value] of Object.entries(component.sizing)) {
+    addChange(changes, field, undefined, value, afterDocument, afterDocument, locale)
+  }
 }
 
 function addPatchedFields(
@@ -392,6 +402,28 @@ function addPatchedFields(
       field,
       (before.config as unknown as Record<string, unknown>)[field],
       (after.config as unknown as Record<string, unknown>)[field],
+      beforeDocument,
+      afterDocument,
+      locale,
+    )
+  }
+  if (command.patch.placement) {
+    addChange(
+      changes,
+      'placement',
+      before.placement,
+      after.placement,
+      beforeDocument,
+      afterDocument,
+      locale,
+    )
+  }
+  for (const field of Object.keys(command.patch.sizing ?? {})) {
+    addChange(
+      changes,
+      field,
+      before.sizing[field as keyof typeof before.sizing],
+      after.sizing[field as keyof typeof after.sizing],
       beforeDocument,
       afterDocument,
       locale,

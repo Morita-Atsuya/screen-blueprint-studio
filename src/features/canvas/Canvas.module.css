@@ -504,8 +504,11 @@
 
 .horizontalChildren > .childSlot {
   position: relative;
-  flex: 0 0 auto;
   min-width: min(120px, 70vw);
+}
+
+.horizontalChildren > .childSlot:not([data-grow='0']) {
+  min-width: 0;
 }
 
 .wrapChildren {
@@ -515,7 +518,8 @@
 
 .gridChildren {
   display: grid;
-  grid-template-columns: repeat(var(--layout-columns, 2), minmax(min(160px, 70vw), 1fr));
+  grid-template-columns: repeat(var(--layout-columns, 2), minmax(160px, 1fr));
+  grid-auto-flow: row;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -530,6 +534,15 @@
   min-width: 0;
   height: 100%;
   overflow-wrap: anywhere;
+}
+
+.childSlot[data-inline-size='fill'] > .comp {
+  width: 100%;
+}
+
+.childSlot[data-inline-size='content'] > .comp {
+  width: fit-content;
+  max-width: 100%;
 }
 
 /* Page */

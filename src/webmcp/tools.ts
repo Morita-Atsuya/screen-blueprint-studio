@@ -7,6 +7,7 @@ import type {
   ComponentKind,
   ComponentOverride,
   ComponentPlacement,
+  ComponentSizing,
   EventAction,
   EventTrigger,
   FieldBinding,
@@ -18,11 +19,14 @@ import { getOwnEntity } from '../domain/entityMap'
 import { effectiveComponent } from '../domain/selectors'
 import { createDuplicateComponentCommand } from '../domain/componentDuplication'
 import { presentChangeSetOperations } from '../domain/changeSetPresentation'
+import { validateComponentSizing } from '../domain/runtimeValidation'
 import type { ChangeSet } from '../domain/collaboration'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
   componentPlacementSchema,
+  rootComponentSizingSchema,
+  componentSizingSchema,
   componentOverridesSchema,
 } from './schemas'
 
@@ -568,6 +572,8 @@ const changeComponentStructure: ToolDefinition = {
   name: 'change_component_structure',
   description:
     'Add, move, duplicate, or remove a component or independent modal root in the active proposal. ' +
+    'Sizing is validated against placement and the logical parent layout; invalid spans, grow, or ' +
+    'structural changes are rejected rather than adjusted. ' +
     AGENT_WORKFLOW,
   inputSchema: {
     oneOf: [
@@ -580,10 +586,11 @@ const changeComponentStructure: ToolDefinition = {
           parentId: { type: 'string', minLength: 1 },
           kind: { type: 'string', enum: CHILD_COMPONENT_KINDS },
           placement: componentPlacementSchema,
+          sizing: componentSizingSchema,
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'config'],
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'sizing', 'config'],
         ...CLOSED_OBJECT,
       },
       {
@@ -600,10 +607,11 @@ const changeComponentStructure: ToolDefinition = {
             required: ['mode'],
             ...CLOSED_OBJECT,
           },
+          sizing: rootComponentSizingSchema,
           config: componentConfigSchema,
           position: { type: 'integer', minimum: 0 },
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'config'],
+        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'sizing', 'config'],
         ...CLOSED_OBJECT,
       },
       {
@@ -654,10 +662,13 @@ const changeComponentStructure: ToolDefinition = {
           'parentId',
           'kind',
           'placement',
+          'sizing',
           'config',
           'position',
         ], 'change_component_structure add input')
         const config = requiredRecord(input, 'config') as ComponentConfig
+        const sizing = requiredRecord(input, 'sizing')
+        validateComponentSizing(sizing, 'sizing')
         command = {
           type: 'addComponent',
           componentId: nanoid(),
@@ -665,6 +676,7 @@ const changeComponentStructure: ToolDefinition = {
           parentId: requiredNullableString(input, 'parentId'),
           kind: requiredString(input, 'kind') as ComponentKind,
           placement: requiredRecord(input, 'placement') as ComponentPlacement,
+          sizing,
           config,
           position: typeof input.position === 'number' ? input.position : undefined,
         }
@@ -722,7 +734,8 @@ const changeComponentStructure: ToolDefinition = {
 const updateComponentSpec: ToolDefinition = {
   name: 'update_component_spec',
   description:
-    'Update a component common spec or kind-specific config in the active proposal. ' +
+    'Update a component common spec, sizing, placement, or kind-specific config. Sizing is a full ' +
+    'object and is rejected when it conflicts with min/max ordering or parent layout context. ' +
     AGENT_WORKFLOW,
   inputSchema: {
     type: 'object',
@@ -743,6 +756,7 @@ const updateComponentSpec: ToolDefinition = {
           },
           config: componentConfigPatchSchema,
           placement: componentPlacementSchema,
+          sizing: componentSizingSchema,
         },
         minProperties: 1,
         ...CLOSED_OBJECT,
@@ -761,11 +775,12 @@ const updateComponentSpec: ToolDefinition = {
         'patch',
       ], 'update_component_spec input')
       const patchInput = requiredRecord(input, 'patch')
-      requireExactKeys(patchInput, ['common', 'config', 'placement'], 'update_component_spec patch')
+      requireExactKeys(patchInput, ['common', 'config', 'placement', 'sizing'], 'update_component_spec patch')
       const patch: {
         common?: Partial<CommonComponentSpec>
         config?: Partial<ComponentConfig>
         placement?: ComponentPlacement
+        sizing?: ComponentSizing
       } = {}
       if (patchInput.common !== undefined) {
         if (!isRecord(patchInput.common)) {
@@ -784,6 +799,13 @@ const updateComponentSpec: ToolDefinition = {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.placement must be an object')
         }
         patch.placement = patchInput.placement as ComponentPlacement
+      }
+      if (patchInput.sizing !== undefined) {
+        if (!isRecord(patchInput.sizing)) {
+          throw new DomainError('INVARIANT_VIOLATION', 'patch.sizing must be an object')
+        }
+        validateComponentSizing(patchInput.sizing, 'patch.sizing')
+        patch.sizing = patchInput.sizing
       }
       return appendCommand(input, {
         type: 'updateComponentSpec',

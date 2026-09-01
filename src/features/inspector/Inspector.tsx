@@ -7,11 +7,14 @@ import type {
   ComponentLayout,
   ComponentOverride,
   ComponentPlacement,
+  ComponentSizeToken,
+  ComponentSizing,
   PlacementAnchor,
   PlacementInset,
   ScreenComponent,
   ScreenState,
 } from '../../domain/model'
+import { COMPONENT_SIZE_TOKENS } from '../../domain/model'
 import type { ChangeSet } from '../../domain/collaboration'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
@@ -236,6 +239,49 @@ export function Inspector() {
       { type: 'updateComponentSpec', componentId: comp!.id, patch: { placement } },
       `Update ${comp!.kind} placement: ${comp!.id}`,
     )
+  }
+
+  function updateSizing(sizing: ComponentSizing): boolean {
+    return dispatch(
+      { type: 'updateComponentSpec', componentId: comp!.id, patch: { sizing } },
+      `Update ${comp!.kind} sizing: ${comp!.id}`,
+    )
+  }
+
+  const parent = comp.parentId
+    ? getOwnEntity(inspectorDocument.components, comp.parentId)
+    : undefined
+  const parentLayout = parent && (
+    parent.config.kind === 'page' ||
+    parent.config.kind === 'container' ||
+    parent.config.kind === 'modal'
+  ) ? parent.config : null
+  const selectedLayout = cfg.kind === 'page' ||
+    cfg.kind === 'container' ||
+    cfg.kind === 'modal'
+    ? cfg
+    : null
+  const minimumGridColumns = selectedLayout
+    ? Math.max(
+        1,
+        ...comp.childIds.flatMap(id => {
+          const child = getOwnEntity(inspectorDocument.components, id)
+          return child?.placement.mode === 'flow' ? [child.sizing.gridSpan] : []
+        }),
+      )
+    : 1
+  const flowChildSizing = comp.childIds.flatMap(id => {
+    const child = getOwnEntity(inspectorDocument.components, id)
+    return child?.placement.mode === 'flow' ? [child.sizing] : []
+  })
+  const layoutAvailability = {
+    vertical: flowChildSizing.every(sizing =>
+      sizing.gridSpan === 1 && sizing.grow === 0 && sizing.shrink === 'allow'),
+    horizontal: flowChildSizing.every(sizing => sizing.gridSpan === 1),
+    grid: flowChildSizing.every(sizing =>
+      sizing.grow === 0 &&
+      sizing.shrink === 'allow' &&
+      sizing.gridSpan <= (selectedLayout?.columns ?? 1)),
   }
 
   return (
@@ -708,7 +754,12 @@ export function Inspector() {
           badges={sectionBadges('layout')}
           onToggle={() => toggleSection('layout')}
         >
-          <LayoutFields layout={cfg} onUpdate={updateConfig} />
+          <LayoutFields
+            layout={cfg}
+            minimumGridColumns={minimumGridColumns}
+            availability={layoutAvailability}
+            onUpdate={updateConfig}
+          />
         </InspectorSection>
       ) : null}
       {comp.parentId !== null ? (
@@ -719,6 +770,12 @@ export function Inspector() {
           badges={sectionBadges('placement')}
           onToggle={() => toggleSection('placement')}
         >
+          <SizingFields
+            sizing={comp.sizing}
+            placement={comp.placement}
+            parentLayout={parentLayout}
+            onUpdate={updateSizing}
+          />
           <PlacementFields placement={comp.placement} onUpdate={updatePlacement} />
         </InspectorSection>
       ) : null}
@@ -934,11 +991,169 @@ function InsetField({
   )
 }
 
+const SIZE_TOKEN_RANK = new Map(COMPONENT_SIZE_TOKENS.map((token, index) => [token, index]))
+
+function SizingFields({
+  sizing,
+  placement,
+  parentLayout,
+  onUpdate,
+}: {
+  sizing: ComponentSizing
+  placement: ComponentPlacement
+  parentLayout: ComponentLayout | null
+  onUpdate(sizing: ComponentSizing): void
+}) {
+  const { t } = useI18n()
+  const isFlow = placement.mode === 'flow'
+  const context = !isFlow ? 'nonFlow' : parentLayout?.layout ?? 'vertical'
+  const minRank = SIZE_TOKEN_RANK.get(sizing.minWidth) ?? 0
+  const maxRank = SIZE_TOKEN_RANK.get(sizing.maxWidth) ?? 0
+  return (
+    <div className={styles.layoutSection} data-sizing-settings data-sizing-context={context}>
+      <div className={styles.settingsHeading}>
+        <p>{t(`inspector.sizingHelp.${context}` as MessageKey)}</p>
+      </div>
+      <Field label={t('inspector.inlineSize')}>{controlId => (
+        <select
+          id={controlId}
+          className={styles.input}
+          value={sizing.inlineSize}
+          onChange={event => onUpdate({
+            ...sizing,
+            inlineSize: event.target.value as ComponentSizing['inlineSize'],
+          })}
+        >
+          <option value="auto" disabled={sizing.grow > 0}>
+            {t('inspector.inlineSize.auto')}
+          </option>
+          <option value="content" disabled={sizing.grow > 0}>
+            {t('inspector.inlineSize.content')}
+          </option>
+          <option value="fill" disabled={false}>{t('inspector.inlineSize.fill')}</option>
+        </select>
+      )}</Field>
+      <Field label={t('inspector.minWidth')}>{controlId => (
+        <select
+          id={controlId}
+          className={styles.input}
+          value={sizing.minWidth}
+          onChange={event => onUpdate({
+            ...sizing,
+            minWidth: event.target.value as ComponentSizeToken,
+          })}
+        >
+          {COMPONENT_SIZE_TOKENS.map((token, rank) => (
+            <option
+              key={token}
+              value={token}
+              disabled={sizing.maxWidth !== 'none' && token !== 'none' && rank > maxRank}
+            >
+              {t(`inspector.sizeToken.${token}` as MessageKey)}
+            </option>
+          ))}
+        </select>
+      )}</Field>
+      <Field label={t('inspector.maxWidth')}>{controlId => (
+        <select
+          id={controlId}
+          className={styles.input}
+          value={sizing.maxWidth}
+          onChange={event => onUpdate({
+            ...sizing,
+            maxWidth: event.target.value as ComponentSizeToken,
+          })}
+        >
+          {COMPONENT_SIZE_TOKENS.map((token, rank) => (
+            <option
+              key={token}
+              value={token}
+              disabled={sizing.minWidth !== 'none' && token !== 'none' && rank < minRank}
+            >
+              {t(`inspector.sizeToken.${token}` as MessageKey)}
+            </option>
+          ))}
+        </select>
+      )}</Field>
+      <div className={styles.settingsHeading}>
+        <p>{t('inspector.widthBoundsHelp')}</p>
+      </div>
+      {context === 'grid' && parentLayout?.layout === 'grid' ? (
+        <Field label={t('inspector.gridSpan')}>{controlId => (
+          <select
+            id={controlId}
+            className={styles.input}
+            value={sizing.gridSpan}
+            onChange={event => onUpdate({
+              ...sizing,
+              gridSpan: Number(event.target.value) as ComponentSizing['gridSpan'],
+            })}
+          >
+            {Array.from({ length: parentLayout.columns }, (_, index) => index + 1).map(span => (
+              <option key={span} value={span}>{span}</option>
+            ))}
+          </select>
+        )}</Field>
+      ) : null}
+      {context === 'horizontal' ? (
+        <>
+          <Field label={t('inspector.grow')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={sizing.grow}
+              onChange={event => onUpdate({
+                ...sizing,
+                grow: Number(event.target.value) as ComponentSizing['grow'],
+              })}
+            >
+              {[0, 1, 2, 3].map(grow => (
+                <option
+                  key={grow}
+                  value={grow}
+                  disabled={grow > 0 && (
+                    sizing.inlineSize !== 'fill' || sizing.shrink !== 'allow'
+                  )}
+                >
+                  {grow}
+                </option>
+              ))}
+            </select>
+          )}</Field>
+          <Field label={t('inspector.shrink')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={sizing.shrink}
+              onChange={event => onUpdate({
+                ...sizing,
+                shrink: event.target.value as ComponentSizing['shrink'],
+              })}
+            >
+              <option value="allow">{t('inspector.shrink.allow')}</option>
+              <option value="prevent" disabled={sizing.grow > 0}>
+                {t('inspector.shrink.prevent')}
+              </option>
+            </select>
+          )}</Field>
+          <div className={styles.settingsHeading}>
+            <p>{t('inspector.growRequirement')}</p>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 function LayoutFields({
   layout,
+  minimumGridColumns,
+  availability,
   onUpdate,
 }: {
   layout: ComponentLayout
+  minimumGridColumns: number
+  availability: Record<ComponentLayout['layout'], boolean>
   onUpdate(partial: Record<string, unknown>): void
 }) {
   const { t } = useI18n()
@@ -947,11 +1162,22 @@ function LayoutFields({
     <div className={styles.layoutSection} data-layout-settings>
       <Field label={t('inspector.layout')}>{controlId => (
         <select id={controlId} className={styles.input} value={layout.layout} onChange={event => onUpdate({ layout: event.target.value })}>
-          <option value="vertical">{t('inspector.layoutVertical')}</option>
-          <option value="horizontal">{t('inspector.layoutHorizontal')}</option>
-          <option value="grid">{t('inspector.layoutGrid')}</option>
+          <option value="vertical" disabled={!availability.vertical}>
+            {t('inspector.layoutVertical')}
+          </option>
+          <option value="horizontal" disabled={!availability.horizontal}>
+            {t('inspector.layoutHorizontal')}
+          </option>
+          <option value="grid" disabled={!availability.grid}>
+            {t('inspector.layoutGrid')}
+          </option>
         </select>
       )}</Field>
+      {Object.values(availability).some(available => !available) ? (
+        <div className={styles.settingsHeading}>
+          <p>{t('inspector.layoutSizingBlocked')}</p>
+        </div>
+      ) : null}
       <Field label={t('inspector.gap')}>{controlId => (
         <select id={controlId} className={styles.input} value={layout.gap} onChange={event => onUpdate({ gap: event.target.value })}>
           <option value="none">{t('inspector.gapNone')}</option>
@@ -961,14 +1187,26 @@ function LayoutFields({
         </select>
       )}</Field>
       {layout.layout === 'grid' ? (
-        <Field label={t('inspector.columns')}>{controlId => (
-          <select id={controlId} className={styles.input} value={layout.columns} onChange={event => onUpdate({ columns: Number(event.target.value) })}>
-            <option value={1}>1</option>
-            <option value={2}>2</option>
-            <option value={3}>3</option>
-            <option value={4}>4</option>
-          </select>
-        )}</Field>
+        <>
+          <Field label={t('inspector.columns')}>{controlId => (
+            <select id={controlId} className={styles.input} value={layout.columns} onChange={event => onUpdate({ columns: Number(event.target.value) })}>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map(columns => (
+                <option
+                  key={columns}
+                  value={columns}
+                  disabled={columns < minimumGridColumns}
+                >
+                  {columns}
+                </option>
+              ))}
+            </select>
+          )}</Field>
+          {minimumGridColumns > 1 ? (
+            <div className={styles.settingsHeading}>
+              <p>{t('inspector.minimumGridColumns', { columns: minimumGridColumns })}</p>
+            </div>
+          ) : null}
+        </>
       ) : null}
       <Field label={t('inspector.justify')}>{controlId => (
         <select id={controlId} className={styles.input} value={layout.justify} onChange={event => onUpdate({ justify: event.target.value })}>

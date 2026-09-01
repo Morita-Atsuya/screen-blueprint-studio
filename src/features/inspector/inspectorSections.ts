@@ -250,7 +250,11 @@ export function inspectorSectionChangeCounts(
     layoutValues(before?.config),
     layoutValues(after.config),
   )
-  empty.placement = stableValue(before?.placement) === stableValue(after.placement) ? 0 : 1
+  empty.placement =
+    (stableValue(before?.placement) === stableValue(after.placement) ? 0 : 1) +
+    (stableValue(before?.sizing) === stableValue(after.sizing)
+      ? 0
+      : differenceCount(before?.sizing ?? {}, after.sizing))
   empty.validation = stableValue(validationRules(before?.config)) ===
     stableValue(validationRules(after.config))
     ? 0

@@ -5,7 +5,8 @@ import type {
 } from './commands'
 import { getOwnEntity } from './entityMap'
 import { CONTAINER_KINDS } from './model'
-import type { EntityId, ProjectDocument } from './model'
+import type { ComponentLayout, EntityId, ProjectDocument } from './model'
+import { validateSizingContext } from './componentSizing'
 import {
   cloneComponentOverride,
   cloneComponentSubtreeSnapshot,
@@ -128,6 +129,21 @@ export function canPasteComponent(
   if (!root || root.kind === 'page' || root.kind === 'modal') return false
   const target = resolveComponentPasteTarget(document, destinationComponentId)
   if (!target) return false
+  const destinationParent = getOwnEntity(
+    document.components,
+    target.destinationParentId,
+  )
+  if (!destinationParent) return false
+  try {
+    validateSizingContext(
+      root.sizing,
+      root.placement,
+      destinationParent.config as ComponentLayout,
+      `Component ${root.id} sizing`,
+    )
+  } catch {
+    return false
+  }
   if (snapshot.sourceScreenId === target.destinationScreenId) {
     return Object.keys(snapshot.stateOverrides).every(stateId =>
       getOwnEntity(document.screenStates, stateId)?.screenId === target.destinationScreenId

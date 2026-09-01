@@ -15,3 +15,9 @@
 すべてのComponentはportableな配置modeを持ちます。**Flow** は親layoutに参加します。**Overlay** はlayout領域を占有せず、immediate logical parent内の9点anchorを使います。**フレーム端固定（Sticky edge）** はCSSのdocument stickyではありません。layout領域を占有せず、所属するPageまたはModal frameの上端／下端に留まります。**フレームviewport** は同じowning frame内の9点anchorを使い、frameのscroll contentとは分離して留まります。
 
 Insetは`none`、`xs`、`sm`、`md`、`lg` tokenで指定し、aligned edgeから必ず内側へ離します。raw pixel、負のoffset、仕様上のz-indexは扱いません。中央axisのinsetは`none`固定です。見た目の重なり順はplacement layerとcanonical sibling orderで決まりますが、Tree階層、selection、behavior target、copy/paste、drag-and-dropはcanonical component identityとparent/index順を維持します。
+
+## 制約付きComponentサイズ
+
+root以外のComponentでは、配置セクションからportableなinline sizeを指定できます。**自動** は親layoutの既定動作、**内容に合わせる** は利用可能な幅を上限に内容の固有幅、**利用可能な幅を埋める** はinline方向の利用可能幅を使います。最小幅と最大幅には`xs`から`xl`までの順序付きtokenを使い、最小幅を最大幅より大きくすることはできません。
+
+Gridは1〜12本の明示的な等幅trackを持ち、flow childは親のカラム数までspanできます。狭いframeでもtrackは自動折り畳みされず、横overflowを維持します。横方向flow childでは0〜3の伸長比と縮小の許可／防止を指定できます。正の伸長比には「利用可能な幅を埋める」と「縮小を許可」が必要で、flex basisは0です。縦方向とflow外のcontext値はneutral固定です。rootのサイズは固定され、サイズを無効にする構造変更やdrag-and-dropは補正せず拒否されます。

@@ -469,6 +469,14 @@ async function run() {
       align: 'stretch',
       wrap: false,
     }
+    const componentSizing = {
+      inlineSize: 'auto',
+      minWidth: 'none',
+      maxWidth: 'none',
+      gridSpan: 1,
+      grow: 0,
+      shrink: 'allow',
+    }
     browserDocument.components['browser-empty-container'] = {
       id: 'browser-empty-container',
       screenId: 'screen-edit',
@@ -476,6 +484,7 @@ async function run() {
       childIds: [],
       kind: 'container',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: { description: 'Empty browser group', visible: true, enabled: true },
       config: { ...containerLayout, layout: 'horizontal' },
     }
@@ -486,6 +495,7 @@ async function run() {
       childIds: ['browser-inner-container'],
       kind: 'container',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: { description: 'Nested browser group', visible: true, enabled: true },
       config: containerLayout,
     }
@@ -496,13 +506,87 @@ async function run() {
       childIds: [],
       kind: 'container',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: { description: 'Inner browser group', visible: true, enabled: true },
       config: containerLayout,
+    }
+    browserDocument.components['browser-sizing-grid'] = {
+      id: 'browser-sizing-grid',
+      screenId: 'screen-edit',
+      parentId: 'comp-edit-section',
+      childIds: [
+        'browser-grid-status',
+        'browser-grid-content',
+        'browser-grid-file',
+        'browser-grid-actions',
+      ],
+      kind: 'container',
+      placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
+      common: { description: 'Twelve-track sizing grid', visible: true, enabled: true },
+      config: {
+        ...containerLayout,
+        layout: 'grid',
+        columns: 12,
+      },
+    }
+    for (const [id, span, text] of [
+      ['browser-grid-status', 1, 'Status'],
+      ['browser-grid-content', 6, 'Content'],
+      ['browser-grid-file', 3, 'File'],
+      ['browser-grid-actions', 2, 'Actions'],
+    ]) {
+      browserDocument.components[id] = {
+        id,
+        screenId: 'screen-edit',
+        parentId: 'browser-sizing-grid',
+        childIds: [],
+        kind: 'text',
+        placement: { mode: 'flow' },
+        sizing: {
+          ...componentSizing,
+          gridSpan: span,
+          inlineSize: id === 'browser-grid-status' ? 'content' : 'auto',
+          minWidth: id === 'browser-grid-status' ? 'xs' : 'none',
+          maxWidth: id === 'browser-grid-status' ? 'md' : 'none',
+        },
+        common: { description: `${text} sizing region`, visible: true, enabled: true },
+        config: { kind: 'text', text, style: 'body' },
+      }
+    }
+    browserDocument.components['browser-grow-row'] = {
+      id: 'browser-grow-row',
+      screenId: 'screen-edit',
+      parentId: 'comp-edit-section',
+      childIds: ['browser-grow-one', 'browser-grow-three'],
+      kind: 'container',
+      placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
+      common: { description: 'Horizontal grow sizing', visible: true, enabled: true },
+      config: { ...containerLayout, layout: 'horizontal' },
+    }
+    for (const [id, grow, text] of [
+      ['browser-grow-one', 1, 'One'],
+      ['browser-grow-three', 3, 'Three'],
+    ]) {
+      browserDocument.components[id] = {
+        id,
+        screenId: 'screen-edit',
+        parentId: 'browser-grow-row',
+        childIds: [],
+        kind: 'text',
+        placement: { mode: 'flow' },
+        sizing: { ...componentSizing, inlineSize: 'fill', grow },
+        common: { description: `${text} grow region`, visible: true, enabled: true },
+        config: { kind: 'text', text, style: 'body' },
+      }
     }
     browserDocument.components['comp-edit-section'].childIds.push(
       'browser-empty-container',
       'browser-nested-container',
       'browser-tree-level-1',
+      'browser-sizing-grid',
+      'browser-grow-row',
     )
     for (const [id, parentId, childId, description] of [
       ['browser-tree-level-1', 'comp-edit-section', 'browser-tree-level-2', 'Details group'],
@@ -516,6 +600,7 @@ async function run() {
         childIds: [childId],
         kind: 'container',
         placement: { mode: 'flow' },
+        sizing: { ...componentSizing },
         common: { description, visible: true, enabled: true },
         config: containerLayout,
       }
@@ -527,6 +612,7 @@ async function run() {
       childIds: [],
       kind: 'text',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: { description: 'Deep review status', visible: false, enabled: false },
       config: { kind: 'text', text: 'Waiting for review', style: 'body' },
     }
@@ -542,6 +628,7 @@ async function run() {
       childIds: [],
       kind: 'link',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: {
         description: 'Downloadable resource regression',
         visible: true,
@@ -566,6 +653,7 @@ async function run() {
       childIds: [],
       kind: 'image',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: {
         description: 'Broken image regression',
         visible: true,
@@ -587,6 +675,7 @@ async function run() {
       childIds: Array.from({ length: 6 }, (_, index) => `browser-horizontal-item-${index + 1}`),
       kind: 'container',
       placement: { mode: 'flow' },
+      sizing: { ...componentSizing },
       common: {
         description: 'Horizontal overflow regression',
         visible: true,
@@ -603,6 +692,11 @@ async function run() {
         childIds: [],
         kind: 'text',
         placement: { mode: 'flow' },
+        sizing: {
+          ...componentSizing,
+          minWidth: 'xs',
+          shrink: 'prevent',
+        },
         common: {
           description: `Horizontal item ${index}`,
           visible: true,
@@ -627,6 +721,7 @@ async function run() {
         insetX: 'sm',
         insetY: 'sm',
       },
+      sizing: { ...componentSizing, minWidth: 'xs' },
       common: {
         description: 'Projected viewport group',
         visible: true,
@@ -646,6 +741,7 @@ async function run() {
         insetX: 'xs',
         insetY: 'xs',
       },
+      sizing: { ...componentSizing },
       common: {
         description: 'Nested projected overlay',
         visible: true,
@@ -1321,6 +1417,60 @@ async function run() {
       assert(fitted.taskSampleVisible, `${width}px TaskFlow edit sample is incomplete or includes Priority`)
       assert(fitted.scale < 1.5, `${width}px oversized persisted zoom was not reduced`)
       assert(fitted.overflow === 0, `${width}px Canvas initial fit introduced document overflow`)
+      const sizingResult = await cdp.call('Runtime.evaluate', {
+        expression: `(() => {
+          const ids = [
+            'browser-grid-status',
+            'browser-grid-content',
+            'browser-grid-file',
+            'browser-grid-actions',
+          ]
+          const slots = ids.map(id =>
+            document.querySelector('[data-component-id="' + id + '"]')
+              ?.closest('[data-grid-span]')
+          )
+          const grid = slots[0]?.parentElement
+          const statusStyle = slots[0] ? getComputedStyle(slots[0]) : null
+          const growOne = document.querySelector('[data-component-id="browser-grow-one"]')
+            ?.closest('[data-grow]')
+          const growThree = document.querySelector('[data-component-id="browser-grow-three"]')
+            ?.closest('[data-grow]')
+          const growOneStyle = growOne ? getComputedStyle(growOne) : null
+          const growThreeStyle = growThree ? getComputedStyle(growThree) : null
+          return {
+            spans: slots.map(slot => slot?.getAttribute('data-grid-span')),
+            trackCount: grid
+              ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length
+              : 0,
+            explicitOverflow: Boolean(grid && grid.scrollWidth > grid.clientWidth),
+            nestedGrid: Boolean(
+              document.querySelector('[data-component-id="browser-sizing-grid"]')
+                ?.contains(document.querySelector('[data-component-id="browser-grid-content"]'))
+            ),
+            statusInline: slots[0]?.getAttribute('data-inline-size'),
+            statusMin: statusStyle?.minWidth,
+            statusMax: statusStyle?.maxWidth,
+            grow: [growOneStyle?.flexGrow, growThreeStyle?.flexGrow],
+            basis: [growOneStyle?.flexBasis, growThreeStyle?.flexBasis],
+            shrink: [growOneStyle?.flexShrink, growThreeStyle?.flexShrink],
+          }
+        })()`,
+        returnByValue: true,
+      })
+      const sizing = sizingResult.result.value
+      assert(
+        sizing.spans.join(',') === '1,6,3,2' &&
+          sizing.trackCount === 12 &&
+          sizing.explicitOverflow &&
+          sizing.nestedGrid &&
+          sizing.statusInline === 'content' &&
+          sizing.statusMin === '160px' &&
+          sizing.statusMax === '320px' &&
+          sizing.grow.join(',') === '1,3' &&
+          sizing.basis.every(value => value === '0px') &&
+          sizing.shrink.every(value => value === '1'),
+        `${width}px constrained Canvas sizing regressed: ${JSON.stringify(sizing)}`,
+      )
 
       await cdp.call('Input.dispatchMouseEvent', {
         type: 'mousePressed',

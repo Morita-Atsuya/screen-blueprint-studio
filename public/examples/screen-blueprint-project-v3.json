@@ -21,6 +21,14 @@
           "childIds": ["header-title"],
           "kind": "container",
           "placement": { "mode": "flow" },
+          "sizing": {
+           "inlineSize": "fill",
+           "minWidth": "none",
+           "maxWidth": "none",
+           "gridSpan": 1,
+           "grow": 0,
+           "shrink": "allow"
+          },
           "common": {
             "description": "Header layout",
             "visible": true,
@@ -43,6 +51,14 @@
           "childIds": [],
           "kind": "text",
           "placement": { "mode": "flow" },
+          "sizing": {
+           "inlineSize": "auto",
+           "minWidth": "none",
+           "maxWidth": "none",
+           "gridSpan": 1,
+           "grow": 0,
+           "shrink": "allow"
+          },
           "common": {
             "description": "Product title",
             "visible": true,
@@ -136,9 +152,17 @@
       "id": "home-page",
       "screenId": "home",
       "parentId": null,
-      "childIds": ["shared-header", "product-image", "documentation-link"],
+      "childIds": ["status-region", "content-region", "product-image", "actions-region", "shared-header", "documentation-link"],
       "kind": "page",
       "placement": { "mode": "flow" },
+      "sizing": {
+        "inlineSize": "fill",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
       "common": {
         "description": "Home page",
         "visible": true,
@@ -146,9 +170,9 @@
       },
       "config": {
         "kind": "page",
-        "layout": "vertical",
+        "layout": "grid",
         "gap": "lg",
-        "columns": 1,
+        "columns": 12,
         "justify": "start",
         "align": "stretch",
         "wrap": false
@@ -165,12 +189,74 @@
         "edge": "top",
         "inset": "sm"
       },
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
       "source": {
         "$ref": "#/componentDefinitions/shared~1header"
       },
       "variantId": "comfortable",
       "props": {
         "title": "Welcome"
+      }
+    },
+    "status-region": {
+      "nodeType": "inline",
+      "id": "status-region",
+      "screenId": "home",
+      "parentId": "home-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": { "mode": "flow" },
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "common": {
+        "description": "Status region spanning one track",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Ready",
+        "style": "caption"
+      }
+    },
+    "content-region": {
+      "nodeType": "inline",
+      "id": "content-region",
+      "screenId": "home",
+      "parentId": "home-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": { "mode": "flow" },
+      "sizing": {
+        "inlineSize": "fill",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 6,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "common": {
+        "description": "Primary content region spanning six tracks",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Review the selected task and its latest activity.",
+        "style": "body"
       }
     },
     "product-image": {
@@ -181,6 +267,14 @@
       "childIds": [],
       "kind": "image",
       "placement": { "mode": "flow" },
+      "sizing": {
+        "inlineSize": "fill",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 3,
+        "grow": 0,
+        "shrink": "allow"
+      },
       "common": {
         "description": "Product workflow illustration",
         "visible": true,
@@ -195,6 +289,36 @@
         "placeholderStyle": "icon"
       }
     },
+    "actions-region": {
+      "nodeType": "inline",
+      "id": "actions-region",
+      "screenId": "home",
+      "parentId": "home-page",
+      "childIds": [],
+      "kind": "button",
+      "placement": { "mode": "flow" },
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 2,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "common": {
+        "description": "Actions region spanning two tracks",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Open task",
+        "variant": "primary",
+        "eventId": null,
+        "confirmationMessage": null,
+        "preventDoubleSubmit": false
+      }
+    },
     "documentation-link": {
       "nodeType": "inline",
       "id": "documentation-link",
@@ -207,6 +331,14 @@
         "anchor": "bottomRight",
         "insetX": "md",
         "insetY": "md"
+      },
+      "sizing": {
+        "inlineSize": "content",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
       },
       "common": {
         "description": "Product documentation",

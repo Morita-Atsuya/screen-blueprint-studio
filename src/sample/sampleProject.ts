@@ -1,5 +1,24 @@
-import type { ProjectDocument } from '../domain/model'
-import { CURRENT_SCHEMA_VERSION, DEFAULT_COMPONENT_LAYOUT } from '../domain/model'
+import type { EntityId, ProjectDocument, ScreenComponent } from '../domain/model'
+import {
+  CURRENT_SCHEMA_VERSION,
+  DEFAULT_COMPONENT_LAYOUT,
+  DEFAULT_COMPONENT_SIZING,
+  ROOT_COMPONENT_SIZING,
+} from '../domain/model'
+
+function sampleComponents(
+  components: Record<EntityId, Omit<ScreenComponent, 'sizing'>>,
+): Record<EntityId, ScreenComponent> {
+  return Object.fromEntries(Object.entries(components).map(([id, component]) => [
+    id,
+    {
+      ...component,
+      sizing: component.parentId === null
+        ? { ...ROOT_COMPONENT_SIZING }
+        : { ...DEFAULT_COMPONENT_SIZING },
+    },
+  ]))
+}
 
 export const sampleProject: ProjectDocument = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -57,7 +76,7 @@ export const sampleProject: ProjectDocument = {
       ],
     },
   },
-  components: {
+  components: sampleComponents({
     // Task List
     'comp-list-page': {
       id: 'comp-list-page',
@@ -939,7 +958,7 @@ export const sampleProject: ProjectDocument = {
         preventDoubleSubmit: true,
       },
     },
-  },
+  }),
   screenStates: {
     'state-list-default': {
       id: 'state-list-default',

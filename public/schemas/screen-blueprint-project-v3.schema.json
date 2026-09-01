@@ -237,6 +237,54 @@
         }
       ]
     },
+    "componentSizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Constrained inline sizing. minWidth and maxWidth use ordered tokens xs < sm < md < lg < xl. Parent layout semantics are validated with the component graph.",
+      "required": ["inlineSize", "minWidth", "maxWidth", "gridSpan", "grow", "shrink"],
+      "properties": {
+        "inlineSize": { "enum": ["auto", "content", "fill"] },
+        "minWidth": { "enum": ["none", "xs", "sm", "md", "lg", "xl"] },
+        "maxWidth": { "enum": ["none", "xs", "sm", "md", "lg", "xl"] },
+        "gridSpan": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "grow": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "shrink": { "enum": ["allow", "prevent"] }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["minWidth"], "properties": { "minWidth": { "const": "xs" } } },
+          "then": { "properties": { "maxWidth": { "enum": ["none", "xs", "sm", "md", "lg", "xl"] } } }
+        },
+        {
+          "if": { "required": ["minWidth"], "properties": { "minWidth": { "const": "sm" } } },
+          "then": { "properties": { "maxWidth": { "enum": ["none", "sm", "md", "lg", "xl"] } } }
+        },
+        {
+          "if": { "required": ["minWidth"], "properties": { "minWidth": { "const": "md" } } },
+          "then": { "properties": { "maxWidth": { "enum": ["none", "md", "lg", "xl"] } } }
+        },
+        {
+          "if": { "required": ["minWidth"], "properties": { "minWidth": { "const": "lg" } } },
+          "then": { "properties": { "maxWidth": { "enum": ["none", "lg", "xl"] } } }
+        },
+        {
+          "if": { "required": ["minWidth"], "properties": { "minWidth": { "const": "xl" } } },
+          "then": { "properties": { "maxWidth": { "enum": ["none", "xl"] } } }
+        },
+        {
+          "if": {
+            "required": ["grow"],
+            "properties": { "grow": { "type": "integer", "minimum": 1 } }
+          },
+          "then": {
+            "properties": {
+              "inlineSize": { "const": "fill" },
+              "shrink": { "const": "allow" }
+            }
+          }
+        }
+      ]
+    },
     "validationRule": {
       "oneOf": [
         {
@@ -303,7 +351,7 @@
             "kind": { "const": "page" },
             "layout": { "enum": ["vertical", "horizontal", "grid"] },
             "gap": { "enum": ["none", "sm", "md", "lg"] },
-            "columns": { "enum": [1, 2, 3, 4] },
+            "columns": { "type": "integer", "minimum": 1, "maximum": 12 },
             "justify": { "enum": ["start", "center", "end", "between"] },
             "align": { "enum": ["start", "center", "end", "stretch"] },
             "wrap": { "type": "boolean" }
@@ -317,7 +365,7 @@
             "kind": { "const": "container" },
             "layout": { "enum": ["vertical", "horizontal", "grid"] },
             "gap": { "enum": ["none", "sm", "md", "lg"] },
-            "columns": { "enum": [1, 2, 3, 4] },
+            "columns": { "type": "integer", "minimum": 1, "maximum": 12 },
             "justify": { "enum": ["start", "center", "end", "between"] },
             "align": { "enum": ["start", "center", "end", "stretch"] },
             "wrap": { "type": "boolean" }
@@ -448,7 +496,7 @@
             "kind": { "const": "modal" },
             "layout": { "enum": ["vertical", "horizontal", "grid"] },
             "gap": { "enum": ["none", "sm", "md", "lg"] },
-            "columns": { "enum": [1, 2, 3, 4] },
+            "columns": { "type": "integer", "minimum": 1, "maximum": 12 },
             "justify": { "enum": ["start", "center", "end", "between"] },
             "align": { "enum": ["start", "center", "end", "stretch"] },
             "wrap": { "type": "boolean" }
@@ -529,6 +577,7 @@
         "childIds",
         "kind",
         "placement",
+        "sizing",
         "common",
         "config"
       ],
@@ -542,6 +591,7 @@
           "enum": ["page", "container", "text", "textInput", "select", "button", "image", "link", "modal"]
         },
         "placement": { "$ref": "#/$defs/componentPlacement" },
+        "sizing": { "$ref": "#/$defs/componentSizing" },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
       },
@@ -572,7 +622,8 @@
         "source",
         "variantId",
         "props",
-        "placement"
+        "placement",
+        "sizing"
       ],
       "properties": {
         "nodeType": { "const": "definitionInstance" },
@@ -581,6 +632,7 @@
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "type": "array", "maxItems": 0 },
         "placement": { "$ref": "#/$defs/componentPlacement" },
+        "sizing": { "$ref": "#/$defs/componentSizing" },
         "source": { "$ref": "#/$defs/definitionSource" },
         "variantId": { "$ref": "#/$defs/nullableEntityId" },
         "props": { "$ref": "#/$defs/props" }
@@ -600,7 +652,7 @@
     "inlineDefinitionNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["nodeType", "id", "parentId", "childIds", "kind", "placement", "common", "config"],
+      "required": ["nodeType", "id", "parentId", "childIds", "kind", "placement", "sizing", "common", "config"],
       "properties": {
         "nodeType": { "const": "inline" },
         "id": { "$ref": "#/$defs/entityId" },
@@ -610,6 +662,7 @@
           "enum": ["page", "container", "text", "textInput", "select", "button", "image", "link", "modal"]
         },
         "placement": { "$ref": "#/$defs/componentPlacement" },
+        "sizing": { "$ref": "#/$defs/componentSizing" },
         "common": { "$ref": "#/$defs/common" },
         "config": { "$ref": "#/$defs/componentConfig" }
       },
@@ -631,13 +684,14 @@
     "nestedDefinitionInstanceNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["nodeType", "id", "parentId", "childIds", "source", "variantId", "props", "placement"],
+      "required": ["nodeType", "id", "parentId", "childIds", "source", "variantId", "props", "placement", "sizing"],
       "properties": {
         "nodeType": { "const": "definitionInstance" },
         "id": { "$ref": "#/$defs/entityId" },
         "parentId": { "$ref": "#/$defs/nullableEntityId" },
         "childIds": { "type": "array", "maxItems": 0 },
         "placement": { "$ref": "#/$defs/componentPlacement" },
+        "sizing": { "$ref": "#/$defs/componentSizing" },
         "source": { "$ref": "#/$defs/definitionSource" },
         "variantId": { "$ref": "#/$defs/nullableEntityId" },
         "props": { "$ref": "#/$defs/props" }
@@ -690,7 +744,13 @@
             "placement.anchor",
             "placement.inset",
             "placement.insetX",
-            "placement.insetY"
+            "placement.insetY",
+            "sizing.inlineSize",
+            "sizing.minWidth",
+            "sizing.maxWidth",
+            "sizing.gridSpan",
+            "sizing.grow",
+            "sizing.shrink"
           ]
         }
       }
@@ -770,7 +830,7 @@
       "properties": {
         "layout": { "enum": ["vertical", "horizontal", "grid"] },
         "gap": { "enum": ["none", "sm", "md", "lg"] },
-        "columns": { "enum": [1, 2, 3, 4] },
+        "columns": { "type": "integer", "minimum": 1, "maximum": 12 },
         "justify": { "enum": ["start", "center", "end", "between"] },
         "align": { "enum": ["start", "center", "end", "stretch"] },
         "wrap": { "type": "boolean" },
@@ -842,7 +902,8 @@
       "properties": {
         "common": { "$ref": "#/$defs/variantCommonOverride" },
         "config": { "$ref": "#/$defs/variantConfigOverride" },
-        "placement": { "$ref": "#/$defs/componentPlacement" }
+        "placement": { "$ref": "#/$defs/componentPlacement" },
+        "sizing": { "$ref": "#/$defs/componentSizing" }
       }
     },
     "componentVariant": {

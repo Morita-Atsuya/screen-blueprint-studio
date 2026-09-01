@@ -7,6 +7,7 @@ import { I18nProvider } from '../../src/i18n/I18nProvider'
 import { LOCALE_STORAGE_KEY } from '../../src/i18n/locale'
 import type { Locale } from '../../src/i18n/messages'
 import { sampleProject } from '../../src/sample/sampleProject'
+import { DEFAULT_COMPONENT_SIZING } from '../../src/domain/model'
 
 const STORAGE_KEY = 'screen-blueprint-studio:v1'
 const LEFT_PANE_STORAGE_KEY = 'screen-blueprint-studio:left-pane-sections:v1'
@@ -150,6 +151,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           parentId,
           kind: 'container',
           placement: { mode: 'flow' },
+          sizing: { ...DEFAULT_COMPONENT_SIZING },
           config: {
             kind: 'container',
             layout: 'vertical',
@@ -198,6 +200,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           parentId,
           kind: 'container',
           placement: { mode: 'flow' },
+          sizing: { ...DEFAULT_COMPONENT_SIZING },
           config: {
             kind: 'container',
             layout: 'vertical',
@@ -218,6 +221,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           parentId: 'regression-tree-level-3',
           kind: 'text',
           placement: { mode: 'flow' },
+          sizing: { ...DEFAULT_COMPONENT_SIZING },
           config: {
             kind: 'text',
             text: 'Waiting for review',
@@ -269,6 +273,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
             insetX: 'sm',
             insetY: 'sm',
           },
+          sizing: { ...DEFAULT_COMPONENT_SIZING },
           config: {
             kind: 'container',
             layout: 'vertical',
@@ -291,6 +296,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
             insetX: 'xs',
             insetY: 'xs',
           },
+          sizing: { ...DEFAULT_COMPONENT_SIZING },
           config: {
             kind: 'text',
             text: 'Nested overlay',

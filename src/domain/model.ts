@@ -103,7 +103,7 @@ export function assertCompleteComponentKindCoverage(
 export interface ComponentLayout {
   layout: 'vertical' | 'horizontal' | 'grid'
   gap: 'none' | 'sm' | 'md' | 'lg'
-  columns: 1 | 2 | 3 | 4
+  columns: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
   justify: 'start' | 'center' | 'end' | 'between'
   align: 'start' | 'center' | 'end' | 'stretch'
   wrap: boolean
@@ -149,6 +149,32 @@ export type ComponentPlacement =
     }
 
 export const DEFAULT_COMPONENT_PLACEMENT: ComponentPlacement = { mode: 'flow' }
+
+export const COMPONENT_SIZE_TOKENS = ['none', 'xs', 'sm', 'md', 'lg', 'xl'] as const
+export type ComponentSizeToken = (typeof COMPONENT_SIZE_TOKENS)[number]
+
+export interface ComponentSizing {
+  inlineSize: 'auto' | 'content' | 'fill'
+  minWidth: ComponentSizeToken
+  maxWidth: ComponentSizeToken
+  gridSpan: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+  grow: 0 | 1 | 2 | 3
+  shrink: 'allow' | 'prevent'
+}
+
+export const DEFAULT_COMPONENT_SIZING: ComponentSizing = {
+  inlineSize: 'auto',
+  minWidth: 'none',
+  maxWidth: 'none',
+  gridSpan: 1,
+  grow: 0,
+  shrink: 'allow',
+}
+
+export const ROOT_COMPONENT_SIZING: ComponentSizing = {
+  ...DEFAULT_COMPONENT_SIZING,
+  inlineSize: 'fill',
+}
 
 export type TextStyle = 'heading1' | 'heading2' | 'heading3' | 'body' | 'caption'
 export type ImageFit = 'contain' | 'cover'
@@ -223,6 +249,7 @@ export interface ScreenComponent {
   childIds: EntityId[]
   kind: ComponentKind
   placement: ComponentPlacement
+  sizing: ComponentSizing
   common: CommonComponentSpec
   config: ComponentConfig
 }

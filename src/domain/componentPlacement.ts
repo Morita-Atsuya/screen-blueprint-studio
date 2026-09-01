@@ -1,7 +1,14 @@
-import type { ComponentKind, EntityId, ProjectDocument, ScreenComponent } from './model'
+import type {
+  ComponentKind,
+  ComponentLayout,
+  EntityId,
+  ProjectDocument,
+  ScreenComponent,
+} from './model'
 import { CONTAINER_KINDS } from './model'
 import { getOwnEntity } from './entityMap'
 import { DomainError } from './errors'
+import { validateSizingContext } from './componentSizing'
 
 export type ComponentPlacementInvalidReason =
   | 'root'
@@ -71,6 +78,16 @@ function moveContext(
   if (!oldParent) return invalid('stale')
   const oldIndex = oldParent.childIds.indexOf(component.id)
   if (oldIndex < 0) return invalid('stale')
+  try {
+    validateSizingContext(
+      component.sizing,
+      component.placement,
+      newParent.config as ComponentLayout,
+      `Component ${component.id} sizing`,
+    )
+  } catch {
+    return invalid('domainValidation')
+  }
   return { component, oldParent, newParent, oldIndex }
 }
 

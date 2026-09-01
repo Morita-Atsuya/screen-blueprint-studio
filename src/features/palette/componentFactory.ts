@@ -9,6 +9,8 @@ import type {
 import {
   DEFAULT_COMPONENT_LAYOUT,
   DEFAULT_COMPONENT_PLACEMENT,
+  DEFAULT_COMPONENT_SIZING,
+  ROOT_COMPONENT_SIZING,
   PALETTE_COMPONENT_KINDS,
 } from '../../domain/model'
 import type { Locale } from '../../i18n/messages'
@@ -116,6 +118,7 @@ export function createAddComponentCommand(
     parentId,
     kind,
     placement: DEFAULT_COMPONENT_PLACEMENT,
+    sizing: kind === 'modal' ? ROOT_COMPONENT_SIZING : DEFAULT_COMPONENT_SIZING,
     config: createDefaultComponentConfig(kind, doc, locale),
     position,
   }

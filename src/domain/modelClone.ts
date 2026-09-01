@@ -8,6 +8,7 @@ import type {
   ComponentConfig,
   ComponentOverride,
   ComponentPlacement,
+  ComponentSizing,
   EventAction,
   EventTrigger,
   FieldBinding,
@@ -63,6 +64,10 @@ export function cloneValidationRule(rule: ValidationRule): ValidationRule {
 
 export function cloneComponentPlacement(placement: ComponentPlacement): ComponentPlacement {
   return { ...placement }
+}
+
+export function cloneComponentSizing(sizing: ComponentSizing): ComponentSizing {
+  return { ...sizing }
 }
 
 export function cloneComponentConfig(config: ComponentConfig): ComponentConfig {
@@ -173,6 +178,7 @@ export function cloneScreenComponent(component: ScreenComponent): ScreenComponen
     ...component,
     childIds: cloneArray(component.childIds, value => value, 'component childIds'),
     placement: cloneComponentPlacement(component.placement),
+    sizing: cloneComponentSizing(component.sizing),
     common: { ...component.common },
     config: cloneComponentConfig(component.config),
   }
@@ -289,6 +295,7 @@ export function cloneDomainCommand(command: DomainCommand): DomainCommand {
       return {
         ...command,
         placement: cloneComponentPlacement(command.placement),
+        sizing: cloneComponentSizing(command.sizing),
         config: cloneComponentConfig(command.config),
       }
     case 'duplicateComponent':
@@ -323,6 +330,9 @@ export function cloneDomainCommand(command: DomainCommand): DomainCommand {
             : {}),
           ...(command.patch.placement
             ? { placement: cloneComponentPlacement(command.patch.placement) }
+            : {}),
+          ...(command.patch.sizing
+            ? { sizing: cloneComponentSizing(command.patch.sizing) }
             : {}),
         },
       }

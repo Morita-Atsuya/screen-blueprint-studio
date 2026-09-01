@@ -4,9 +4,11 @@ import type {
   ComponentKind,
   ComponentLayout,
   ComponentPlacement,
+  ComponentSizing,
   ComponentOverride,
   TextStyle,
 } from './model'
+import { isRootSizing, validateSizingContext } from './componentSizing'
 
 export type CanonicalEntityIdV3 = string
 export type StableDefinitionNodeIdV3 = string
@@ -78,6 +80,13 @@ export const VARIANT_CONFIG_OVERRIDE_FIELDS_V3 = [
   'openMode',
 ] as const
 
+export const VARIANT_NODE_OVERRIDE_FIELDS_V3 = [
+  'common',
+  'config',
+  'placement',
+  'sizing',
+] as const
+
 export type PublicPropValueV3 = string | number | boolean
 
 export type ComponentConfigV3 = ComponentConfig
@@ -103,6 +112,7 @@ export interface InlineScreenNodeV3 {
   childIds: CanonicalEntityIdV3[]
   kind: ComponentKind
   placement: ComponentPlacement
+  sizing: ComponentSizing
   common: CommonComponentSpecV3
   config: ComponentConfigV3
 }
@@ -114,6 +124,7 @@ export interface DefinitionInstanceScreenNodeV3 extends DefinitionInstanceFields
   parentId: CanonicalEntityIdV3 | null
   childIds: []
   placement: ComponentPlacement
+  sizing: ComponentSizing
 }
 
 export type ScreenNodeV3 = InlineScreenNodeV3 | DefinitionInstanceScreenNodeV3
@@ -125,6 +136,7 @@ export interface InlineDefinitionNodeV3 {
   childIds: StableDefinitionNodeIdV3[]
   kind: ComponentKind
   placement: ComponentPlacement
+  sizing: ComponentSizing
   common: CommonComponentSpecV3
   config: ComponentConfigV3
 }
@@ -135,6 +147,7 @@ export interface NestedDefinitionInstanceNodeV3 extends DefinitionInstanceFields
   parentId: StableDefinitionNodeIdV3 | null
   childIds: []
   placement: ComponentPlacement
+  sizing: ComponentSizing
 }
 
 export type ComponentDefinitionNodeV3 =
@@ -206,6 +219,12 @@ export const PUBLIC_PROP_FIELDS_V3 = [
   'placement.inset',
   'placement.insetX',
   'placement.insetY',
+  'sizing.inlineSize',
+  'sizing.minWidth',
+  'sizing.maxWidth',
+  'sizing.gridSpan',
+  'sizing.grow',
+  'sizing.shrink',
 ] as const
 export type PublicPropFieldV3 = (typeof PUBLIC_PROP_FIELDS_V3)[number]
 
@@ -245,6 +264,7 @@ export interface VariantNodeOverrideV3 {
   common?: VariantCommonOverrideV3
   config?: VariantConfigOverrideV3
   placement?: ComponentPlacement
+  sizing?: ComponentSizing
 }
 
 export interface ComponentVariantV3 {
@@ -274,12 +294,36 @@ export function assertCanonicalRootPlacementsV3(
       throw new Error(`${label} must use flow placement`)
     }
   }
+  const assertRootSizing = (sizing: ComponentSizing, label: string) => {
+    if (!isRootSizing(sizing)) throw new Error(`${label} must use fixed root sizing`)
+  }
+  const nodeLayout = (
+    node: ScreenNodeV3 | ComponentDefinitionNodeV3 | undefined,
+    configOverride?: VariantConfigOverrideV3,
+  ): ComponentLayout | null => {
+    if (!node || node.nodeType !== 'inline') return null
+    const config = configOverride ? { ...node.config, ...configOverride } : node.config
+    return config.kind === 'page' || config.kind === 'container' || config.kind === 'modal'
+      ? config as ComponentLayout
+      : null
+  }
   for (const screen of Object.values(spec.screens)) {
     const rootIds = [screen.rootComponentId, ...screen.modalComponentIds]
     for (const rootId of rootIds) {
       const root = spec.components[rootId]
       if (!root) throw new Error(`Unresolved Screen root component: ${rootId}`)
       assertFlow(root.placement, `Screen root ${rootId}`)
+      assertRootSizing(root.sizing, `Screen root ${rootId}`)
+    }
+    for (const node of Object.values(spec.components).filter(node => node.screenId === screen.id)) {
+      if (rootIds.includes(node.id)) continue
+      const parent = node.parentId ? spec.components[node.parentId] : undefined
+      validateSizingContext(
+        node.sizing,
+        node.placement,
+        nodeLayout(parent),
+        `Screen node ${node.id} sizing`,
+      )
     }
   }
   for (const definition of Object.values(spec.componentDefinitions)) {
@@ -290,12 +334,42 @@ export function assertCanonicalRootPlacementsV3(
       )
     }
     assertFlow(root.placement, `Component Definition root ${definition.id}/${root.id}`)
+    assertRootSizing(root.sizing, `Component Definition root ${definition.id}/${root.id}`)
+    for (const node of Object.values(definition.nodes)) {
+      if (node.id === root.id) continue
+      const parent = node.parentId ? definition.nodes[node.parentId] : undefined
+      validateSizingContext(
+        node.sizing,
+        node.placement,
+        nodeLayout(parent),
+        `Component Definition node ${definition.id}/${node.id} sizing`,
+      )
+    }
     for (const variant of definition.variants) {
       const rootOverride = variant.nodeOverrides[definition.rootNodeId]?.placement
       if (rootOverride) {
         assertFlow(
           rootOverride,
           `Component Definition root Variant ${definition.id}/${variant.id}`,
+        )
+      }
+      const rootSizingOverride = variant.nodeOverrides[definition.rootNodeId]?.sizing
+      assertRootSizing(
+        rootSizingOverride ?? root.sizing,
+        `Component Definition root Variant ${definition.id}/${variant.id}`,
+      )
+      for (const node of Object.values(definition.nodes)) {
+        if (node.id === root.id) continue
+        const override = variant.nodeOverrides[node.id]
+        const parent = node.parentId ? definition.nodes[node.parentId] : undefined
+        const parentOverride = node.parentId
+          ? variant.nodeOverrides[node.parentId]?.config
+          : undefined
+        validateSizingContext(
+          override?.sizing ?? node.sizing,
+          override?.placement ?? node.placement,
+          nodeLayout(parent, parentOverride),
+          `Component Definition Variant node ${definition.id}/${variant.id}/${node.id} sizing`,
         )
       }
     }

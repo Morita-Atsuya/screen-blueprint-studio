@@ -3,6 +3,7 @@ import {
   COMPONENT_KINDS,
   PLACEMENT_ANCHORS,
   PLACEMENT_INSET_TOKENS,
+  COMPONENT_SIZE_TOKENS,
 } from './model'
 import type {
   ApiOperation,
@@ -11,6 +12,7 @@ import type {
   ComponentKind,
   ComponentOverride,
   ComponentPlacement,
+  ComponentSizing,
   EventAction,
   EventTrigger,
   FieldBinding,
@@ -128,7 +130,7 @@ export function validateScreenComponent(
   const component = record(value, path)
   exactKeys(
     component,
-    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'placement', 'common', 'config'],
+    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'placement', 'sizing', 'common', 'config'],
     [],
     path,
   )
@@ -138,8 +140,28 @@ export function validateScreenComponent(
   entityIdArray(component.childIds, `${path}.childIds`)
   enumValue(component.kind, COMPONENT_KINDS, `${path}.kind`)
   validateComponentPlacement(component.placement, `${path}.placement`)
+  validateComponentSizing(component.sizing, `${path}.sizing`)
   validateCommonComponentSpec(component.common, `${path}.common`)
   validateComponentConfig(component.config, component.kind, `${path}.config`)
+}
+
+export function validateComponentSizing(
+  value: unknown,
+  path = 'component.sizing',
+): asserts value is ComponentSizing {
+  const sizing = record(value, path)
+  exactKeys(
+    sizing,
+    ['inlineSize', 'minWidth', 'maxWidth', 'gridSpan', 'grow', 'shrink'],
+    [],
+    path,
+  )
+  enumValue(sizing.inlineSize, ['auto', 'content', 'fill'], `${path}.inlineSize`)
+  enumValue(sizing.minWidth, COMPONENT_SIZE_TOKENS, `${path}.minWidth`)
+  enumValue(sizing.maxWidth, COMPONENT_SIZE_TOKENS, `${path}.maxWidth`)
+  enumValue(sizing.gridSpan, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${path}.gridSpan`)
+  enumValue(sizing.grow, [0, 1, 2, 3], `${path}.grow`)
+  enumValue(sizing.shrink, ['allow', 'prevent'], `${path}.shrink`)
 }
 
 export function validateComponentPlacement(
@@ -602,7 +624,7 @@ export function validateComponentConfig(
 function validateComponentLayout(config: UnknownRecord, path: string): void {
   enumValue(config.layout, ['vertical', 'horizontal', 'grid'], `${path}.layout`)
   enumValue(config.gap, ['none', 'sm', 'md', 'lg'], `${path}.gap`)
-  enumValue(config.columns, [1, 2, 3, 4], `${path}.columns`)
+  enumValue(config.columns, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${path}.columns`)
   enumValue(config.justify, ['start', 'center', 'end', 'between'], `${path}.justify`)
   enumValue(config.align, ['start', 'center', 'end', 'stretch'], `${path}.align`)
   boolean(config.wrap, `${path}.wrap`)

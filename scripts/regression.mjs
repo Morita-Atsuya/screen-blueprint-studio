@@ -210,6 +210,22 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+function defaultSizing(overrides = {}) {
+  return {
+    inlineSize: 'auto',
+    minWidth: 'none',
+    maxWidth: 'none',
+    gridSpan: 1,
+    grow: 0,
+    shrink: 'allow',
+    ...overrides,
+  }
+}
+
+function rootSizing() {
+  return defaultSizing({ inlineSize: 'fill' })
+}
+
 function installInteractiveDom() {
   const { document, window } = parseHTML('<html><body></body></html>')
   let activeElement = document.body
@@ -510,7 +526,7 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
   }
   assert(
     Object.values(example.components)
-        .filter(component => component.nodeType === 'inline').length === 3 &&
+        .filter(component => component.nodeType === 'inline').length === 6 &&
       Object.values(example.components)
         .filter(component => component.nodeType === 'definitionInstance').length === 1 &&
       resolvedDefinition.name === 'Shared Header' &&
@@ -536,6 +552,12 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       resolvedDefinition.nodes[resolvedDefinition.rootNodeId].placement.mode === 'flow' &&
       resolvedDefinition.variants[1].nodeOverrides['header-title'].placement.mode === 'overlay',
     'public v3 example does not demonstrate the approved Stage 1 contract',
+  )
+  assert(
+    example.components['home-page'].config.columns === 12 &&
+      JSON.stringify(['status-region', 'content-region', 'product-image', 'actions-region']
+        .map(id => example.components[id].sizing.gridSpan)) === JSON.stringify([1, 6, 3, 2]),
+    'public v3 example must preserve the non-equal 1/6/3/2 grid at every viewport',
   )
   contracts.assertCanonicalRootPlacementsV3(example)
   const unsafeImage = clone(example)
@@ -625,6 +647,50 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       rejected = true
     }
     assert(rejected, 'canonical v3 semantic validation accepted non-flow Definition root placement')
+  }
+  const missingSizing = clone(example)
+  delete missingSizing.components['status-region'].sizing
+  assert(!isValid(missingSizing), 'canonical v3 inline node accepted missing sizing')
+  for (const [label, mutate] of [
+    ['Screen root sizing', candidate => {
+      candidate.components['home-page'].sizing.inlineSize = 'auto'
+    }],
+    ['Definition root sizing', candidate => {
+      candidate.componentDefinitions['shared/header'].nodes['header-root']
+        .sizing.inlineSize = 'auto'
+    }],
+    ['min/max ordering', candidate => {
+      candidate.components['status-region'].sizing.minWidth = 'lg'
+      candidate.components['status-region'].sizing.maxWidth = 'sm'
+    }],
+    ['Grid span context', candidate => {
+      candidate.components['home-page'].config.columns = 4
+    }],
+    ['non-flow Variant context', candidate => {
+      candidate.componentDefinitions['shared/header'].variants[1]
+        .nodeOverrides['header-title'].sizing = defaultSizing({
+          inlineSize: 'fill',
+          grow: 1,
+        })
+    }],
+    ['Variant parent context', candidate => {
+      const overrides = candidate.componentDefinitions['shared/header'].variants[0]
+        .nodeOverrides
+      overrides['header-root'].config = { layout: 'grid', columns: 1 }
+      overrides['header-title'] = {
+        sizing: defaultSizing({ gridSpan: 2 }),
+      }
+    }],
+  ]) {
+    const invalidSizing = clone(example)
+    mutate(invalidSizing)
+    let rejected = false
+    try {
+      contracts.assertCanonicalRootPlacementsV3(invalidSizing)
+    } catch {
+      rejected = true
+    }
+    assert(rejected, `canonical v3 semantic validation accepted invalid ${label}`)
   }
 
   for (const invalidRef of [
@@ -916,6 +982,231 @@ await test('placement editing survives undo, redo, persistence, and review lock'
   )
 })
 
+await test('component sizing is exact, contextual, atomic, and DnD-safe', async () => {
+  const { applyCommandWithoutRevision } = await import(
+    moduleUrl(domainBundle, 'component-sizing-domain')
+  )
+  const { validateComponentSizing, validateScreenComponent } = await import(
+    moduleUrl(runtimeValidationBundle, 'component-sizing-runtime')
+  )
+  const { validateInvariants } = await import(
+    moduleUrl(invariantsBundle, 'component-sizing-invariants')
+  )
+  const { resolveEditorDrop } = await import(
+    moduleUrl(editorDndBundle, 'component-sizing-dnd')
+  )
+  const { canPasteComponent, createComponentSubtreeSnapshot } = await import(
+    moduleUrl(componentDuplicationBundle, 'component-sizing-copy-paste')
+  )
+  const { sampleProject } = await import(
+    moduleUrl(sampleProjectBundle, 'component-sizing-sample')
+  )
+  const rejected = (callback, message) => {
+    let didReject = false
+    try {
+      callback()
+    } catch {
+      didReject = true
+    }
+    assert(didReject, message)
+  }
+
+  for (const sizing of [
+    { ...defaultSizing(), extra: true },
+    { ...defaultSizing(), gridSpan: 0 },
+    { ...defaultSizing(), gridSpan: 1.5 },
+    { ...defaultSizing(), grow: 4 },
+  ]) {
+    rejected(
+      () => validateComponentSizing(sizing),
+      `runtime accepted invalid sizing ${JSON.stringify(sizing)}`,
+    )
+  }
+  const missingSizing = clone(sampleProject.components['comp-list-summary'])
+  delete missingSizing.sizing
+  rejected(
+    () => validateScreenComponent(missingSizing),
+    'runtime accepted a component without required sizing',
+  )
+
+  const updateSizing = (document, componentId, sizing) =>
+    applyCommandWithoutRevision(document, {
+      type: 'updateComponentSpec',
+      componentId,
+      patch: { sizing },
+    })
+  rejected(
+    () => updateSizing(
+      sampleProject,
+      'comp-list-summary',
+      defaultSizing({ minWidth: 'lg', maxWidth: 'sm' }),
+    ),
+    'minWidth greater than maxWidth was accepted',
+  )
+  rejected(
+    () => updateSizing(
+      sampleProject,
+      'comp-list-summary',
+      defaultSizing({ gridSpan: 2 }),
+    ),
+    'vertical flow accepted a grid span',
+  )
+  rejected(
+    () => updateSizing(
+      sampleProject,
+      'comp-save-btn',
+      defaultSizing({ grow: 1 }),
+    ),
+    'horizontal grow accepted non-fill inline sizing',
+  )
+  rejected(
+    () => updateSizing(
+      sampleProject,
+      'comp-task-launch-card',
+      defaultSizing({ grow: 1, inlineSize: 'fill' }),
+    ),
+    'Grid flow accepted flex grow',
+  )
+  rejected(
+    () => applyCommandWithoutRevision(sampleProject, {
+      type: 'updateComponentSpec',
+      componentId: 'comp-list-summary',
+      patch: {
+        placement: {
+          mode: 'overlay',
+          anchor: 'topLeft',
+          insetX: 'sm',
+          insetY: 'sm',
+        },
+        sizing: defaultSizing({ gridSpan: 2 }),
+      },
+    }),
+    'non-flow placement accepted parent-layout sizing',
+  )
+  rejected(
+    () => updateSizing(sampleProject, 'comp-list-page', defaultSizing()),
+    'Page root accepted editable non-root sizing',
+  )
+
+  const spannedGrid = updateSizing(
+    sampleProject,
+    'comp-task-launch-card',
+    defaultSizing({ gridSpan: 2 }),
+  )
+  validateInvariants(spannedGrid)
+  for (const config of [{ columns: 1 }, { layout: 'vertical' }]) {
+    rejected(
+      () => applyCommandWithoutRevision(spannedGrid, {
+        type: 'updateComponentSpec',
+        componentId: 'comp-list-grid',
+        patch: { config },
+      }),
+      `parent layout edit silently invalidated a child: ${JSON.stringify(config)}`,
+    )
+  }
+  rejected(
+    () => applyCommandWithoutRevision(spannedGrid, {
+      type: 'moveComponent',
+      componentId: 'comp-task-launch-card',
+      newParentId: 'comp-list-section',
+    }),
+    'reparent accepted sizing invalid for the destination layout',
+  )
+  const dndOutcome = resolveEditorDrop(
+    spannedGrid,
+    {
+      type: 'component',
+      componentId: 'comp-task-launch-card',
+      screenId: 'screen-list',
+      label: 'Launch card',
+      surface: 'canvas',
+    },
+    {
+      type: 'component-drop',
+      surface: 'canvas',
+      parentId: 'comp-list-section',
+      screenId: 'screen-list',
+      position: 0,
+      label: 'Task list',
+    },
+  )
+  assert(
+    dndOutcome.status === 'invalid' && dndOutcome.reason === 'domainValidation',
+    'DnD advertised a reparent that violates destination sizing context',
+  )
+  const snapshot = createComponentSubtreeSnapshot(
+    spannedGrid,
+    'comp-task-launch-card',
+  )
+  assert(
+    snapshot &&
+      snapshot.components['comp-task-launch-card'].sizing.gridSpan === 2 &&
+      snapshot.components['comp-task-launch-card'].sizing !==
+        spannedGrid.components['comp-task-launch-card'].sizing &&
+      !canPasteComponent(spannedGrid, snapshot, 'comp-list-section'),
+    'copy/paste lost sizing isolation or advertised an invalid destination',
+  )
+
+  const callerSizing = defaultSizing({
+    inlineSize: 'fill',
+    grow: 2,
+    shrink: 'allow',
+  })
+  const horizontal = updateSizing(sampleProject, 'comp-save-btn', callerSizing)
+  callerSizing.grow = 3
+  assert(
+    horizontal.components['comp-save-btn'].sizing.grow === 2 &&
+      horizontal.components['comp-save-btn'].sizing !== callerSizing,
+    'sizing update retained caller-owned mutable state',
+  )
+
+  memoryStorage.clear()
+  installStorage(memoryStorage)
+  const store = await freshStore('component-sizing-history')
+  const persistedSizing = defaultSizing({
+    inlineSize: 'fill',
+    minWidth: 'xs',
+    maxWidth: 'lg',
+    grow: 2,
+  })
+  assert(
+    store.getState().dispatch({
+      type: 'updateComponentSpec',
+      componentId: 'comp-save-btn',
+      patch: { sizing: persistedSizing },
+    }, 'Update sizing'),
+    'atomic sizing edit failed',
+  )
+  store.getState().undo()
+  assert(
+    store.getState().document.components['comp-save-btn'].sizing.grow === 0,
+    'Undo did not restore sizing',
+  )
+  store.getState().redo()
+  assert(
+    JSON.stringify(store.getState().document.components['comp-save-btn'].sizing) ===
+      JSON.stringify(persistedSizing),
+    'Redo did not restore complete sizing',
+  )
+  const reloaded = await freshStore('component-sizing-history-reload')
+  assert(
+    JSON.stringify(reloaded.getState().document.components['comp-save-btn'].sizing) ===
+      JSON.stringify(persistedSizing),
+    'sizing did not survive reload',
+  )
+  reloaded.getState().beginChangeSet('Lock sizing')
+  const beforeLockedEdit = JSON.stringify(reloaded.getState().document)
+  assert(
+    !reloaded.getState().dispatch({
+      type: 'updateComponentSpec',
+      componentId: 'comp-save-btn',
+      patch: { sizing: defaultSizing() },
+    }, 'Blocked sizing edit') &&
+      JSON.stringify(reloaded.getState().document) === beforeLockedEdit,
+    'review lock allowed a human sizing edit',
+  )
+})
+
 await test('schema v1 sections migrate to containers across persisted change set data', async () => {
   memoryStorage.clear()
   const baselineStore = await freshStore('section-migration-baseline')
@@ -938,6 +1229,14 @@ await test('schema v1 sections migrate to containers across persisted change set
         parentId: 'comp-edit-section',
         kind: 'section',
         placement: { mode: 'flow' },
+        sizing: {
+          inlineSize: 'auto',
+          minWidth: 'none',
+          maxWidth: 'none',
+          gridSpan: 1,
+          grow: 0,
+          shrink: 'allow',
+        },
         config: {
           kind: 'section',
           layout: 'vertical',
@@ -1855,6 +2154,7 @@ await test('domain commands isolate every nested payload from returned documents
       insetX: 'sm',
       insetY: 'sm',
     },
+    sizing: defaultSizing(),
     config: {
       kind: 'textInput',
       fieldKey: 'isolatedInput',
@@ -2665,6 +2965,7 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
     parentId: null,
     kind: 'modal',
     placement: { mode: 'flow' },
+    sizing: rootSizing(),
     config: {
       kind: 'modal',
       layout: 'vertical',
@@ -3823,7 +4124,9 @@ await test('representative screen/component/state/event/API writes reach the cha
         .filter(variant => variant.properties?.operation?.const === 'add')
         .every(variant =>
           variant.required?.includes('placement') &&
-          variant.properties?.placement
+          variant.properties?.placement &&
+          variant.required?.includes('sizing') &&
+          variant.properties?.sizing
         ),
     'WebMCP does not distinguish modal creation, child creation, and duplication',
   )
@@ -3839,6 +4142,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     parentId: 'comp-list-page',
     kind: 'container',
     placement: { mode: 'flow' },
+    sizing: defaultSizing(),
     config: {
       kind: 'container',
       layout: 'horizontal',
@@ -3868,6 +4172,22 @@ await test('representative screen/component/state/event/API writes reach the cha
       latestCommand().patch.placement.mode === 'overlay',
     'WebMCP layout or placement update did not reach the change set',
   )
+  execute('update_component_spec', {
+    componentId: addedContainerId,
+    patch: {
+      sizing: defaultSizing({
+        inlineSize: 'content',
+        minWidth: 'xs',
+        maxWidth: 'md',
+      }),
+    },
+  })
+  assert(
+    latestCommand().patch.sizing.inlineSize === 'content' &&
+      latestCommand().patch.sizing.minWidth === 'xs' &&
+      latestCommand().patch.sizing.maxWidth === 'md',
+    'WebMCP sizing-only update did not reach the change set',
+  )
 
   execute('change_component_structure', {
     operation: 'add',
@@ -3875,6 +4195,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     parentId: addedContainerId,
     kind: 'text',
     placement: { mode: 'flow' },
+    sizing: defaultSizing(),
     config: { kind: 'text', text: 'Agent text', style: 'heading2' },
   })
   const addedComponentId = latestCommand().componentId
@@ -3907,6 +4228,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     parentId: null,
     kind: 'modal',
     placement: { mode: 'flow' },
+    sizing: rootSizing(),
     config: {
       kind: 'modal',
       layout: 'vertical',
@@ -4400,6 +4722,7 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
     kind: 'select',
     position: 6,
     placement: { mode: 'flow' },
+    sizing: defaultSizing(),
     config: {
       kind: 'select',
       fieldKey: 'priority',
@@ -5068,6 +5391,7 @@ await test('modal roots own independent trees and clean references on removal', 
     parentId: null,
     kind: 'modal',
     placement: { mode: 'flow' },
+    sizing: rootSizing(),
     config: { kind: 'modal', ...layout },
   })
   assert(
@@ -5084,6 +5408,7 @@ await test('modal roots own independent trees and clean references on removal', 
     parentId: 'modal-root',
     kind: 'button',
     placement: { mode: 'flow' },
+    sizing: defaultSizing(),
     config: {
       kind: 'button',
       label: 'Close',
@@ -5134,6 +5459,7 @@ await test('modal roots own independent trees and clean references on removal', 
       parentId: 'comp-list-page',
       kind: 'modal',
       placement: { mode: 'flow' },
+      sizing: rootSizing(),
       config: { kind: 'modal', ...layout },
     },
     {
@@ -5195,6 +5521,7 @@ await test('modal roots own independent trees and clean references on removal', 
     parentId: null,
     kind: 'modal',
     placement: { mode: 'flow' },
+    sizing: rootSizing(),
     config: { kind: 'modal', ...layout },
   })
   const state = store.getState()
@@ -11773,6 +12100,7 @@ await test('API editor commands preserve references and enforce canonical bindin
       parentId: 'comp-list-section',
       kind: 'textInput',
       placement: { mode: 'flow' },
+      sizing: defaultSizing(),
       config: {
         kind: 'textInput',
         fieldKey: 'foreign',

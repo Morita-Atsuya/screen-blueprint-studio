@@ -1,11 +1,13 @@
-import type { ProjectDocument, Screen, EntityId } from './model'
+import type { ComponentLayout, ProjectDocument, Screen, EntityId } from './model'
 import { CONTAINER_KINDS, LEAF_KINDS } from './model'
 import { DomainError } from './errors'
 import {
   validateComponentOverride,
   validateProjectDocumentMetadata,
+  validateScreenComponent,
 } from './runtimeValidation'
 import { getOwnEntity, hasOwnEntity } from './entityMap'
+import { isRootSizing, validateSizingContext } from './componentSizing'
 
 export function validateInvariants(doc: ProjectDocument): void {
   validateProjectDocumentMetadata(doc)
@@ -39,6 +41,7 @@ export function validateInvariants(doc: ProjectDocument): void {
 
   // Orphan component check
   for (const comp of Object.values(components)) {
+    validateScreenComponent(comp, `components.${comp.id}`)
     if (!hasOwnEntity(screens, comp.screenId)) {
       throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} references non-existent screen ${comp.screenId}`)
     }
@@ -241,6 +244,22 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
   for (const comp of screenComponents) {
     const isPageRoot = comp.id === screen.rootComponentId
     const isModalRoot = screen.modalComponentIds.includes(comp.id)
+    if (isPageRoot || isModalRoot) {
+      if (!isRootSizing(comp.sizing)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Independent root ${comp.id} must use fixed root sizing`,
+        )
+      }
+    } else {
+      const parent = comp.parentId ? getOwnEntity(components, comp.parentId) : undefined
+      const parentLayout: ComponentLayout | null = parent && (
+        parent.config.kind === 'page' ||
+        parent.config.kind === 'container' ||
+        parent.config.kind === 'modal'
+      ) ? parent.config : null
+      validateSizingContext(comp.sizing, comp.placement, parentLayout, `Component ${comp.id} sizing`)
+    }
     if ((isPageRoot || isModalRoot) && comp.placement.mode !== 'flow') {
       throw new DomainError(
         'INVARIANT_VIOLATION',

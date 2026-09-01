@@ -12,6 +12,7 @@ import type {
   ComponentConfig,
   ComponentLayout,
   ComponentPlacement,
+  ComponentSizing,
   EntityId,
   PlacementInset,
   ProjectDocument,
@@ -490,6 +491,44 @@ type PlacementStyle = CSSProperties & {
   '--placement-inset-y'?: string
 }
 
+function sizingToken(token: ComponentSizing['minWidth']): string | undefined {
+  switch (token) {
+    case 'none': return undefined
+    case 'xs': return '160px'
+    case 'sm': return '240px'
+    case 'md': return '320px'
+    case 'lg': return '480px'
+    case 'xl': return '640px'
+  }
+}
+
+function sizingStyle(
+  sizing: ComponentSizing,
+  context: 'flow' | 'projection',
+): CSSProperties {
+  const maxWidth = sizingToken(sizing.maxWidth)
+  const style: CSSProperties = {
+    width: sizing.inlineSize === 'fill'
+      ? '100%'
+      : sizing.inlineSize === 'content'
+        ? 'fit-content'
+        : 'auto',
+    minWidth: sizingToken(sizing.minWidth),
+    maxWidth: context === 'projection'
+      ? maxWidth
+        ? `min(${maxWidth}, calc(100% - 2 * var(--placement-inset-x, var(--placement-inset, 0px))))`
+        : undefined
+      : maxWidth ?? '100%',
+  }
+  if (context === 'flow') {
+    style.gridColumn = `span ${sizing.gridSpan}`
+    style.flexGrow = sizing.grow
+    style.flexShrink = sizing.shrink === 'allow' ? 1 : 0
+    if (sizing.grow > 0) style.flexBasis = 0
+  }
+  return style
+}
+
 function placementInset(token: PlacementInset): string {
   switch (token) {
     case 'none': return '0px'
@@ -511,17 +550,22 @@ function owningFrameId(document: ProjectDocument, componentId: EntityId): Entity
   return component?.id ?? componentId
 }
 
-function projectionStyle(placement: ComponentPlacement): PlacementStyle {
+function projectionStyle(
+  placement: ComponentPlacement,
+  sizing: ComponentSizing,
+): PlacementStyle {
+  const sizingProperties = sizingStyle(sizing, 'projection')
   if (placement.mode === 'sticky') {
-    return { '--placement-inset': placementInset(placement.inset) }
+    return { ...sizingProperties, '--placement-inset': placementInset(placement.inset) }
   }
   if (placement.mode === 'overlay' || placement.mode === 'viewport') {
     return {
+      ...sizingProperties,
       '--placement-inset-x': placementInset(placement.insetX),
       '--placement-inset-y': placementInset(placement.insetY),
     }
   }
-  return {}
+  return sizingProperties
 }
 
 function ProjectedCanvasComponent({
@@ -555,7 +599,7 @@ function ProjectedCanvasComponent({
   return (
     <div
       className={styles.projectionItem}
-      style={projectionStyle(placement)}
+      style={projectionStyle(placement, component.sizing)}
       data-placement-projection={layer}
       data-placement-anchor={
         placement.mode === 'overlay' || placement.mode === 'viewport'
@@ -792,7 +836,18 @@ function CanvasComponent({
                 return null
               }
               return (
-                <div className={styles.childSlot} key={childId}>
+                <div
+                  className={styles.childSlot}
+                  key={childId}
+                  style={sizingStyle(
+                    getOwnEntity(document.components, childId)!.sizing,
+                    'flow',
+                  )}
+                  data-inline-size={getOwnEntity(document.components, childId)!.sizing.inlineSize}
+                  data-grid-span={getOwnEntity(document.components, childId)!.sizing.gridSpan}
+                  data-grow={getOwnEntity(document.components, childId)!.sizing.grow}
+                  data-shrink={getOwnEntity(document.components, childId)!.sizing.shrink}
+                >
                   {dropZone}
                   <CanvasComponent
                     componentId={childId}
