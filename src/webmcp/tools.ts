@@ -9,11 +9,11 @@ import type {
   ComponentOverride,
   ComponentPlacement,
   ComponentSizing,
+  DefinitionComponentConfig,
   EventAction,
   EventTrigger,
   FieldBinding,
   HttpMethod,
-  ComponentDefinition,
   ComponentTargetRef,
   PublicPropFieldV3,
 } from '../domain/model'
@@ -44,7 +44,9 @@ import {
   createEmptyComponentDefinition,
   createExtractDefinitionCommand,
   duplicateComponentDefinition,
+  resolveOwnedDefinitionInlineNodeAtPath,
 } from '../domain/definitionEditing'
+import { cloneComponentDefinition } from '../domain/modelClone'
 import { resolveComponentTarget, resolveScreenNodes } from '../domain/definitionResolver'
 import type { ChangeSet } from '../domain/collaboration'
 import {
@@ -53,6 +55,7 @@ import {
   componentPlacementSchema,
   rootComponentSizingSchema,
   componentSizingSchema,
+  componentSizingPatchSchema,
   componentOverridesSchema,
 } from './schemas'
 
@@ -320,7 +323,11 @@ function withWriteFailure<T extends JsonObject>(operation: () => T): ToolResult<
   return withFailure(operation)
 }
 
-function appendCommand(input: JsonObject, command: DomainCommand): JsonObject {
+function appendCommand(
+  input: JsonObject,
+  command: DomainCommand,
+  resultData: JsonObject = {},
+): JsonObject {
   const state = useAppStore.getState()
   if (state.recoveryState) {
     throw new DomainError('RECOVERY_REQUIRED', 'Persisted data recovery is required', {
@@ -366,6 +373,7 @@ function appendCommand(input: JsonObject, command: DomainCommand): JsonObject {
     changeSetId: updated.id,
     changeSetVersion: updated.version,
     revision: state.revision,
+    ...resultData,
   }
 }
 
@@ -809,18 +817,25 @@ const changeScreenStructure: ToolDefinition = {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
+      let resultData: JsonObject = {}
       if (operation === 'add') {
         requireExactKeys(
           input,
           [...Object.keys(writeBaseProperties), 'operation', 'name', 'route'],
           'change_screen_structure add input',
         )
+        const screenId = nanoid()
+        const rootComponentId = nanoid()
         command = {
           type: 'addScreen',
-          screenId: nanoid(),
-          rootComponentId: nanoid(),
+          screenId,
+          rootComponentId,
           name: requiredString(input, 'name'),
           route: requiredString(input, 'route'),
+        }
+        resultData = {
+          createdScreenId: screenId,
+          createdRootComponentId: rootComponentId,
         }
       } else if (operation === 'update') {
         requireExactKeys(
@@ -847,7 +862,7 @@ const changeScreenStructure: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported screen operation: ${operation}`)
       }
-      return appendCommand(input, command)
+      return appendCommand(input, command, resultData)
     })
   },
 }
@@ -936,6 +951,7 @@ const changeComponentStructure: ToolDefinition = {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
+      let resultData: JsonObject = {}
       if (operation === 'add') {
         requireExactKeys(input, [
           'changeSetId',
@@ -953,9 +969,10 @@ const changeComponentStructure: ToolDefinition = {
         const config = requiredRecord(input, 'config') as ComponentConfig
         const sizing = requiredRecord(input, 'sizing')
         validateComponentSizing(sizing, 'sizing')
+        const componentId = nanoid()
         command = {
           type: 'addComponent',
-          componentId: nanoid(),
+          componentId,
           screenId: requiredString(input, 'screenId'),
           parentId: requiredNullableString(input, 'parentId'),
           kind: requiredString(input, 'kind') as ComponentKind,
@@ -964,6 +981,7 @@ const changeComponentStructure: ToolDefinition = {
           config,
           position: typeof input.position === 'number' ? input.position : undefined,
         }
+        resultData = { createdComponentId: componentId }
       } else if (operation === 'move') {
         requireExactKeys(input, [
           'changeSetId',
@@ -998,6 +1016,14 @@ const changeComponentStructure: ToolDefinition = {
           throw new DomainError('INVALID_PARENT', 'Independent screen roots cannot be duplicated')
         }
         command = duplicateCommand
+        const createdComponentId = duplicateCommand.componentIdMap[componentId]
+        if (!createdComponentId) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Duplicate command omitted the generated root ID for ${componentId}`,
+          )
+        }
+        resultData = { createdComponentId }
       } else if (operation === 'remove') {
         requireExactKeys(input, [
           'changeSetId',
@@ -1010,7 +1036,7 @@ const changeComponentStructure: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported component operation: ${operation}`)
       }
-      return appendCommand(input, command)
+      return appendCommand(input, command, resultData)
     })
   },
 }
@@ -1018,8 +1044,9 @@ const changeComponentStructure: ToolDefinition = {
 const updateComponentSpec: ToolDefinition = {
   name: 'update_component_spec',
   description:
-    'Update a component common spec, sizing, placement, or kind-specific config. Sizing is a full ' +
-    'object and is rejected when it conflicts with min/max ordering or parent layout context. ' +
+    'Update a component common spec, partial sizing, placement, or kind-specific config. Sizing ' +
+    'fields are merged with the current base sizing and rejected when the result conflicts with ' +
+    'min/max ordering or parent layout context. ' +
     AGENT_WORKFLOW,
   inputSchema: {
     type: 'object',
@@ -1040,7 +1067,7 @@ const updateComponentSpec: ToolDefinition = {
           },
           config: componentConfigPatchSchema,
           placement: componentPlacementSchema,
-          sizing: componentSizingSchema,
+          sizing: componentSizingPatchSchema,
         },
         minProperties: 1,
         ...CLOSED_OBJECT,
@@ -1060,6 +1087,7 @@ const updateComponentSpec: ToolDefinition = {
       ], 'update_component_spec input')
       const patchInput = requiredRecord(input, 'patch')
       requireExactKeys(patchInput, ['common', 'config', 'placement', 'sizing'], 'update_component_spec patch')
+      const componentId = requiredString(input, 'componentId')
       const patch: {
         common?: Partial<CommonComponentSpec>
         config?: Partial<ComponentConfig>
@@ -1088,12 +1116,18 @@ const updateComponentSpec: ToolDefinition = {
         if (!isRecord(patchInput.sizing)) {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.sizing must be an object')
         }
-        validateComponentSizing(patchInput.sizing, 'patch.sizing')
-        patch.sizing = patchInput.sizing
+        const current = getOwnEntity(
+          useAppStore.getState().effectiveDocument.components,
+          componentId,
+        )
+        if (!current) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
+        const sizing = { ...current.sizing, ...patchInput.sizing }
+        validateComponentSizing(sizing, 'patch.sizing')
+        patch.sizing = sizing
       }
       return appendCommand(input, {
         type: 'updateComponentSpec',
-        componentId: requiredString(input, 'componentId'),
+        componentId,
         patch,
       })
     })
@@ -1148,6 +1182,7 @@ const upsertScreenState: ToolDefinition = {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
+      let resultData: JsonObject = {}
       if (operation === 'create') {
         requireExactKeys(
           input,
@@ -1161,14 +1196,16 @@ const upsertScreenState: ToolDefinition = {
           ],
           'upsert_screen_state create input',
         )
+        const stateId = nanoid()
         command = {
           type: 'createScreenState',
-          stateId: nanoid(),
+          stateId,
           screenId: requiredString(input, 'screenId'),
           name: requiredString(input, 'name'),
           description: optionalString(input, 'description'),
           overrides: scenarioOverridesFromInput(input.overrides),
         }
+        resultData = { stateId }
       } else if (operation === 'update') {
         requireExactKeys(
           input,
@@ -1189,6 +1226,7 @@ const upsertScreenState: ToolDefinition = {
           description: optionalString(input, 'description'),
           overrides: scenarioOverridesFromInput(input.overrides),
         }
+        resultData = { stateId: command.stateId }
       } else if (operation === 'remove') {
         requireExactKeys(
           input,
@@ -1199,7 +1237,7 @@ const upsertScreenState: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported state operation: ${operation}`)
       }
-      return appendCommand(input, command)
+      return appendCommand(input, command, resultData)
     })
   },
 }
@@ -1332,6 +1370,7 @@ const connectBehavior: ToolDefinition = {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
       let command: DomainCommand
+      let resultData: JsonObject = {}
       if (operation === 'connectEvent') {
         requireExactKeys(
           input,
@@ -1349,14 +1388,16 @@ const connectBehavior: ToolDefinition = {
         if (!Array.isArray(input.actions)) {
           throw new DomainError('INVALID_REFERENCE', 'actions must be an array')
         }
+        const eventId = nanoid()
         command = {
           type: 'connectEvent',
-          eventId: nanoid(),
+          eventId,
           screenId: requiredString(input, 'screenId'),
           name: requiredString(input, 'name'),
           trigger,
           actions: input.actions as EventAction[],
         }
+        resultData = { eventId }
       } else if (operation === 'updateEvent') {
         requireExactKeys(
           input,
@@ -1381,6 +1422,7 @@ const connectBehavior: ToolDefinition = {
           trigger,
           actions: input.actions as EventAction[],
         }
+        resultData = { eventId: command.eventId }
       } else if (operation === 'removeEvent') {
         requireExactKeys(
           input,
@@ -1407,9 +1449,10 @@ const connectBehavior: ToolDefinition = {
         if (input.requestBindings !== undefined && !Array.isArray(input.requestBindings)) {
           throw new DomainError('INVALID_REFERENCE', 'requestBindings must be an array')
         }
+        const apiId = nanoid()
         command = {
           type: 'bindApiOperation',
-          operationId: nanoid(),
+          operationId: apiId,
           screenId: requiredString(input, 'screenId'),
           name: requiredString(input, 'name'),
           method: requiredString(input, 'method') as HttpMethod,
@@ -1418,6 +1461,7 @@ const connectBehavior: ToolDefinition = {
           successScenarioId: optionalString(input, 'successStateId'),
           errorScenarioId: optionalString(input, 'errorStateId'),
         }
+        resultData = { apiId }
       } else if (operation === 'updateApi') {
         requireExactKeys(
           input,
@@ -1447,6 +1491,7 @@ const connectBehavior: ToolDefinition = {
           successScenarioId: requiredNullableString(input, 'successStateId'),
           errorScenarioId: requiredNullableString(input, 'errorStateId'),
         }
+        resultData = { apiId: command.operationId }
       } else if (operation === 'removeApi') {
         requireExactKeys(
           input,
@@ -1457,7 +1502,7 @@ const connectBehavior: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported behavior operation: ${operation}`)
       }
-      return appendCommand(input, command)
+      return appendCommand(input, command, resultData)
     })
   },
 }
@@ -1465,11 +1510,55 @@ const connectBehavior: ToolDefinition = {
 const manageComponentDefinition: ToolDefinition = {
   name: 'manage_component_definition',
   description:
-    'Create, rename, duplicate, expose a typed public property, add a constrained Variant, or ' +
-    'remove a shared Component Definition. Definitions are global and nested references must remain a DAG. ' +
+    'Create, rename, duplicate, update an owned inline node, expose a typed public property, add a ' +
+    'constrained Variant, or remove a shared Component Definition. Definitions are global and nested ' +
+    'references must remain a DAG. ' +
     AGENT_WORKFLOW,
   inputSchema: {
     oneOf: [
+      {
+        type: 'object',
+        properties: {
+          ...writeBaseProperties,
+          operation: { const: 'updateNode' },
+          definitionId: { type: 'string', minLength: 1 },
+          nodePath: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string', minLength: 1 },
+          },
+          patch: {
+            type: 'object',
+            properties: {
+              common: {
+                type: 'object',
+                properties: {
+                  description: { type: 'string' },
+                  visible: { type: 'boolean' },
+                  enabled: { type: 'boolean' },
+                },
+                minProperties: 1,
+                ...CLOSED_OBJECT,
+              },
+              config: componentConfigPatchSchema,
+              placement: componentPlacementSchema,
+              sizing: componentSizingSchema,
+            },
+            minProperties: 1,
+            ...CLOSED_OBJECT,
+          },
+        },
+        required: [
+          'changeSetId',
+          'expectedRevision',
+          'expectedChangeSetVersion',
+          'operation',
+          'definitionId',
+          'nodePath',
+          'patch',
+        ],
+        ...CLOSED_OBJECT,
+      },
       {
         type: 'object',
         properties: {
@@ -1573,6 +1662,9 @@ const manageComponentDefinition: ToolDefinition = {
           type: 'putComponentDefinition',
           mode: 'create',
           definition,
+        }, {
+          createdDefinitionId: definition.id,
+          createdNodeId: definition.rootNodeId,
         })
       }
       const definitionId = requiredString(input, 'definitionId')
@@ -1582,21 +1674,71 @@ const manageComponentDefinition: ToolDefinition = {
         return appendCommand(input, { type: 'removeComponentDefinition', definitionId })
       }
       if (operation === 'duplicate') {
+        const duplicate = duplicateComponentDefinition(
+          current,
+          `definition-${nanoid()}`,
+          optionalString(input, 'name') ?? `${current.name} copy`,
+          nanoid,
+        )
         return appendCommand(input, {
           type: 'putComponentDefinition',
           mode: 'create',
-          definition: duplicateComponentDefinition(
-            current,
-            `definition-${nanoid()}`,
-            optionalString(input, 'name') ?? `${current.name} copy`,
-            nanoid,
-          ),
+          definition: duplicate,
+        }, {
+          createdDefinitionId: duplicate.id,
+          createdNodeId: duplicate.rootNodeId,
         })
       }
-      const definition = structuredClone(current) as ComponentDefinition
+      const definition = cloneComponentDefinition(current)
+      let resultData: JsonObject = { definitionId }
       if (operation === 'updateMeta') {
         definition.name = optionalString(input, 'name') ?? definition.name
         definition.description = optionalString(input, 'description') ?? definition.description
+      } else if (operation === 'updateNode') {
+        if (
+          !Array.isArray(input.nodePath) ||
+          input.nodePath.length === 0 ||
+          !input.nodePath.every(segment => typeof segment === 'string' && segment.length > 0)
+        ) {
+          throw new DomainError('INVALID_REFERENCE', 'nodePath must be a non-empty string array')
+        }
+        const nodePath = [...input.nodePath] as [string, ...string[]]
+        const patch = requiredRecord(input, 'patch')
+        requireExactKeys(
+          patch,
+          ['common', 'config', 'placement', 'sizing'],
+          'manage_component_definition updateNode patch',
+        )
+        if (Object.keys(patch).length === 0) {
+          throw new DomainError('INVALID_ARGUMENT', 'updateNode patch must not be empty')
+        }
+        const node = resolveOwnedDefinitionInlineNodeAtPath(definition, nodePath)
+        if (patch.common !== undefined) {
+          if (!isRecord(patch.common)) {
+            throw new DomainError('INVALID_ARGUMENT', 'patch.common must be an object')
+          }
+          node.common = { ...node.common, ...patch.common } as CommonComponentSpec
+        }
+        if (patch.config !== undefined) {
+          if (!isRecord(patch.config)) {
+            throw new DomainError('INVALID_ARGUMENT', 'patch.config must be an object')
+          }
+          node.config = { ...node.config, ...patch.config } as DefinitionComponentConfig
+        }
+        if (patch.placement !== undefined) {
+          if (!isRecord(patch.placement)) {
+            throw new DomainError('INVALID_ARGUMENT', 'patch.placement must be an object')
+          }
+          node.placement = patch.placement as ComponentPlacement
+        }
+        if (patch.sizing !== undefined) {
+          if (!isRecord(patch.sizing)) {
+            throw new DomainError('INVALID_ARGUMENT', 'patch.sizing must be an object')
+          }
+          validateComponentSizing(patch.sizing, 'patch.sizing')
+          node.sizing = patch.sizing
+        }
+        resultData = { definitionId, nodePath }
       } else if (operation === 'publishStringProp') {
         if (!Array.isArray(input.nodePath) || input.nodePath.length === 0) {
           throw new DomainError('INVALID_REFERENCE', 'nodePath must be a non-empty array')
@@ -1654,6 +1796,7 @@ const manageComponentDefinition: ToolDefinition = {
           nodeOverrides: {},
         })
         definition.representativeVariantId ??= variantId
+        resultData = { definitionId, createdVariantId: variantId }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported Definition operation: ${operation}`)
       }
@@ -1661,7 +1804,7 @@ const manageComponentDefinition: ToolDefinition = {
         type: 'putComponentDefinition',
         mode: 'update',
         definition,
-      })
+      }, resultData)
     })
   },
 }
@@ -1748,21 +1891,28 @@ const manageDefinitionInstance: ToolDefinition = {
       const operation = requiredString(input, 'operation')
       const document = useAppStore.getState().effectiveDocument
       if (operation === 'extract') {
-        return appendCommand(input, createExtractDefinitionCommand(
+        const command = createExtractDefinitionCommand(
           document,
           requiredString(input, 'componentId'),
           `definition-${nanoid()}`,
           `instance-${nanoid()}`,
           requiredString(input, 'name'),
           nanoid,
-        ))
+        )
+        return appendCommand(input, command, {
+          createdDefinitionId: command.definition.id,
+          createdInstanceId: command.replacementInstanceId,
+        })
       }
       if (operation === 'detach') {
-        return appendCommand(input, createDetachDefinitionInstanceCommand(
+        const command = createDetachDefinitionInstanceCommand(
           document,
           requiredString(input, 'componentId'),
           nanoid,
-        ))
+        )
+        return appendCommand(input, command, {
+          createdComponentIds: command.generatedComponents.map(entry => entry.componentId),
+        })
       }
       if (operation === 'add') {
         const props = input.props === undefined ? {} : requiredRecord(input, 'props')
@@ -1770,9 +1920,10 @@ const manageDefinitionInstance: ToolDefinition = {
           ? DEFAULT_COMPONENT_SIZING
           : requiredRecord(input, 'sizing')
         validateComponentSizing(sizing, 'sizing')
+        const componentId = `instance-${nanoid()}`
         return appendCommand(input, {
           type: 'addDefinitionInstance',
-          componentId: `instance-${nanoid()}`,
+          componentId,
           screenId: requiredString(input, 'screenId'),
           parentId: requiredString(input, 'parentId'),
           position: typeof input.position === 'number' ? input.position : undefined,
@@ -1785,6 +1936,8 @@ const manageDefinitionInstance: ToolDefinition = {
             ? DEFAULT_COMPONENT_PLACEMENT
             : requiredRecord(input, 'placement') as ComponentPlacement,
           sizing,
+        }, {
+          createdInstanceId: componentId,
         })
       }
       if (operation === 'update') {
@@ -1795,9 +1948,10 @@ const manageDefinitionInstance: ToolDefinition = {
           ? undefined
           : requiredRecord(input, 'sizing')
         if (sizing) validateComponentSizing(sizing, 'sizing')
+        const componentId = requiredString(input, 'componentId')
         return appendCommand(input, {
           type: 'updateDefinitionInstance',
-          componentId: requiredString(input, 'componentId'),
+          componentId,
           variantId: input.variantId === undefined
             ? undefined
             : requiredNullableString(input, 'variantId'),
@@ -1806,6 +1960,8 @@ const manageDefinitionInstance: ToolDefinition = {
             ? undefined
             : requiredRecord(input, 'placement') as ComponentPlacement,
           sizing,
+        }, {
+          instanceId: componentId,
         })
       }
       throw new DomainError('INVALID_REFERENCE', `Unsupported Instance operation: ${operation}`)

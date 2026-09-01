@@ -290,7 +290,7 @@ export function DefinitionEditor() {
       ) : (
         <div className={styles.workspace}>
           {reviewLocked ? <p className={styles.lockNotice}>{t('definitions.reviewLocked')}</p> : null}
-          <header className={styles.definitionHeader}>
+          <header className={styles.definitionHeader} data-definition-header>
             <div>
               <label>
                 <span>{t('definitions.name')}</span>
@@ -374,7 +374,7 @@ export function DefinitionEditor() {
           ) : null}
 
           <div className={styles.editorGrid}>
-            <section className={styles.panel}>
+            <section className={styles.panel} data-definition-panel="nodes">
               <h3>{t('definitions.nodes')}</h3>
               <DefinitionNodeTree
                 definition={definition}
@@ -385,7 +385,7 @@ export function DefinitionEditor() {
               />
             </section>
 
-            <section className={styles.panel}>
+            <section className={styles.panel} data-definition-panel="base">
               <h3>{t('definitions.nodeBase')}</h3>
               {selectedNode && editableField ? (
                 <>
@@ -418,7 +418,7 @@ export function DefinitionEditor() {
               ) : null}
             </section>
 
-            <section className={styles.panel}>
+            <section className={styles.panel} data-definition-panel="properties">
               <h3>{t('definitions.properties')}</h3>
               {definition.publicProps.length === 0 ? (
                 <p className={styles.muted}>{t('definitions.noProperties')}</p>
@@ -447,7 +447,7 @@ export function DefinitionEditor() {
               )}
             </section>
 
-            <section className={styles.panel}>
+            <section className={styles.panel} data-definition-panel="variants">
               <div className={styles.panelTitle}>
                 <h3>{t('definitions.variants')}</h3>
                 <button type="button" onClick={addVariant} disabled={reviewLocked}>

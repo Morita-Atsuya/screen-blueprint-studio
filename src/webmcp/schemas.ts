@@ -128,42 +128,54 @@ export const componentPlacementSchema = {
   ],
 } as const
 
-export const componentSizingSchema = {
-  type: 'object',
-  properties: {
-    inlineSize: { type: 'string', enum: ['auto', 'content', 'fill'] },
-    minWidth: { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg', 'xl'] },
-    maxWidth: { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg', 'xl'] },
-    gridSpan: { type: 'integer', minimum: 1, maximum: 12 },
-    grow: { type: 'integer', minimum: 0, maximum: 3 },
-    shrink: { type: 'string', enum: ['allow', 'prevent'] },
-  },
-  required: ['inlineSize', 'minWidth', 'maxWidth', 'gridSpan', 'grow', 'shrink'],
-  allOf: [
-    ...(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((minWidth, index, tokens) => ({
-      if: {
-        properties: { minWidth: { const: minWidth } },
-        required: ['minWidth'],
-      },
-      then: {
-        properties: {
-          maxWidth: { type: 'string', enum: ['none', ...tokens.slice(index)] },
-        },
-      },
-    })),
-    {
-      if: {
-        properties: { grow: { type: 'integer', minimum: 1 } },
-        required: ['grow'],
-      },
-      then: {
-        properties: {
-          inlineSize: { const: 'fill' },
-          shrink: { const: 'allow' },
-        },
+const componentSizingProperties = {
+  inlineSize: { type: 'string', enum: ['auto', 'content', 'fill'] },
+  minWidth: { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg', 'xl'] },
+  maxWidth: { type: 'string', enum: ['none', 'xs', 'sm', 'md', 'lg', 'xl'] },
+  gridSpan: { type: 'integer', minimum: 1, maximum: 12 },
+  grow: { type: 'integer', minimum: 0, maximum: 3 },
+  shrink: { type: 'string', enum: ['allow', 'prevent'] },
+} as const
+
+const componentSizingRules = [
+  ...(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((minWidth, index, tokens) => ({
+    if: {
+      properties: { minWidth: { const: minWidth } },
+      required: ['minWidth'],
+    },
+    then: {
+      properties: {
+        maxWidth: { type: 'string', enum: ['none', ...tokens.slice(index)] },
       },
     },
-  ],
+  })),
+  {
+    if: {
+      properties: { grow: { type: 'integer', minimum: 1 } },
+      required: ['grow'],
+    },
+    then: {
+      properties: {
+        inlineSize: { const: 'fill' },
+        shrink: { const: 'allow' },
+      },
+    },
+  },
+] as const
+
+export const componentSizingSchema = {
+  type: 'object',
+  properties: componentSizingProperties,
+  required: ['inlineSize', 'minWidth', 'maxWidth', 'gridSpan', 'grow', 'shrink'],
+  allOf: componentSizingRules,
+  ...closed,
+} as const
+
+export const componentSizingPatchSchema = {
+  type: 'object',
+  properties: componentSizingProperties,
+  minProperties: 1,
+  allOf: componentSizingRules,
   ...closed,
 } as const
 

@@ -112,6 +112,7 @@ const canonicalProjectSpecV3Bundle = join(temp, 'canonicalProjectSpecV3.mjs')
 const portableUrlBundle = join(temp, 'portableUrl.mjs')
 const webMcpSchemasBundle = join(temp, 'webMcpSchemas.mjs')
 const modelCloneBundle = join(temp, 'modelClone.mjs')
+const definitionEditingBundle = join(temp, 'definitionEditing.mjs')
 bundle('src/app/appStore.ts', appStoreBundle)
 bundle('src/webmcp/tools.ts', toolsBundle)
 bundle('src/domain/applyCommand.ts', domainBundle)
@@ -149,6 +150,7 @@ bundle('src/domain/canonicalProjectSpecV3.ts', canonicalProjectSpecV3Bundle)
 bundle('src/domain/portableUrl.ts', portableUrlBundle)
 bundle('src/webmcp/schemas.ts', webMcpSchemasBundle)
 bundle('src/domain/modelClone.ts', modelCloneBundle)
+bundle('src/domain/definitionEditing.ts', definitionEditingBundle)
 bundle(
   'scripts/fixtures/renderInspector.tsx',
   renderInspectorBundle,
@@ -4150,6 +4152,293 @@ await test('representative screen/component/state/event/API writes reach the cha
   execute('upsert_screen_state', { operation: 'remove', stateId: addedStateId })
 
   assert(pending().operations.length === version, 'operation count and version diverged')
+})
+
+await test('WebMCP supports Definition node edits, partial sizing, and generated result IDs', async () => {
+  localStorage.clear()
+  const module = await import(moduleUrl(toolsBundle, 'definition-node-and-result-ids'))
+  const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
+  const begin = byName('begin_change_set').execute({ summary: 'Edit Definitions and collect IDs' })
+  assert(begin.ok, 'Definition edit change set did not begin')
+  const common = {
+    changeSetId: begin.data.changeSetId,
+    expectedRevision: begin.data.baseRevision,
+  }
+  let version = 0
+  const execute = (name, input) => {
+    const result = byName(name).execute({
+      ...common,
+      expectedChangeSetVersion: version,
+      ...input,
+    })
+    assert(result.ok, `${name} failed: ${JSON.stringify(result)}`)
+    version = result.data.changeSetVersion
+    return result
+  }
+  const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
+  const latestCommand = () => pending().operations.at(-1).command
+
+  const sizingPatchSchema = byName('update_component_spec')
+    .inputSchema.properties.patch.properties.sizing
+  const validateSizingPatch = new Ajv2020({ strict: false }).compile(sizingPatchSchema)
+  assert(
+    validateSizingPatch({ gridSpan: 10 }) &&
+      !sizingPatchSchema.required,
+    'update_component_spec sizing schema still requires a complete ComponentSizing',
+  )
+
+  const screenResult = execute('change_screen_structure', {
+    operation: 'add',
+    name: 'Generated ID screen',
+    route: '/generated-id',
+  })
+  assert(
+    screenResult.data.createdScreenId === latestCommand().screenId &&
+      screenResult.data.createdRootComponentId === latestCommand().rootComponentId,
+    'screen add result omitted its generated screen or root ID',
+  )
+
+  const containerResult = execute('change_component_structure', {
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: 'comp-list-page',
+    kind: 'container',
+    placement: { mode: 'flow' },
+    sizing: defaultSizing(),
+    config: {
+      kind: 'container',
+      layout: 'grid',
+      gap: 'md',
+      columns: 12,
+      justify: 'start',
+      align: 'stretch',
+      wrap: false,
+    },
+  })
+  const containerId = containerResult.data.createdComponentId
+  assert(
+    containerId === latestCommand().componentId,
+    'component add result omitted its generated component ID',
+  )
+
+  const textResult = execute('change_component_structure', {
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: containerId,
+    kind: 'text',
+    placement: { mode: 'flow' },
+    sizing: defaultSizing(),
+    config: { kind: 'text', text: 'Generated ID source', style: 'body' },
+  })
+  const textId = textResult.data.createdComponentId
+  const partialSizingResult = execute('update_component_spec', {
+    componentId: textId,
+    patch: { sizing: { gridSpan: 10 } },
+  })
+  assert(
+    partialSizingResult.ok &&
+      latestCommand().patch.sizing.gridSpan === 10 &&
+      latestCommand().patch.sizing.inlineSize === 'auto' &&
+      latestCommand().patch.sizing.minWidth === 'none' &&
+      latestCommand().patch.sizing.maxWidth === 'none' &&
+      latestCommand().patch.sizing.grow === 0 &&
+      latestCommand().patch.sizing.shrink === 'allow',
+    'partial sizing was not merged over the current complete sizing',
+  )
+
+  const duplicateComponentResult = execute('change_component_structure', {
+    operation: 'duplicate',
+    componentId: textId,
+  })
+  assert(
+    duplicateComponentResult.data.createdComponentId ===
+      latestCommand().componentIdMap[textId],
+    'component duplicate result omitted its generated root component ID',
+  )
+
+  const definitionNodeResult = execute('manage_component_definition', {
+    operation: 'updateNode',
+    definitionId: 'shared/task-card',
+    nodePath: ['task-card-action'],
+    patch: {
+      common: { description: 'Open a task from WebMCP' },
+      config: { label: 'Open task now' },
+      sizing: defaultSizing({ gridSpan: 2 }),
+    },
+  })
+  assert(
+    definitionNodeResult.data.definitionId === 'shared/task-card' &&
+      JSON.stringify(definitionNodeResult.data.nodePath) ===
+        JSON.stringify(['task-card-action']) &&
+      latestCommand().type === 'putComponentDefinition' &&
+      latestCommand().mode === 'update' &&
+      latestCommand().definition.nodes['task-card-action'].common.description ===
+        'Open a task from WebMCP' &&
+      latestCommand().definition.nodes['task-card-action'].config.label === 'Open task now',
+    'Definition-owned node update did not reach the reviewed putComponentDefinition command',
+  )
+  const operationCountBeforeInvalidPath = pending().operations.length
+  const invalidPath = byName('manage_component_definition').execute({
+    ...common,
+    expectedChangeSetVersion: version,
+    operation: 'updateNode',
+    definitionId: 'shared/task-card',
+    nodePath: ['task-card-title', 'task-card-action'],
+    patch: { common: { description: 'Invalid path' } },
+  })
+  assert(
+    !invalidPath.ok &&
+      invalidPath.error.code === 'INVALID_REFERENCE' &&
+      pending().operations.length === operationCountBeforeInvalidPath,
+    'Definition node update accepted a path outside the owned parent-child chain',
+  )
+
+  const createdDefinition = execute('manage_component_definition', {
+    operation: 'create',
+    name: 'Generated Definition',
+  })
+  assert(
+    createdDefinition.data.createdDefinitionId === latestCommand().definition.id &&
+      createdDefinition.data.createdNodeId === latestCommand().definition.rootNodeId,
+    'Definition create result omitted its generated Definition or root node ID',
+  )
+  const duplicatedDefinition = execute('manage_component_definition', {
+    operation: 'duplicate',
+    definitionId: createdDefinition.data.createdDefinitionId,
+  })
+  assert(
+    duplicatedDefinition.data.createdDefinitionId === latestCommand().definition.id &&
+      duplicatedDefinition.data.createdNodeId === latestCommand().definition.rootNodeId,
+    'Definition duplicate result omitted its generated Definition or root node ID',
+  )
+  const variantResult = execute('manage_component_definition', {
+    operation: 'addVariant',
+    definitionId: createdDefinition.data.createdDefinitionId,
+    name: 'Compact',
+    propertyKey: 'density',
+    propertyValue: 'compact',
+  })
+  assert(
+    variantResult.data.createdVariantId ===
+      latestCommand().definition.variants.at(-1).id,
+    'Definition addVariant result omitted its generated Variant ID',
+  )
+
+  const instanceResult = execute('manage_definition_instance', {
+    operation: 'add',
+    screenId: 'screen-list',
+    parentId: 'comp-list-page',
+    definitionId: createdDefinition.data.createdDefinitionId,
+  })
+  assert(
+    instanceResult.data.createdInstanceId === latestCommand().componentId,
+    'Definition Instance add result omitted its generated instance ID',
+  )
+
+  const stateResult = execute('upsert_screen_state', {
+    operation: 'create',
+    screenId: 'screen-list',
+    name: 'Generated state',
+  })
+  assert(
+    stateResult.data.stateId === latestCommand().stateId,
+    'state create result omitted its generated state ID',
+  )
+  const eventResult = execute('connect_behavior', {
+    operation: 'connectEvent',
+    screenId: 'screen-list',
+    name: 'Generated event',
+    trigger: { type: 'click', target: { type: 'inline', componentId: textId } },
+    actions: [],
+  })
+  assert(
+    eventResult.data.eventId === latestCommand().eventId,
+    'event create result omitted its generated event ID',
+  )
+  const apiResult = execute('connect_behavior', {
+    operation: 'bindApi',
+    screenId: 'screen-list',
+    name: 'Generated API',
+    method: 'GET',
+    path: '/generated',
+  })
+  assert(
+    apiResult.data.apiId === latestCommand().operationId &&
+      typeof apiResult.data.operationId === 'string',
+    'API create result omitted its generated API ID or replaced the change operation ID',
+  )
+
+  const extracted = execute('manage_definition_instance', {
+    operation: 'extract',
+    componentId: textId,
+    name: 'Extracted Definition',
+  })
+  assert(
+    extracted.data.createdDefinitionId === latestCommand().definition.id &&
+      extracted.data.createdInstanceId === latestCommand().replacementInstanceId,
+    'Definition extraction result omitted its generated Definition or replacement Instance ID',
+  )
+  const detached = execute('manage_definition_instance', {
+    operation: 'detach',
+    componentId: extracted.data.createdInstanceId,
+  })
+  assert(
+    detached.data.createdComponentIds.length === latestCommand().generatedComponents.length &&
+      detached.data.createdComponentIds.every((id, index) =>
+        id === latestCommand().generatedComponents[index].componentId),
+    'Definition detach result omitted generated inline component IDs',
+  )
+  assert(pending().operations.length === version, 'generated-ID operations diverged from version')
+})
+
+await test('Definition node ownership rejects nested Definition Instance boundaries', async () => {
+  const { resolveOwnedDefinitionInlineNodeAtPath } = await import(
+    moduleUrl(definitionEditingBundle, 'owned-definition-paths')
+  )
+  const definition = {
+    id: 'outer',
+    rootNodeId: 'root',
+    nodes: {
+      root: { nodeType: 'inline', id: 'root', parentId: null, childIds: ['nested'] },
+      nested: {
+        nodeType: 'definitionInstance',
+        id: 'nested',
+        parentId: 'root',
+        childIds: [],
+      },
+    },
+  }
+  let nestedBoundaryError
+  try {
+    resolveOwnedDefinitionInlineNodeAtPath(definition, ['nested', 'inner-root'])
+  } catch (error) {
+    nestedBoundaryError = error
+  }
+  assert(
+    nestedBoundaryError?.code === 'INVALID_ARGUMENT' &&
+      nestedBoundaryError.message.includes('nested Definition Instance'),
+    'Definition-owned path resolution crossed a nested Definition Instance boundary',
+  )
+})
+
+await test('Definition editor CSS stays within narrow three-pane layouts', async () => {
+  const styles = readFileSync(
+    join(root, 'src/features/definitions/DefinitionEditor.module.css'),
+    'utf8',
+  )
+  const source = readFileSync(
+    join(root, 'src/features/definitions/DefinitionEditor.tsx'),
+    'utf8',
+  )
+  assert(
+    styles.includes('grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr))') &&
+      styles.includes('grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr))') &&
+      styles.includes('overflow-x: hidden;') &&
+      styles.includes('text-overflow: ellipsis;') &&
+      source.includes('data-definition-header') &&
+      source.includes('data-definition-panel="variants"'),
+    'Definition editor lacks responsive cards, overflow containment, or geometry landmarks',
+  )
 })
 
 await test('WebMCP reads are compact, discoverable, and serializable', async () => {

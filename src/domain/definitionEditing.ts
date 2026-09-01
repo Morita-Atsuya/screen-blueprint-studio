@@ -69,6 +69,51 @@ export function createEmptyComponentDefinition(
   }
 }
 
+export function resolveOwnedDefinitionInlineNodeAtPath(
+  definition: ComponentDefinition,
+  nodePath: readonly EntityId[],
+): Extract<ComponentDefinitionNode, { nodeType: 'inline' }> {
+  const root = getOwnEntity(definition.nodes, definition.rootNodeId)
+  if (!root || root.nodeType !== 'inline') {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} root must be an inline node`,
+    )
+  }
+  if (nodePath.length === 1 && nodePath[0] === definition.rootNodeId) return root
+  if (nodePath.length === 0) {
+    throw new DomainError('INVALID_REFERENCE', 'nodePath must contain at least one node ID')
+  }
+  if (nodePath[0] === definition.rootNodeId) {
+    throw new DomainError(
+      'INVALID_REFERENCE',
+      'nodePath must omit the Definition root ID except when targeting the root itself',
+    )
+  }
+
+  let current = root
+  for (const segment of nodePath) {
+    if (!current.childIds.includes(segment)) {
+      throw new DomainError(
+        'INVALID_REFERENCE',
+        `Node ${segment} is not a child on the requested Definition-owned path`,
+      )
+    }
+    const next = getOwnEntity(definition.nodes, segment)
+    if (!next) {
+      throw new DomainError('INVALID_REFERENCE', `Definition node ${segment} not found`)
+    }
+    if (next.nodeType !== 'inline') {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `nodePath cannot cross nested Definition Instance ${segment}`,
+      )
+    }
+    current = next
+  }
+  return current
+}
+
 export function createExtractDefinitionCommand(
   document: ProjectDocument,
   sourceRootComponentId: EntityId,
