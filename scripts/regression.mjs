@@ -11776,6 +11776,7 @@ await test('AI writes expose only the change set review flow', async () => {
   const toolsSource = readFileSync(join(root, 'src/webmcp/tools.ts'), 'utf8')
   const designSource = readFileSync(join(root, 'docs/MVP_TECHNICAL_DESIGN.md'), 'utf8')
   const readmeSource = readFileSync(join(root, 'README.md'), 'utf8')
+  const readmeJaSource = readFileSync(join(root, 'README.ja.md'), 'utf8')
   const obsoleteMode = ['auto', '-apply'].join('')
   const obsoletePolicy = ['agent', 'Write', 'Policy'].join('')
   const obsoleteEntryDisplay = ['entry', '表示'].join('')
@@ -11792,7 +11793,8 @@ await test('AI writes expose only the change set review flow', async () => {
     !designSource.toLowerCase().includes(obsoleteMode) &&
       !designSource.includes(obsoleteEntryDisplay) &&
       !designSource.includes(obsoleteEntrySelection) &&
-    readmeSource.includes('active change set中はreview lockとなり') &&
+    readmeSource.includes('AI proposals appear as change sets inside the application') &&
+    readmeJaSource.includes('AIの提案はアプリ内のchange setとして表示') &&
     designSource.includes('新しいactive change setへ追加できるのは`source: "agent"`だけ'),
     'documentation still describes a deleted collaboration or entry concept',
   )
