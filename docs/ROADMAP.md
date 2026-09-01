@@ -28,7 +28,6 @@ Planned enhancements extend portability and behavior modeling without turning th
 - **`load` and `change` triggers** alongside the existing `click` and `submit` triggers.
 - **Back, external navigation, resource, and scroll actions** alongside state changes, API calls, and internal navigation.
 - **HTTP status-specific API outcomes** so individual response classes or status codes can select distinct states.
-- Definition-based **Status Badge, Pagination, and Notification patterns** built from reusable component definitions rather than hard-coded special cases.
 - **Improved interaction preview** for exercising triggers, actions, collection items, navigation, and API outcomes while keeping editing and execution modes clearly separated.
 
 Roadmap scope may be refined as each capability is designed, but the portability, typed-model, and human-review principles above remain the product boundary.

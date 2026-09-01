@@ -28,7 +28,6 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントから、ワ�
 - 既存の`click`／`submit`に加える **`load`／`change` trigger**。
 - 状態変更、API呼び出し、アプリ内遷移に加える **back、external navigation、resource、scroll action**。
 - Response classまたは個別status codeごとに異なる画面状態を選べる **HTTP status別API outcome**。
-- Hard-codedな特例ではなく、再利用可能なcomponent definitionから構成する **Status Badge、Pagination、Notification pattern**。
 - 編集modeと実行modeを明確に分けたまま、trigger、action、collection item、navigation、API outcomeを試せる **操作previewの改善**。
 
 各機能の設計に伴ってroadmapのscopeを調整する場合がありますが、portability、typed model、人間によるreviewという上記の原則は製品境界として維持します。

@@ -286,10 +286,13 @@ Screen Blueprint StudioのReact MVPを実装済みで、現在は提出品質を
 
 - Portable JSON/YAML Import/Export
 - 汎用Behavior（typed ValueSource、trigger、action、API outcomeの拡張）
-- Shared ComponentsのDefinitionを利用するshared patterns
 - 全面的なdocs再編
 
-この判断は提出作業の内部優先順位を定めるものであり、root READMEの商品説明には持ち込まない。締切前scopeでも、統合時に品質を確認できない項目は完了扱いにせず、公開roadmapのstatusを **In progress** のまま維持する。
+### 製品scopeから除外
+
+- Status Badge、Pagination、Notificationなどのtemplate／pattern library。Shared Component Definitionsで個別に構成できるため、専用の製品機能は提供しない。
+
+この判断は提出作業の内部優先順位を定めるものであり、root READMEの商品説明には持ち込まない。締切前scopeでも、統合時に品質を確認できない項目は完了扱いにせず、公開roadmapの **Available in this release** から外す。
 
 ## 13. 参照資料
 
