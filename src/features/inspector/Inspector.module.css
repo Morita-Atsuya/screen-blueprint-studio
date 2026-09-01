@@ -494,3 +494,43 @@
 .inlineField {
   min-width: 0;
 }
+
+.definitionImpactList,
+.definitionItemList {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  list-style: none;
+}
+
+.definitionImpactList li {
+  overflow-wrap: anywhere;
+}
+
+.definitionItemList li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.definitionItemList li > span {
+  display: grid;
+  min-width: 0;
+}
+
+.definitionItemList code {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

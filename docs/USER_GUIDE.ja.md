@@ -6,12 +6,12 @@
 
 エディタには4つの主な操作領域があります。
 
-- **Palette**には意味を持つcomponentと、利用可能なShared Component Definitionが表示されます。
+- **Palette**には意味を持つcomponentと、利用可能な共通コンポーネントが表示されます。
 - **Tree**には、独立したModal rootとCollection境界を含むcanonicalな画面階層が表示されます。
 - **Canvas**には、現在のScreenとScenarioが編集可能なwireframeとして表示されます。
-- **Inspector**では、選択したScreen、component、解決済みDefinition node、state、Event、APIの仕様を編集します。
+- **Inspector**では、選択したScreen component、共通コンポーネント内の要素、state、Event、APIの仕様を編集します。
 
-Screen一覧では、Screenの追加、名前変更、選択、削除を行います。表示tabを使うと、Screen editor、navigation Flow、Shared Component Definitionを切り替えられます。Canvas上部のstate controlでは、loading、empty、saving、success、errorなどの名前付きScenarioを作成・選択できます。
+Screen一覧では、Screenの追加、名前変更、選択、削除を行います。表示tabを使うと、Screen editor、navigation Flow、**共通コンポーネント**を切り替えられます。Canvas上部のstate controlでは、loading、empty、saving、success、errorなどの名前付きScenarioを作成・選択できます。
 
 Paletteの項目をTreeまたはCanvasへdragします。既存のroot以外のcomponentは、並べ替えたり、対応するContainer、Page、Modal間で移動したりできます。無効なparent、descendant、sizing contextは黙って補正せず、理由を示して拒否されます。
 
@@ -48,30 +48,30 @@ Gridは1〜12本の明示的な等幅trackを持ち、各flow childは親のtrac
 
 ## Shared Componentを再利用する
 
-同じ意味を持つsubtreeを複数Screenで同期したい場合は、**Component Definition**を使います。Definitionはstableなlocal node、base design、typed public property、任意のVariantを所有します。Screen上のDefinition **Instance**は、選択Variant、明示したpublic-property value、外側のplacementとsizingを持ちます。Definitionを編集すると、すべてのInstanceへ即時反映されます。
+同じ意味を持つsubtreeを複数Screenで同期したい場合は、**共通コンポーネント**を使います。共通コンポーネントはstableなlocal要素、base design、typedな公開項目、任意の表示パターンを持ちます。Screen上の各利用箇所は、選択した表示パターン、明示した公開項目の値、外側のplacementとsizingを持ちます。共通コンポーネントを編集すると、すべての利用箇所へ即時反映されます。
 
-**Definitions**では、Definitionの作成、名前・説明の変更、複製、構造確認、対応node fieldのpublic property化、Variant overrideの追加を行えます。Instanceの値は次の順で解決されます。
+**共通コンポーネント**表示では、再利用するデザインを独立したvisual previewで確認できます。previewまたは構造一覧で要素を選択し、右Inspectorで名前・説明・複製、基本項目、layout/placement/sizing、公開項目、表示パターンの上書きを編集します。Base/表示パターンとBase値/利用例の切替はpreview表示だけを変更します。利用箇所の値は次の順で解決されます。
 
-1. Definition base
-2. 選択された最終Variant
-3. 明示したInstance public-property value
+1. 共通コンポーネントのBase
+2. 選択された最終表示パターン
+3. 利用箇所で明示した公開項目の値
 4. active Scenario override
 
-Variantが変更できるのは対応fieldだけで、node identityやtopologyは変えません。
+表示パターンが変更できるのは対応fieldだけで、要素のidentityやtopologyは変えません。
 
-Paletteには利用可能なDefinitionが表示されます。Instance境界を選択すると、Variant、public property、placement、sizingを編集できます。内部の解決済みnodeを選択すると、stableなInstanceとnode pathのtargetを確認し、behaviorまたはScenario overrideを設定し、元Definitionを開けます。解決済みnodeのbase fieldは直接編集できません。
+Paletteには利用可能な共通コンポーネントが表示されます。利用箇所の境界を選択すると、表示パターン、公開項目、placement、sizingを編集できます。内部の解決済み要素を選択すると、stableな利用箇所と要素pathのtargetを確認し、behaviorまたはScenario overrideを設定し、元の共通コンポーネントを開けます。解決済み要素のbase fieldは直接編集できません。
 
-Inline subtreeからDefinitionを抽出したり、通常のInstanceをinline componentへ戻したりできます。どちらもUndo 1回分のatomic操作で、関係するScenario、Event、API targetをrewriteします。Screen Instanceまたはnested Definition referenceが利用中のDefinitionは削除できず、Definitions表示に影響が示されます。Definitionのnestは循環せず、展開上限を守る必要があります。
+Inline subtreeから共通コンポーネントを作成したり、通常の利用箇所をinline componentへ戻したりできます。どちらもUndo 1回分のatomic操作で、関係するScenario、Event、API targetをrewriteします。Screenまたはnest内に利用箇所がある共通コンポーネントは削除できず、Inspectorに影響が示されます。共通コンポーネントのnestは循環せず、展開上限を守る必要があります。nest先が所有する要素は、その元の共通コンポーネントを開くまでread-onlyです。
 
 ## Collectionで一覧を記述する
 
-**Collection**は、制限付きのpreview sliceから1つのDefinitionを繰り返します。Item Definition、preview object、stableなitem key用JSON Pointerを設定します。Response items pathはAPI response body基準です。Item key、public-property binding、Variant rule、visibility rule、behavior item valueは各item基準です。値の欠損と明示的な`null`は区別されます。
+**Collection**は、制限付きのpreview sliceから1つの共通コンポーネントを繰り返します。項目の共通コンポーネント、preview object、stableなitem key用JSON Pointerを設定します。Response items pathはAPI response body基準です。Item key、公開項目のbinding、表示パターンrule、visibility rule、behavior item valueは各item基準です。値の欠損と明示的な`null`は区別されます。
 
-各preview itemは、Definition base、最終Variant 1つ、itemからbindしたpublic propertyの順で完成したDefinitionへ解決されます。Variantは最初に一致したexact scalar case、rule fallback、item-template Variantの順で選ばれます。Visibilityもexact scalar ruleで、一致時とfallbackの結果を明示します。
+各preview itemは、共通コンポーネントのBase、最終表示パターン1つ、itemからbindした公開項目の順で完成します。表示パターンは最初に一致したexact scalar case、rule fallback、item-templateの表示パターンの順で選ばれます。Visibilityもexact scalar ruleで、一致時とfallbackの結果を明示します。
 
-CanvasはScreen-owned componentのcopyを追加せずに解決済みitemを繰り返します。TreeにはcanonicalなCollection境界を1つだけ表示します。どのpreview itemでも内部nodeをclickすると、Collection IDとstableなDefinition-local node pathで識別される共通template targetを選択します。Inspectorには全itemへ適用されることが表示され、EventとAPI behaviorを確認できます。Preview item順序やruntime DOM IDはtargetとして保存しません。
+CanvasはScreen-owned componentのcopyを追加せずに解決済みitemを繰り返します。TreeにはcanonicalなCollection境界を1つだけ表示します。どのpreview itemでも内部要素をclickすると、Collection IDとstableな共通コンポーネント内pathで識別される共通template targetを選択します。Inspectorには全itemへ適用されることが表示され、EventとAPI behaviorを確認できます。Preview item順序やruntime DOM IDはtargetとして保存しません。
 
-Preview dataの上限は20 object、32 KiB、nest 8階層です。Item keyは一意なstringまたはnumberへ解決される必要があります。Collectionが利用中のDefinitionは削除できません。参照中のAPI operationを削除すると、preview sliceを保ったままCollection data sourceを明示的に切断します。
+Preview dataの上限は20 object、32 KiB、nest 8階層です。Item keyは一意なstringまたはnumberへ解決される必要があります。Collectionが利用中の共通コンポーネントは削除できません。参照中のAPI operationを削除すると、preview sliceを保ったままCollection data sourceを明示的に切断します。
 
 ## Event、navigation、APIを接続する
 

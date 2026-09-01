@@ -724,6 +724,7 @@ function ProjectedResolvedCanvasNode({
   document,
   locale,
   t,
+  definitionSelection,
 }: {
   runtimeId: string
   owningFrameId: EntityId
@@ -732,6 +733,7 @@ function ProjectedResolvedCanvasNode({
   document: ProjectDocument
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
+  definitionSelection?: DefinitionPreviewSelection
 }) {
   const node = resolved.nodesById[runtimeId]
   if (!node || node.placement.mode === 'flow' || node.placement.mode === 'overlay') return null
@@ -754,6 +756,7 @@ function ProjectedResolvedCanvasNode({
         document={document}
         locale={locale}
         t={t}
+        definitionSelection={definitionSelection}
       />
     </div>
   )
@@ -777,18 +780,92 @@ function resolvedNodeLabel(node: ResolvedRuntimeNode, locale: 'ja' | 'en'): stri
   } as EffectiveScreenComponent, locale)
 }
 
+interface DefinitionPreviewSelection {
+  definitionId: EntityId
+  selectedNodePath: readonly EntityId[]
+  onSelect(nodePath: [EntityId, ...EntityId[]]): void
+}
+
+export function ResolvedDefinitionPreview({
+  rootRuntimeId,
+  resolved,
+  document,
+  locale,
+  t,
+  definitionSelection,
+}: {
+  rootRuntimeId: string
+  resolved: ResolveScreenNodesResult
+  document: ProjectDocument
+  locale: 'ja' | 'en'
+  t: ReturnType<typeof useI18n>['t']
+  definitionSelection: DefinitionPreviewSelection
+}) {
+  const projections = resolved.orderedNodes.filter(node =>
+    node.id !== rootRuntimeId &&
+    node.common.visible &&
+    (node.placement.mode === 'sticky' || node.placement.mode === 'viewport'))
+  return (
+    <div
+      className={styles.definitionPreviewSurface}
+      role="tree"
+      aria-label={t('definitions.preview')}
+      data-definition-preview-surface
+    >
+      <div className={styles.definitionPreviewScrollport}>
+        <ResolvedCanvasNode
+          runtimeId={rootRuntimeId}
+          resolved={resolved}
+          document={document}
+          locale={locale}
+          t={t}
+          definitionSelection={definitionSelection}
+          previewRoot
+        />
+      </div>
+      {(['sticky', 'viewport'] as const).map(layer => (
+        <div
+          key={layer}
+          className={`${styles.frameProjectionLayer} ${
+            layer === 'sticky' ? styles.stickyLayer : styles.viewportLayer
+          }`}
+          data-placement-layer={layer}
+        >
+          {projections.filter(node => node.placement.mode === layer).map(node => (
+            <ProjectedResolvedCanvasNode
+              key={node.id}
+              runtimeId={node.id}
+              owningFrameId={rootRuntimeId}
+              layer={layer}
+              resolved={resolved}
+              document={document}
+              locale={locale}
+              t={t}
+              definitionSelection={definitionSelection}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ResolvedCanvasNode({
   runtimeId,
   resolved,
   document,
   locale,
   t,
+  definitionSelection,
+  previewRoot = false,
 }: {
   runtimeId: string
   resolved: ResolveScreenNodesResult
   document: ProjectDocument
   locale: 'ja' | 'en'
   t: ReturnType<typeof useI18n>['t']
+  definitionSelection?: DefinitionPreviewSelection
+  previewRoot?: boolean
 }) {
   const selection = useAppStore(state => state.ui.selection)
   const setSelection = useAppStore(state => state.setSelection)
@@ -797,9 +874,11 @@ function ResolvedCanvasNode({
     !node ||
     (!node.instanceId && !node.collectionId) ||
     !node.nodePath ||
-    !node.common.visible
+    (!node.common.visible && !previewRoot)
   ) return null
-  const isSelected = (
+  const isSelected = definitionSelection
+    ? JSON.stringify(definitionSelection.selectedNodePath) === JSON.stringify(node.nodePath)
+    : (
     selection?.type === 'resolvedDefinitionNode' &&
     selection.instanceId === node.instanceId &&
     JSON.stringify(selection.nodePath) === JSON.stringify(node.nodePath)
@@ -819,11 +898,17 @@ function ResolvedCanvasNode({
     .filter((child): child is ResolvedRuntimeNode =>
       Boolean(child && child.placement.mode === 'overlay'))
   const label = resolvedNodeLabel(node, locale)
-  const select = () => setSelection(
-    node.instanceId
-      ? resolvedDefinitionNodeSelection(node.screenId, node.instanceId, node.nodePath!)
-      : collectionItemNodeSelection(node.screenId, node.collectionId!, node.nodePath!),
-  )
+  const select = () => {
+    if (definitionSelection) {
+      definitionSelection.onSelect(node.nodePath!)
+      return
+    }
+    setSelection(
+      node.instanceId
+        ? resolvedDefinitionNodeSelection(node.screenId, node.instanceId, node.nodePath!)
+        : collectionItemNodeSelection(node.screenId, node.collectionId!, node.nodePath!),
+    )
+  }
   const childrenStyle = layout
     ? {
         '--layout-gap': layoutGap(layout.gap),
@@ -843,9 +928,12 @@ function ResolvedCanvasNode({
           ? styles.emptyContainer
           : '',
         isSelected ? styles.selected : '',
+        previewRoot && !node.common.visible ? styles.rootStateHidden : '',
         node.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}
       tabIndex={0}
+      role={definitionSelection ? 'treeitem' : undefined}
+      aria-selected={definitionSelection ? isSelected : undefined}
       aria-label={label}
       onClick={event => {
         event.stopPropagation()
@@ -869,6 +957,7 @@ function ResolvedCanvasNode({
       data-node-path={node.nodePath.join('/')}
       data-editor-selected={isSelected || undefined}
       data-placement-mode={node.placement.mode}
+      data-definition-preview-node={definitionSelection ? node.definitionNodeId ?? undefined : undefined}
     >
       <div className={styles.componentChrome} data-editor-chrome>
         <span className={styles.componentLabel}>{label}</span>
@@ -901,6 +990,7 @@ function ResolvedCanvasNode({
                 document={document}
                 locale={locale}
                 t={t}
+                definitionSelection={definitionSelection}
               />
             </div>
           ))}
@@ -924,6 +1014,7 @@ function ResolvedCanvasNode({
                 document={document}
                 locale={locale}
                 t={t}
+                definitionSelection={definitionSelection}
               />
             </div>
           ))}

@@ -1644,7 +1644,7 @@ function isVerticalCenter(anchor: PlacementAnchor): boolean {
   return anchor === 'centerLeft' || anchor === 'center' || anchor === 'centerRight'
 }
 
-function PlacementFields({
+export function PlacementFields({
   placement,
   onUpdate,
 }: {
@@ -1773,7 +1773,7 @@ function InsetField({
 
 const SIZE_TOKEN_RANK = new Map(COMPONENT_SIZE_TOKENS.map((token, index) => [token, index]))
 
-function SizingFields({
+export function SizingFields({
   sizing,
   placement,
   parentLayout,
@@ -1925,7 +1925,7 @@ function SizingFields({
   )
 }
 
-function LayoutFields({
+export function LayoutFields({
   layout,
   minimumGridColumns,
   availability,

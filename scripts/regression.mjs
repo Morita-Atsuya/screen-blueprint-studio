@@ -4421,23 +4421,41 @@ await test('Definition node ownership rejects nested Definition Instance boundar
   )
 })
 
-await test('Definition editor CSS stays within narrow three-pane layouts', async () => {
+await test('Shared component editor stays visual, view-aware, and bounded', async () => {
   const styles = readFileSync(
     join(root, 'src/features/definitions/DefinitionEditor.module.css'),
     'utf8',
   )
-  const source = readFileSync(
+  const editorSource = readFileSync(
     join(root, 'src/features/definitions/DefinitionEditor.tsx'),
     'utf8',
   )
+  const inspectorSource = readFileSync(
+    join(root, 'src/features/definitions/DefinitionInspector.tsx'),
+    'utf8',
+  )
+  const appSource = readFileSync(join(root, 'src/app/App.tsx'), 'utf8')
+  const canvasSource = readFileSync(
+    join(root, 'src/features/canvas/Canvas.tsx'),
+    'utf8',
+  )
+  const messagesSource = readFileSync(join(root, 'src/i18n/messages.ts'), 'utf8')
   assert(
-    styles.includes('grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr))') &&
-      styles.includes('grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr))') &&
+    styles.includes('grid-template-columns: minmax(180px, 220px) minmax(0, 1fr)') &&
       styles.includes('overflow-x: hidden;') &&
       styles.includes('text-overflow: ellipsis;') &&
-      source.includes('data-definition-header') &&
-      source.includes('data-definition-panel="variants"'),
-    'Definition editor lacks responsive cards, overflow containment, or geometry landmarks',
+      editorSource.includes('data-definition-preview') &&
+      editorSource.includes('data-definition-preview-node') === false &&
+      inspectorSource.includes('data-definition-inspector') &&
+      inspectorSource.includes('nestedReadOnly') &&
+      inspectorSource.includes('activeChangeSet') &&
+      appSource.includes("editorView === 'definition'") &&
+      appSource.includes('<DefinitionInspector') &&
+      canvasSource.includes('export function ResolvedDefinitionPreview') &&
+      canvasSource.includes('definitionEditorNodeSelection') === false &&
+      messagesSource.includes("'editor.definitionView': 'Shared components'") &&
+      messagesSource.includes("'editor.definitionView': '共通コンポーネント'"),
+    'Shared component editor lost visual preview, view-aware Inspector, lock, naming, or geometry contracts',
   )
 })
 

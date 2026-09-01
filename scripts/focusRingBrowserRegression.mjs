@@ -190,6 +190,62 @@ async function sampleBrowserDocument(profile) {
       openMode: 'newContext',
     },
   }
+  document.componentDefinitions['shared/wrapped-header'] = {
+    id: 'shared/wrapped-header',
+    name: 'Wrapped Header',
+    description: 'Nested shared component regression fixture.',
+    rootNodeId: 'wrapped-root',
+    nodes: {
+      'wrapped-root': {
+        nodeType: 'inline',
+        id: 'wrapped-root',
+        parentId: null,
+        childIds: ['nested-header'],
+        kind: 'container',
+        placement: { mode: 'flow' },
+        sizing: {
+          inlineSize: 'fill',
+          minWidth: 'none',
+          maxWidth: 'none',
+          gridSpan: 1,
+          grow: 0,
+          shrink: 'allow',
+        },
+        common: { description: 'Wrapper', visible: true, enabled: true },
+        config: {
+          kind: 'container',
+          layout: 'vertical',
+          gap: 'sm',
+          columns: 1,
+          justify: 'start',
+          align: 'stretch',
+          wrap: false,
+        },
+      },
+      'nested-header': {
+        nodeType: 'definitionInstance',
+        id: 'nested-header',
+        parentId: 'wrapped-root',
+        childIds: [],
+        placement: { mode: 'flow' },
+        sizing: {
+          inlineSize: 'fill',
+          minWidth: 'none',
+          maxWidth: 'none',
+          gridSpan: 1,
+          grow: 0,
+          shrink: 'allow',
+        },
+        source: structuredClone(document.components['comp-list-header'].source),
+        props: {},
+        variantId: 'comfortable',
+      },
+    },
+    publicProps: [],
+    variantProperties: [],
+    variants: [],
+    representativeVariantId: null,
+  }
   return document
 }
 
@@ -554,6 +610,12 @@ async function run() {
     )
     console.log('PASS resolved Definition node selection stays typed and sealed')
 
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
     await evaluate(`document.querySelectorAll('[data-editor-view-switch] > button')[2].click()`)
     await waitFor(
       `document.querySelector('[data-editor-view="definition"]').hidden === false`,
@@ -566,30 +628,113 @@ async function run() {
       childPath: document.querySelector(
         '[data-definition-tree-node="header-title"]'
       )?.getAttribute('data-definition-node-path'),
-      impactVisible: Boolean(document.querySelector('[data-definition-usage-impact]')),
+      impactVisible: Boolean(document.querySelector(
+        '[data-definition-inspector] [data-definition-usage-impact]'
+      )),
+      previewVisible: Boolean(document.querySelector(
+        '[data-definition-preview] [data-definition-preview-node="header-root"]'
+      )),
+      inspectorVisible: Boolean(document.querySelector('[data-definition-inspector]')),
+      verticalContained: (() => {
+        const stage = document.querySelector('[data-definition-preview]')
+        const scrollport = document.querySelector(
+          '[data-definition-preview-surface] > div:first-child'
+        )
+        return scrollport.clientHeight <= stage.clientHeight &&
+          getComputedStyle(scrollport).overflowY === 'auto'
+      })(),
+      horizontalOverflow: Math.max(
+        document.querySelector('[data-definition-editor]').scrollWidth -
+          document.querySelector('[data-definition-editor]').clientWidth,
+        document.querySelector('[data-definition-inspector]').scrollWidth -
+          document.querySelector('[data-definition-inspector]').clientWidth
+      ),
     }))()`)
     assert(
       editorState.rootPath === 'header-root' &&
         editorState.childPath === 'header-copy/header-title' &&
-        editorState.impactVisible,
+        editorState.impactVisible &&
+        editorState.previewVisible &&
+        editorState.inspectorVisible &&
+        editorState.verticalContained &&
+        editorState.horizontalOverflow <= 1,
       `Definition editor node paths or impact list drifted: ${JSON.stringify(editorState)}`,
+    )
+    await evaluate(`document.querySelector(
+      '[aria-label="Preview display pattern"] button'
+    ).click()`)
+    await waitFor(
+      `!document.querySelector('[data-definition-inspector]')
+        ?.textContent.includes('Selected pattern override')`,
+      'Base preview exposed a display-pattern override editor',
+    )
+    await evaluate(`[
+      ...document.querySelectorAll('[aria-label="Preview display pattern"] button')
+    ].find(button => button.textContent.trim() === 'Comfortable').click()`)
+    await evaluate(`[
+      ...document.querySelectorAll('[data-definition-editor] button')
+    ].find(button => button.textContent.trim() === 'Usage sample').click()`)
+    await waitFor(
+      `document.querySelector('[data-definition-preview]')
+        ?.textContent.includes('Track what needs to ship next.')`,
+      'Usage-sample preview did not resolve public field values from a real usage location',
+    )
+    await evaluate(`[
+      ...document.querySelectorAll('[data-definition-editor] button')
+    ].find(button => button.querySelector('strong')?.textContent === 'Task Card').click()`)
+    await waitFor(
+      `Boolean(document.querySelector(
+        '[data-definition-preview-node="task-card-action"]'
+      ))`,
+      'Task Card did not render as an isolated shared component preview',
+    )
+    await evaluate(`[
+      ...document.querySelectorAll('[data-definition-editor] button')
+    ].find(button => button.querySelector('strong')?.textContent === 'Wrapped Header').click()`)
+    await waitFor(
+      `Boolean(document.querySelector(
+        '[data-definition-preview-node="header-root"]'
+      ))`,
+      'Nested shared component did not resolve in the isolated preview',
+    )
+    await evaluate(`document.querySelector(
+      '[data-definition-tree-node="nested-header"]'
+    ).click()`)
+    await waitFor(
+      `document.querySelector(
+        '[data-definition-preview-node="header-root"]'
+      )?.getAttribute('aria-selected') === 'true' &&
+      document.querySelector('[data-definition-inspector]')
+        ?.textContent.includes('belongs to a nested shared component')`,
+      'Nested shared component boundary selection was not highlighted and sealed',
+    )
+    await evaluate(`[
+      ...document.querySelectorAll('[data-definition-editor] button')
+    ].find(button => button.querySelector('strong')?.textContent === 'Shared Header').click()`)
+    await waitFor(
+      `Boolean(document.querySelector(
+        '[data-definition-preview-node="header-link"]'
+      ))`,
+      'Shared Header preview did not reopen after switching shared components',
     )
 
     await evaluate(`(() => {
-      document.querySelector('[data-definition-tree-node="header-link"]').click()
+      document.querySelector(
+        '[data-definition-preview-node="header-link"]'
+      ).click()
       return new Promise(resolve => setTimeout(resolve, 0))
     })()`)
     await evaluate(`(() => {
-      const fields = [...document.querySelectorAll('[data-definition-editor] label')]
-      const field = fields.find(label => label.querySelector('span')?.textContent.trim() === 'Label')
-      const textarea = field?.querySelector('textarea')
+      const fields = [...document.querySelectorAll('[data-definition-inspector] label')]
+      const field = fields.find(label => label.textContent.trim() === 'Label')
+      const textarea = field?.parentElement.querySelector('textarea')
       textarea.focus()
       textarea.select()
       return true
     })()`)
     await cdp.call('Input.insertText', { text: 'Shared planning workspace' })
     await waitFor(
-      `Boolean(document.querySelector('[data-definition-editor] [data-dirty="true"]'))`,
+      `Boolean(document.querySelector('[data-definition-inspector] [data-dirty="true"]'))`,
       'Definition field did not retain its in-progress draft',
     )
     await evaluate(`document.querySelector('[data-definition-tree-node="header-root"]').focus()`)
@@ -603,6 +748,11 @@ async function run() {
       `JSON.parse(localStorage.getItem(${JSON.stringify(workspaceKey)})).revision`,
     )
     assert(revisionAfterEdit === 1, 'Definition text edit was not one atomic history operation')
+    await waitFor(
+      `document.querySelector('[data-definition-preview]')
+        ?.textContent.includes('Shared planning workspace')`,
+      'Definition Inspector edit did not update the isolated preview immediately',
+    )
 
     await evaluate(`document.querySelectorAll('[data-editor-view-switch] > button')[0].click()`)
     await waitFor(
@@ -736,28 +886,40 @@ async function run() {
       return true
     })()`)
     await reload()
+    await evaluate(`[
+      ...document.querySelectorAll('button')
+    ].find(button => button.textContent.trim() === 'Inspector')?.click()`)
     await evaluate(`document.querySelectorAll('[data-editor-view-switch] > button')[2].click()`)
     await waitFor(
-      `document.querySelector('[data-editor-view="definition"]').hidden === false`,
+      `document.querySelector('[data-editor-view="definition"]').hidden === false &&
+        Boolean(document.querySelector('[data-definition-inspector]'))`,
       'Definition editor did not reopen under review lock',
     )
     const locked = await evaluate(`(() => {
       const editor = document.querySelector('[data-definition-editor]')
-      const formControls = [...editor.querySelectorAll('input, textarea, select')]
+      const inspector = document.querySelector('[data-definition-inspector]')
+      const formControls = [...inspector.querySelectorAll('input, textarea, select')]
       const mutationLabels = [
-        'New definition',
+        'New shared component',
         'Duplicate',
         'Delete',
-        'Expose field',
-        'Add variant',
+        'Expose as public field',
+        'Add display pattern',
       ]
-      const mutationButtons = [...editor.querySelectorAll('button')].filter(button =>
+      const mutationButtons = [
+        ...editor.querySelectorAll('button'),
+        ...inspector.querySelectorAll('button')
+      ].filter(button =>
         mutationLabels.some(label => button.textContent.includes(label))
       )
       return {
-        notice: editor.textContent.includes('unavailable while reviewing changes'),
+        notice: editor.textContent.includes('unavailable while reviewing changes') &&
+          inspector.textContent.includes('unavailable while reviewing changes'),
         editableMutationControls: [...formControls, ...mutationButtons]
-          .filter(control => !control.disabled).length,
+          .filter(control => !control.matches(':disabled')).length,
+        inspectorSectionToggles: [...inspector.querySelectorAll(
+          '[data-inspector-section-toggle]'
+        )].filter(control => !control.matches(':disabled')).length,
         navigationControls: [...editor.querySelectorAll(
           '[data-definition-tree-node], [aria-current="page"]'
         )].filter(control => !control.disabled).length,
@@ -768,6 +930,7 @@ async function run() {
     assert(
       locked.notice &&
         locked.editableMutationControls === 0 &&
+        locked.inspectorSectionToggles > 0 &&
         locked.navigationControls > 0 &&
         locked.draft === 'Shared planning workspace',
       `review lock exposed Definition mutation controls or discarded content: ${

@@ -3,9 +3,9 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg);
 }
@@ -27,7 +27,7 @@
 }
 
 .libraryHeader h2,
-.panel h3 {
+.structure h3 {
   margin: 0;
   color: var(--text);
   font-size: 0.78rem;
@@ -36,12 +36,15 @@
 .library button,
 .workspace button,
 .empty button {
+  min-width: 0;
   min-height: 30px;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-surface);
   color: var(--text);
   font: inherit;
+  overflow-wrap: anywhere;
 }
 
 .library button:not(:disabled):hover,
@@ -52,7 +55,6 @@
 }
 
 .definitionList,
-.propertyList,
 .nodeTree,
 .nodeTree ul {
   padding: 0;
@@ -69,284 +71,183 @@
 .definitionList button {
   display: grid;
   width: 100%;
-  min-width: 0;
-  max-width: 100%;
   gap: 3px;
   padding: 8px 10px;
   text-align: left;
 }
 
 .definitionList strong,
-.definitionList span {
+.definitionList span,
+.previewIdentity strong,
+.variantTabs button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .definitionList span,
-.muted,
-.nodeKind {
+.previewIdentity span,
+.previewHint {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
 }
 
-.definitionList .activeDefinition,
-.variantTabs .activeVariant,
-.nodeTree .activeNode {
-  border-color: var(--accent);
-  background: var(--bg-selected);
-  color: var(--accent-hover);
+.activeDefinition,
+.activeVariant,
+.activeNode {
+  border-color: var(--accent) !important;
+  background: var(--bg-selected) !important;
+  color: var(--accent-hover) !important;
 }
 
-.workspace {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 18px;
+.structure {
+  padding: 12px 8px;
+  border-top: 1px solid var(--border);
 }
 
-.lockNotice {
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-selected);
-  color: var(--text-muted);
-  font-size: 0.76rem;
-}
-
-.usageImpact {
-  margin-top: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  padding: 0.75rem 1rem;
-}
-
-.usageImpact ul {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.25rem 1rem;
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-  color: var(--text-muted);
-}
-
-.definitionHeader {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-}
-
-.definitionHeader > div:first-child {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 12px;
-}
-
-.workspace label {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-  color: var(--text-muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.workspace input,
-.workspace textarea,
-.workspace select {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-  padding: 7px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 400;
-}
-
-.workspace textarea {
-  min-height: 58px;
-  resize: vertical;
-}
-
-.headerActions,
-.panelTitle,
-.variantTabs {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.headerActions {
-  flex: 0 1 auto;
-}
-
-.workspace button {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.headerActions button,
-.panel button,
-.empty button {
-  padding: 5px 9px;
-  font-size: 0.72rem;
-}
-
-.editorGrid {
-  display: grid;
-  min-width: 0;
-  max-width: 100%;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.panel {
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-}
-
-.panel > h3,
-.panelTitle {
-  margin-bottom: 12px;
-}
-
-.panelTitle {
-  align-items: center;
-  justify-content: space-between;
-}
-
-.panelTitle h3 {
-  margin: 0;
+.structure h3 {
+  padding: 0 6px 8px;
 }
 
 .nodeTree ul {
   min-width: 0;
-  padding-left: 14px;
+  padding-left: 12px;
 }
 
 .nodeTree button {
   display: flex;
   width: 100%;
-  min-width: 0;
-  max-width: 100%;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 7px;
+  gap: 6px;
+  padding: 5px 6px;
   border-color: transparent;
   text-align: left;
 }
 
-.nodeTree code,
-.propertyList code {
+.nodeTree button > span {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+}
+
+.nodeTree code {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 0.64rem;
+  font-size: 0.62rem;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.nodeTree button > span {
-  flex: 0 0 auto;
+.workspace {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.nodeTree button > code {
-  flex: 1;
-  text-align: right;
-}
-
-.nodeTree li > span {
+.previewToolbar {
   display: flex;
   min-width: 0;
-  max-width: 100%;
-  gap: 8px;
-}
-
-.nodeTree li > span code {
-  flex: 1;
-}
-
-.propertyList {
-  display: grid;
-  gap: 6px;
-}
-
-.propertyList li {
-  display: grid;
-  min-width: 0;
-  max-width: 100%;
-  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 8px;
-  padding: 7px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
 }
 
-.propertyList li > div {
+.previewIdentity {
   display: grid;
   min-width: 0;
+  gap: 2px;
+  flex: 1 1 180px;
 }
 
-.propertyList li > span {
+.variantTabs,
+.valueTabs {
+  display: flex;
   min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-muted);
-  font-size: 0.68rem;
+  max-width: 58%;
+  flex: 0 1 auto;
+  gap: 5px;
+  overflow-x: auto;
 }
 
-.variantTabs {
-  flex-wrap: wrap;
-  margin: 10px 0;
+.variantTabs button,
+.valueTabs button {
+  flex: 0 0 auto;
+  max-width: 160px;
+  padding: 4px 9px;
+  font-size: 0.7rem;
+}
+
+.valueTabs {
+  max-width: none;
+}
+
+.lockNotice {
+  margin: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-selected);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.previewStage {
+  width: min(100% - 32px, 760px);
+  min-width: 0;
+  min-height: 0;
+  height: calc(100% - 32px);
+  align-self: center;
+  justify-self: center;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.previewHint {
+  margin: 0;
+  padding: 8px 14px 10px;
+  text-align: center;
 }
 
 .empty {
   display: grid;
+  min-width: 0;
   place-content: center;
   justify-items: center;
   gap: 12px;
+  padding: 24px;
   color: var(--text-muted);
   text-align: center;
 }
 
+.empty button {
+  padding: 5px 10px;
+}
+
 @media (max-width: 720px) {
   .root {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(150px, 38%) minmax(0, 1fr);
   }
 
-  .library {
-    max-height: 180px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+  .previewToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .variantTabs {
+    max-width: 100%;
   }
 }

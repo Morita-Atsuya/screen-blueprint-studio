@@ -12,6 +12,7 @@ import { Toast } from './Toast'
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog'
 import { useI18n } from '../i18n/I18nProvider'
 import { getOwnEntity } from '../domain/entityMap'
+import { definitionEditorNodeSelection } from '../domain/editorSelection'
 import {
   LEFT_PANE_WIDTH_STORAGE_KEY,
   RIGHT_PANE_WIDTH_STORAGE_KEY,
@@ -28,6 +29,7 @@ import {
 import logoMarkUrl from '../../brand/logo-mark.svg'
 import { BUILD_FEATURE_FLAGS } from '../config/buildFeatureFlags'
 import { DefinitionEditor } from '../features/definitions/DefinitionEditor'
+import { DefinitionInspector } from '../features/definitions/DefinitionInspector'
 import styles from './App.module.css'
 
 function browserStorage(): Storage | undefined {
@@ -62,6 +64,7 @@ export function App() {
     resetToSample,
     dismissToast,
     runToastAction,
+    setSelection,
   } = useAppStore()
   const canUndo = history.length > 0 && !activeChangeSet
   const canRedo = redoStack.length > 0 && !activeChangeSet
@@ -94,6 +97,8 @@ export function App() {
   )
   const [resizingPane, setResizingPane] = useState<'left' | 'right' | null>(null)
   const [editorView, setEditorView] = useState<'screen' | 'flow' | 'definition'>('screen')
+  const [definitionPreviewVariantId, setDefinitionPreviewVariantId] =
+    useState<string | null>(null)
   const { left: leftPaneWidth, right: rightPaneWidth } = resolvePaneWidths(
     preferredLeftPaneWidth,
     preferredRightPaneWidth,
@@ -158,7 +163,24 @@ export function App() {
       rightPaneWidthRef.current = clamped
       setPreferredRightPaneWidth(clamped)
     }
+
     if (persist) persistPaneWidth(browserStorage(), storageKey, clamped)
+  }
+
+  function openDefinitionView() {
+    setEditorView('definition')
+    if (ui.selection?.type === 'definitionEditorNode') return
+    const firstDefinition = Object.values(effectiveDocument.componentDefinitions)
+      .sort((left, right) => left.name.localeCompare(right.name))[0]
+    if (firstDefinition) {
+      setDefinitionPreviewVariantId(
+        firstDefinition.representativeVariantId ?? firstDefinition.variants[0]?.id ?? null,
+      )
+      setSelection(definitionEditorNodeSelection(
+        firstDefinition.id,
+        [firstDefinition.rootNodeId],
+      ))
+    }
   }
 
   function finishPaneResize(event: ReactPointerEvent<HTMLDivElement>) {
@@ -422,7 +444,7 @@ export function App() {
                 type="button"
                 className={editorView === 'definition' ? styles.editorViewActive : ''}
                 aria-pressed={editorView === 'definition'}
-                onClick={() => setEditorView('definition')}
+                onClick={openDefinitionView}
               >
                 {t('editor.definitionView')}
               </button>
@@ -477,7 +499,10 @@ export function App() {
               hidden={editorView !== 'definition'}
               data-editor-view="definition"
             >
-              <DefinitionEditor />
+              <DefinitionEditor
+                previewVariantId={definitionPreviewVariantId}
+                onPreviewVariantChange={setDefinitionPreviewVariantId}
+              />
             </div>
           </main>
 
@@ -512,7 +537,15 @@ export function App() {
               <div className={styles.rightHeading}>{t('tabs.inspector')}</div>
             )}
             <div className={styles.rightContent}>
-              <Inspector />
+              {editorView === 'definition' &&
+              !(activeChangeSet && ui.rightPanelTab === 'changes') ? (
+                <DefinitionInspector
+                  previewVariantId={definitionPreviewVariantId}
+                  onPreviewVariantChange={setDefinitionPreviewVariantId}
+                />
+              ) : (
+                <Inspector />
+              )}
             </div>
           </aside>
         </div>

@@ -6,12 +6,12 @@
 
 The editor has four primary working surfaces:
 
-- **Palette** provides semantic components and available Shared Component Definitions.
+- **Palette** provides semantic components and available Shared components.
 - **Tree** shows the canonical screen hierarchy, including independent Modal roots and Collection boundaries.
 - **Canvas** renders the current Screen and Scenario as an editable wireframe.
-- **Inspector** edits the selected Screen, component, resolved Definition node, state, Event, or API specification.
+- **Inspector** edits the selected Screen component, Shared component element, state, Event, or API specification.
 
-Use the Screen list to add, rename, select, and remove Screens. Use the view tabs to switch between the Screen editor, navigation Flow, and Shared Component Definitions. The state controls above the Canvas create and select named Scenarios such as loading, empty, saving, success, and error.
+Use the Screen list to add, rename, select, and remove Screens. Use the view tabs to switch between the Screen editor, navigation Flow, and **Shared components**. The state controls above the Canvas create and select named Scenarios such as loading, empty, saving, success, and error.
 
 Drag Palette items into the Tree or Canvas. Drag existing non-root components to reorder them or move them between compatible Containers, Pages, and Modals. Invalid parents, descendants, and sizing contexts are rejected with an explanation rather than silently adjusted.
 
@@ -48,30 +48,30 @@ A Grid has 1–12 explicit equal tracks. Each flow child may span up to its pare
 
 ## Reuse Shared Components
 
-Use a **Component Definition** when the same semantic subtree should stay synchronized across Screens. A Definition owns stable local nodes, a base design, typed public properties, and optional Variants. A Screen stores a Definition **Instance** with its selected Variant, explicit public-property values, and outer placement and sizing. Editing the Definition updates every Instance immediately.
+Use a **Shared component** when the same semantic subtree should stay synchronized across Screens. It owns stable local elements, a base design, typed public fields, and optional display patterns. Each usage location on a Screen stores its selected pattern, explicit public-field values, and outer placement and sizing. Editing the Shared component updates every usage location immediately.
 
-Open **Definitions** to create, rename, describe, or duplicate a Definition; inspect its structure; expose a supported node field as a public property; and add Variant overrides. Instance values resolve in this order:
+Open **Shared components** to see the reusable design as an isolated visual preview. Select an element in the preview or structure list, then use the right Inspector to rename, describe, duplicate, edit basic fields, adjust layout/placement/sizing, expose a public field, or add display-pattern overrides. The Base/Pattern and Base values/Usage sample controls only change what the preview shows. Usage values resolve in this order:
 
-1. Definition base
-2. selected final Variant
-3. explicit Instance public-property value
+1. Shared component base
+2. selected final display pattern
+3. explicit usage-location public-field value
 4. active Scenario override
 
-A Variant changes only supported fields and never changes node identity or topology.
+A display pattern changes only supported fields and never changes element identity or topology.
 
-The Palette lists available Definitions. Select an Instance boundary to edit its Variant, public properties, placement, or sizing. Select a resolved node inside it to inspect the stable Instance-and-node-path target, attach behavior or a Scenario override, and open its source Definition. Resolved nodes are sealed against direct base edits.
+The Palette lists available Shared components. Select a usage boundary to edit its display pattern, public fields, placement, or sizing. Select a resolved element inside it to inspect the stable usage-and-element-path target, attach behavior or a Scenario override, and open its source Shared component. Resolved elements are sealed against direct base edits.
 
-You can extract an inline subtree into a Definition or detach a normal Instance back to inline components. Each operation is one atomic Undo step and rewrites affected Scenario, Event, and API targets. Deleting a Definition is blocked while Screen Instances or nested Definition references still use it; the Definitions view shows the impact. Nested Definitions must remain acyclic and within bounded expansion limits.
+You can extract an inline subtree into a Shared component or detach a normal usage back to inline components. Each operation is one atomic Undo step and rewrites affected Scenario, Event, and API targets. Deleting a Shared component is blocked while Screen or nested usage locations still reference it; the Inspector shows the impact. Nested Shared components must remain acyclic and within bounded expansion limits. Elements owned by a nested Shared component are read-only until you open that source component.
 
 ## Describe Collections
 
-Use a **Collection** to repeat one Definition from a bounded preview slice. Choose the item Definition, provide preview objects, and set a stable item-key JSON Pointer. The response items path is relative to an API response body. Item keys, public-property bindings, Variant rules, visibility rules, and behavior item values are relative to each item. A missing value remains different from an explicit `null`.
+Use a **Collection** to repeat one Shared component from a bounded preview slice. Choose the item Shared component, provide preview objects, and set a stable item-key JSON Pointer. The response items path is relative to an API response body. Item keys, public-field bindings, display-pattern rules, visibility rules, and behavior item values are relative to each item. A missing value remains different from an explicit `null`.
 
-Each preview item resolves to one completed Definition: Definition base, one final Variant, then item-bound public properties. Variant selection uses the first exact scalar case, then the rule fallback, then the item-template Variant. Visibility uses an exact scalar rule with explicit matched and fallback outcomes.
+Each preview item resolves to one completed Shared component: base, one final display pattern, then item-bound public fields. Pattern selection uses the first exact scalar case, then the rule fallback, then the item-template pattern. Visibility uses an exact scalar rule with explicit matched and fallback outcomes.
 
-Canvas repeats resolved items without adding Screen-owned component copies. Tree keeps one canonical Collection boundary. Clicking an internal node in any preview item selects the shared template target, identified by the Collection ID and stable Definition-local node path. Inspector labels it as applying to every item and shows its Event and API behavior. Preview item order and runtime DOM IDs are never persisted as targets.
+Canvas repeats resolved items without adding Screen-owned component copies. Tree keeps one canonical Collection boundary. Clicking an internal element in any preview item selects the shared template target, identified by the Collection ID and stable Shared-component-local path. Inspector labels it as applying to every item and shows its Event and API behavior. Preview item order and runtime DOM IDs are never persisted as targets.
 
-Preview data is limited to 20 objects, 32 KiB, and eight levels of nesting. Item keys must resolve to unique strings or numbers. A Definition cannot be deleted while a Collection uses it. Removing a referenced API operation explicitly disconnects the Collection data source while preserving its preview slice.
+Preview data is limited to 20 objects, 32 KiB, and eight levels of nesting. Item keys must resolve to unique strings or numbers. A Shared component cannot be deleted while a Collection uses it. Removing a referenced API operation explicitly disconnects the Collection data source while preserving its preview slice.
 
 ## Connect Events, navigation, and APIs
 
