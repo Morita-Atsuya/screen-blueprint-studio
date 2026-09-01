@@ -265,6 +265,13 @@ export function mountReviewLockApp(locale: Locale = 'en') {
     addPlacementFixture() {
       flushSync(() => {
         useAppStore.getState().dispatch({
+          type: 'updateComponentSpec',
+          componentId: 'comp-list-header',
+          patch: {
+            placement: { mode: 'sticky', edge: 'top', inset: 'sm' },
+          },
+        }, 'Project list header')
+        useAppStore.getState().dispatch({
           type: 'addComponent',
           componentId: 'regression-viewport-container',
           screenId: 'screen-list',

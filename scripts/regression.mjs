@@ -556,7 +556,7 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
       link.config.destination.type === 'external' &&
       link.config.openMode === 'newContext' &&
       page.placement.mode === 'flow' &&
-      sharedInstance.placement.mode === 'sticky' &&
+      sharedInstance.placement.mode === 'flow' &&
       link.placement.mode === 'viewport' &&
       resolvedDefinition.nodes[resolvedDefinition.rootNodeId].placement.mode === 'flow',
     'public v3 example does not demonstrate the shared component and media contract',
@@ -909,7 +909,7 @@ await test('component placement is atomic, constrained, and retained by structur
     apiOperationIdMap: {},
   })
   assert(
-    duplicated.components['copy-list-header'].placement.mode === 'sticky' &&
+    duplicated.components['copy-list-header'].placement.mode === 'flow' &&
       duplicated.components['copy-list-header'].placement !==
         duplicated.components['comp-list-header'].placement,
     'duplicate did not retain an isolated placement value',

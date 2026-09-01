@@ -518,7 +518,7 @@
 
 .gridChildren {
   display: grid;
-  grid-template-columns: repeat(var(--layout-columns, 2), minmax(160px, 1fr));
+  grid-template-columns: repeat(var(--layout-columns, 2), minmax(0, 1fr));
   grid-auto-flow: row;
   overflow-x: auto;
   overflow-y: hidden;
@@ -677,12 +677,11 @@
     min-width: 38px;
   }
 }
-.resolvedDefinitionNode {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+.resolvedDefinitionNode:hover:not(:has(.resolvedDefinitionNode:hover))::after {
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
-.resolvedDefinitionNode:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.resolvedDefinitionNode:hover:not(:has(.resolvedDefinitionNode:hover)) > .componentChrome,
+.resolvedDefinitionNode:focus-visible > .componentChrome {
+  opacity: 1;
 }

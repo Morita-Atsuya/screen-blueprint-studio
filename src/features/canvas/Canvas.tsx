@@ -837,6 +837,11 @@ function ResolvedCanvasNode({
       className={[
         styles.comp,
         styles.resolvedDefinitionNode,
+        node.kind === 'button' ? styles.buttonComponent : '',
+        node.kind === 'container' ? styles.containerComponent : '',
+        node.kind === 'container' && flowChildren.length === 0
+          ? styles.emptyContainer
+          : '',
         isSelected ? styles.selected : '',
         node.common.enabled ? '' : styles.componentDisabled,
       ].join(' ')}

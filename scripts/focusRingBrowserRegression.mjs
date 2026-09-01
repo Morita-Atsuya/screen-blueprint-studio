@@ -223,6 +223,14 @@ async function run() {
     await cdp.open()
     await cdp.call('Runtime.enable')
     await cdp.call('Page.enable')
+    await cdp.call('DOM.enable')
+    await cdp.call('CSS.enable')
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
 
     const evaluate = async expression => {
       const result = await cdp.call('Runtime.evaluate', {
@@ -287,7 +295,7 @@ async function run() {
         ).length,
         nodeCount: nodes.length,
         uniqueIds: new Set(ids).size,
-        projectedOnce: instance.closest('[data-placement-projection="sticky"]') !== null,
+        inFlow: instance.closest('[data-placement-projection]') === null,
         owningFrame: frame?.contains(instance),
         resolvedDraggables: nodes.filter(node => node.hasAttribute('data-canvas-draggable')).length,
         link: link && {
@@ -304,7 +312,7 @@ async function run() {
         initial.dragCount === 1 &&
         initial.nodeCount === 5 &&
         initial.uniqueIds === 5 &&
-        initial.projectedOnce &&
+        initial.inFlow &&
         initial.owningFrame &&
         initial.resolvedDraggables === 0,
       `resolved Instance identity or projection drifted: ${JSON.stringify(initial)}`,
@@ -325,7 +333,110 @@ async function run() {
       ]),
       `resolved DOM order no longer follows canonical node order: ${JSON.stringify(initial.nodePaths)}`,
     )
-    console.log('PASS resolved Instance identity, projection, DnD, and Link semantics')
+    console.log('PASS resolved Instance identity, flow placement, DnD, and Link semantics')
+
+    const geometry = await evaluate(`(() => {
+      const header = document.querySelector('[data-component-id="comp-list-header"]')
+      const summary = document.querySelector('[data-component-id="comp-list-summary"]')
+      const collection = document.querySelector('[data-component-id="comp-launch-task-card"]')
+      const itemRoots = [...document.querySelectorAll(
+        '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-root"]'
+      )]
+      const grid = itemRoots[0]?.querySelector('[data-layout="grid"]')
+      const resolved = Object.fromEntries(
+        ['task-card-status', 'task-card-image', 'task-card-action'].map(nodeId => {
+          const node = document.querySelector(
+            \`[data-collection-id="comp-launch-task-card"][data-definition-node-id="\${nodeId}"]\`
+          )
+          const style = node && getComputedStyle(node)
+          return [nodeId, style && {
+            borderStyle: style.borderTopStyle,
+            borderWidth: style.borderTopWidth,
+          }]
+        })
+      )
+      const rootStyle = itemRoots[0] && getComputedStyle(itemRoots[0])
+      const headerRect = header?.getBoundingClientRect()
+      const summaryRect = summary?.getBoundingClientRect()
+      const collectionRect = collection?.getBoundingClientRect()
+      const gridRect = grid?.getBoundingClientRect()
+      return {
+        noHeaderOverlap: Boolean(
+          headerRect && summaryRect &&
+          (headerRect.bottom <= summaryRect.top || summaryRect.bottom <= headerRect.top)
+        ),
+        collectionWidth: collectionRect?.width,
+        gridWidth: gridRect?.width,
+        gridClientWidth: grid?.clientWidth,
+        gridScrollWidth: grid?.scrollWidth,
+        itemHeights: itemRoots.map(node => node.getBoundingClientRect().height),
+        itemWidths: itemRoots.map(node => node.getBoundingClientRect().width),
+        rootBorder: rootStyle && {
+          borderStyle: rootStyle.borderTopStyle,
+          borderWidth: rootStyle.borderTopWidth,
+        },
+        resolved,
+      }
+    })()`)
+    assert(
+      geometry.noHeaderOverlap &&
+        geometry.rootBorder?.borderStyle === 'dashed' &&
+        geometry.rootBorder.borderWidth === '1px' &&
+        Object.values(geometry.resolved).every(
+          border => border?.borderStyle === 'none' && border.borderWidth === '0px'
+        ) &&
+        geometry.gridScrollWidth <= geometry.gridClientWidth + 1 &&
+        geometry.gridWidth <= geometry.collectionWidth + 1 &&
+        geometry.itemHeights.length === 2 &&
+        Math.max(...geometry.itemHeights) < 360 &&
+        Math.min(...geometry.itemWidths) > 0,
+      `default Canvas geometry or resolved borders drifted: ${JSON.stringify(geometry)}`,
+    )
+    console.log('PASS default Canvas geometry keeps flow, borders, and 12-track cards bounded')
+
+    const hoverPoint = await evaluate(`(() => {
+      const node = document.querySelector(
+        '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-title"]'
+      )
+      const rect = node.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    })()`)
+    await cdp.call('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: hoverPoint.x,
+      y: hoverPoint.y,
+    })
+    await waitFor(
+      `getComputedStyle(document.querySelector(
+        '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-title"]'
+      ).querySelector(':scope > [data-editor-chrome]')).opacity === '1'`,
+      'resolved hover chrome did not finish appearing',
+    )
+    const hoverChrome = await evaluate(`(() => {
+      const leaf = document.querySelector(
+        '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-title"]'
+      )
+      const root = leaf.closest(
+        '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-root"]'
+      )
+      return {
+        leafOutline: getComputedStyle(leaf, '::after').boxShadow,
+        rootOutline: getComputedStyle(root, '::after').boxShadow,
+        leafChrome: getComputedStyle(
+          leaf.querySelector(':scope > [data-editor-chrome]')
+        ).opacity,
+        rootChrome: getComputedStyle(
+          root.querySelector(':scope > [data-editor-chrome]')
+        ).opacity,
+      }
+    })()`)
+    assert(
+      hoverChrome.leafOutline !== hoverChrome.rootOutline &&
+        hoverChrome.leafChrome === '1' &&
+        hoverChrome.rootChrome === '0',
+      `resolved hover escaped the deepest target: ${JSON.stringify(hoverChrome)}`,
+    )
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
 
     await evaluate(`document.querySelector(
       '[data-instance-id="comp-list-header"][data-definition-node-id="header-title"]'
@@ -358,6 +469,37 @@ async function run() {
         selected.apiEditor,
       `resolved selection identity drifted: ${JSON.stringify(selected)}`,
     )
+    const selectedOutline = await evaluate(`getComputedStyle(
+      document.querySelector('[data-editor-selected="true"]'),
+      '::after'
+    ).boxShadow`)
+    assert(
+      selectedOutline !== 'none' && selectedOutline.includes('2px'),
+      `resolved selection outline disappeared: ${selectedOutline}`,
+    )
+    const { root: domRoot } = await cdp.call('DOM.getDocument')
+    const { nodeId: subtitleNodeId } = await cdp.call('DOM.querySelector', {
+      nodeId: domRoot.nodeId,
+      selector: '[data-instance-id="comp-list-header"][data-definition-node-id="header-subtitle"]',
+    })
+    await cdp.call('CSS.forcePseudoState', {
+      nodeId: subtitleNodeId,
+      forcedPseudoClasses: ['focus', 'focus-visible'],
+    })
+    const focusedOutline = await evaluate(`getComputedStyle(
+      document.querySelector(
+        '[data-instance-id="comp-list-header"][data-definition-node-id="header-subtitle"]'
+      ),
+      '::after'
+    ).boxShadow`)
+    assert(
+      focusedOutline !== 'none' && focusedOutline.includes('1px'),
+      `resolved focus outline disappeared: ${focusedOutline}`,
+    )
+    await cdp.call('CSS.forcePseudoState', {
+      nodeId: subtitleNodeId,
+      forcedPseudoClasses: [],
+    })
     const contextSelection = await evaluate(`(() => {
       const node = document.querySelector(
         '[data-instance-id="comp-list-header"][data-definition-node-id="header-title"]'
@@ -492,7 +634,14 @@ async function run() {
     )
     console.log('PASS Definition propagation participates in Undo and Redo')
 
-    for (const width of [1280, 720]) {
+    await evaluate(`[
+      ...document.querySelectorAll('aside button')
+    ].find(button => button.textContent.trim() === 'Task List').click()`)
+    await waitFor(
+      `Boolean(document.querySelector('[data-component-id="comp-launch-task-card"]'))`,
+      'Task List did not reopen for responsive geometry checks',
+    )
+    for (const width of [899, 640]) {
       await cdp.call('Emulation.setDeviceMetricsOverride', {
         width,
         height: 900,
@@ -500,28 +649,76 @@ async function run() {
         mobile: false,
       })
       const responsive = await evaluate(`(() => {
-        const instance = document.querySelector('[data-component-id="comp-edit-header"]')
+        const instance = document.querySelector('[data-component-id="comp-list-header"]')
         const frame = document.querySelector(
-          '[data-owning-frame-kind="page"][data-owning-frame-id="comp-edit-page"]'
+          '[data-owning-frame-kind="page"][data-owning-frame-id="comp-list-page"]'
         )
+        const collection = document.querySelector('[data-component-id="comp-launch-task-card"]')
+        const grid = document.querySelector(
+          '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-root"]'
+        )?.querySelector('[data-layout="grid"]')
+        const itemRoots = [...document.querySelectorAll(
+          '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-root"]'
+        )]
         return {
-          count: document.querySelectorAll('[data-component-id="comp-edit-header"]').length,
+          count: document.querySelectorAll('[data-component-id="comp-list-header"]').length,
           inside: frame?.contains(instance),
           duplicateRuntimeIds: (() => {
             const ids = [...document.querySelectorAll('[data-component-id]')]
               .map(node => node.getAttribute('data-component-id'))
             return ids.length - new Set(ids).size
           })(),
+          collectionOverflow: collection.scrollWidth - collection.clientWidth,
+          gridOverflow: grid.scrollWidth - grid.clientWidth,
+          maxItemHeight: Math.max(...itemRoots.map(node => node.getBoundingClientRect().height)),
         }
       })()`)
       assert(
-        responsive.count === 1 && responsive.inside && responsive.duplicateRuntimeIds === 0,
+        responsive.count === 1 &&
+          responsive.inside &&
+          responsive.duplicateRuntimeIds === 0 &&
+          responsive.collectionOverflow <= 1 &&
+          responsive.gridOverflow <= 1 &&
+          responsive.maxItemHeight < 360,
         `${width}px responsive projection duplicated or escaped its frame: ${
           JSON.stringify(responsive)
         }`,
       )
     }
-    console.log('PASS responsive owning-frame projection keeps one runtime DOM')
+    await cdp.call('Emulation.setPageScaleFactor', { pageScaleFactor: 1.25 })
+    await evaluate(`document.querySelector(
+      '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-action"]'
+    ).click()`)
+    await waitFor(
+      `document.querySelector('[data-editor-selected="true"]')
+        ?.getAttribute('data-node-path') === 'task-card-action'`,
+      'Collection item target selection failed after responsive zoom',
+    )
+    const collectionSelection = await evaluate(`(() => {
+      const selected = document.querySelector('[data-editor-selected="true"]')
+      const inspector = document.querySelector('[data-resolved-node-inspector]')
+      return {
+        collectionId: selected?.getAttribute('data-collection-id'),
+        nodePath: selected?.getAttribute('data-node-path'),
+        itemKey: selected?.getAttribute('data-collection-item-key'),
+        inspectorText: inspector?.textContent,
+        projectionCount: document.querySelectorAll(
+          '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-action"]'
+        ).length,
+      }
+    })()`)
+    assert(
+      collectionSelection.collectionId === 'comp-launch-task-card' &&
+        collectionSelection.nodePath === 'task-card-action' &&
+        collectionSelection.itemKey !== null &&
+        collectionSelection.inspectorText.includes('Applies to every Collection item') &&
+        collectionSelection.projectionCount === 2,
+      `Collection template target review drifted after zoom: ${
+        JSON.stringify(collectionSelection)
+      }`,
+    )
+    await cdp.call('Emulation.setPageScaleFactor', { pageScaleFactor: 1 })
+    console.log('PASS 899/640 responsive geometry, zoom, and Collection target review')
 
     await evaluate(`(() => {
       const key = ${JSON.stringify(workspaceKey)}
@@ -578,7 +775,7 @@ async function run() {
       }`,
     )
     console.log('PASS review lock seals Definition editor without discarding content')
-    console.log('PASS trusted Chrome shared component regression (6 groups)')
+    console.log('PASS trusted Chrome Canvas regression (8 groups)')
   } finally {
     try {
       cdp?.close()

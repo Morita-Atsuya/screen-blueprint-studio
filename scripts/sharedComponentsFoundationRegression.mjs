@@ -497,7 +497,13 @@ await test('resolver applies base -> variant -> instance prop -> scenario overri
     JSON.stringify(node.nodePath) === JSON.stringify(['header-copy', 'header-title']),
   )
   assert(title?.config.kind === 'text' && title.config.text === 'TaskFlow', 'instance prop did not set title text')
-  const editResolved = resolveScreenNodes(sampleProject, 'screen-edit', null)
+  const projectedDocument = structuredClone(sampleProject)
+  projectedDocument.components['comp-edit-header'].placement = {
+    mode: 'sticky',
+    edge: 'top',
+    inset: 'sm',
+  }
+  const editResolved = resolveScreenNodes(projectedDocument, 'screen-edit', null)
   const rootNode = Object.values(editResolved.nodesByTarget).find(node =>
     node.instanceId === 'comp-edit-header' &&
     JSON.stringify(node.nodePath) === JSON.stringify(['header-root']),

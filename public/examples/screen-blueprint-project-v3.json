@@ -320,9 +320,7 @@
       "screenId": "screen-list",
       "parentId": "comp-list-page",
       "placement": {
-        "mode": "sticky",
-        "edge": "top",
-        "inset": "sm"
+        "mode": "flow"
       },
       "sizing": {
         "inlineSize": "fill",
@@ -1017,9 +1015,7 @@
       "screenId": "screen-edit",
       "parentId": "comp-edit-page",
       "placement": {
-        "mode": "sticky",
-        "edge": "top",
-        "inset": "sm"
+        "mode": "flow"
       },
       "sizing": {
         "inlineSize": "fill",
