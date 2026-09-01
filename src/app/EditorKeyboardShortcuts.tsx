@@ -4,13 +4,14 @@ import { useAppStore } from './appStore'
 import {
   resolveEditorShortcut,
   resolveHierarchySelectionShortcut,
-  resolveHierarchySelectionTarget,
+  resolveHierarchyEditorSelection,
 } from './editorShortcuts'
 import {
   canDuplicateComponent,
   canPasteComponent,
 } from '../domain/componentDuplication'
 import { useI18n } from '../i18n/I18nProvider'
+import { selectedScreenComponentId } from '../domain/editorSelection'
 
 export function EditorKeyboardShortcuts({
   readOnlyEditorView,
@@ -38,9 +39,9 @@ export function EditorKeyboardShortcuts({
       const state = useAppStore.getState()
       if (state.recoveryState) return
       if (shortcut === 'clear-selection') {
-        if (!state.ui.selectedComponentId) return
+        if (!state.ui.selection) return
         event.preventDefault()
-        state.setSelectedComponent(null)
+        state.setSelection(null)
         return
       }
       if (shortcut === 'undo') {
@@ -64,8 +65,9 @@ export function EditorKeyboardShortcuts({
         return
       }
 
-      const selectedId = state.ui.selectedComponentId
-      if (!selectedId) return
+      const selection = state.ui.selection
+      const selectedId = selectedScreenComponentId(selection)
+      if (!selection || !selectedId) return
       if (shortcut === 'copy-selection') {
         if (!canDuplicateComponent(state.effectiveDocument, selectedId)) return
         event.preventDefault()
@@ -143,8 +145,9 @@ export function EditorKeyboardShortcuts({
 
       const state = useAppStore.getState()
       if (state.recoveryState) return
-      const selectedId = state.ui.selectedComponentId
-      if (!selectedId) return
+      const selection = state.ui.selection
+      const selectedId = selectedScreenComponentId(selection)
+      if (!selection || !selectedId) return
       const selected = getOwnEntity(state.effectiveDocument.components, selectedId)
       if (!selected || selected.screenId !== state.ui.activeScreenId) return
 
@@ -152,13 +155,13 @@ export function EditorKeyboardShortcuts({
       const shortcutScope = (event.target as Element | null)?.closest<HTMLElement>(
         '[data-hierarchy-shortcut-scope]',
       )
-      const targetId = resolveHierarchySelectionTarget(
+      const targetSelection = resolveHierarchyEditorSelection(
         state.effectiveDocument,
-        selectedId,
+        selection,
         shortcut,
       )
-      if (!targetId) return
-      state.setSelectedComponent(targetId)
+      if (!targetSelection) return
+      state.setSelection(targetSelection)
       if (shortcutScope?.dataset.hierarchyShortcutScope === 'inspector') {
         setTimeout(() => {
           document

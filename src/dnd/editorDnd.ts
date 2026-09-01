@@ -18,6 +18,12 @@ export type EditorDragData =
       label: string
     }
   | {
+      type: 'definitionPalette'
+      definitionId: EntityId
+      kind: PaletteItem['kind']
+      label: string
+    }
+  | {
       type: 'component'
       componentId: EntityId
       screenId: EntityId
@@ -46,7 +52,7 @@ export type EditorDropOutcome =
 export function isEditorDragData(value: unknown): value is EditorDragData {
   if (!value || typeof value !== 'object') return false
   const data = value as Partial<EditorDragData>
-  return data.type === 'palette' || (
+  return data.type === 'palette' || data.type === 'definitionPalette' || (
     data.type === 'component' &&
     (data.surface === 'canvas' || data.surface === 'tree')
   )
@@ -63,7 +69,7 @@ export function isDropSurfaceCompatible(
   drag: EditorDragData,
   target: Pick<ComponentDropData, 'surface'>,
 ): boolean {
-  return drag.type === 'palette'
+  return drag.type === 'palette' || drag.type === 'definitionPalette'
     ? target.surface === 'canvas'
     : drag.surface === target.surface
 }
@@ -90,7 +96,7 @@ export function resolveEditorDrop(
   if (!isDropSurfaceCompatible(drag, target)) {
     return { status: 'invalid', reason: 'surfaceMismatch' }
   }
-  if (drag.type === 'palette') {
+  if (drag.type === 'palette' || drag.type === 'definitionPalette') {
     const outcome = classifyPaletteDrop(
       document,
       target.screenId,

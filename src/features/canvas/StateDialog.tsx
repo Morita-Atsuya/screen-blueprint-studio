@@ -2,7 +2,6 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type { ScreenState } from '../../domain/model'
-import { getOwnEntity } from '../../domain/entityMap'
 import { useI18n } from '../../i18n/I18nProvider'
 import styles from './StateDialog.module.css'
 import {
@@ -21,10 +20,9 @@ interface StateDialogProps {
 
 export function StateDialog({ mode, screenId, state, onClose }: StateDialogProps) {
   const { t } = useI18n()
-  const { dispatch, effectiveDocument, requestHumanDelete, setActiveState } = useAppStore()
+  const { dispatch, requestHumanDelete, setActiveState } = useAppStore()
   const { reviewLocked, staleAfterReview } = useDialogReviewLock()
-  const screen = getOwnEntity(effectiveDocument.screens, screenId)
-  const isDefault = state?.id === screen?.defaultStateId
+  const isDefault = false
   const [name, setName] = useState(state?.name ?? t('states.newName'))
   const [description, setDescription] = useState(state?.description ?? '')
   const dialogRef = useRef<HTMLElement>(null)

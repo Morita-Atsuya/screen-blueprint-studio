@@ -43,6 +43,13 @@ import {
   saveRejectedRecord,
   saveToStorage,
 } from '../persistence/localStorage'
+import type { EditorSelection } from '../domain/editorSelection'
+import {
+  cloneEditorSelection,
+  reconcileEditorSelection,
+  screenComponentSelection,
+  selectionRootScreenComponentId,
+} from '../domain/editorSelection'
 
 export interface HistoryEntry {
   id: EntityId
@@ -50,14 +57,14 @@ export interface HistoryEntry {
   source: 'human' | 'accepted-change-set'
   before: ProjectDocument
   after: ProjectDocument
-  selectionBefore?: EntityId | null
-  selectionAfter?: EntityId | null
+  selectionBefore?: EditorSelection | null
+  selectionAfter?: EditorSelection | null
 }
 
 export interface UiState {
   activeScreenId: EntityId | null
   activeStateId: EntityId | null
-  selectedComponentId: EntityId | null
+  selection: EditorSelection | null
   rightPanelTab: 'inspector' | 'changes'
 }
 
@@ -80,6 +87,7 @@ export interface PendingDeleteRequest {
 
 export interface AppStore {
   // Confirmed document (never preview)
+  revision: number
   document: ProjectDocument
   activeChangeSet: ChangeSet | null
   rejectedRecords: RejectedChangeSetRecord[]
@@ -110,7 +118,8 @@ export interface AppStore {
 
   setActiveScreen(screenId: EntityId): void
   setActiveState(stateId: EntityId | null): void
-  setSelectedComponent(componentId: EntityId | null): void
+  setSelection(selection: EditorSelection | null): void
+  selectScreenComponent(componentId: EntityId | null): void
   setRightPanelTab(tab: UiState['rightPanelTab']): void
   setReviewDraftProtected(id: string, protectedDraft: boolean): void
 
@@ -132,13 +141,24 @@ export interface AppStore {
   resetToSample(): void
 }
 
-function initialUiState(doc: ProjectDocument, activeScreenId?: string): UiState {
+function initialUiState(
+  doc: ProjectDocument,
+  activeScreenId?: string,
+  activeStateId?: string,
+  selection?: EditorSelection,
+): UiState {
   const screenId = activeScreenId ?? doc.project.screenIds[0] ?? null
   const screen = screenId ? getOwnEntity(doc.screens, screenId) : null
   return {
     activeScreenId: screenId,
-    activeStateId: screen?.defaultStateId ?? null,
-    selectedComponentId: null,
+    activeStateId: (
+      activeStateId &&
+      screen?.scenarioIds.includes(activeStateId) &&
+      getOwnEntity(doc.screenScenarios, activeStateId)?.screenId === screenId
+    )
+      ? activeStateId
+      : null,
+    selection: reconcileEditorSelection(doc, selection ?? null, screenId),
     rightPanelTab: 'inspector',
   }
 }
@@ -151,23 +171,18 @@ export function reconcileUiState(doc: ProjectDocument, current: UiState): UiStat
   const activeScreen = activeScreenId ? getOwnEntity(doc.screens, activeScreenId) : undefined
   const activeStateId = (
     current.activeStateId &&
-    activeScreen?.stateIds.includes(current.activeStateId) &&
-    getOwnEntity(doc.screenStates, current.activeStateId)?.screenId === activeScreenId
+    activeScreen?.scenarioIds.includes(current.activeStateId) &&
+    getOwnEntity(doc.screenScenarios, current.activeStateId)?.screenId === activeScreenId
   )
     ? current.activeStateId
-    : activeScreen?.defaultStateId ?? null
-  const selectedComponentId = (
-    current.selectedComponentId &&
-    getOwnEntity(doc.components, current.selectedComponentId)?.screenId === activeScreenId
-  )
-    ? current.selectedComponentId
     : null
+  const selection = reconcileEditorSelection(doc, current.selection, activeScreenId)
 
   return {
     ...current,
     activeScreenId,
     activeStateId,
-    selectedComponentId,
+    selection,
   }
 }
 
@@ -200,11 +215,19 @@ export function restoreEffectiveDocument(
 
 const MAX_HISTORY = 50
 
-function persist(document: ProjectDocument, activeChangeSet: ChangeSet | null, activeScreenId: EntityId | null): boolean {
+function persist(
+  revision: number,
+  document: ProjectDocument,
+  activeChangeSet: ChangeSet | null,
+  ui: Pick<UiState, 'activeScreenId' | 'activeStateId' | 'selection'>,
+): boolean {
   return saveToStorage({
+    revision,
     document,
     activeChangeSet: activeChangeSet ?? undefined,
-    activeScreenId: activeScreenId ?? undefined,
+    activeScreenId: ui.activeScreenId ?? undefined,
+    activeStateId: ui.activeStateId ?? undefined,
+    selection: ui.selection ? cloneEditorSelection(ui.selection) : undefined,
   })
 }
 
@@ -214,8 +237,8 @@ function buildHistory(
   label: string,
   source: HistoryEntry['source'],
   selection?: {
-    before: EntityId | null
-    after: EntityId | null
+    before: EditorSelection | null
+    after: EditorSelection | null
   },
 ): HistoryEntry {
   return {
@@ -224,16 +247,43 @@ function buildHistory(
     source,
     before,
     after,
-    selectionBefore: selection?.before,
-    selectionAfter: selection?.after,
+    selectionBefore: selection?.before ? cloneEditorSelection(selection.before) : selection?.before,
+    selectionAfter: selection?.after ? cloneEditorSelection(selection.after) : selection?.after,
   }
+}
+
+function replaceSelectionRoot(
+  document: ProjectDocument,
+  selection: EditorSelection,
+  componentId: EntityId,
+): EditorSelection | null {
+  const component = getOwnEntity(document.components, componentId)
+  if (!component) return null
+  if (selection.type === 'resolvedDefinitionNode') {
+    return component.nodeType === 'definitionInstance'
+      ? {
+          ...selection,
+          screenId: component.screenId,
+          instanceId: componentId,
+          nodePath: [...selection.nodePath] as [EntityId, ...EntityId[]],
+        }
+      : null
+  }
+  if (
+    selection.type === 'screenInlineComponent' ||
+    selection.type === 'screenDefinitionInstance'
+  ) {
+    return screenComponentSelection(document, component.screenId, componentId)
+  }
+  return selection
 }
 
 function selectionBeforeChangeSet(
   changeSet: ChangeSet,
-  selectedComponentId: EntityId | null,
-): EntityId | null {
-  let candidate = selectedComponentId
+  selection: EditorSelection | null,
+): EditorSelection | null {
+  if (!selection || selection.type === 'definitionEditorNode') return selection
+  let candidate = selectionRootScreenComponentId(selection)
   if (!candidate) return null
 
   for (const operation of [...changeSet.operations].reverse()) {
@@ -252,7 +302,9 @@ function selectionBeforeChangeSet(
     )
     if (sourceId) candidate = sourceId
   }
-  return hasOwnEntity(changeSet.baseDocument.components, candidate) ? candidate : null
+  return hasOwnEntity(changeSet.baseDocument.components, candidate)
+    ? replaceSelectionRoot(changeSet.baseDocument, selection, candidate)
+    : null
 }
 
 function toDomainError(error: unknown): DomainError {
@@ -284,6 +336,7 @@ type DeleteUndoToken = { kind: 'history'; historyEntryId: EntityId }
 export const useAppStore = create<AppStore>((set, get) => {
   const loadResult = loadFromStorage()
   const rejectedRecords = loadRejectedRecords()
+  let revision = 0
   let confirmedDocument = sampleProject
   let activeChangeSet: ChangeSet | null = null
   let ui = initialUiState(sampleProject)
@@ -292,6 +345,7 @@ export const useAppStore = create<AppStore>((set, get) => {
   let persistenceUnavailable = false
 
   if (loadResult.status === 'success') {
+    revision = loadResult.revision
     confirmedDocument = loadResult.document
     const restoredChangeSet = loadResult.activeChangeSet ?? null
     activeChangeSet = restoredChangeSet && rejectedRecords.some(
@@ -299,7 +353,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     )
       ? null
       : restoredChangeSet
-    ui = initialUiState(confirmedDocument, loadResult.activeScreenId)
+    ui = initialUiState(
+      confirmedDocument,
+      loadResult.activeScreenId,
+      loadResult.activeStateId,
+      loadResult.selection,
+    )
     if (activeChangeSet) ui = { ...ui, rightPanelTab: 'changes' }
     if (loadResult.discardedActiveChangeSet) {
       persistenceUnavailable = !loadResult.discardedActiveChangeSet.persisted
@@ -324,7 +383,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         ...reconcileUiState(confirmedDocument, ui),
         rightPanelTab: 'inspector',
       }
-      const persisted = persist(confirmedDocument, null, ui.activeScreenId)
+      const persisted = persist(revision, confirmedDocument, null, ui)
       persistenceUnavailable = !persisted
       startupNotice = {
         key: persisted
@@ -350,18 +409,19 @@ export const useAppStore = create<AppStore>((set, get) => {
   }
 
   function persistIfAvailable(
+    revisionValue: number,
     document: ProjectDocument,
     changeSet: ChangeSet | null,
-    activeScreenId: EntityId | null,
+    uiState: Pick<UiState, 'activeScreenId' | 'activeStateId' | 'selection'>,
   ): boolean {
     if (get().recoveryState) return true
-    return persist(document, changeSet, activeScreenId)
+    return persist(revisionValue, document, changeSet, uiState)
   }
 
   function deleteRoutingKey(state: AppStore): string {
     return state.activeChangeSet
       ? `change-set:${state.activeChangeSet.id}:${state.activeChangeSet.version}`
-      : `document:${state.document.revision}`
+      : `document:${state.revision}`
   }
 
   function showDeleteUndoToast(token: DeleteUndoToken): void {
@@ -418,6 +478,7 @@ export const useAppStore = create<AppStore>((set, get) => {
   }
 
   return {
+    revision,
     document: confirmedDocument,
     activeChangeSet,
     rejectedRecords,
@@ -452,19 +513,21 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       try {
         const next = applyCommand(state.document, command)
+        const nextRevisionValue = nextRevision(state.revision)
         const newHistory = [
           ...state.history.slice(-(MAX_HISTORY - 1)),
           buildHistory(state.document, next, label, 'human'),
         ]
         const newUi = reconcileUiState(next, state.ui)
         set({
+          revision: nextRevisionValue,
           document: next,
           history: newHistory,
           redoStack: [],
           effectiveDocument: next,
           ui: newUi,
         })
-        markPersistence(persistIfAvailable(next, null, newUi.activeScreenId))
+        markPersistence(persistIfAvailable(nextRevisionValue, next, null, newUi))
         return true
       } catch (e) {
         set({ toast: createErrorToast(toUiMessage(e)) })
@@ -487,7 +550,11 @@ export const useAppStore = create<AppStore>((set, get) => {
       set(state => {
         const ui = reconcileUiState(state.effectiveDocument, {
           ...state.ui,
-          selectedComponentId: duplicatedRootId,
+          selection: screenComponentSelection(
+            state.effectiveDocument,
+            getOwnEntity(state.effectiveDocument.components, duplicatedRootId)?.screenId ?? '',
+            duplicatedRootId,
+          ),
         })
         if (before.activeChangeSet) return { ui }
 
@@ -499,8 +566,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             ...state.history.slice(0, -1),
             {
               ...last,
-              selectionBefore: before.ui.selectedComponentId,
-              selectionAfter: duplicatedRootId,
+              selectionBefore: before.ui.selection,
+              selectionAfter: ui.selection,
             },
           ],
         }
@@ -551,7 +618,11 @@ export const useAppStore = create<AppStore>((set, get) => {
       set(state => {
         const ui = reconcileUiState(state.effectiveDocument, {
           ...state.ui,
-          selectedComponentId: pastedRootId,
+          selection: screenComponentSelection(
+            state.effectiveDocument,
+            getOwnEntity(state.effectiveDocument.components, pastedRootId)?.screenId ?? '',
+            pastedRootId,
+          ),
         })
         if (before.activeChangeSet) return { ui }
         const last = state.history[state.history.length - 1]
@@ -562,8 +633,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             ...state.history.slice(0, -1),
             {
               ...last,
-              selectionBefore: before.ui.selectedComponentId,
-              selectionAfter: pastedRootId,
+              selectionBefore: before.ui.selection,
+              selectionAfter: ui.selection,
             },
           ],
         }
@@ -586,7 +657,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       const changeSet: ChangeSet = {
         id: nanoid(),
         summary,
-        baseRevision: state.document.revision,
+        baseRevision: state.revision,
         version: 0,
         baseDocument: state.document,
         operations: [],
@@ -603,7 +674,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           ? state.document
           : state.reviewDraftDocument,
       })
-      markPersistence(persistIfAvailable(state.document, changeSet, nextUi.activeScreenId))
+      markPersistence(persistIfAvailable(state.revision, state.document, changeSet, nextUi))
       return changeSet
     },
 
@@ -656,11 +727,11 @@ export const useAppStore = create<AppStore>((set, get) => {
             ...reconciledUi,
             activeScreenId: state.ui.activeScreenId,
             activeStateId: state.ui.activeStateId,
-            selectedComponentId: state.ui.selectedComponentId,
+            selection: state.ui.selection,
           }
         : reconciledUi
       set({ activeChangeSet: newChangeSet, effectiveDocument: effective, ui: nextUi })
-      markPersistence(persistIfAvailable(state.document, newChangeSet, nextUi.activeScreenId))
+      markPersistence(persistIfAvailable(state.revision, state.document, newChangeSet, nextUi))
     },
 
     acceptChangeSet(historyLabel) {
@@ -679,7 +750,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             effectiveDocument: state.document,
             ui: nextUi,
           })
-          markPersistence(persistIfAvailable(state.document, null, nextUi.activeScreenId))
+          markPersistence(persistIfAvailable(state.revision, state.document, null, nextUi))
           return
         }
         // Atomic re-validation: apply all ops on baseDocument
@@ -687,9 +758,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           state.activeChangeSet.baseDocument,
           state.activeChangeSet.operations.map(op => op.command),
         )
+        const nextRevisionValue = nextRevision(state.revision)
         const selectedBefore = selectionBeforeChangeSet(
           state.activeChangeSet,
-          state.ui.selectedComponentId,
+          state.ui.selection,
         )
         const newHistory = [
           ...state.history.slice(-(MAX_HISTORY - 1)),
@@ -698,7 +770,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             next,
             historyLabel ?? `Accept change set: ${state.activeChangeSet.summary}`,
             'accepted-change-set',
-            { before: selectedBefore, after: state.ui.selectedComponentId },
+            { before: selectedBefore, after: state.ui.selection },
           ),
         ]
         const reconciledUi = reconcileUiState(next, state.ui)
@@ -708,12 +780,13 @@ export const useAppStore = create<AppStore>((set, get) => {
                 ...reconciledUi,
                 activeScreenId: state.ui.activeScreenId,
                 activeStateId: state.ui.activeStateId,
-                selectedComponentId: state.ui.selectedComponentId,
+                selection: state.ui.selection,
               }
             : reconciledUi),
           rightPanelTab: 'inspector' as const,
         }
         set({
+          revision: nextRevisionValue,
           document: next,
           activeChangeSet: null,
           history: newHistory,
@@ -721,7 +794,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           effectiveDocument: next,
           ui: nextUi,
         })
-        markPersistence(persistIfAvailable(next, null, nextUi.activeScreenId))
+        markPersistence(persistIfAvailable(nextRevisionValue, next, null, nextUi))
       } catch (e) {
         if (e instanceof DomainError) {
           set({ toast: createErrorToast(domainErrorMessage(e.code)) })
@@ -757,13 +830,13 @@ export const useAppStore = create<AppStore>((set, get) => {
         : [record]
       const selectedBefore = selectionBeforeChangeSet(
         state.activeChangeSet,
-        state.ui.selectedComponentId,
+        state.ui.selection,
       )
       const nextUi = {
         ...reconcileUiState(state.document, {
           ...state.ui,
-          selectedComponentId: state.reviewDraftProtectionIds.length > 0
-            ? state.ui.selectedComponentId
+          selection: state.reviewDraftProtectionIds.length > 0
+            ? state.ui.selection
             : selectedBefore,
         }),
         rightPanelTab: 'inspector' as const,
@@ -772,7 +845,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       // Save the rejection first so a failed main write can be suppressed on reload
       // without deleting the last confirmed document.
       const rejectionSaved = saveRejectedRecord(record)
-      const documentSaved = persistIfAvailable(state.document, null, nextUi.activeScreenId)
+      const documentSaved = persistIfAvailable(state.revision, state.document, null, nextUi)
       if (!documentSaved && !rejectionSaved) removePersistedDocument()
       markPersistence(documentSaved && rejectionSaved)
       if (!documentSaved || !rejectionSaved) {
@@ -787,28 +860,27 @@ export const useAppStore = create<AppStore>((set, get) => {
       const state = get()
       if (state.activeChangeSet || state.history.length === 0) return
       const last = state.history[state.history.length - 1]!
-      const restored = {
-        ...last.before,
-        revision: nextRevision(state.document.revision),
-      }
+      const restored = last.before
+      const nextRevisionValue = nextRevision(state.revision)
       const nextUi = reconcileUiState(restored, {
         ...state.ui,
-        selectedComponentId: last.selectionBefore !== undefined
+        selection: last.selectionBefore !== undefined
           ? last.selectionBefore
-          : state.ui.selectedComponentId,
+          : state.ui.selection,
       })
       const redoStack = [
         ...state.redoStack.slice(-(MAX_HISTORY - 1)),
         last,
       ]
       set({
+        revision: nextRevisionValue,
         document: restored,
         history: state.history.slice(0, -1),
         redoStack,
         effectiveDocument: restored,
         ui: nextUi,
       })
-      markPersistence(persistIfAvailable(restored, null, nextUi.activeScreenId))
+      markPersistence(persistIfAvailable(nextRevisionValue, restored, null, nextUi))
     },
 
     redo() {
@@ -816,15 +888,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       const state = get()
       if (state.activeChangeSet || state.redoStack.length === 0) return
       const entry = state.redoStack[state.redoStack.length - 1]!
-      const restored = {
-        ...entry.after,
-        revision: nextRevision(state.document.revision),
-      }
+      const restored = entry.after
+      const nextRevisionValue = nextRevision(state.revision)
       const nextUi = reconcileUiState(restored, {
         ...state.ui,
-        selectedComponentId: entry.selectionAfter !== undefined
+        selection: entry.selectionAfter !== undefined
           ? entry.selectionAfter
-          : state.ui.selectedComponentId,
+          : state.ui.selection,
       })
       const newHistory = [
         ...state.history.slice(-(MAX_HISTORY - 1)),
@@ -842,13 +912,14 @@ export const useAppStore = create<AppStore>((set, get) => {
         ),
       ]
       set({
+        revision: nextRevisionValue,
         document: restored,
         history: newHistory,
         redoStack: state.redoStack.slice(0, -1),
         effectiveDocument: restored,
         ui: nextUi,
       })
-      markPersistence(persistIfAvailable(restored, null, nextUi.activeScreenId))
+      markPersistence(persistIfAvailable(nextRevisionValue, restored, null, nextUi))
     },
 
     setActiveScreen(screenId) {
@@ -859,11 +930,11 @@ export const useAppStore = create<AppStore>((set, get) => {
       const nextUi = reconcileUiState(state.effectiveDocument, {
         ...state.ui,
         activeScreenId: screenId,
-        activeStateId: screen.defaultStateId,
-        selectedComponentId: null,
+        activeStateId: null,
+        selection: null,
       })
       set({ ui: nextUi })
-      markPersistence(persistIfAvailable(state.document, state.activeChangeSet, nextUi.activeScreenId))
+      markPersistence(persistIfAvailable(state.revision, state.document, state.activeChangeSet, nextUi))
     },
 
     setActiveState(stateId) {
@@ -873,11 +944,27 @@ export const useAppStore = create<AppStore>((set, get) => {
       }))
     },
 
-    setSelectedComponent(componentId) {
+    setSelection(selection) {
       requireWritable()
       set(state => ({
-        ui: reconcileUiState(state.effectiveDocument, { ...state.ui, selectedComponentId: componentId }),
+        ui: reconcileUiState(state.effectiveDocument, {
+          ...state.ui,
+          selection: selection ? cloneEditorSelection(selection) : null,
+        }),
       }))
+    },
+
+    selectScreenComponent(componentId) {
+      requireWritable()
+      set(state => {
+        const activeScreenId = state.ui.activeScreenId
+        const selection = componentId && activeScreenId
+          ? screenComponentSelection(state.effectiveDocument, activeScreenId, componentId)
+          : null
+        return {
+          ui: reconcileUiState(state.effectiveDocument, { ...state.ui, selection }),
+        }
+      })
     },
 
     setRightPanelTab(tab) {
@@ -901,7 +988,7 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     exportCurrentData() {
       const state = get()
-      downloadCurrentData(state.document, state.effectiveDocument)
+      downloadCurrentData(state.revision, state.document, state.effectiveDocument)
     },
 
     dismissStartupNotice() {
@@ -1051,6 +1138,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     resetToSample() {
       const nextUi = initialUiState(sampleProject)
       set({
+        revision: 0,
         document: sampleProject,
         activeChangeSet: null,
         history: [],
@@ -1067,7 +1155,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         reviewDraftDocument: null,
       })
       const cleared = clearStorage()
-      markPersistence(cleared && persistIfAvailable(sampleProject, null, nextUi.activeScreenId))
+      markPersistence(cleared && persistIfAvailable(0, sampleProject, null, nextUi))
     },
   }
 })

@@ -474,3 +474,23 @@
 .acceptBtn:hover { background: var(--accent-hover); }
 .rejectBtn { border: 1px solid var(--border); background: white; color: var(--text-muted); }
 .rejectBtn:hover { border-color: var(--danger); color: var(--danger); background: #fff5f5; }
+.inlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.secondaryButton {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.inlineField {
+  min-width: 0;
+}

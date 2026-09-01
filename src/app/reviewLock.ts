@@ -8,7 +8,7 @@ export interface DialogReviewLock {
 
 export function useDialogReviewLock(): DialogReviewLock {
   const activeChangeSet = useAppStore(state => state.activeChangeSet)
-  const revision = useAppStore(state => state.document.revision)
+  const revision = useAppStore(state => state.revision)
   const setReviewDraftProtected = useAppStore(state => state.setReviewDraftProtected)
   const openedRevision = useRef(revision)
   const protectionId = useId()

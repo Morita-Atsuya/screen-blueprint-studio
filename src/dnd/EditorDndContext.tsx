@@ -25,6 +25,10 @@ import styles from './EditorDndContext.module.css'
 import { useI18n } from '../i18n/I18nProvider'
 import type { MessageKey } from '../i18n/messages'
 import type { ComponentPlacementInvalidReason } from '../domain/componentPlacement'
+import {
+  DEFAULT_COMPONENT_PLACEMENT,
+  DEFAULT_COMPONENT_SIZING,
+} from '../domain/model'
 
 const DROP_ERROR_KEYS: Record<
   ComponentPlacementInvalidReason | 'surfaceMismatch',
@@ -79,7 +83,10 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
     const drag = event.active.data.current
     completedDrop.current = null
     setDragLabel(isEditorDragData(drag) ? drag.label : null)
-    setIsPaletteDrag(isEditorDragData(drag) && drag.type === 'palette')
+    setIsPaletteDrag(
+      isEditorDragData(drag) &&
+      (drag.type === 'palette' || drag.type === 'definitionPalette'),
+    )
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -109,7 +116,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    if (drag.type === 'palette') {
+    if (drag.type === 'palette' || drag.type === 'definitionPalette') {
       if (outcome.action !== 'add') {
         completedDrop.current = { status: 'invalid', reason: 'domainValidation' }
         state.showToast({
@@ -118,14 +125,27 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
         })
         return
       }
-      const command = createAddComponentCommand(
-        state.effectiveDocument,
-        target.screenId,
-        outcome.parentId,
-        drag.kind,
-        locale,
-        outcome.position,
-      )
+      const command = drag.type === 'palette'
+        ? createAddComponentCommand(
+            state.effectiveDocument,
+            target.screenId,
+            outcome.parentId,
+            drag.kind,
+            locale,
+            outcome.position,
+          )
+        : {
+            type: 'addDefinitionInstance' as const,
+            componentId: `instance-${crypto.randomUUID()}`,
+            screenId: target.screenId,
+            parentId: target.parentId,
+            position: outcome.position,
+            definitionId: drag.definitionId,
+            variantId: null,
+            props: {},
+            placement: DEFAULT_COMPONENT_PLACEMENT,
+            sizing: DEFAULT_COMPONENT_SIZING,
+          }
       if (!state.dispatch(command, `Add component: ${drag.kind}`)) {
         completedDrop.current = { status: 'invalid', reason: 'domainValidation' }
         useAppStore.getState().showToast({
@@ -134,7 +154,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
         })
         return
       }
-      useAppStore.getState().setSelectedComponent(command.componentId)
+      useAppStore.getState().selectScreenComponent(command.componentId)
       return
     }
 
@@ -159,7 +179,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       })
       return
     }
-    useAppStore.getState().setSelectedComponent(drag.componentId)
+    useAppStore.getState().selectScreenComponent(drag.componentId)
   }
 
   function handleDragCancel() {

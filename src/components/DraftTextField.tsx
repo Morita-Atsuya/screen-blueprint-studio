@@ -103,7 +103,7 @@ export function DraftTextField({
   disabled = false,
 }: DraftTextFieldProps) {
   const { t } = useI18n()
-  const revision = useAppStore(state => state.document.revision)
+  const revision = useAppStore(state => state.revision)
   const setReviewDraftProtected = useAppStore(state => state.setReviewDraftProtected)
   const errorId = useId()
   const cached = useRef(draftCache.get(draftId) ?? loadStoredDraft(draftId))

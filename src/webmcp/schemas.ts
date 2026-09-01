@@ -407,24 +407,58 @@ const commonOverrideProperties = {
 }
 
 export const componentOverridesSchema = {
-  type: 'object',
-  additionalProperties: {
-    anyOf: [
-      {
-        type: 'object',
-        properties: commonOverrideProperties,
-        ...closed,
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      target: {
+        oneOf: [
+          {
+            type: 'object',
+            properties: {
+              type: { const: 'inline' },
+              componentId: nonEmptyString,
+            },
+            required: ['type', 'componentId'],
+            ...closed,
+          },
+          {
+            type: 'object',
+            properties: {
+              type: { const: 'definitionNode' },
+              instanceId: nonEmptyString,
+              nodePath: {
+                type: 'array',
+                minItems: 1,
+                items: nonEmptyString,
+              },
+            },
+            required: ['type', 'instanceId', 'nodePath'],
+            ...closed,
+          },
+        ],
       },
-      {
-        type: 'object',
-        properties: { ...commonOverrideProperties, text: string },
-        ...closed,
+      override: {
+        anyOf: [
+          {
+            type: 'object',
+            properties: commonOverrideProperties,
+            ...closed,
+          },
+          {
+            type: 'object',
+            properties: { ...commonOverrideProperties, text: string },
+            ...closed,
+          },
+          {
+            type: 'object',
+            properties: { ...commonOverrideProperties, value: string },
+            ...closed,
+          },
+        ],
       },
-      {
-        type: 'object',
-        properties: { ...commonOverrideProperties, value: string },
-        ...closed,
-      },
-    ],
+    },
+    required: ['target', 'override'],
+    ...closed,
   },
 }

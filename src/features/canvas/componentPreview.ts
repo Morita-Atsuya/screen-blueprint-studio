@@ -1,5 +1,11 @@
 import { assertNever } from '../../domain/assertNever'
-import type { ComponentConfig, LinkDestination, LinkOpenMode, TextStyle } from '../../domain/model'
+import type {
+  ComponentConfig,
+  DefinitionComponentConfig,
+  LinkDestination,
+  LinkOpenMode,
+  TextStyle,
+} from '../../domain/model'
 import { isSafePortableUrl } from '../../domain/portableUrl'
 
 export type ImagePreviewStatus = 'ready' | 'missing' | 'invalid' | 'failed'
@@ -83,7 +89,7 @@ function textElement(style: TextStyle): 'h1' | 'h2' | 'h3' | 'p' | 'small' {
 }
 
 export function createCanvasComponentPreview(
-  config: ComponentConfig,
+  config: ComponentConfig | DefinitionComponentConfig,
 ): CanvasComponentPreview {
   switch (config.kind) {
     case 'page':

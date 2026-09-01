@@ -12,6 +12,7 @@ import {
   useDialogReviewLock,
 } from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
+import { cloneComponentTargetRef } from '../../domain/componentTargets'
 
 type DialogMode = 'create' | 'edit'
 type DialogResult = 'cancelled' | 'saved' | 'deleted'
@@ -73,7 +74,7 @@ export function EventDialog({
         eventId: nanoid(),
         screenId: context.screenId,
         name: name.trim(),
-        trigger: { type: triggerType, componentId: context.componentId },
+        trigger: { type: triggerType, target: cloneComponentTargetRef(context.target) },
         actions: eventActions,
       }, `${t('behavior.addEvent')}: ${name.trim()}`)
     } else {
@@ -82,7 +83,7 @@ export function EventDialog({
         type: 'updateEvent',
         eventId: persistedEventId,
         name: name.trim(),
-        trigger: { type: triggerType, componentId: context.componentId },
+        trigger: { type: triggerType, target: cloneComponentTargetRef(context.target) },
         actions: eventActions,
       }, `${t('behavior.editEvent')}: ${name.trim()}`)
     }
@@ -121,7 +122,7 @@ export function EventDialog({
     if (draftLocked) return
     setActions(current => [
       ...current,
-      { key: nanoid(), value: createAction('setState', context) },
+      { key: nanoid(), value: createAction('setScenario', context) },
     ])
   }
 
@@ -337,12 +338,14 @@ export function EventDialog({
   )
 }
 
-const ACTION_TYPES: ActionType[] = ['setState', 'navigate', 'callApi']
+const ACTION_TYPES: ActionType[] = ['setScenario', 'clearScenario', 'navigate', 'callApi']
 
 function createAction(type: ActionType, context: EventEditorContext): EventAction {
   switch (type) {
-    case 'setState':
-      return { type, stateId: context.states[0]?.id ?? '' }
+    case 'setScenario':
+      return { type, scenarioId: context.states[0]?.id ?? '' }
+    case 'clearScenario':
+      return { type: 'clearScenario' }
     case 'navigate':
       return { type, destinationScreenId: context.screens[0]?.id ?? '' }
     case 'callApi':
@@ -352,8 +355,10 @@ function createAction(type: ActionType, context: EventEditorContext): EventActio
 
 function hasActionCandidates(type: ActionType, context: EventEditorContext): boolean {
   switch (type) {
-    case 'setState':
+    case 'setScenario':
       return context.states.length > 0
+    case 'clearScenario':
+      return true
     case 'navigate':
       return context.screens.length > 0
     case 'callApi':
@@ -366,8 +371,10 @@ function isActionTargetAvailable(
   context: EventEditorContext,
 ): boolean {
   switch (action.type) {
-    case 'setState':
-      return context.states.some(state => state.id === action.stateId)
+    case 'setScenario':
+      return context.states.some(state => state.id === action.scenarioId)
+    case 'clearScenario':
+      return true
     case 'navigate':
       return context.screens.some(screen => screen.id === action.destinationScreenId)
     case 'callApi':
@@ -386,27 +393,28 @@ function ActionTarget({
 }) {
   const { t } = useI18n()
   switch (action.type) {
-    case 'setState':
+    case 'setScenario':
       return (
         <label className={styles.compactField}>
           <span>{t('behavior.target')}</span>
           <select
-            value={action.stateId}
-            onChange={event => onChange({ ...action, stateId: event.target.value })}
+            value={action.scenarioId}
+            onChange={event => onChange({ ...action, scenarioId: event.target.value })}
           >
             <MissingOption
-              currentId={action.stateId}
+              currentId={action.scenarioId}
               availableIds={context.states.map(state => state.id)}
             />
             {context.states.map(state => (
               <option key={state.id} value={state.id}>
                 {state.label}
-                {state.isDefault ? ` (${t('behavior.defaultState')})` : ''}
               </option>
             ))}
           </select>
         </label>
       )
+    case 'clearScenario':
+      return null
     case 'navigate':
       return (
         <label className={styles.compactField}>

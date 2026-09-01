@@ -1,5 +1,6 @@
 import { getComponentDisplayLabel } from './componentDisplayLabel'
 import { getOwnEntity } from './entityMap'
+import { targetRootScreenComponentId } from './componentTargets'
 import type {
   EntityId,
   ProjectDocument,
@@ -107,7 +108,8 @@ function transitionSnapshots(
   return Object.values(document.events)
     .flatMap(event => {
       const sourceScreen = getOwnEntity(document.screens, event.screenId)
-      const trigger = getOwnEntity(document.components, event.trigger.componentId)
+      const triggerComponentId = targetRootScreenComponentId(event.trigger.target)
+      const trigger = getOwnEntity(document.components, triggerComponentId)
       return event.actions.flatMap((action, actionIndex) =>
         action.type === 'navigate'
           ? [{
@@ -117,10 +119,10 @@ function transitionSnapshots(
               eventId: event.id,
               eventName: event.name,
               eventOrder: eventOrder(document, sourceScreen, event),
-              triggerComponentId: event.trigger.componentId,
+              triggerComponentId,
               triggerLabel: trigger
                 ? getComponentDisplayLabel(trigger, locale)
-                : event.trigger.componentId,
+                : triggerComponentId,
               triggerResolved: Boolean(trigger),
               actionIndex,
             }]

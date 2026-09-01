@@ -32,14 +32,12 @@ export function ScreenList() {
   function addScreen() {
     const screenId = nanoid()
     const rootComponentId = nanoid()
-    const defaultStateId = nanoid()
     const { name, route } = findAvailableScreenDefaults(screens, locale)
     dispatch(
       {
         type: 'addScreen',
         screenId,
         rootComponentId,
-        defaultStateId,
         name,
         route,
       },

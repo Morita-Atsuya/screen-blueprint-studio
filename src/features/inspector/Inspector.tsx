@@ -11,10 +11,10 @@ import type {
   ComponentSizing,
   PlacementAnchor,
   PlacementInset,
-  ScreenComponent,
+  ProjectDocument,
   ScreenState,
 } from '../../domain/model'
-import { COMPONENT_SIZE_TOKENS } from '../../domain/model'
+import { COMPONENT_SIZE_TOKENS, isInlineScreenComponent } from '../../domain/model'
 import type { ChangeSet } from '../../domain/collaboration'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
@@ -22,18 +22,38 @@ import { isSafeExternalUrl, isSafePortableUrl } from '../../domain/portableUrl'
 import { DraftTextField } from '../../components/DraftTextField'
 import {
   getComponentBehavior,
+  getComponentTargetBehavior,
   getApiEditorContext,
+  getApiEditorContextForTarget,
   getEventEditorContext,
+  getEventEditorContextForTarget,
   getValidationRulesEditorContext,
 } from '../../domain/componentBehavior'
 import { BehaviorDetails, ValidationDetails } from './BehaviorDetails'
 import { getComponentSelectionContext } from '../../domain/componentDisplayLabel'
+import { selectedScreenComponentId } from '../../domain/editorSelection'
+import {
+  definitionEditorNodeSelection,
+  selectionCanonicalTarget,
+} from '../../domain/editorSelection'
+import { resolveComponentTarget } from '../../domain/definitionResolver'
+import { resolveComponentDefinitionRefV3 } from '../../domain/canonicalProjectSpecV3'
+import {
+  createDetachDefinitionInstanceCommand,
+  createExtractDefinitionCommand,
+} from '../../domain/definitionEditing'
 import { ChangeOperationList } from '../change-review/ChangeOperationList'
-import { resolveEffectiveComponentState } from '../../domain/selectors'
+import { effectiveComponent, resolveEffectiveComponentState, type EffectiveScreenComponent } from '../../domain/selectors'
 import {
   createResetComponentOverrideCommand,
   createSetComponentOverrideFieldCommand,
 } from '../../domain/stateOverrides'
+import {
+  createResetTargetOverrideCommand,
+  createSetTargetOverrideFieldCommand,
+} from '../../domain/stateOverrides'
+import { findScenarioOverride } from '../../domain/componentTargets'
+import { findInlineScenarioOverride } from '../../domain/componentTargets'
 import { InspectorSection } from './InspectorSection'
 import type { InspectorSectionBadge } from './InspectorSection'
 import {
@@ -46,6 +66,24 @@ import {
 } from './inspectorSections'
 import type { InspectorSectionId } from './inspectorSections'
 
+function resolvedNodeInspectorLabel(
+  node: ReturnType<typeof resolveComponentTarget>,
+): string {
+  switch (node.config.kind) {
+    case 'text':
+      return node.config.text || node.kind
+    case 'image':
+      return node.config.alt || node.kind
+    case 'textInput':
+    case 'select':
+    case 'button':
+    case 'link':
+      return node.config.label || node.kind
+    default:
+      return node.common.description || node.kind
+  }
+}
+
 export function Inspector() {
   const { locale, t } = useI18n()
   const descriptionInputId = useId()
@@ -56,7 +94,8 @@ export function Inspector() {
     reviewDraftProtectionIds,
     reviewDraftDocument,
     activeChangeSet,
-    setSelectedComponent,
+    selectScreenComponent,
+    setSelection,
   } = useAppStore()
   const [sectionPreferences, setSectionPreferences] = useState<Record<string, boolean>>({})
   const [validationErrorCounts, setValidationErrorCounts] = useState<Record<string, number>>({})
@@ -65,23 +104,162 @@ export function Inspector() {
       current[componentId] === count ? current : { ...current, [componentId]: count },
     )
   }, [])
-  const { selectedComponentId, rightPanelTab } = ui
+  const { rightPanelTab } = ui
+  const selectedComponentId = selectedScreenComponentId(ui.selection)
 
   if (rightPanelTab === 'changes' && activeChangeSet) {
     return <ChangesPanel changeSet={activeChangeSet} />
+  }
+
+  if (ui.selection?.type === 'resolvedDefinitionNode') {
+    const resolved = resolveComponentTarget(
+      effectiveDocument,
+      ui.selection.screenId,
+      {
+        type: 'definitionNode',
+        instanceId: ui.selection.instanceId,
+        nodePath: ui.selection.nodePath,
+      },
+      ui.activeStateId,
+    )
+    const definition = resolved.definitionId
+      ? getOwnEntity(effectiveDocument.componentDefinitions, resolved.definitionId)
+      : undefined
+    const activeState = ui.activeStateId
+      ? getOwnEntity(effectiveDocument.screenScenarios, ui.activeStateId)
+      : undefined
+    const target = selectionCanonicalTarget(effectiveDocument, ui.selection)
+    const behavior = target
+      ? getComponentTargetBehavior(effectiveDocument, ui.selection.screenId, target)
+      : null
+    const eventEditor = target
+      ? getEventEditorContextForTarget(effectiveDocument, ui.selection.screenId, target)
+      : null
+    const apiEditor = target
+      ? getApiEditorContextForTarget(
+          effectiveDocument,
+          ui.selection.screenId,
+          target,
+          locale,
+        )
+      : null
+    const override = target && activeState
+      ? findScenarioOverride(activeState, target)?.override
+      : undefined
+    const setOverride = (
+      key: 'visible' | 'enabled',
+      value: boolean | undefined,
+    ) => {
+      if (!activeState || !target) return
+      const command = createSetTargetOverrideFieldCommand(activeState, target, key, value)
+      if (command) dispatch(command, `Update resolved ${key}`)
+    }
+    return (
+      <div className={styles.root} data-resolved-node-inspector>
+        <h3 className={styles.heading}>{resolvedNodeInspectorLabel(resolved)}</h3>
+        <p className={styles.context}>{definition?.name}</p>
+        <p className={styles.reviewLock}>{t('definitions.resolvedSealed')}</p>
+        <div className={styles.inlineActions}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={!definition}
+            onClick={() => {
+              if (!definition) return
+              setSelection(definitionEditorNodeSelection(
+                definition.id,
+                [definition.rootNodeId],
+              ))
+            }}
+          >
+            {t('definitions.editDefinition')}
+          </button>
+        </div>
+        {activeState && target ? (
+          <InspectorSection
+            sectionId="stateOverrides"
+            title={t('inspector.sectionStateOverrides')}
+            expanded
+            badges={[]}
+            onToggle={() => undefined}
+          >
+            <Field label={t('inspector.visible')}>{controlId => (
+              <select
+                id={controlId}
+                className={styles.input}
+                disabled={Boolean(activeChangeSet)}
+                value={override?.visible === undefined ? '' : String(override.visible)}
+                onChange={event => setOverride(
+                  'visible',
+                  event.target.value === '' ? undefined : event.target.value === 'true',
+                )}
+              >
+                <option value="">{t('definitions.defaultValue')}</option>
+                <option value="true">{t('review.value.yes')}</option>
+                <option value="false">{t('review.value.no')}</option>
+              </select>
+            )}</Field>
+            <Field label={t('inspector.enabled')}>{controlId => (
+              <select
+                id={controlId}
+                className={styles.input}
+                disabled={Boolean(activeChangeSet)}
+                value={override?.enabled === undefined ? '' : String(override.enabled)}
+                onChange={event => setOverride(
+                  'enabled',
+                  event.target.value === '' ? undefined : event.target.value === 'true',
+                )}
+              >
+                <option value="">{t('definitions.defaultValue')}</option>
+                <option value="true">{t('review.value.yes')}</option>
+                <option value="false">{t('review.value.no')}</option>
+              </select>
+            )}</Field>
+            {override ? (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                disabled={Boolean(activeChangeSet)}
+                onClick={() => {
+                  const command = createResetTargetOverrideCommand(activeState, target)
+                  if (command) dispatch(command, 'Reset resolved override')
+                }}
+              >
+                {t('definitions.resetOverride')}
+              </button>
+            ) : null}
+          </InspectorSection>
+        ) : null}
+        {behavior && eventEditor && apiEditor ? (
+          <InspectorSection
+            sectionId="behavior"
+            title={t('inspector.sectionBehavior')}
+            expanded
+            badges={[]}
+            onToggle={() => undefined}
+          >
+            <BehaviorDetails
+              behavior={behavior}
+              eventEditor={eventEditor}
+              apiEditor={apiEditor}
+            />
+          </InspectorSection>
+        ) : null}
+      </div>
+    )
   }
 
   if (!selectedComponentId) {
     return <p className={styles.empty}>{t('inspector.selectComponent')}</p>
   }
 
-  const selectedEffectiveComponent = getOwnEntity(
+  const selectedBaseComponent = getOwnEntity(
     effectiveDocument.components,
     selectedComponentId,
   )
   const protectedActiveStateMissing = Boolean(
     ui.activeStateId &&
-    !getOwnEntity(effectiveDocument.screenStates, ui.activeStateId),
+    !getOwnEntity(effectiveDocument.screenScenarios, ui.activeStateId),
   )
   const inspectorDialogProtected = reviewDraftProtectionIds.some(id =>
     id.startsWith('dialog:')
@@ -91,18 +269,19 @@ export function Inspector() {
     reviewDraftDocument &&
     (
       inspectorDialogProtected ||
-      !selectedEffectiveComponent ||
+      !selectedBaseComponent ||
       protectedActiveStateMissing
     )
   )
     ? reviewDraftDocument
     : effectiveDocument
-  const comp = selectedEffectiveComponent ??
+  const baseComp = selectedBaseComponent ??
     getOwnEntity(inspectorDocument.components, selectedComponentId)
-  if (!comp) return null
+  if (!baseComp) return null
   const activeState = ui.activeStateId
-    ? getOwnEntity(inspectorDocument.screenStates, ui.activeStateId)
+    ? getOwnEntity(inspectorDocument.screenScenarios, ui.activeStateId)
     : undefined
+  const comp = effectiveComponent(inspectorDocument, baseComp, activeState)
   const screen = getOwnEntity(inspectorDocument.screens, comp.screenId)
   const selectionContext = getComponentSelectionContext(
     inspectorDocument,
@@ -111,6 +290,166 @@ export function Inspector() {
     activeState,
   )
   if (!selectionContext) return null
+  if (baseComp.nodeType === 'definitionInstance') {
+    const definition = resolveComponentDefinitionRefV3(inspectorDocument, baseComp.source.$ref)
+    const parent = baseComp.parentId
+      ? getOwnEntity(inspectorDocument.components, baseComp.parentId)
+      : undefined
+    const effectiveParent = parent
+      ? effectiveComponent(inspectorDocument, parent, activeState)
+      : undefined
+    const parentLayout = effectiveParent && (
+      effectiveParent.config.kind === 'page' ||
+      effectiveParent.config.kind === 'container' ||
+      effectiveParent.config.kind === 'modal'
+    )
+      ? effectiveParent.config
+      : null
+    const updateInstance = (
+      patch: Omit<Extract<
+        import('../../domain/commands').DomainCommand,
+        { type: 'updateDefinitionInstance' }
+      >, 'type' | 'componentId'>,
+      label: string,
+    ) => dispatch(
+      { type: 'updateDefinitionInstance', componentId: baseComp.id, ...patch },
+      label,
+    )
+    return (
+      <div className={styles.root}>
+        <h3 className={styles.heading}>{selectionContext.targetLabel}</h3>
+        <p className={styles.context}>{selectionContext.screenName}</p>
+        <p className={styles.context}>{definition.description}</p>
+        <div className={styles.inlineActions}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() => setSelection(
+              definitionEditorNodeSelection(definition.id, [definition.rootNodeId]),
+            )}
+          >
+            {t('definitions.editDefinition')}
+          </button>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={Boolean(activeChangeSet)}
+            onClick={() => dispatch(
+              createDetachDefinitionInstanceCommand(
+                effectiveDocument,
+                baseComp.id,
+                () => `component-${crypto.randomUUID()}`,
+              ),
+              t('definitions.detach'),
+            )}
+          >
+            {t('definitions.detach')}
+          </button>
+        </div>
+        <InspectorSection
+          sectionId="content"
+          title={t('definitions.instance')}
+          expanded
+          badges={[]}
+          onToggle={() => undefined}
+        >
+          <Field label={t('definitions.variant')}>{controlId => (
+            <select
+              id={controlId}
+              className={styles.input}
+              value={baseComp.variantId ?? ''}
+              onChange={event => updateInstance(
+                { variantId: event.target.value || null },
+                t('definitions.variant'),
+              )}
+            >
+              <option value="">{t('definitions.baseVariant')}</option>
+              {definition.variants.map(variant => (
+                <option key={variant.id} value={variant.id}>{variant.name}</option>
+              ))}
+            </select>
+          )}</Field>
+          {definition.publicProps.map(prop => (
+            <Field key={prop.key} label={prop.name}>{controlId => (
+              <div className={styles.inlineField}>
+                {prop.type === 'boolean' ? (
+                  <select
+                    id={controlId}
+                    className={styles.input}
+                    value={Object.prototype.hasOwnProperty.call(baseComp.props, prop.key)
+                      ? String(baseComp.props[prop.key])
+                      : ''}
+                    onChange={event => {
+                      const props = { ...baseComp.props }
+                      if (event.target.value === '') delete props[prop.key]
+                      else props[prop.key] = event.target.value === 'true'
+                      updateInstance({ props }, prop.name)
+                    }}
+                  >
+                    <option value="">{t('definitions.defaultValue')}</option>
+                    <option value="true">{t('review.value.yes')}</option>
+                    <option value="false">{t('review.value.no')}</option>
+                  </select>
+                ) : prop.type === 'enum' ? (
+                  <select
+                    id={controlId}
+                    className={styles.input}
+                    value={String(baseComp.props[prop.key] ?? '')}
+                    onChange={event => {
+                      const props = { ...baseComp.props }
+                      if (event.target.value === '') delete props[prop.key]
+                      else props[prop.key] = event.target.value
+                      updateInstance({ props }, prop.name)
+                    }}
+                  >
+                    <option value="">{t('definitions.defaultValue')}</option>
+                    {prop.values.map(value => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    id={controlId}
+                    className={styles.input}
+                    type={prop.type === 'number' ? 'number' : 'text'}
+                    value={String(baseComp.props[prop.key] ?? '')}
+                    placeholder={t('definitions.defaultValue')}
+                    onChange={event => {
+                      const props = { ...baseComp.props }
+                      if (event.target.value === '') delete props[prop.key]
+                      else props[prop.key] = prop.type === 'number'
+                        ? Number(event.target.value)
+                        : event.target.value
+                      updateInstance({ props }, prop.name)
+                    }}
+                  />
+                )}
+              </div>
+            )}</Field>
+          ))}
+        </InspectorSection>
+        <InspectorSection
+          sectionId="placement"
+          title={t('inspector.sectionPlacement')}
+          expanded
+          badges={[]}
+          onToggle={() => undefined}
+        >
+          <SizingFields
+            sizing={baseComp.sizing}
+            placement={baseComp.placement}
+            parentLayout={parentLayout}
+            onUpdate={sizing => updateInstance({ sizing }, t('inspector.sectionPlacement'))}
+          />
+          <PlacementFields
+            placement={baseComp.placement}
+            onUpdate={placement => updateInstance(
+              { placement },
+              t('inspector.sectionPlacement'),
+            )}
+          />
+        </InspectorSection>
+      </div>
+    )
+  }
 
   const cfg = comp.config
   const linkDestination = cfg.kind === 'link' ? cfg.destination : undefined
@@ -134,7 +473,7 @@ export function Inspector() {
       apiEditor.operations.length > 0),
   )
   const validationRuleCount = behavior?.validationRules.length ?? 0
-  const selectedOverride = activeState?.componentOverrides[comp.id]
+  const selectedOverride = findInlineScenarioOverride(activeState, comp.id)?.override
   const overrideFieldCount = countOverrideFields(selectedOverride)
   const sectionSignals = {
     hasBehavior: hasBehaviorData,
@@ -251,7 +590,7 @@ export function Inspector() {
   const parent = comp.parentId
     ? getOwnEntity(inspectorDocument.components, comp.parentId)
     : undefined
-  const parentLayout = parent && (
+  const parentLayout = parent && isInlineScreenComponent(parent) && (
     parent.config.kind === 'page' ||
     parent.config.kind === 'container' ||
     parent.config.kind === 'modal'
@@ -313,7 +652,7 @@ export function Inspector() {
                       { label: item.label },
                     )}
                     title={item.label}
-                    onClick={() => setSelectedComponent(item.componentId)}
+                    onClick={() => selectScreenComponent(item.componentId)}
                   >
                     {item.label}
                   </button>
@@ -323,6 +662,42 @@ export function Inspector() {
           </ol>
         </nav>
       </header>
+      {baseComp.parentId !== null ? (
+        <div className={styles.inlineActions}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={Boolean(activeChangeSet)}
+            onClick={() => {
+              try {
+                const command = createExtractDefinitionCommand(
+                  effectiveDocument,
+                  baseComp.id,
+                  `definition-${crypto.randomUUID()}`,
+                  `instance-${crypto.randomUUID()}`,
+                  selectionContext.targetLabel,
+                  () => `node-${crypto.randomUUID()}`,
+                )
+                if (dispatch(command, t('definitions.extract'))) {
+                  selectScreenComponent(command.replacementInstanceId)
+                }
+              } catch (error) {
+                useAppStore.getState().showToast({
+                  severity: 'error',
+                  message: {
+                    key: 'errors.unexpected',
+                    params: {
+                      message: error instanceof Error ? error.message : String(error),
+                    },
+                  },
+                })
+              }
+            }}
+          >
+            {t('definitions.extract')}
+          </button>
+        </div>
+      ) : null}
       {activeChangeSet ? (
         <p id="inspector-review-lock" className={styles.reviewLock}>
           {t('changes.editLocked')}
@@ -822,9 +1197,9 @@ export function Inspector() {
         onToggle={() => toggleSection('stateOverrides')}
       >
         <StateOverrides
+          document={inspectorDocument}
           component={comp}
           state={activeState}
-          defaultStateId={screen?.defaultStateId ?? null}
         />
       </InspectorSection>
     </div>
@@ -1235,18 +1610,17 @@ function LayoutFields({
 }
 
 function StateOverrides({
+  document,
   component,
   state,
-  defaultStateId,
 }: {
-  component: ScreenComponent
+  document: ProjectDocument
+  component: EffectiveScreenComponent
   state?: ScreenState
-  defaultStateId: string | null
 }) {
   const { t } = useI18n()
   const dispatch = useAppStore(current => current.dispatch)
-  const isDefaultState = !state || state.id === defaultStateId
-  if (isDefaultState) {
+  if (!state) {
     return (
       <div
         className={`${styles.overrideSection} ${styles.inactiveOverrideSection}`}
@@ -1254,12 +1628,10 @@ function StateOverrides({
         data-override-mode="base"
       >
         <div className={styles.overrideHeading}>
-          <span data-override-heading>{state
-            ? t('overrides.forState', { name: state.name })
-            : t('overrides.noState')}</span>
+          <span data-override-heading>{t('overrides.noState')}</span>
         </div>
         <p className={styles.overrideExplanation} data-override-explanation>
-          {t(state ? 'overrides.defaultStateExplanation' : 'overrides.noStateExplanation')}
+          {t('overrides.noStateExplanation')}
         </p>
       </div>
     )
@@ -1267,7 +1639,7 @@ function StateOverrides({
 
   const selectedState = state
   const { component: effective, override: selectedOverride, hasOverride } =
-    resolveEffectiveComponentState(component, selectedState)
+    resolveEffectiveComponentState(document, component, selectedState)
   const override = selectedOverride ?? {}
 
   function updateOverride<Key extends keyof ComponentOverride>(
@@ -1491,7 +1863,7 @@ function formatOverrideValue(
   return value === '' ? t('overrides.emptyValue') : value
 }
 
-function overrideContent(component: ScreenComponent, effective: ScreenComponent): {
+function overrideContent(component: EffectiveScreenComponent, effective: EffectiveScreenComponent): {
   key: 'text' | 'value'
   labelKey: MessageKey
   baseValue: string

@@ -1,17 +1,26 @@
 import type { Locale } from '../i18n/messages'
 import { getComponentDisplayLabel } from './componentDisplayLabel'
-import { getOwnEntity } from './entityMap'
-import type {
-  EntityId,
-  ApiOperation,
-  EventAction,
-  FieldBinding,
-  HttpMethod,
-  ProjectDocument,
-  ScreenEvent,
-  ValidationRule,
+import {
+  CONTAINER_KINDS,
+  type ApiOperation,
+  type ComponentTargetRef,
+  type EntityId,
+  type EventAction,
+  type FieldBinding,
+  type HttpMethod,
+  type ProjectDocument,
+  type ScreenEvent,
+  type ValidationRule,
+  isInlineScreenComponent,
 } from './model'
-import { CONTAINER_KINDS } from './model'
+import { getOwnEntity } from './entityMap'
+import {
+  cloneComponentTargetRef,
+  componentTargetRefEquals,
+  componentTargetRefKey,
+  inlineTargetRef,
+} from './componentTargets'
+import { resolveComponentTarget, resolveScreenNodes } from './definitionResolver'
 
 export interface ResolvedReference {
   id: EntityId
@@ -25,12 +34,13 @@ export interface ResolvedScreenReference extends ResolvedReference {
 export interface ResolvedApiReference extends ResolvedReference {
   method: HttpMethod | null
   path: string | null
-  successState: ResolvedReference | null
-  errorState: ResolvedReference | null
+  successScenario: ResolvedReference | null
+  errorScenario: ResolvedReference | null
 }
 
 export type ResolvedEventAction =
-  | { type: 'setState'; state: ResolvedReference }
+  | { type: 'setScenario'; scenario: ResolvedReference }
+  | { type: 'clearScenario' }
   | { type: 'callApi'; operation: ResolvedApiReference }
   | { type: 'navigate'; screen: ResolvedScreenReference }
 
@@ -60,9 +70,7 @@ export interface ComponentBehaviorProjection {
   hasBehavior: boolean
 }
 
-export interface EventEditorStateOption extends ResolvedReference {
-  isDefault: boolean
-}
+export interface EventEditorStateOption extends ResolvedReference {}
 
 export interface EventEditorEvent {
   event: ScreenEvent
@@ -71,6 +79,7 @@ export interface EventEditorEvent {
 
 export interface EventEditorContext {
   componentId: EntityId
+  target: ComponentTargetRef
   screenId: EntityId
   supportsEventCreation: boolean
   events: EventEditorEvent[]
@@ -95,7 +104,7 @@ export interface ApiEditorContext {
   supportsApiEditing: boolean
   operations: ApiEditorOperation[]
   states: ResolvedReference[]
-  inputComponents: ResolvedReference[]
+  inputComponents: Array<ResolvedReference & { target: ComponentTargetRef }>
 }
 
 export interface ValidationRulesEditorContext {
@@ -105,9 +114,9 @@ export interface ValidationRulesEditorContext {
   rules: ValidationRule[]
 }
 
-function resolveState(document: ProjectDocument, stateId: EntityId): ResolvedReference {
-  const state = getOwnEntity(document.screenStates, stateId)
-  return { id: stateId, label: state?.name ?? null }
+function resolveScenario(document: ProjectDocument, scenarioId: EntityId): ResolvedReference {
+  const scenario = getOwnEntity(document.screenScenarios, scenarioId)
+  return { id: scenarioId, label: scenario?.name ?? null }
 }
 
 function resolveComponent(
@@ -132,11 +141,11 @@ function resolveApi(
     label: operation?.name ?? null,
     method: operation?.method ?? null,
     path: operation?.path ?? null,
-    successState: operation?.successStateId
-      ? resolveState(document, operation.successStateId)
+    successScenario: operation?.successScenarioId
+      ? resolveScenario(document, operation.successScenarioId)
       : null,
-    errorState: operation?.errorStateId
-      ? resolveState(document, operation.errorStateId)
+    errorScenario: operation?.errorScenarioId
+      ? resolveScenario(document, operation.errorScenarioId)
       : null,
   }
 }
@@ -146,8 +155,10 @@ function resolveAction(
   action: EventAction,
 ): ResolvedEventAction {
   switch (action.type) {
-    case 'setState':
-      return { type: action.type, state: resolveState(document, action.stateId) }
+    case 'setScenario':
+      return { type: action.type, scenario: resolveScenario(document, action.scenarioId) }
+    case 'clearScenario':
+      return { type: 'clearScenario' }
     case 'callApi':
       return { type: action.type, operation: resolveApi(document, action.apiOperationId) }
     case 'navigate': {
@@ -164,20 +175,19 @@ function resolveAction(
   }
 }
 
-function componentEvents(
+function targetEvents(
   document: ProjectDocument,
-  componentId: EntityId,
+  screenId: EntityId,
+  target: ComponentTargetRef,
 ): ScreenEvent[] {
-  const component = getOwnEntity(document.components, componentId)
-  if (!component) return []
-  const screen = getOwnEntity(document.screens, component.screenId)
+  const screen = getOwnEntity(document.screens, screenId)
   const seenEventIds = new Set<EntityId>()
   const events: ScreenEvent[] = []
   for (const eventId of screen?.eventIds ?? []) {
     if (seenEventIds.has(eventId)) continue
     seenEventIds.add(eventId)
     const event = getOwnEntity(document.events, eventId)
-    if (event?.trigger.componentId === componentId) events.push(event)
+    if (event && componentTargetRefEquals(event.trigger.target, target)) events.push(event)
   }
   return events
 }
@@ -188,25 +198,49 @@ export function getComponentBehavior(
 ): ComponentBehaviorProjection | null {
   const component = getOwnEntity(document.components, componentId)
   if (!component) return null
+  if (!isInlineScreenComponent(component)) {
+    return {
+      events: [],
+      validationRules: [],
+      apiBindings: [],
+      hasBehavior: false,
+    }
+  }
 
-  const events = componentEvents(document, componentId).map(event => ({
+  return getComponentTargetBehavior(document, component.screenId, inlineTargetRef(component.id))
+}
+
+export function getComponentTargetBehavior(
+  document: ProjectDocument,
+  screenId: EntityId,
+  target: ComponentTargetRef,
+): ComponentBehaviorProjection | null {
+  let resolved
+  try {
+    resolved = resolveComponentTarget(document, screenId, target)
+  } catch {
+    return null
+  }
+  const events = targetEvents(document, screenId, target).map(event => ({
     id: event.id,
     name: event.name,
     triggerType: event.trigger.type,
     configuredByButton: (
-      component.config.kind === 'button' &&
-      component.config.eventId === event.id
+      target.type === 'inline' &&
+      resolved.config.kind === 'button' &&
+      'eventId' in resolved.config &&
+      resolved.config.eventId === event.id
     ),
     triggeredByComponent: true,
     actions: event.actions.map(action => resolveAction(document, action)),
   }))
 
-  const validationRules = component.config.kind === 'textInput'
-    ? component.config.validationRules
+  const validationRules = resolved.config.kind === 'textInput'
+    ? resolved.config.validationRules
     : []
   const apiBindings = Object.values(document.apiOperations).flatMap(operation =>
     operation.requestBindings
-      .filter(apiBinding => apiBinding.componentId === componentId)
+      .filter(apiBinding => componentTargetRefEquals(apiBinding.source, target))
       .map(apiBinding => ({
         operation: resolveApi(document, operation.id),
         targetPath: apiBinding.targetPath,
@@ -217,11 +251,7 @@ export function getComponentBehavior(
     events,
     validationRules,
     apiBindings,
-    hasBehavior: (
-      events.length > 0 ||
-      validationRules.length > 0 ||
-      apiBindings.length > 0
-    ),
+    hasBehavior: events.length > 0 || validationRules.length > 0 || apiBindings.length > 0,
   }
 }
 
@@ -230,38 +260,51 @@ export function getEventEditorContext(
   componentId: EntityId,
 ): EventEditorContext | null {
   const component = getOwnEntity(document.components, componentId)
-  if (!component) return null
-  const screen = getOwnEntity(document.screens, component.screenId)
-  if (!screen) return null
+  if (!component || !isInlineScreenComponent(component)) return null
+  return getEventEditorContextForTarget(
+    document,
+    component.screenId,
+    inlineTargetRef(componentId),
+  )
+}
 
+export function getEventEditorContextForTarget(
+  document: ProjectDocument,
+  screenId: EntityId,
+  target: ComponentTargetRef,
+): EventEditorContext | null {
+  const screen = getOwnEntity(document.screens, screenId)
+  if (!screen) return null
+  let resolved
+  try {
+    resolved = resolveComponentTarget(document, screenId, target)
+  } catch {
+    return null
+  }
   return {
-    componentId,
+    componentId: target.type === 'inline' ? target.componentId : componentTargetRefKey(target),
+    target: cloneComponentTargetRef(target),
     screenId: screen.id,
-    supportsEventCreation: !CONTAINER_KINDS.includes(component.kind),
-    events: componentEvents(document, componentId).map(event => ({
+    supportsEventCreation: !CONTAINER_KINDS.includes(resolved.kind),
+    events: targetEvents(document, screenId, target).map(event => ({
       event,
       configuredByButton: (
-        component.config.kind === 'button' &&
-        component.config.eventId === event.id
+        target.type === 'inline' &&
+        resolved.config.kind === 'button' &&
+        'eventId' in resolved.config &&
+        resolved.config.eventId === event.id
       ),
     })),
-    states: screen.stateIds.flatMap(stateId => {
-      const state = getOwnEntity(document.screenStates, stateId)
-      return state
-        ? [{
-            ...resolveState(document, stateId),
-            isDefault: stateId === screen.defaultStateId,
-          }]
+    states: screen.scenarioIds.flatMap(scenarioId => {
+      const scenario = getOwnEntity(document.screenScenarios, scenarioId)
+      return scenario
+        ? [{ id: scenario.id, label: scenario.name }]
         : []
     }),
     screens: document.project.screenIds.flatMap(screenId => {
       const candidate = getOwnEntity(document.screens, screenId)
       return candidate
-        ? [{
-            id: candidate.id,
-            label: candidate.name,
-            route: candidate.route,
-          }]
+        ? [{ id: candidate.id, label: candidate.name, route: candidate.route }]
         : []
     }),
     apiOperations: Object.values(document.apiOperations)
@@ -275,8 +318,14 @@ function resolveBinding(
   binding: FieldBinding,
   locale: Locale,
 ): ResolvedFieldBinding {
+  if (binding.source.type !== 'inline') {
+    return {
+      component: { id: componentTargetRefKey(binding.source), label: null },
+      targetPath: binding.targetPath,
+    }
+  }
   return {
-    component: resolveComponent(document, binding.componentId, locale),
+    component: resolveComponent(document, binding.source.componentId, locale),
     targetPath: binding.targetPath,
   }
 }
@@ -287,46 +336,79 @@ export function getApiEditorContext(
   locale: Locale = 'en',
 ): ApiEditorContext | null {
   const component = getOwnEntity(document.components, componentId)
-  if (!component) return null
-  const screen = getOwnEntity(document.screens, component.screenId)
-  if (!screen) return null
+  if (!component || !isInlineScreenComponent(component)) return null
+  return getApiEditorContextForTarget(
+    document,
+    component.screenId,
+    inlineTargetRef(componentId),
+    locale,
+  )
+}
 
+function resolvedTargetLabel(
+  node: ReturnType<typeof resolveScreenNodes>['orderedNodes'][number],
+): string {
+  if ('label' in node.config && typeof node.config.label === 'string') return node.config.label
+  if (node.config.kind === 'text') return node.config.text
+  return node.common.description || node.kind
+}
+
+export function getApiEditorContextForTarget(
+  document: ProjectDocument,
+  screenId: EntityId,
+  target: ComponentTargetRef,
+  locale: Locale = 'en',
+): ApiEditorContext | null {
+  const screen = getOwnEntity(document.screens, screenId)
+  if (!screen) return null
+  let selected
+  let resolvedNodes
+  try {
+    selected = resolveComponentTarget(document, screenId, target)
+    resolvedNodes = resolveScreenNodes(document, screenId, null)
+  } catch {
+    return null
+  }
   const events = screen.eventIds.flatMap(eventId => {
     const event = getOwnEntity(document.events, eventId)
     return event ? [event] : []
   })
 
   return {
-    componentId,
+    componentId: target.type === 'inline' ? target.componentId : componentTargetRefKey(target),
     screenId: screen.id,
-    supportsApiEditing: !CONTAINER_KINDS.includes(component.kind),
+    supportsApiEditing: !CONTAINER_KINDS.includes(selected.kind),
     operations: Object.values(document.apiOperations)
       .filter(operation => operation.screenId === screen.id)
       .map(operation => ({
         operation,
         reference: resolveApi(document, operation.id),
-        bindings: operation.requestBindings.map(binding =>
-          resolveBinding(document, binding, locale),
-        ),
+        bindings: operation.requestBindings.map(binding => resolveBinding(document, binding, locale)),
         eventReferences: events.flatMap(event => {
           const actionCount = event.actions.filter(action =>
             action.type === 'callApi' && action.apiOperationId === operation.id,
           ).length
           return actionCount > 0
-            ? [{
-                event: { id: event.id, label: event.name },
-                actionCount,
-              }]
+            ? [{ event: { id: event.id, label: event.name }, actionCount }]
             : []
         }),
       })),
-    states: screen.stateIds.map(stateId => resolveState(document, stateId)),
-    inputComponents: Object.values(document.components)
-      .filter(candidate =>
-        candidate.screenId === screen.id &&
-        (candidate.kind === 'textInput' || candidate.kind === 'select'),
-      )
-      .map(candidate => resolveComponent(document, candidate.id, locale)),
+    states: screen.scenarioIds.map(scenarioId => resolveScenario(document, scenarioId)),
+    inputComponents: resolvedNodes.orderedNodes
+      .filter(candidate => candidate.kind === 'textInput' || candidate.kind === 'select')
+      .map(candidate => ({
+        id: candidate.canonicalTarget.type === 'inline'
+          ? candidate.canonicalTarget.componentId
+          : componentTargetRefKey(candidate.canonicalTarget),
+        label: candidate.canonicalTarget.type === 'inline'
+          ? resolveComponent(
+              document,
+              candidate.canonicalTarget.componentId,
+              locale,
+            ).label
+          : resolvedTargetLabel(candidate),
+        target: cloneComponentTargetRef(candidate.canonicalTarget),
+      })),
   }
 }
 
@@ -336,8 +418,7 @@ export function getValidationRulesEditorContext(
   locale: Locale = 'en',
 ): ValidationRulesEditorContext | null {
   const component = getOwnEntity(document.components, componentId)
-  if (!component) return null
-
+  if (!component || !isInlineScreenComponent(component)) return null
   return {
     componentId,
     label: getComponentDisplayLabel(component, locale),

@@ -1,4 +1,10 @@
 import { getOwnEntity } from '../domain/entityMap'
+import type { EditorSelection } from '../domain/editorSelection'
+import {
+  resolvedDefinitionNodeSelection,
+  screenComponentSelection,
+} from '../domain/editorSelection'
+import { resolveScreenNodes } from '../domain/definitionResolver'
 import type { EntityId, ProjectDocument } from '../domain/model'
 
 export type EditorShortcut =
@@ -153,11 +159,63 @@ export function resolveHierarchySelectionTarget(
   if (!selected.parentId) return null
   const parent = getOwnEntity(document.components, selected.parentId)
   if (!parent || parent.screenId !== selected.screenId) return null
-  const selectedIndex = parent.childIds.indexOf(selected.id)
+  const selectedIndex = (parent.childIds as readonly string[]).indexOf(selected.id)
   if (selectedIndex < 0) return null
   const offset = shortcut === 'select-previous-sibling' ? -1 : 1
   const sibling = getOwnEntity(document.components, parent.childIds[selectedIndex + offset])
   return sibling?.screenId === selected.screenId ? sibling.id : null
+}
+
+export function resolveHierarchyEditorSelection(
+  document: ProjectDocument,
+  selection: EditorSelection,
+  shortcut: HierarchySelectionShortcut,
+): EditorSelection | null {
+  if (selection.type !== 'resolvedDefinitionNode') {
+    if (selection.type === 'definitionEditorNode') return null
+    const targetId = resolveHierarchySelectionTarget(
+      document,
+      selection.componentId,
+      shortcut,
+    )
+    return targetId
+      ? screenComponentSelection(document, selection.screenId, targetId)
+      : null
+  }
+
+  const resolved = resolveScreenNodes(document, selection.screenId, null)
+  const selected = resolved.nodesByTarget[
+    `definition:${selection.instanceId}:${selection.nodePath.join('/')}`
+  ]
+  if (!selected) return null
+  let targetRuntimeId: string | undefined
+  if (shortcut === 'select-parent') {
+    targetRuntimeId = selected.parentId ?? undefined
+  } else if (shortcut === 'select-first-child') {
+    targetRuntimeId = selected.childIds[0]
+  } else {
+    if (!selected.parentId) return null
+    const parent = resolved.nodesById[selected.parentId]
+    const index = parent?.childIds.indexOf(selected.id) ?? -1
+    if (index < 0) return null
+    targetRuntimeId = parent?.childIds[
+      index + (shortcut === 'select-previous-sibling' ? -1 : 1)
+    ]
+  }
+  if (!targetRuntimeId) return null
+  const target = resolved.nodesById[targetRuntimeId]
+  if (!target) return null
+  return target.canonicalTarget.type === 'definitionNode'
+    ? resolvedDefinitionNodeSelection(
+        selection.screenId,
+        target.canonicalTarget.instanceId,
+        target.canonicalTarget.nodePath,
+      )
+    : screenComponentSelection(
+        document,
+        selection.screenId,
+        target.canonicalTarget.componentId,
+      )
 }
 
 function isHierarchyShortcutScope(target: unknown): boolean {

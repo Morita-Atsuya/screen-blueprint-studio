@@ -13,6 +13,7 @@ import type { EntityId } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
+import { selectedScreenComponentId } from '../../domain/editorSelection'
 import { useI18n } from '../../i18n/I18nProvider'
 import { createAddComponentCommand } from '../palette/componentFactory'
 import {
@@ -65,7 +66,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
   const copyComponent = useAppStore(state => state.copyComponent)
   const pasteComponent = useAppStore(state => state.pasteComponent)
   const componentClipboard = useAppStore(state => state.componentClipboard)
-  const setSelectedComponent = useAppStore(state => state.setSelectedComponent)
+  const selectScreenComponent = useAppStore(state => state.selectScreenComponent)
   const requestHumanDelete = useAppStore(state => state.requestHumanDelete)
   const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null)
@@ -178,7 +179,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
     if (!dispatch(command, t('componentMenu.historyLabel', {
       kind: t(COMPONENT_KIND_MESSAGE_KEYS[kind]),
     }))) return
-    setSelectedComponent(command.componentId)
+    selectScreenComponent(command.componentId)
     close()
   }
 
@@ -208,7 +209,7 @@ export function useComponentAddMenu(): ComponentAddMenuController {
     )
     const restoreSelectionFocus = () => {
       window.setTimeout(() => {
-        const selectedId = useAppStore.getState().ui.selectedComponentId
+        const selectedId = selectedScreenComponentId(useAppStore.getState().ui.selection)
         const selectedCanvasComponent = selectedId
           ? focusScope?.querySelector<HTMLElement>(
               `[data-component-id="${CSS.escape(selectedId)}"]`,

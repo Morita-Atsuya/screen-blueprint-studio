@@ -1,67 +1,98 @@
-import type { ProjectDocument, ScreenComponent, ComponentOverride, EntityId } from './model'
-import type { ScreenState } from './model'
+import type {
+  ComponentOverride,
+  EntityId,
+  ProjectDocument,
+  ScreenComponent,
+  ScreenState,
+} from './model'
+import { isInlineScreenComponent } from './model'
 import { getOwnEntity, setOwnEntity } from './entityMap'
+import { resolveDefinitionInstanceRoot } from './definitionResolver'
+import { findScenarioOverride, inlineTargetRef } from './componentTargets'
 
-/** Apply a screen state's overrides on top of a component's base values */
-export function applyStateOverride(
-  comp: ScreenComponent,
+export type EffectiveScreenComponent =
+  | Extract<ScreenComponent, { nodeType: 'inline' }>
+  | ReturnType<typeof resolveDefinitionInstanceRoot>['component']
+
+function applyInlineScenarioOverride(
+  component: Extract<ScreenComponent, { nodeType: 'inline' }>,
   override: ComponentOverride | undefined,
-): ScreenComponent {
-  if (!override) return comp
-  const newCommon = {
-    ...comp.common,
-    visible: override.visible ?? comp.common.visible,
-    enabled: override.enabled ?? comp.common.enabled,
+): Extract<ScreenComponent, { nodeType: 'inline' }> {
+  if (!override) return component
+  const next: Extract<ScreenComponent, { nodeType: 'inline' }> = {
+    ...component,
+    childIds: [...component.childIds],
+    placement: { ...component.placement },
+    sizing: { ...component.sizing },
+    common: {
+      ...component.common,
+      visible: override.visible ?? component.common.visible,
+      enabled: override.enabled ?? component.common.enabled,
+    },
+    config: structuredClone(component.config),
   }
-  const newConfig = { ...comp.config }
-  if (override.text !== undefined && 'text' in newConfig) {
-    (newConfig as { text: string }).text = override.text
+  if (override.text !== undefined && next.config.kind === 'text') {
+    next.config.text = override.text
   }
-  if (override.value !== undefined && (
-    newConfig.kind === 'textInput' ||
-    newConfig.kind === 'select'
-  )) {
-    newConfig.defaultValue = override.value
+  if (
+    override.value !== undefined &&
+    (next.config.kind === 'textInput' || next.config.kind === 'select')
+  ) {
+    next.config.defaultValue = override.value
   }
-  return { ...comp, common: newCommon, config: newConfig }
+  return next
 }
 
-/** Get the effective component for a given state (or default if no override) */
 export function effectiveComponent(
-  comp: ScreenComponent,
+  document: ProjectDocument,
+  component: ScreenComponent,
   state: ScreenState | undefined,
-): ScreenComponent {
-  return resolveEffectiveComponentState(comp, state).component
+): EffectiveScreenComponent {
+  return resolveEffectiveComponentState(document, component, state).component
 }
 
 export interface EffectiveComponentState {
-  component: ScreenComponent
+  component: EffectiveScreenComponent
   override: ComponentOverride | null
   hasOverride: boolean
 }
 
 export function resolveEffectiveComponentState(
-  comp: ScreenComponent,
+  document: ProjectDocument,
+  component: ScreenComponent,
   state: ScreenState | undefined,
 ): EffectiveComponentState {
-  const override = state
-    ? getOwnEntity(state.componentOverrides, comp.id) ?? null
-    : null
+  if (isInlineScreenComponent(component)) {
+    const override = findScenarioOverride(state, inlineTargetRef(component.id))?.override ?? null
+    return {
+      component: applyInlineScenarioOverride(component, override ?? undefined),
+      override,
+      hasOverride: override !== null && Object.keys(override).length > 0,
+    }
+  }
+  const resolvedRoot = resolveDefinitionInstanceRoot(document, component, state?.id ?? null)
+  const override = findScenarioOverride(state, resolvedRoot.component.rootTarget)?.override ?? null
   return {
-    component: applyStateOverride(comp, override ?? undefined),
+    component: resolvedRoot.component,
     override,
     hasOverride: override !== null && Object.keys(override).length > 0,
   }
 }
 
-/** Get all components in a screen as a flat record */
 export function screenComponents(
   doc: ProjectDocument,
   screenId: EntityId,
 ): Record<EntityId, ScreenComponent> {
-  const result: Record<EntityId, ScreenComponent> = Object.create(null) as Record<EntityId, ScreenComponent>
-  for (const [id, comp] of Object.entries(doc.components)) {
-    if (comp.screenId === screenId) setOwnEntity(result, id, comp)
+  const result = Object.create(null) as Record<EntityId, ScreenComponent>
+  for (const [id, component] of Object.entries(doc.components)) {
+    if (component.screenId === screenId) setOwnEntity(result, id, component)
   }
   return result
+}
+
+export function scenarioById(
+  doc: ProjectDocument,
+  scenarioId: EntityId | null,
+): ScreenState | undefined {
+  return scenarioId ? getOwnEntity(doc.screenScenarios, scenarioId) : undefined
 }

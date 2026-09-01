@@ -14,7 +14,7 @@ export function ChangeOperationList({ changeSet }: { changeSet: ChangeSet }) {
   const activeScreenId = useAppStore(state => state.ui.activeScreenId)
   const setActiveScreen = useAppStore(state => state.setActiveScreen)
   const setActiveState = useAppStore(state => state.setActiveState)
-  const setSelectedComponent = useAppStore(state => state.setSelectedComponent)
+  const selectScreenComponent = useAppStore(state => state.selectScreenComponent)
   const setRightPanelTab = useAppStore(state => state.setRightPanelTab)
   const operations = useMemo(
     () => presentChangeSetOperations(changeSet, locale),
@@ -24,7 +24,7 @@ export function ChangeOperationList({ changeSet }: { changeSet: ChangeSet }) {
   function navigate(target: ReviewNavigation) {
     if (activeScreenId !== target.screenId) setActiveScreen(target.screenId)
     if (target.stateId) setActiveState(target.stateId)
-    setSelectedComponent(target.componentId ?? null)
+    selectScreenComponent(target.componentId ?? null)
     setRightPanelTab('inspector')
   }
 

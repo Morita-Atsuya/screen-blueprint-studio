@@ -27,3 +27,22 @@
 .item:disabled { opacity: 0.4; cursor: not-allowed; }
 .item:active:not(:disabled) { cursor: grabbing; }
 .dragging { opacity: 0.35; }
+
+.sectionTitle {
+  margin: 10px 0 2px;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.definitionItem {
+  justify-content: space-between;
+  gap: 8px;
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+
+.definitionItem small {
+  color: var(--text-faint);
+  font-size: 0.64rem;
+}

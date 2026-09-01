@@ -70,7 +70,7 @@ export function summarizeDeleteImpact(
   command: DeleteCommand,
 ): DeleteImpactAnalysis {
   const componentChanges = entityChanges(before.components, after.components)
-  const stateChanges = entityChanges(before.screenStates, after.screenStates)
+  const stateChanges = entityChanges(before.screenScenarios, after.screenScenarios)
   const eventChanges = entityChanges(before.events, after.events)
   const apiChanges = entityChanges(before.apiOperations, after.apiOperations)
   const target = deleteTarget(command)
@@ -121,13 +121,13 @@ export function summarizeDeleteImpact(
       target,
       removed: {
         components: removedSnapshots(before.components, componentChanges.removedIds),
-        states: removedSnapshots(before.screenStates, stateChanges.removedIds),
+        states: removedSnapshots(before.screenScenarios, stateChanges.removedIds),
         events: removedSnapshots(before.events, eventChanges.removedIds),
         apiOperations: removedSnapshots(before.apiOperations, apiChanges.removedIds),
       },
       changed: {
         components: changedSnapshots(before.components, after.components, componentChanges.changedIds),
-        states: changedSnapshots(before.screenStates, after.screenStates, stateChanges.changedIds),
+        states: changedSnapshots(before.screenScenarios, after.screenScenarios, stateChanges.changedIds),
         events: changedSnapshots(before.events, after.events, eventChanges.changedIds),
         apiOperations: changedSnapshots(before.apiOperations, after.apiOperations, apiChanges.changedIds),
       },
@@ -195,8 +195,8 @@ function countApiBindings(document: ProjectDocument): number {
 }
 
 function countStateOverrides(document: ProjectDocument): number {
-  return Object.values(document.screenStates).reduce(
-    (count, state) => count + Object.keys(state.componentOverrides).length,
+  return Object.values(document.screenScenarios).reduce(
+    (count, scenario) => count + scenario.componentOverrides.length,
     0,
   )
 }
@@ -208,9 +208,11 @@ function countClearedButtonEventConnections(
   return Object.values(before.components).filter(component => {
     const afterComponent = getOwnEntity(after.components, component.id)
     return (
+      component.nodeType === 'inline' &&
       component.config.kind === 'button' &&
       component.config.eventId !== null &&
-      afterComponent?.config.kind === 'button' &&
+      afterComponent?.nodeType === 'inline' &&
+      afterComponent.config.kind === 'button' &&
       afterComponent.config.eventId === null
     )
   }).length
@@ -224,12 +226,12 @@ function countClearedApiStateConnections(
     const afterOperation = getOwnEntity(after.apiOperations, operation.id)
     if (!afterOperation) {
       return count +
-        Number(operation.successStateId !== null) +
-        Number(operation.errorStateId !== null)
+        Number(operation.successScenarioId !== null) +
+        Number(operation.errorScenarioId !== null)
     }
     return count +
-      Number(operation.successStateId !== null && afterOperation.successStateId === null) +
-      Number(operation.errorStateId !== null && afterOperation.errorStateId === null)
+      Number(operation.successScenarioId !== null && afterOperation.successScenarioId === null) +
+      Number(operation.errorScenarioId !== null && afterOperation.errorScenarioId === null)
   }, 0)
 }
 

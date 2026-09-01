@@ -26,7 +26,7 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
       <StateDialog
         mode="edit"
         screenId="screen-edit"
-        state={sampleProject.screenStates['state-edit-saving']}
+        state={sampleProject.screenScenarios['scenario-edit-saving']}
         onClose={onClose}
       />
     )
@@ -49,7 +49,7 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
   if (kind === 'api') {
     const context = getApiEditorContext(sampleProject, 'comp-save-btn')
     const editorOperation = context?.operations.find(
-      candidate => candidate.operation.id === 'api-update-task',
+      candidate => candidate.operation.id === 'api-save-task',
     )
     if (!context || !editorOperation) throw new Error('Missing API editor context')
     return (
@@ -63,7 +63,7 @@ function dialogFor(kind: LockedDialogKind, onClose: () => void) {
     )
   }
 
-  const context = getValidationRulesEditorContext(sampleProject, 'comp-task-title-input')
+  const context = getValidationRulesEditorContext(sampleProject, 'comp-task-name-input')
   if (!context) throw new Error('Missing validation editor context')
   return (
     <ValidationRulesDialog
@@ -133,8 +133,8 @@ export function mountLockedDialog(kind: LockedDialogKind) {
     ui: {
       ...state.ui,
       activeScreenId: 'screen-edit',
-      activeStateId: 'state-edit-default',
-      selectedComponentId: 'comp-save-btn',
+      activeStateId: 'scenario-edit-saving',
+      selection: { type: 'screenInlineComponent', componentId: 'comp-save-btn' },
       rightPanelTab: 'inspector',
     },
   }))

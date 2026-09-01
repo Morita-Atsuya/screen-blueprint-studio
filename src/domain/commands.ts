@@ -1,16 +1,19 @@
 import type {
-  EntityId,
-  ComponentKind,
-  ComponentConfig,
+  ApiOperation,
   CommonComponentSpec,
-  ComponentOverride,
+  ComponentConfig,
+  ComponentDefinition,
+  ComponentKind,
   ComponentPlacement,
   ComponentSizing,
-  EventTrigger,
+  EntityId,
   EventAction,
-  HttpMethod,
+  EventTrigger,
   FieldBinding,
+  HttpMethod,
   ScreenComponent,
+  ScreenEvent,
+  ScreenScenario,
 } from './model'
 
 export type DomainCommand =
@@ -25,7 +28,12 @@ export type DomainCommand =
   | PasteComponentCommand
   | RemoveComponentCommand
   | UpdateComponentSpecCommand
-  // State commands
+  | ExtractComponentDefinitionCommand
+  | DetachDefinitionInstanceCommand
+  | PutComponentDefinitionCommand
+  | AddDefinitionInstanceCommand
+  | UpdateDefinitionInstanceCommand
+  // Scenario commands
   | CreateScreenStateCommand
   | UpdateScreenStateCommand
   | RemoveScreenStateCommand
@@ -37,6 +45,7 @@ export type DomainCommand =
   | BindApiOperationCommand
   | UpdateApiOperationCommand
   | RemoveApiOperationCommand
+  | RemoveComponentDefinitionCommand
 
 // ============================================================
 // Screen commands
@@ -45,9 +54,9 @@ export interface AddScreenCommand {
   type: 'addScreen'
   screenId: EntityId
   rootComponentId: EntityId
-  defaultStateId: EntityId
   name: string
   route: string
+  baseDescription?: string
 }
 
 export interface UpdateScreenCommand {
@@ -55,6 +64,7 @@ export interface UpdateScreenCommand {
   screenId: EntityId
   name?: string
   route?: string
+  baseDescription?: string
 }
 
 export interface RemoveScreenCommand {
@@ -84,18 +94,22 @@ export interface MoveComponentCommand {
   position?: number
 }
 
-export interface DuplicateComponentCommand {
-  type: 'duplicateComponent'
-  componentId: EntityId
-  componentIdMap: Record<EntityId, EntityId>
-}
-
 export interface ComponentSubtreeSnapshot {
   projectId: EntityId
   sourceScreenId: EntityId
   rootComponentId: EntityId
   components: Record<EntityId, ScreenComponent>
-  stateOverrides: Record<EntityId, Record<EntityId, ComponentOverride>>
+  scenarioOverrides: Record<EntityId, ScreenScenario['componentOverrides']>
+  events: Record<EntityId, ScreenEvent>
+  apiOperations: Record<EntityId, ApiOperation>
+}
+
+export interface DuplicateComponentCommand {
+  type: 'duplicateComponent'
+  componentId: EntityId
+  componentIdMap: Record<EntityId, EntityId>
+  eventIdMap: Record<EntityId, EntityId>
+  apiOperationIdMap: Record<EntityId, EntityId>
 }
 
 export interface PasteComponentCommand {
@@ -106,6 +120,8 @@ export interface PasteComponentCommand {
   destinationParentId: EntityId
   position: number
   componentIdMap: Record<EntityId, EntityId>
+  eventIdMap: Record<EntityId, EntityId>
+  apiOperationIdMap: Record<EntityId, EntityId>
 }
 
 export interface RemoveComponentCommand {
@@ -124,8 +140,54 @@ export interface UpdateComponentSpecCommand {
   }
 }
 
+export interface ExtractComponentDefinitionCommand {
+  type: 'extractComponentDefinition'
+  sourceRootComponentId: EntityId
+  sourceScreenId: EntityId
+  definition: ComponentDefinition
+  replacementInstanceId: EntityId
+  componentIdToNodePath: Record<EntityId, [EntityId, ...EntityId[]]>
+}
+
+export interface DetachDefinitionInstanceCommand {
+  type: 'detachDefinitionInstance'
+  instanceId: EntityId
+  generatedComponents: Array<{
+    nodePath: [EntityId, ...EntityId[]]
+    componentId: EntityId
+  }>
+}
+
+export interface PutComponentDefinitionCommand {
+  type: 'putComponentDefinition'
+  mode: 'create' | 'update'
+  definition: ComponentDefinition
+}
+
+export interface AddDefinitionInstanceCommand {
+  type: 'addDefinitionInstance'
+  componentId: EntityId
+  screenId: EntityId
+  parentId: EntityId
+  position?: number
+  definitionId: EntityId
+  variantId: EntityId | null
+  props: Record<string, string | number | boolean>
+  placement: ComponentPlacement
+  sizing: ComponentSizing
+}
+
+export interface UpdateDefinitionInstanceCommand {
+  type: 'updateDefinitionInstance'
+  componentId: EntityId
+  variantId?: EntityId | null
+  props?: Record<string, string | number | boolean>
+  placement?: ComponentPlacement
+  sizing?: ComponentSizing
+}
+
 // ============================================================
-// State commands
+// Scenario commands
 // ============================================================
 export interface CreateScreenStateCommand {
   type: 'createScreenState'
@@ -133,7 +195,7 @@ export interface CreateScreenStateCommand {
   screenId: EntityId
   name: string
   description?: string
-  overrides?: Record<EntityId, ComponentOverride>
+  overrides?: ScreenScenario['componentOverrides']
 }
 
 export interface UpdateScreenStateCommand {
@@ -141,7 +203,7 @@ export interface UpdateScreenStateCommand {
   stateId: EntityId
   name?: string
   description?: string
-  overrides?: Record<EntityId, ComponentOverride>
+  overrides?: ScreenScenario['componentOverrides']
 }
 
 export interface RemoveScreenStateCommand {
@@ -185,8 +247,8 @@ export interface BindApiOperationCommand {
   method: HttpMethod
   path: string
   requestBindings?: FieldBinding[]
-  successStateId?: EntityId
-  errorStateId?: EntityId
+  successScenarioId?: EntityId
+  errorScenarioId?: EntityId
 }
 
 export interface UpdateApiOperationCommand {
@@ -196,11 +258,19 @@ export interface UpdateApiOperationCommand {
   method: HttpMethod
   path: string
   requestBindings: FieldBinding[]
-  successStateId: EntityId | null
-  errorStateId: EntityId | null
+  successScenarioId: EntityId | null
+  errorScenarioId: EntityId | null
 }
 
 export interface RemoveApiOperationCommand {
   type: 'removeApiOperation'
   operationId: EntityId
+}
+
+// ============================================================
+// Definition commands
+// ============================================================
+export interface RemoveComponentDefinitionCommand {
+  type: 'removeComponentDefinition'
+  definitionId: EntityId
 }

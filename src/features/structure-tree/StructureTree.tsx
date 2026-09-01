@@ -10,6 +10,15 @@ import {
   getComponentTreeLabel,
 } from '../../domain/componentDisplayLabel'
 import { COMPONENT_KIND_MESSAGE_KEYS } from '../../domain/componentDisplayLabel'
+import {
+  resolvedDefinitionNodeSelection,
+  selectionScreenComponentId,
+} from '../../domain/editorSelection'
+import {
+  resolveScreenNodes,
+  type ResolveScreenNodesResult,
+  type ResolvedRuntimeNode,
+} from '../../domain/definitionResolver'
 import { resolveEffectiveComponentState } from '../../domain/selectors'
 import { createResetComponentOverrideCommand } from '../../domain/stateOverrides'
 import {
@@ -139,12 +148,15 @@ export function StructureTree() {
     activeChangeSet,
     pendingDelete,
     ui,
-    setSelectedComponent,
+    selectScreenComponent,
     setRightPanelTab,
     dispatch,
     requestHumanDelete,
   } = useAppStore()
-  const { activeScreenId, selectedComponentId } = ui
+  const { activeScreenId } = ui
+  const selectedComponentId = ui.selection
+    ? selectionScreenComponentId(ui.selection)
+    : null
   const [treePreferences, setTreePreferences] = useState<StructureTreePreferences>(() =>
     resolveInitialStructureTreePreferences(browserStorage()),
   )
@@ -159,11 +171,17 @@ export function StructureTree() {
   const [focusedComponentId, setFocusedComponentId] = useState<EntityId | null>(null)
   const screen = activeScreenId ? getOwnEntity(effectiveDocument.screens, activeScreenId) : undefined
   const activeState = ui.activeStateId
-    ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
+    ? getOwnEntity(effectiveDocument.screenScenarios, ui.activeStateId)
     : undefined
   const componentChanges = useMemo(
     () => activeChangeSet ? getChangeSetComponentChanges(activeChangeSet) : null,
     [activeChangeSet],
+  )
+  const resolvedScreen = useMemo(
+    () => screen
+      ? resolveScreenNodes(effectiveDocument, screen.id, activeState?.id ?? null)
+      : null,
+    [activeState?.id, effectiveDocument, screen],
   )
 
   function move(id: EntityId, direction: -1 | 1) {
@@ -171,7 +189,7 @@ export function StructureTree() {
     if (!component?.parentId) return
     const parent = getOwnEntity(effectiveDocument.components, component.parentId)
     if (!parent) return
-    const index = parent.childIds.indexOf(id)
+    const index = (parent.childIds as readonly string[]).indexOf(id)
     const position = index + direction
     if (index < 0 || position < 0 || position >= parent.childIds.length) return
     dispatch(
@@ -335,7 +353,7 @@ export function StructureTree() {
           document={effectiveDocument}
           activeState={activeState}
           selectedComponentId={selectedComponentId}
-          onSelect={setSelectedComponent}
+          onSelect={selectScreenComponent}
           onMove={move}
           onRemove={remove}
           onResetOverride={resetOverride}
@@ -356,6 +374,7 @@ export function StructureTree() {
             }
           }}
           componentStatuses={componentChanges?.statuses}
+          resolvedScreen={resolvedScreen ?? undefined}
         />
         {screen.modalComponentIds.map(modalId => (
           <TreeNode
@@ -365,7 +384,7 @@ export function StructureTree() {
             document={effectiveDocument}
             activeState={activeState}
             selectedComponentId={selectedComponentId}
-            onSelect={setSelectedComponent}
+            onSelect={selectScreenComponent}
             onMove={move}
             onRemove={remove}
             onResetOverride={resetOverride}
@@ -425,6 +444,7 @@ interface TreeNodeProps {
   addMenu: ComponentAddMenuTrigger
   registerNodeRef(componentId: EntityId, element: HTMLLIElement | null): void
   componentStatuses?: ReadonlyMap<EntityId, ComponentChangeStatus>
+  resolvedScreen?: ResolveScreenNodesResult
 }
 
 function TreeNode({
@@ -448,11 +468,12 @@ function TreeNode({
   addMenu,
   registerNodeRef,
   componentStatuses,
+  resolvedScreen,
 }: TreeNodeProps) {
   const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const baseComponent = getOwnEntity(document.components, componentId)
   const effectiveState = baseComponent
-    ? resolveEffectiveComponentState(baseComponent, activeState)
+    ? resolveEffectiveComponentState(document, baseComponent, activeState)
     : undefined
   const component = effectiveState?.component
   const ownerScreen = component
@@ -461,7 +482,11 @@ function TreeNode({
   const isIndependentRoot = component?.parentId === null
   const isPageRoot = component?.kind === 'page' && isIndependentRoot
   const isModalRoot = component?.kind === 'modal' && isIndependentRoot
-  const kindLabel = component ? t(COMPONENT_KIND_MESSAGE_KEYS[component.kind]) : ''
+  const kindLabel = component
+    ? component.nodeType === 'inline'
+      ? t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])
+      : t('component.container')
+    : ''
   const spokenLabel = component
     ? isPageRoot
       ? ownerScreen?.name ?? kindLabel
@@ -470,7 +495,7 @@ function TreeNode({
         : getComponentTreeLabel(component, locale)
     : ''
   const visibleLabel = component
-    ? CONTAINER_KINDS.includes(component.kind) && !isPageRoot && !isModalRoot
+    ? component.nodeType === 'inline' && CONTAINER_KINDS.includes(component.kind) && !isPageRoot && !isModalRoot
       ? ''
       : spokenLabel
     : ''
@@ -498,8 +523,17 @@ function TreeNode({
   if (!component) return null
   const isSelected = selectedComponentId === component.id
   const isFocused = focusedComponentId === component.id
-  const isContainer = CONTAINER_KINDS.includes(component.kind)
-  const hasChildren = isContainer && component.childIds.length > 0
+  const isContainer = baseComponent?.nodeType === 'inline' && CONTAINER_KINDS.includes(component.kind)
+  const hasInlineChildren = isContainer && component.childIds.length > 0
+  const resolvedInstance = baseComponent?.nodeType === 'definitionInstance'
+    ? resolvedScreen ?? resolveScreenNodes(document, baseComponent.screenId, activeState?.id ?? null)
+    : null
+  const resolvedInstanceRoot = resolvedInstance?.orderedNodes.find(node =>
+    node.instanceId === baseComponent?.id &&
+    node.instanceBoundary.isBoundaryRoot &&
+    node.instanceBoundary.depth === 1)
+  const hasResolvedChildren = Boolean(resolvedInstanceRoot)
+  const hasChildren = hasInlineChildren || hasResolvedChildren
   const isCollapsed = hasChildren && collapsedIds.has(component.id)
   const isHidden = !component.common.visible
   const isDisabled = !component.common.enabled
@@ -513,7 +547,7 @@ function TreeNode({
   const parent = component.parentId
     ? getOwnEntity(document.components, component.parentId)
     : undefined
-  const siblingIndex = parent?.childIds.indexOf(component.id) ?? -1
+  const siblingIndex = parent ? (parent.childIds as readonly string[]).indexOf(component.id) : -1
   const compactDepth = Math.min(depth, 3) * 16 + Math.max(depth - 3, 0) * 8
   const style: CSSProperties = {
     paddingInlineStart: `${8 + compactDepth}px`,
@@ -540,11 +574,19 @@ function TreeNode({
         }
       }}
       onContextMenu={event => {
+        if (
+          (event.target as HTMLElement).closest('[role="treeitem"]') !==
+          event.currentTarget
+        ) return
         event.stopPropagation()
         onSelect(component.id)
         addMenu.openFromPointer(event, component.id)
       }}
       onKeyDown={event => {
+        if (
+          (event.target as HTMLElement).closest('[role="treeitem"]') !==
+          event.currentTarget
+        ) return
         if (addMenu.openFromKeyboard(event, component.id)) {
           onSelect(component.id)
           return
@@ -621,7 +663,7 @@ function TreeNode({
         )}
         <span className={styles.nodeBody}>
           <span className={styles.nodeLabel}>
-            <span className={styles.kind}>{t(COMPONENT_KIND_MESSAGE_KEYS[component.kind])}</span>
+          <span className={styles.kind}>{kindLabel}</span>
             {visibleLabel ? <span className={styles.name} title={visibleLabel}>{visibleLabel}</span> : null}
           </span>
           {hasStateStatus || changeStatus ? (
@@ -722,7 +764,17 @@ function TreeNode({
           </div>
         )}
       </div>
-      {hasChildren && !isCollapsed && (
+      {hasResolvedChildren && !isCollapsed && resolvedInstance && resolvedInstanceRoot ? (
+        <ul className={styles.children} role="group" data-resolved-definition-tree>
+          <ResolvedTreeNode
+            runtimeId={resolvedInstanceRoot.id}
+            resolved={resolvedInstance}
+            depth={depth + 1}
+            locale={locale}
+          />
+        </ul>
+      ) : null}
+      {hasInlineChildren && !isCollapsed && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('tree', id))}
           strategy={verticalListSortingStrategy}
@@ -762,6 +814,7 @@ function TreeNode({
                   addMenu={addMenu}
                   registerNodeRef={registerNodeRef}
                   componentStatuses={componentStatuses}
+                  resolvedScreen={resolvedScreen}
                 />
               </Fragment>
             ))}
@@ -777,7 +830,7 @@ function TreeNode({
           </ul>
         </SortableContext>
       )}
-      {hasChildren && isCollapsed && (
+      {hasInlineChildren && isCollapsed && (
         <ul className={styles.children} role="group">
           <li className={styles.dropItem} role="none" aria-hidden="true">
             <ComponentDropZone
@@ -790,6 +843,107 @@ function TreeNode({
           </li>
         </ul>
       )}
+    </li>
+  )
+}
+
+function resolvedTreeLabel(node: ResolvedRuntimeNode): string {
+  switch (node.config.kind) {
+    case 'text':
+      return node.config.text || node.kind
+    case 'image':
+      return node.config.alt || node.kind
+    case 'textInput':
+    case 'select':
+    case 'button':
+    case 'link':
+      return node.config.label || node.kind
+    default:
+      return node.common.description || node.kind
+  }
+}
+
+function ResolvedTreeNode({
+  runtimeId,
+  resolved,
+  depth,
+  locale: _locale,
+}: {
+  runtimeId: string
+  resolved: ResolveScreenNodesResult
+  depth: number
+  locale: 'ja' | 'en'
+}) {
+  const selection = useAppStore(state => state.ui.selection)
+  const setSelection = useAppStore(state => state.setSelection)
+  const node = resolved.nodesById[runtimeId]
+  if (!node || !node.instanceId || !node.nodePath) return null
+  const selected = selection?.type === 'resolvedDefinitionNode' &&
+    selection.instanceId === node.instanceId &&
+    JSON.stringify(selection.nodePath) === JSON.stringify(node.nodePath)
+  const label = resolvedTreeLabel(node)
+  return (
+    <li
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-selected={selected}
+      aria-expanded={node.childIds.length > 0 ? true : undefined}
+      tabIndex={0}
+      className={styles.resolvedTreeItem}
+      data-tree-resolved-node-id={node.id}
+      onClick={event => {
+        event.stopPropagation()
+        setSelection(resolvedDefinitionNodeSelection(node.screenId, node.instanceId!, node.nodePath!))
+      }}
+      onContextMenu={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        setSelection(resolvedDefinitionNodeSelection(node.screenId, node.instanceId!, node.nodePath!))
+      }}
+      onKeyDown={event => {
+        if (
+          event.key === 'ContextMenu' ||
+          (event.key === 'F10' && event.shiftKey)
+        ) {
+          event.preventDefault()
+          event.stopPropagation()
+          setSelection(resolvedDefinitionNodeSelection(
+            node.screenId,
+            node.instanceId!,
+            node.nodePath!,
+          ))
+          return
+        }
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        setSelection(resolvedDefinitionNodeSelection(node.screenId, node.instanceId!, node.nodePath!))
+      }}
+    >
+      <div
+        className={`${styles.node} ${selected ? styles.selected : ''}`}
+        style={{ paddingInlineStart: `${8 + Math.min(depth, 3) * 16}px` }}
+      >
+        <span className={styles.disclosurePlaceholder} aria-hidden="true" />
+        <span className={styles.nodeBody}>
+          <span className={styles.nodeLabel}>
+            <span className={styles.kind}>{node.kind}</span>
+            <span className={styles.name} title={label}>{label}</span>
+          </span>
+        </span>
+      </div>
+      {node.childIds.length > 0 ? (
+        <ul className={styles.children} role="group">
+          {node.childIds.map(childId => (
+            <ResolvedTreeNode
+              key={childId}
+              runtimeId={childId}
+              resolved={resolved}
+              depth={depth + 1}
+              locale={_locale}
+            />
+          ))}
+        </ul>
+      ) : null}
     </li>
   )
 }

@@ -13,16 +13,21 @@ import type {
   ComponentLayout,
   ComponentPlacement,
   ComponentSizing,
+  DefinitionComponentConfig,
   EntityId,
   PlacementInset,
   ProjectDocument,
-  ScreenComponent,
   ScreenState,
 } from '../../domain/model'
 import { CONTAINER_KINDS } from '../../domain/model'
-import { effectiveComponent } from '../../domain/selectors'
+import { effectiveComponent, type EffectiveScreenComponent } from '../../domain/selectors'
 import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
+import {
+  resolvedDefinitionNodeSelection,
+  selectedScreenComponentId,
+  selectionScreenComponentId,
+} from '../../domain/editorSelection'
 import {
   getChangeSetComponentChanges,
   type ComponentChangeStatus,
@@ -38,6 +43,11 @@ import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
 import { ComponentChangeBadge } from '../change-review/ComponentChangeBadge'
 import { RemovedComponentGhostList } from '../change-review/RemovedComponentGhostList'
+import {
+  resolveScreenNodes,
+  type ResolveScreenNodesResult,
+  type ResolvedRuntimeNode,
+} from '../../domain/definitionResolver'
 import styles from './Canvas.module.css'
 
 export function Canvas() {
@@ -48,14 +58,21 @@ export function Canvas() {
     reviewDraftProtectionIds,
     reviewDraftDocument,
     ui,
-    setSelectedComponent,
+    selectScreenComponent,
     setActiveState,
     setRightPanelTab,
   } = useAppStore()
-  const { activeScreenId, activeStateId, selectedComponentId } = ui
+  const { activeScreenId, activeStateId } = ui
+  const selectedComponentId = ui.selection
+    ? selectionScreenComponentId(ui.selection)
+    : null
+  const viewportSelectedComponentId = selectedScreenComponentId(ui.selection)
   const [stateDialog, setStateDialog] = useState<'create' | 'edit' | null>(null)
   const [hoveredComponentId, setHoveredComponentId] = useState<EntityId | null>(null)
-  const viewport = useCanvasViewport({ activeScreenId, selectedComponentId })
+  const viewport = useCanvasViewport({
+    activeScreenId,
+    selectedComponentId: viewportSelectedComponentId,
+  })
   const componentAddMenu = useComponentAddMenu()
   const componentChanges = useMemo(
     () => activeChangeSet ? getChangeSetComponentChanges(activeChangeSet) : null,
@@ -72,12 +89,12 @@ export function Canvas() {
       : undefined)
   if (!screen) return null
   const activeState = activeStateId
-    ? getOwnEntity(effectiveDocument.screenStates, activeStateId) ??
+    ? getOwnEntity(effectiveDocument.screenScenarios, activeStateId) ??
       (reviewDraftProtectionIds.length > 0 && reviewDraftDocument
-        ? getOwnEntity(reviewDraftDocument.screenStates, activeStateId)
+        ? getOwnEntity(reviewDraftDocument.screenScenarios, activeStateId)
         : undefined)
     : undefined
-  const activeStateDescription = activeState?.description.trim()
+  const activeStateDescription = activeState?.description.trim() || screen.baseDescription.trim()
   const activeStateDescriptionId = activeStateDescription
     ? 'active-state-description'
     : undefined
@@ -92,15 +109,24 @@ export function Canvas() {
       onClick={event => {
         if (viewport.consumeSuppressedClick()) return
         event.currentTarget.focus({ preventScroll: true })
-        setSelectedComponent(null)
+        selectScreenComponent(null)
       }}
       onPointerLeave={() => setHoveredComponentId(null)}
     >
       <div className={styles.stateBar} data-state-bar>
         <div className={styles.stateToolbar} data-state-toolbar>
           <div className={styles.stateTabs} data-state-tabs>
-            {screen.stateIds.map(stateId => {
-              const state = getOwnEntity(effectiveDocument.screenStates, stateId)
+            <button
+              className={`${styles.stateBtn} ${activeStateId === null ? styles.stateBtnActive : ''}`}
+              onClick={event => { event.stopPropagation(); setActiveState(null) }}
+              aria-pressed={activeStateId === null}
+              aria-describedby={activeStateId === null ? activeStateDescriptionId : undefined}
+              data-state-id="base"
+            >
+              {t('behavior.clearScenario')}
+            </button>
+            {screen.scenarioIds.map(stateId => {
+              const state = getOwnEntity(effectiveDocument.screenScenarios, stateId)
               if (!state) return null
               const isActive = activeStateId === stateId
               return (
@@ -110,7 +136,6 @@ export function Canvas() {
                   onClick={event => { event.stopPropagation(); setActiveState(stateId) }}
                   aria-pressed={isActive}
                   aria-describedby={isActive ? activeStateDescriptionId : undefined}
-                  title={state.id === screen.defaultStateId ? t('states.defaultLocked') : undefined}
                   data-state-id={state.id}
                 >
                   {state.name}
@@ -119,22 +144,28 @@ export function Canvas() {
             })}
           </div>
           <div className={styles.stateActions} data-state-actions>
-            {activeState ? (
-              <button
-                type="button"
-                className={styles.stateIconBtn}
-                disabled={Boolean(activeChangeSet)}
-                onClick={event => {
-                  event.stopPropagation()
-                  setStateDialog('edit')
-                }}
-                title={activeChangeSet ? t('changes.editLocked') : t('states.manage')}
-                aria-label={t('states.manageAria', { name: activeState?.name ?? '' })}
-                data-state-manage
-              >
-                ⋯
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className={styles.stateIconBtn}
+              disabled={!activeState || Boolean(activeChangeSet)}
+              onClick={event => {
+                event.stopPropagation()
+                setStateDialog('edit')
+              }}
+              title={
+                activeChangeSet
+                  ? t('changes.editLocked')
+                  : activeState
+                    ? t('states.manage')
+                    : t('states.defaultLocked')
+              }
+              aria-label={t('states.manageAria', {
+                name: activeState?.name ?? t('behavior.defaultState'),
+              })}
+              data-state-manage
+            >
+              ⋯
+            </button>
             <button
               type="button"
               className={styles.stateIconBtn}
@@ -190,7 +221,7 @@ export function Canvas() {
               activeState={activeState}
               selectedComponentId={selectedComponentId}
               hoveredComponentId={hoveredComponentId}
-              onSelect={setSelectedComponent}
+              onSelect={selectScreenComponent}
               onHover={setHoveredComponentId}
               locale={locale}
               t={t}
@@ -210,7 +241,7 @@ export function Canvas() {
                 activeState={activeState}
                 selectedComponentId={selectedComponentId}
                 hoveredComponentId={hoveredComponentId}
-                onSelect={setSelectedComponent}
+                onSelect={selectScreenComponent}
                 onHover={setHoveredComponentId}
                 locale={locale}
                 t={t}
@@ -333,6 +364,7 @@ interface CanvasComponentProps {
   consumeSuppressedClick(): boolean
   addMenu: ComponentAddMenuTrigger
   componentStatuses?: ReadonlyMap<EntityId, ComponentChangeStatus>
+  resolvedScreen?: ResolveScreenNodesResult
   independentRoot?: boolean
 }
 
@@ -361,7 +393,7 @@ function CanvasFrame({
 }: CanvasFrameProps) {
   const base = getOwnEntity(document.components, componentId)
   if (!base) return null
-  const component = effectiveComponent(base, activeState)
+  const component = effectiveComponent(document, base, activeState)
   const projected = collectFrameProjections(document, componentId, activeState)
   const screenName = getOwnEntity(document.screens, component.screenId)?.name
   const label = frameKind === 'page'
@@ -411,6 +443,7 @@ function CanvasFrame({
             consumeSuppressedClick={consumeSuppressedClick}
             addMenu={addMenu}
             componentStatuses={componentStatuses}
+            resolvedScreen={projected.resolved}
             independentRoot
           />
         </div>
@@ -434,6 +467,19 @@ function CanvasFrame({
               consumeSuppressedClick={consumeSuppressedClick}
               addMenu={addMenu}
               componentStatuses={componentStatuses}
+              resolvedScreen={projected.resolved}
+            />
+          ))}
+          {projected.resolvedSticky.map(runtimeId => (
+            <ProjectedResolvedCanvasNode
+              key={runtimeId}
+              runtimeId={runtimeId}
+              owningFrameId={componentId}
+              layer="sticky"
+              resolved={projected.resolved}
+              document={document}
+              t={t}
+              locale={locale}
             />
           ))}
         </div>
@@ -457,6 +503,19 @@ function CanvasFrame({
               consumeSuppressedClick={consumeSuppressedClick}
               addMenu={addMenu}
               componentStatuses={componentStatuses}
+              resolvedScreen={projected.resolved}
+            />
+          ))}
+          {projected.resolvedViewport.map(runtimeId => (
+            <ProjectedResolvedCanvasNode
+              key={runtimeId}
+              runtimeId={runtimeId}
+              owningFrameId={componentId}
+              layer="viewport"
+              resolved={projected.resolved}
+              document={document}
+              t={t}
+              locale={locale}
             />
           ))}
         </div>
@@ -469,18 +528,47 @@ function collectFrameProjections(
   document: ProjectDocument,
   rootComponentId: EntityId,
   activeState?: ScreenState,
-): { sticky: EntityId[]; viewport: EntityId[] } {
-  const result = { sticky: [] as EntityId[], viewport: [] as EntityId[] }
+): {
+  sticky: EntityId[]
+  viewport: EntityId[]
+  resolvedSticky: string[]
+  resolvedViewport: string[]
+  resolved: ResolveScreenNodesResult
+} {
+  const rootComponent = getOwnEntity(document.components, rootComponentId)
+  const resolved = resolveScreenNodes(
+    document,
+    rootComponent?.screenId ?? '',
+    activeState?.id ?? null,
+  )
+  const result = {
+    sticky: [] as EntityId[],
+    viewport: [] as EntityId[],
+    resolvedSticky: [] as string[],
+    resolvedViewport: [] as string[],
+    resolved,
+  }
   const visit = (componentId: EntityId, isRoot: boolean) => {
     const base = getOwnEntity(document.components, componentId)
     if (!base) return
-    const component = effectiveComponent(base, activeState)
+    const component = effectiveComponent(document, base, activeState)
     if (!isRoot && !component.common.visible) return
     if (!isRoot && component.placement.mode === 'sticky') result.sticky.push(component.id)
     if (!isRoot && component.placement.mode === 'viewport') result.viewport.push(component.id)
     component.childIds.forEach(childId => visit(childId, false))
   }
   visit(rootComponentId, true)
+  for (const node of resolved.orderedNodes) {
+    if (
+      node.instanceId === null ||
+      (node.instanceBoundary.isBoundaryRoot && node.instanceBoundary.depth === 1) ||
+      owningFrameId(document, node.instanceId) !== rootComponentId
+    ) {
+      continue
+    }
+    if (node.placement.mode === 'sticky') result.resolvedSticky.push(node.id)
+    if (node.placement.mode === 'viewport') result.resolvedViewport.push(node.id)
+  }
   return result
 }
 
@@ -583,7 +671,7 @@ function ProjectedCanvasComponent({
   const parent = component.parentId
     ? getOwnEntity(props.document.components, component.parentId)
     : undefined
-  const effectiveParent = parent ? effectiveComponent(parent, props.activeState) : undefined
+  const effectiveParent = parent ? effectiveComponent(props.document, parent, props.activeState) : undefined
   const parentLayout = effectiveParent && hasLayout(effectiveParent.config)
     ? effectiveParent.config
     : undefined
@@ -592,7 +680,7 @@ function ProjectedCanvasComponent({
     : parentLayout?.layout === 'grid'
       ? 'grid'
       : 'vertical'
-  const position = parent?.childIds.indexOf(component.id) ?? -1
+  const position = parent ? (parent.childIds as readonly string[]).indexOf(component.id) : -1
   const parentLabel = effectiveParent
     ? getComponentDisplayLabel(effectiveParent, props.locale)
     : ''
@@ -626,6 +714,202 @@ function ProjectedCanvasComponent({
   )
 }
 
+function ProjectedResolvedCanvasNode({
+  runtimeId,
+  owningFrameId,
+  layer,
+  resolved,
+  document,
+  locale,
+  t,
+}: {
+  runtimeId: string
+  owningFrameId: EntityId
+  layer: 'sticky' | 'viewport'
+  resolved: ResolveScreenNodesResult
+  document: ProjectDocument
+  locale: 'ja' | 'en'
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  const node = resolved.nodesById[runtimeId]
+  if (!node || node.placement.mode === 'flow' || node.placement.mode === 'overlay') return null
+  return (
+    <div
+      className={styles.projectionItem}
+      style={projectionStyle(node.placement, node.sizing)}
+      data-placement-projection={layer}
+      data-placement-anchor={
+        node.placement.mode === 'viewport' ? node.placement.anchor : undefined
+      }
+      data-placement-edge={
+        node.placement.mode === 'sticky' ? node.placement.edge : undefined
+      }
+      data-owning-frame-id={owningFrameId}
+    >
+      <ResolvedCanvasNode
+        runtimeId={runtimeId}
+        resolved={resolved}
+        document={document}
+        locale={locale}
+        t={t}
+      />
+    </div>
+  )
+}
+
+function resolvedNodeLabel(node: ResolvedRuntimeNode, locale: 'ja' | 'en'): string {
+  return getComponentDisplayLabel({
+    nodeType: 'inline',
+    id: node.id,
+    screenId: node.screenId,
+    parentId: null,
+    childIds: [],
+    kind: node.kind,
+    placement: node.placement,
+    sizing: node.sizing,
+    common: node.common,
+    config: {
+      ...node.config,
+      ...(node.config.kind === 'button' ? { eventId: null } : {}),
+    },
+  } as EffectiveScreenComponent, locale)
+}
+
+function ResolvedCanvasNode({
+  runtimeId,
+  resolved,
+  document,
+  locale,
+  t,
+}: {
+  runtimeId: string
+  resolved: ResolveScreenNodesResult
+  document: ProjectDocument
+  locale: 'ja' | 'en'
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  const selection = useAppStore(state => state.ui.selection)
+  const setSelection = useAppStore(state => state.setSelection)
+  const node = resolved.nodesById[runtimeId]
+  if (!node || !node.instanceId || !node.nodePath || !node.common.visible) return null
+  const isSelected = selection?.type === 'resolvedDefinitionNode' &&
+    selection.instanceId === node.instanceId &&
+    JSON.stringify(selection.nodePath) === JSON.stringify(node.nodePath)
+  const isContainer = CONTAINER_KINDS.includes(node.kind)
+  const layout = hasLayout(node.config) ? node.config : null
+  const flowChildren = node.childIds
+    .map(childId => resolved.nodesById[childId])
+    .filter((child): child is ResolvedRuntimeNode =>
+      Boolean(child && child.placement.mode === 'flow'))
+  const overlayChildren = node.childIds
+    .map(childId => resolved.nodesById[childId])
+    .filter((child): child is ResolvedRuntimeNode =>
+      Boolean(child && child.placement.mode === 'overlay'))
+  const label = resolvedNodeLabel(node, locale)
+  const select = () => setSelection(
+    resolvedDefinitionNodeSelection(node.screenId, node.instanceId!, node.nodePath!),
+  )
+  const childrenStyle = layout
+    ? {
+        '--layout-gap': layoutGap(layout.gap),
+        '--layout-columns': layout.columns,
+        justifyContent: layout.justify === 'between' ? 'space-between' : layout.justify,
+        alignItems: layout.align,
+      } as CSSProperties
+    : undefined
+  return (
+    <div
+      className={[
+        styles.comp,
+        styles.resolvedDefinitionNode,
+        isSelected ? styles.selected : '',
+        node.common.enabled ? '' : styles.componentDisabled,
+      ].join(' ')}
+      tabIndex={0}
+      aria-label={label}
+      onClick={event => {
+        event.stopPropagation()
+        select()
+      }}
+      onKeyDown={event => {
+        if (event.currentTarget !== event.target) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          select()
+        }
+      }}
+      data-component-id={node.id}
+      data-resolved-definition-node
+      data-definition-id={node.definitionId ?? undefined}
+      data-definition-node-id={node.definitionNodeId ?? undefined}
+      data-instance-id={node.instanceId}
+      data-node-path={node.nodePath.join('/')}
+      data-editor-selected={isSelected || undefined}
+      data-placement-mode={node.placement.mode}
+    >
+      <div className={styles.componentChrome} data-editor-chrome>
+        <span className={styles.componentLabel}>{label}</span>
+      </div>
+      <ComponentView comp={node} document={document} t={t} />
+      {isContainer ? (
+        <div
+          className={[
+            styles.children,
+            layout?.layout === 'horizontal' ? styles.horizontalChildren : '',
+            layout?.layout === 'grid' ? styles.gridChildren : '',
+            layout?.layout === 'horizontal' && layout.wrap ? styles.wrapChildren : '',
+          ].join(' ')}
+          style={childrenStyle}
+          data-layout={layout?.layout}
+        >
+          {flowChildren.map(child => (
+            <div
+              className={styles.childSlot}
+              key={child.id}
+              style={sizingStyle(child.sizing, 'flow')}
+              data-inline-size={child.sizing.inlineSize}
+              data-grid-span={child.sizing.gridSpan}
+              data-grow={child.sizing.grow}
+              data-shrink={child.sizing.shrink}
+            >
+              <ResolvedCanvasNode
+                runtimeId={child.id}
+                resolved={resolved}
+                document={document}
+                locale={locale}
+                t={t}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {isContainer && overlayChildren.length > 0 ? (
+        <div className={styles.overlayLayer} data-placement-layer="overlay">
+          {overlayChildren.map(child => (
+            <div
+              key={child.id}
+              className={styles.projectionItem}
+              style={projectionStyle(child.placement, child.sizing)}
+              data-placement-projection="overlay"
+              data-placement-anchor={
+                child.placement.mode === 'overlay' ? child.placement.anchor : undefined
+              }
+            >
+              <ResolvedCanvasNode
+                runtimeId={child.id}
+                resolved={resolved}
+                document={document}
+                locale={locale}
+                t={t}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function CanvasComponent({
   componentId,
   document,
@@ -641,11 +925,19 @@ function CanvasComponent({
   consumeSuppressedClick,
   addMenu,
   componentStatuses,
+  resolvedScreen,
   independentRoot = false,
 }: CanvasComponentProps) {
   const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const base = getOwnEntity(document.components, componentId)
-  const component = base ? effectiveComponent(base, activeState) : undefined
+  const component = base ? effectiveComponent(document, base, activeState) : undefined
+  const resolvedInstance = base?.nodeType === 'definitionInstance'
+    ? resolvedScreen ?? resolveScreenNodes(document, base.screenId, activeState?.id ?? null)
+    : null
+  const resolvedInstanceRoot = resolvedInstance?.orderedNodes.find(node =>
+    node.instanceId === base?.id &&
+    node.instanceBoundary.isBoundaryRoot &&
+    node.instanceBoundary.depth === 1)
   const displayName = component
     ? getComponentDisplayLabel(component, locale)
     : ''
@@ -681,7 +973,7 @@ function CanvasComponent({
   const isSelected = selectedComponentId === component.id
   const isHovered = hoveredComponentId === component.id
   const canDrag = !isRoot && !reviewLocked && !spacePanActive
-  const isContainer = CONTAINER_KINDS.includes(component.kind)
+  const isContainer = base?.nodeType === 'inline' && CONTAINER_KINDS.includes(component.kind)
   const flowChildIds = component.childIds.filter(childId =>
     getOwnEntity(document.components, childId)?.placement.mode === 'flow')
   const overlayChildIds = component.childIds.filter(childId =>
@@ -748,6 +1040,9 @@ function CanvasComponent({
         onSelect(component.id)
       }}
       onContextMenu={event => {
+        const closestComponent = (event.target as HTMLElement)
+          .closest<HTMLElement>('[data-component-id]')
+        if (closestComponent !== event.currentTarget) return
         onSelect(component.id)
         addMenu.openFromPointer(event, component.id)
       }}
@@ -798,8 +1093,18 @@ function CanvasComponent({
           <span className={styles.componentLabel}>{displayName}</span>
         </div>
       ) : null}
-      <ComponentView comp={component} document={document} t={t} />
-      {isContainer && (
+      {base?.nodeType === 'definitionInstance' && resolvedInstance && resolvedInstanceRoot ? (
+        <ResolvedCanvasNode
+          runtimeId={resolvedInstanceRoot.id}
+          resolved={resolvedInstance}
+          document={document}
+          locale={locale}
+          t={t}
+        />
+      ) : (
+        <ComponentView comp={component} document={document} t={t} />
+      )}
+      {isContainer && base?.nodeType === 'inline' && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
           strategy={sortingStrategy}
@@ -864,6 +1169,7 @@ function CanvasComponent({
                     consumeSuppressedClick={consumeSuppressedClick}
                     addMenu={addMenu}
                     componentStatuses={componentStatuses}
+                    resolvedScreen={resolvedScreen}
                   />
                 </div>
               )
@@ -909,7 +1215,9 @@ function CanvasComponent({
   )
 }
 
-function hasLayout(config: ComponentConfig): config is ComponentConfig & ComponentLayout {
+function hasLayout(
+  config: ComponentConfig | DefinitionComponentConfig,
+): config is (ComponentConfig | DefinitionComponentConfig) & ComponentLayout {
   return (
     config.kind === 'page' ||
     config.kind === 'container' ||
@@ -931,7 +1239,7 @@ function ComponentView({
   document,
   t,
 }: {
-  comp: ScreenComponent
+  comp: Pick<EffectiveScreenComponent, 'config'>
   document: ProjectDocument
   t: ReturnType<typeof useI18n>['t']
 }) {

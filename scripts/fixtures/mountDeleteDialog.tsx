@@ -32,8 +32,8 @@ export function mountDeleteDialog() {
     ui: {
       ...state.ui,
       activeScreenId: 'screen-edit',
-      activeStateId: 'state-edit-default',
-      selectedComponentId: 'comp-actions',
+      activeStateId: null,
+      selection: { type: 'screenInlineComponent', componentId: 'comp-task-list' },
       rightPanelTab: 'inspector',
     },
   }))
@@ -55,7 +55,7 @@ export function mountDeleteDialog() {
       opener.focus()
       flushSync(() => {
         useAppStore.getState().requestHumanDelete(
-          { type: 'removeComponent', componentId: 'comp-actions' },
+          { type: 'removeComponent', componentId: 'comp-task-list' },
           'Delete component',
         )
       })
@@ -96,7 +96,7 @@ export function mountDeleteDialog() {
       const state = useAppStore.getState()
       return {
         pending: Boolean(state.pendingDelete),
-        targetExists: Boolean(state.document.components['comp-actions']),
+        targetExists: Boolean(state.document.components['comp-task-list']),
         historyLength: state.history.length,
         hasUndoAction: Boolean(state.toast?.action),
       }

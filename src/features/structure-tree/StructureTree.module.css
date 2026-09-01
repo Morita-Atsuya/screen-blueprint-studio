@@ -218,3 +218,10 @@
 .iconBtn:disabled { opacity: 0.35; cursor: default; }
 .iconBtn:disabled:hover { background: transparent; color: var(--text-faint); }
 .danger:hover { color: var(--danger); border-color: var(--danger); }
+.resolvedTreeItem {
+  list-style: none;
+}
+
+.resolvedTreeItem > .node {
+  border-inline-start: 2px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}

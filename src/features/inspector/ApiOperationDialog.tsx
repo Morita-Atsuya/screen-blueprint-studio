@@ -7,6 +7,7 @@ import type {
   ApiEditorOperation,
 } from '../../domain/componentBehavior'
 import type { FieldBinding, HttpMethod } from '../../domain/model'
+import { cloneComponentTargetRef, componentTargetRefKey } from '../../domain/componentTargets'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
@@ -22,6 +23,12 @@ type DialogResult = 'cancelled' | 'saved' | 'deleted'
 interface DraftBinding {
   key: string
   value: FieldBinding
+}
+
+function bindingComponentId(binding: FieldBinding): string {
+  return binding.source.type === 'inline'
+    ? binding.source.componentId
+    : componentTargetRefKey(binding.source)
 }
 
 interface ApiOperationDialogProps {
@@ -55,8 +62,8 @@ export function ApiOperationDialog({
   const [name, setName] = useState(operation?.name ?? t('behavior.newApiOperationName'))
   const [method, setMethod] = useState<HttpMethod>(operation?.method ?? 'GET')
   const [path, setPath] = useState(operation?.path ?? '/api/')
-  const [successStateId, setSuccessStateId] = useState(operation?.successStateId ?? '')
-  const [errorStateId, setErrorStateId] = useState(operation?.errorStateId ?? '')
+  const [successStateId, setSuccessStateId] = useState(operation?.successScenarioId ?? '')
+  const [errorStateId, setErrorStateId] = useState(operation?.errorScenarioId ?? '')
   const [bindings, setBindings] = useState<DraftBinding[]>(() =>
     (operation?.requestBindings ?? []).map(value => ({
       key: nanoid(),
@@ -67,7 +74,7 @@ export function ApiOperationDialog({
     mode === 'create' ||
     context.operations.some(candidate => candidate.operation.id === persistedOperationId)
   )
-  const componentIds = bindings.map(binding => binding.value.componentId)
+  const componentIds = bindings.map(binding => bindingComponentId(binding.value))
   const targetPaths = bindings.map(binding => binding.value.targetPath.trim())
   const statesAvailable = [successStateId, errorStateId].every(stateId =>
     stateId === '' || context.states.some(state => state.id === stateId),
@@ -78,7 +85,7 @@ export function ApiOperationDialog({
     operationAvailable &&
     statesAvailable &&
     bindings.every(binding =>
-      context.inputComponents.some(component => component.id === binding.value.componentId) &&
+      context.inputComponents.some(component => component.id === bindingComponentId(binding.value)) &&
       binding.value.targetPath.trim().length > 0
     ) &&
     new Set(componentIds).size === componentIds.length &&
@@ -88,7 +95,7 @@ export function ApiOperationDialog({
   function save() {
     if (reviewLocked || staleAfterReview || !canSubmit || (mode === 'edit' && !persistedOperationId)) return
     const requestBindings = bindings.map(binding => ({
-      componentId: binding.value.componentId,
+      source: cloneComponentTargetRef(binding.value.source),
       targetPath: binding.value.targetPath.trim(),
     }))
     const normalizedName = name.trim()
@@ -98,8 +105,8 @@ export function ApiOperationDialog({
       method,
       path: normalizedPath,
       requestBindings,
-      successStateId: successStateId || null,
-      errorStateId: errorStateId || null,
+      successScenarioId: successStateId || null,
+      errorScenarioId: errorStateId || null,
     }
     let saved: boolean
     if (mode === 'create') {
@@ -108,8 +115,8 @@ export function ApiOperationDialog({
           operationId: nanoid(),
           screenId: context.screenId,
           ...common,
-          successStateId: common.successStateId ?? undefined,
-          errorStateId: common.errorStateId ?? undefined,
+          successScenarioId: common.successScenarioId ?? undefined,
+          errorScenarioId: common.errorScenarioId ?? undefined,
         }, `${t('behavior.addApiOperation')}: ${normalizedName}`)
     } else {
       if (!persistedOperationId) return
@@ -152,13 +159,16 @@ export function ApiOperationDialog({
 
   function addBinding() {
     if (draftLocked) return
-    const used = new Set(bindings.map(binding => binding.value.componentId))
-    const componentId = context.inputComponents.find(component => !used.has(component.id))?.id
-      ?? context.inputComponents[0]?.id
-      ?? ''
+    const used = new Set(bindings.map(binding => bindingComponentId(binding.value)))
+    const component = context.inputComponents.find(candidate => !used.has(candidate.id))
+      ?? context.inputComponents[0]
+    if (!component) return
     setBindings(current => [
       ...current,
-      { key: nanoid(), value: { componentId, targetPath: '' } },
+      {
+        key: nanoid(),
+        value: { source: cloneComponentTargetRef(component.target), targetPath: '' },
+      },
     ])
   }
 
@@ -299,7 +309,7 @@ export function ApiOperationDialog({
             <ol className={styles.actionList}>
               {bindings.map((binding, index) => {
                 const usedByOther = new Set(bindings.flatMap((candidate, candidateIndex) =>
-                  candidateIndex === index ? [] : [candidate.value.componentId],
+                  candidateIndex === index ? [] : [bindingComponentId(candidate.value)],
                 ))
                 return (
                   <li
@@ -334,18 +344,22 @@ export function ApiOperationDialog({
                       <label className={styles.compactField}>
                         <span>{t('behavior.bindingComponent')}</span>
                         <select
-                          value={binding.value.componentId}
+                          value={bindingComponentId(binding.value)}
                           onChange={event => updateBinding(index, {
                             ...binding.value,
-                            componentId: event.target.value,
+                            source: cloneComponentTargetRef(
+                              context.inputComponents.find(component =>
+                                component.id === event.target.value)?.target ??
+                                binding.value.source,
+                            ),
                           })}
                         >
                           {!context.inputComponents.some(
-                            component => component.id === binding.value.componentId,
+                            component => component.id === bindingComponentId(binding.value),
                           ) ? (
-                            <option value={binding.value.componentId}>
+                            <option value={bindingComponentId(binding.value)}>
                               {t('behavior.missingReference', {
-                                id: binding.value.componentId,
+                                id: bindingComponentId(binding.value),
                               })}
                             </option>
                           ) : null}

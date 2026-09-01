@@ -3,31 +3,38 @@
   "kind": "screen-blueprint-project",
   "schemaVersion": 3,
   "project": {
-    "id": "example-project",
-    "name": "Shared Header Example",
-    "screenIds": ["home"]
+    "id": "proj-taskflow",
+    "name": "TaskFlow",
+    "screenIds": [
+      "screen-list",
+      "screen-edit"
+    ]
   },
   "componentDefinitions": {
     "shared/header": {
       "id": "shared/header",
       "name": "Shared Header",
-      "description": "A reusable product header with selectable spacing.",
+      "description": "Reusable TaskFlow heading with controllable density and copy.",
       "rootNodeId": "header-root",
       "nodes": {
         "header-root": {
           "nodeType": "inline",
           "id": "header-root",
           "parentId": null,
-          "childIds": ["header-title"],
+          "childIds": [
+            "header-copy"
+          ],
           "kind": "container",
-          "placement": { "mode": "flow" },
+          "placement": {
+            "mode": "flow"
+          },
           "sizing": {
-           "inlineSize": "fill",
-           "minWidth": "none",
-           "maxWidth": "none",
-           "gridSpan": 1,
-           "grow": 0,
-           "shrink": "allow"
+            "inlineSize": "fill",
+            "minWidth": "none",
+            "maxWidth": "none",
+            "gridSpan": 1,
+            "grow": 0,
+            "shrink": "allow"
           },
           "common": {
             "description": "Header layout",
@@ -36,38 +43,103 @@
           },
           "config": {
             "kind": "container",
-            "layout": "horizontal",
+            "layout": "vertical",
             "gap": "md",
             "columns": 1,
-            "justify": "between",
-            "align": "center",
+            "justify": "start",
+            "align": "stretch",
+            "wrap": false
+          }
+        },
+        "header-copy": {
+          "nodeType": "inline",
+          "id": "header-copy",
+          "parentId": "header-root",
+          "childIds": [
+            "header-title",
+            "header-subtitle"
+          ],
+          "kind": "container",
+          "placement": {
+            "mode": "flow"
+          },
+          "sizing": {
+            "inlineSize": "auto",
+            "minWidth": "none",
+            "maxWidth": "none",
+            "gridSpan": 1,
+            "grow": 0,
+            "shrink": "allow"
+          },
+          "common": {
+            "description": "Header copy block",
+            "visible": true,
+            "enabled": true
+          },
+          "config": {
+            "kind": "container",
+            "layout": "vertical",
+            "gap": "sm",
+            "columns": 1,
+            "justify": "start",
+            "align": "stretch",
             "wrap": false
           }
         },
         "header-title": {
           "nodeType": "inline",
           "id": "header-title",
-          "parentId": "header-root",
+          "parentId": "header-copy",
           "childIds": [],
           "kind": "text",
-          "placement": { "mode": "flow" },
+          "placement": {
+            "mode": "flow"
+          },
           "sizing": {
-           "inlineSize": "auto",
-           "minWidth": "none",
-           "maxWidth": "none",
-           "gridSpan": 1,
-           "grow": 0,
-           "shrink": "allow"
+            "inlineSize": "auto",
+            "minWidth": "none",
+            "maxWidth": "none",
+            "gridSpan": 1,
+            "grow": 0,
+            "shrink": "allow"
           },
           "common": {
-            "description": "Product title",
+            "description": "Header title",
             "visible": true,
             "enabled": true
           },
           "config": {
             "kind": "text",
-            "text": "Screen Blueprint",
-            "style": "heading2"
+            "text": "TaskFlow",
+            "style": "heading1"
+          }
+        },
+        "header-subtitle": {
+          "nodeType": "inline",
+          "id": "header-subtitle",
+          "parentId": "header-copy",
+          "childIds": [],
+          "kind": "text",
+          "placement": {
+            "mode": "flow"
+          },
+          "sizing": {
+            "inlineSize": "auto",
+            "minWidth": "none",
+            "maxWidth": "none",
+            "gridSpan": 1,
+            "grow": 0,
+            "shrink": "allow"
+          },
+          "common": {
+            "description": "Header subtitle",
+            "visible": true,
+            "enabled": true
+          },
+          "config": {
+            "kind": "text",
+            "text": "Keep the team aligned on what ships next.",
+            "style": "body"
           }
         }
       },
@@ -75,11 +147,29 @@
         {
           "key": "title",
           "name": "Title",
-          "description": "Text displayed as the product title.",
+          "description": "Primary heading copy.",
           "type": "string",
           "bindings": [
             {
-              "nodePath": ["header-title"],
+              "nodePath": [
+                "header-copy",
+                "header-title"
+              ],
+              "field": "config.text"
+            }
+          ]
+        },
+        {
+          "key": "subtitle",
+          "name": "Subtitle",
+          "description": "Supporting heading copy.",
+          "type": "string",
+          "bindings": [
+            {
+              "nodePath": [
+                "header-copy",
+                "header-subtitle"
+              ],
               "field": "config.text"
             }
           ]
@@ -89,8 +179,11 @@
         {
           "key": "density",
           "name": "Density",
-          "description": "Controls spacing without changing the header topology.",
-          "values": ["comfortable", "compact"]
+          "description": "Controls visual spacing without changing topology.",
+          "values": [
+            "comfortable",
+            "compact"
+          ]
         }
       ],
       "variants": [
@@ -120,12 +213,9 @@
                 "gap": "sm"
               }
             },
-            "header-title": {
-              "placement": {
-                "mode": "overlay",
-                "anchor": "topLeft",
-                "insetX": "sm",
-                "insetY": "sm"
+            "header-subtitle": {
+              "config": {
+                "style": "caption"
               }
             }
           }
@@ -135,26 +225,54 @@
     }
   },
   "screens": {
-    "home": {
-      "id": "home",
-      "name": "Home",
-      "route": "/",
-      "baseDescription": "The signed-in landing experience before an optional scenario is applied.",
-      "rootComponentId": "home-page",
-      "modalComponentIds": [],
-      "scenarioIds": ["loading"],
-      "eventIds": ["activate-loading"]
+    "screen-list": {
+      "id": "screen-list",
+      "name": "Task List",
+      "route": "/tasks",
+      "baseDescription": "Review the active launch work and open the create form when needed.",
+      "rootComponentId": "comp-list-page",
+      "modalComponentIds": [
+        "comp-create-modal"
+      ],
+      "scenarioIds": [
+        "scenario-list-loading",
+        "scenario-list-empty",
+        "scenario-list-create",
+        "scenario-list-create-error"
+      ],
+      "eventIds": [
+        "event-open-create",
+        "event-close-create",
+        "event-submit-create",
+        "event-edit-launch-task"
+      ]
+    },
+    "screen-edit": {
+      "id": "screen-edit",
+      "name": "Edit Task",
+      "route": "/tasks/:taskId",
+      "baseDescription": "Update the selected task and confirm before discarding unsaved work.",
+      "rootComponentId": "comp-edit-page",
+      "modalComponentIds": [
+        "comp-discard-modal"
+      ],
+      "scenarioIds": [
+        "scenario-edit-saving",
+        "scenario-edit-success",
+        "scenario-edit-error",
+        "scenario-edit-confirm-exit"
+      ],
+      "eventIds": [
+        "event-save-task",
+        "event-cancel-task-edit",
+        "event-discard-task-changes",
+        "event-continue-task-editing"
+      ]
     }
   },
   "components": {
-    "home-page": {
+    "comp-list-page": {
       "nodeType": "inline",
-      "id": "home-page",
-      "screenId": "home",
-      "parentId": null,
-      "childIds": ["status-region", "content-region", "product-image", "actions-region", "shared-header", "documentation-link"],
-      "kind": "page",
-      "placement": { "mode": "flow" },
       "sizing": {
         "inlineSize": "fill",
         "minWidth": "none",
@@ -163,34 +281,50 @@
         "grow": 0,
         "shrink": "allow"
       },
+      "id": "comp-list-page",
+      "screenId": "screen-list",
+      "parentId": null,
+      "childIds": [
+        "comp-list-header",
+        "comp-list-summary",
+        "comp-task-list",
+        "comp-create-task-btn",
+        "comp-list-loading-message",
+        "comp-list-empty-message",
+        "comp-list-help-link"
+      ],
+      "kind": "page",
+      "placement": {
+        "mode": "flow"
+      },
       "common": {
-        "description": "Home page",
+        "description": "Task list page",
         "visible": true,
         "enabled": true
       },
       "config": {
         "kind": "page",
-        "layout": "grid",
-        "gap": "lg",
-        "columns": 12,
+        "layout": "vertical",
+        "gap": "md",
+        "columns": 6,
         "justify": "start",
         "align": "stretch",
         "wrap": false
       }
     },
-    "shared-header": {
+    "comp-list-header": {
       "nodeType": "definitionInstance",
-      "id": "shared-header",
-      "screenId": "home",
-      "parentId": "home-page",
       "childIds": [],
+      "id": "comp-list-header",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
       "placement": {
         "mode": "sticky",
         "edge": "top",
         "inset": "sm"
       },
       "sizing": {
-        "inlineSize": "auto",
+        "inlineSize": "fill",
         "minWidth": "none",
         "maxWidth": "none",
         "gridSpan": 1,
@@ -202,17 +336,12 @@
       },
       "variantId": "comfortable",
       "props": {
-        "title": "Welcome"
+        "title": "TaskFlow",
+        "subtitle": "Track what needs to ship next."
       }
     },
-    "status-region": {
+    "comp-list-summary": {
       "nodeType": "inline",
-      "id": "status-region",
-      "screenId": "home",
-      "parentId": "home-page",
-      "childIds": [],
-      "kind": "text",
-      "placement": { "mode": "flow" },
       "sizing": {
         "inlineSize": "auto",
         "minWidth": "none",
@@ -221,8 +350,118 @@
         "grow": 0,
         "shrink": "allow"
       },
+      "id": "comp-list-summary",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
       "common": {
-        "description": "Status region spanning one track",
+        "description": "Page summary",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Review the launch queue, open the create form, and jump into the active task.",
+        "style": "body"
+      }
+    },
+    "comp-task-list": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-task-list",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
+      "childIds": [
+        "comp-launch-task-card"
+      ],
+      "kind": "container",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Task card list",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "container",
+        "layout": "vertical",
+        "gap": "sm",
+        "columns": 1,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "comp-launch-task-card": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-launch-task-card",
+      "screenId": "screen-list",
+      "parentId": "comp-task-list",
+      "childIds": [
+        "comp-launch-task-status",
+        "comp-launch-task-title",
+        "comp-launch-task-image",
+        "comp-edit-launch-task-btn"
+      ],
+      "kind": "container",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Launch onboarding checklist",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "container",
+        "layout": "grid",
+        "gap": "sm",
+        "columns": 12,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "comp-launch-task-status": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-launch-task-status",
+      "screenId": "screen-list",
+      "parentId": "comp-launch-task-card",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Task status",
         "visible": true,
         "enabled": true
       },
@@ -232,71 +471,69 @@
         "style": "caption"
       }
     },
-    "content-region": {
+    "comp-launch-task-title": {
       "nodeType": "inline",
-      "id": "content-region",
-      "screenId": "home",
-      "parentId": "home-page",
-      "childIds": [],
-      "kind": "text",
-      "placement": { "mode": "flow" },
       "sizing": {
-        "inlineSize": "fill",
+        "inlineSize": "auto",
         "minWidth": "none",
         "maxWidth": "none",
         "gridSpan": 6,
         "grow": 0,
         "shrink": "allow"
       },
+      "id": "comp-launch-task-title",
+      "screenId": "screen-list",
+      "parentId": "comp-launch-task-card",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
       "common": {
-        "description": "Primary content region spanning six tracks",
+        "description": "Task card title",
         "visible": true,
         "enabled": true
       },
       "config": {
         "kind": "text",
-        "text": "Review the selected task and its latest activity.",
-        "style": "body"
+        "text": "Launch onboarding checklist",
+        "style": "heading3"
       }
     },
-    "product-image": {
+    "comp-launch-task-image": {
       "nodeType": "inline",
-      "id": "product-image",
-      "screenId": "home",
-      "parentId": "home-page",
-      "childIds": [],
-      "kind": "image",
-      "placement": { "mode": "flow" },
       "sizing": {
-        "inlineSize": "fill",
+        "inlineSize": "auto",
         "minWidth": "none",
         "maxWidth": "none",
         "gridSpan": 3,
         "grow": 0,
         "shrink": "allow"
       },
+      "id": "comp-launch-task-image",
+      "screenId": "screen-list",
+      "parentId": "comp-launch-task-card",
+      "childIds": [],
+      "kind": "image",
+      "placement": {
+        "mode": "flow"
+      },
       "common": {
-        "description": "Product workflow illustration",
+        "description": "Task board preview",
         "visible": true,
         "enabled": true
       },
       "config": {
         "kind": "image",
-        "source": "./taskflow-board.svg",
-        "alt": "Task board organized into three columns",
-        "fit": "cover",
+        "source": "./examples/taskflow-board.svg",
+        "alt": "TaskFlow board preview",
+        "fit": "contain",
         "aspectRatio": "16:9",
         "placeholderStyle": "icon"
       }
     },
-    "actions-region": {
+    "comp-edit-launch-task-btn": {
       "nodeType": "inline",
-      "id": "actions-region",
-      "screenId": "home",
-      "parentId": "home-page",
-      "childIds": [],
-      "kind": "button",
-      "placement": { "mode": "flow" },
       "sizing": {
         "inlineSize": "auto",
         "minWidth": "none",
@@ -305,25 +542,131 @@
         "grow": 0,
         "shrink": "allow"
       },
+      "id": "comp-edit-launch-task-btn",
+      "screenId": "screen-list",
+      "parentId": "comp-launch-task-card",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
       "common": {
-        "description": "Actions region spanning two tracks",
+        "description": "Open the launch task",
         "visible": true,
         "enabled": true
       },
       "config": {
         "kind": "button",
-        "label": "Open task",
-        "variant": "primary",
-        "eventId": null,
+        "label": "Edit task",
+        "variant": "secondary",
+        "eventId": "event-edit-launch-task",
         "confirmationMessage": null,
         "preventDoubleSubmit": false
       }
     },
-    "documentation-link": {
+    "comp-create-task-btn": {
       "nodeType": "inline",
-      "id": "documentation-link",
-      "screenId": "home",
-      "parentId": "home-page",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-create-task-btn",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Open the create form",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Create task",
+        "variant": "primary",
+        "eventId": "event-open-create",
+        "confirmationMessage": null,
+        "preventDoubleSubmit": false
+      }
+    },
+    "comp-list-loading-message": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-list-loading-message",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Loading status",
+        "visible": false,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Loading tasks…",
+        "style": "caption"
+      }
+    },
+    "comp-list-empty-message": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-list-empty-message",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Empty state message",
+        "visible": false,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "No tasks yet. Start by creating the first task.",
+        "style": "body"
+      }
+    },
+    "comp-list-help-link": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-list-help-link",
+      "screenId": "screen-list",
+      "parentId": "comp-list-page",
       "childIds": [],
       "kind": "link",
       "placement": {
@@ -332,81 +675,969 @@
         "insetX": "md",
         "insetY": "md"
       },
+      "common": {
+        "description": "Task planning guide",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "link",
+        "label": "Task planning guide",
+        "destination": {
+          "type": "external",
+          "url": "https://docs.github.com/issues/tracking-your-work-with-issues"
+        },
+        "openMode": "newContext"
+      }
+    },
+    "comp-create-modal": {
+      "nodeType": "inline",
       "sizing": {
-        "inlineSize": "content",
+        "inlineSize": "fill",
         "minWidth": "none",
         "maxWidth": "none",
         "gridSpan": 1,
         "grow": 0,
         "shrink": "allow"
       },
+      "id": "comp-create-modal",
+      "screenId": "screen-list",
+      "parentId": null,
+      "childIds": [
+        "comp-create-form"
+      ],
+      "kind": "modal",
+      "placement": {
+        "mode": "flow"
+      },
       "common": {
-        "description": "Product documentation",
+        "description": "Create task dialog",
+        "visible": false,
+        "enabled": true
+      },
+      "config": {
+        "kind": "modal",
+        "layout": "vertical",
+        "gap": "sm",
+        "columns": 1,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "comp-create-form": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-create-form",
+      "screenId": "screen-list",
+      "parentId": "comp-create-modal",
+      "childIds": [
+        "comp-create-title-input",
+        "comp-create-submit-btn",
+        "comp-create-cancel-btn"
+      ],
+      "kind": "container",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Create task form",
         "visible": true,
         "enabled": true
       },
       "config": {
-        "kind": "link",
-        "label": "Read the documentation",
-        "destination": {
-          "type": "external",
-          "url": "https://github.com/Morita-Atsuya/screen-blueprint-studio"
-        },
-        "openMode": "newContext"
+        "kind": "container",
+        "layout": "vertical",
+        "gap": "sm",
+        "columns": 1,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "comp-create-title-input": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-create-title-input",
+      "screenId": "screen-list",
+      "parentId": "comp-create-form",
+      "childIds": [],
+      "kind": "textInput",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Task title input",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "textInput",
+        "fieldKey": "taskTitle",
+        "label": "Task title",
+        "inputType": "text",
+        "required": true,
+        "placeholder": "Launch onboarding checklist",
+        "defaultValue": "",
+        "validationRules": [
+          {
+            "id": "rule-task-title",
+            "type": "required",
+            "message": "Enter a task title."
+          }
+        ]
+      }
+    },
+    "comp-create-submit-btn": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-create-submit-btn",
+      "screenId": "screen-list",
+      "parentId": "comp-create-form",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Submit task creation",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Create task",
+        "variant": "primary",
+        "eventId": "event-submit-create",
+        "confirmationMessage": null,
+        "preventDoubleSubmit": true
+      }
+    },
+    "comp-create-cancel-btn": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-create-cancel-btn",
+      "screenId": "screen-list",
+      "parentId": "comp-create-form",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Dismiss task creation",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Cancel",
+        "variant": "secondary",
+        "eventId": "event-close-create",
+        "confirmationMessage": null,
+        "preventDoubleSubmit": false
+      }
+    },
+    "comp-edit-page": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "fill",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-edit-page",
+      "screenId": "screen-edit",
+      "parentId": null,
+      "childIds": [
+        "comp-edit-header",
+        "comp-edit-summary",
+        "comp-task-name-input",
+        "comp-task-status-select",
+        "comp-save-btn",
+        "comp-cancel-edit-btn",
+        "comp-save-error"
+      ],
+      "kind": "page",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Task edit page",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "page",
+        "layout": "vertical",
+        "gap": "md",
+        "columns": 4,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "comp-edit-header": {
+      "nodeType": "definitionInstance",
+      "childIds": [],
+      "id": "comp-edit-header",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "placement": {
+        "mode": "sticky",
+        "edge": "top",
+        "inset": "sm"
+      },
+      "sizing": {
+        "inlineSize": "fill",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "source": {
+        "$ref": "#/componentDefinitions/shared~1header"
+      },
+      "variantId": "compact",
+      "props": {
+        "title": "Edit task",
+        "subtitle": "Update the details and save when you are ready."
+      }
+    },
+    "comp-edit-summary": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-edit-summary",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Edit summary",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Update assignees, state, and notes.",
+        "style": "body"
+      }
+    },
+    "comp-task-name-input": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-task-name-input",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "childIds": [],
+      "kind": "textInput",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Task name field",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "textInput",
+        "fieldKey": "taskName",
+        "label": "Task name",
+        "inputType": "text",
+        "required": true,
+        "placeholder": "Launch onboarding checklist",
+        "defaultValue": "Launch onboarding checklist",
+        "validationRules": [
+          {
+            "id": "rule-edit-name",
+            "type": "required",
+            "message": "Task name is required."
+          }
+        ]
+      }
+    },
+    "comp-task-status-select": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-task-status-select",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "childIds": [],
+      "kind": "select",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Task status field",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "select",
+        "fieldKey": "taskStatus",
+        "label": "Status",
+        "required": true,
+        "options": [
+          {
+            "value": "todo",
+            "label": "To do"
+          },
+          {
+            "value": "in-progress",
+            "label": "In progress"
+          },
+          {
+            "value": "done",
+            "label": "Done"
+          }
+        ],
+        "defaultValue": "in-progress"
+      }
+    },
+    "comp-save-btn": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-save-btn",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Save task changes",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Save task",
+        "variant": "primary",
+        "eventId": "event-save-task",
+        "confirmationMessage": null,
+        "preventDoubleSubmit": true
+      }
+    },
+    "comp-cancel-edit-btn": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-cancel-edit-btn",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Cancel editing",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Cancel",
+        "variant": "secondary",
+        "eventId": "event-cancel-task-edit",
+        "confirmationMessage": null,
+        "preventDoubleSubmit": false
+      }
+    },
+    "comp-save-error": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-save-error",
+      "screenId": "screen-edit",
+      "parentId": "comp-edit-page",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Save error copy",
+        "visible": false,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Saving failed. Review the inputs and try again.",
+        "style": "caption"
+      }
+    },
+    "comp-discard-modal": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "fill",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-discard-modal",
+      "screenId": "screen-edit",
+      "parentId": null,
+      "childIds": [
+        "comp-discard-copy",
+        "comp-discard-confirm-btn",
+        "comp-discard-stay-btn"
+      ],
+      "kind": "modal",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Discard changes dialog",
+        "visible": false,
+        "enabled": true
+      },
+      "config": {
+        "kind": "modal",
+        "layout": "vertical",
+        "gap": "sm",
+        "columns": 1,
+        "justify": "start",
+        "align": "stretch",
+        "wrap": false
+      }
+    },
+    "comp-discard-copy": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-discard-copy",
+      "screenId": "screen-edit",
+      "parentId": "comp-discard-modal",
+      "childIds": [],
+      "kind": "text",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Discard message",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "text",
+        "text": "Discard unsaved task updates?",
+        "style": "body"
+      }
+    },
+    "comp-discard-confirm-btn": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-discard-confirm-btn",
+      "screenId": "screen-edit",
+      "parentId": "comp-discard-modal",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Discard changes",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Discard changes",
+        "variant": "danger",
+        "eventId": "event-discard-task-changes",
+        "confirmationMessage": "Discard the unsaved edits?",
+        "preventDoubleSubmit": false
+      }
+    },
+    "comp-discard-stay-btn": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-discard-stay-btn",
+      "screenId": "screen-edit",
+      "parentId": "comp-discard-modal",
+      "childIds": [],
+      "kind": "button",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Continue editing",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "button",
+        "label": "Keep editing",
+        "variant": "secondary",
+        "eventId": "event-continue-task-editing",
+        "confirmationMessage": null,
+        "preventDoubleSubmit": false
       }
     }
   },
   "screenScenarios": {
-    "loading": {
-      "id": "loading",
-      "screenId": "home",
+    "scenario-list-loading": {
+      "id": "scenario-list-loading",
+      "screenId": "screen-list",
       "name": "Loading",
-      "description": "Shows a meaningful in-progress presentation.",
+      "description": "Show the refresh message and shared header loading subtitle.",
       "componentOverrides": [
         {
           "target": {
-            "type": "definitionNode",
-            "instanceId": "shared-header",
-            "nodePath": ["header-title"]
+            "type": "inline",
+            "componentId": "comp-list-loading-message"
           },
           "override": {
-            "text": "Loading…"
+            "visible": true
+          }
+        },
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-task-list"
+          },
+          "override": {
+            "visible": false
+          }
+        },
+        {
+          "target": {
+            "type": "definitionNode",
+            "instanceId": "comp-list-header",
+            "nodePath": [
+              "header-copy",
+              "header-subtitle"
+            ]
+          },
+          "override": {
+            "text": "Refreshing tasks…"
+          }
+        }
+      ]
+    },
+    "scenario-list-empty": {
+      "id": "scenario-list-empty",
+      "screenId": "screen-list",
+      "name": "Empty",
+      "description": "Explain that there are no tasks yet.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-list-empty-message"
+          },
+          "override": {
+            "visible": true
+          }
+        },
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-task-list"
+          },
+          "override": {
+            "visible": false
+          }
+        }
+      ]
+    },
+    "scenario-list-create": {
+      "id": "scenario-list-create",
+      "screenId": "screen-list",
+      "name": "Create",
+      "description": "Open the create-task modal.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-create-modal"
+          },
+          "override": {
+            "visible": true
+          }
+        }
+      ]
+    },
+    "scenario-list-create-error": {
+      "id": "scenario-list-create-error",
+      "screenId": "screen-list",
+      "name": "Create error",
+      "description": "Keep the modal open and explain that creation failed.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-create-modal"
+          },
+          "override": {
+            "visible": true
+          }
+        },
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-list-summary"
+          },
+          "override": {
+            "text": "Creating the task failed. Update the title and try again."
+          }
+        }
+      ]
+    },
+    "scenario-edit-saving": {
+      "id": "scenario-edit-saving",
+      "screenId": "screen-edit",
+      "name": "Saving",
+      "description": "Prevent duplicate saves while the request is active.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-save-btn"
+          },
+          "override": {
+            "enabled": false
+          }
+        }
+      ]
+    },
+    "scenario-edit-success": {
+      "id": "scenario-edit-success",
+      "screenId": "screen-edit",
+      "name": "Success",
+      "description": "Confirm that the task was saved.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-edit-summary"
+          },
+          "override": {
+            "text": "Task saved. Continue refining the rollout details if needed."
+          }
+        }
+      ]
+    },
+    "scenario-edit-error": {
+      "id": "scenario-edit-error",
+      "screenId": "screen-edit",
+      "name": "Error",
+      "description": "Explain that save failed.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-save-error"
+          },
+          "override": {
+            "visible": true
+          }
+        }
+      ]
+    },
+    "scenario-edit-confirm-exit": {
+      "id": "scenario-edit-confirm-exit",
+      "screenId": "screen-edit",
+      "name": "Confirm exit",
+      "description": "Open the discard-changes modal.",
+      "componentOverrides": [
+        {
+          "target": {
+            "type": "inline",
+            "componentId": "comp-discard-modal"
+          },
+          "override": {
+            "visible": true
           }
         }
       ]
     }
   },
   "events": {
-    "activate-loading": {
-      "id": "activate-loading",
-      "screenId": "home",
-      "name": "Activate loading scenario",
+    "event-open-create": {
+      "id": "event-open-create",
+      "screenId": "screen-list",
+      "name": "Open create form",
       "trigger": {
         "type": "click",
         "target": {
-          "type": "definitionNode",
-          "instanceId": "shared-header",
-          "nodePath": ["header-title"]
+          "type": "inline",
+          "componentId": "comp-create-task-btn"
         }
       },
       "actions": [
         {
           "type": "setScenario",
-          "scenarioId": "loading"
+          "scenarioId": "scenario-list-create"
+        }
+      ]
+    },
+    "event-close-create": {
+      "id": "event-close-create",
+      "screenId": "screen-list",
+      "name": "Close create form",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-create-cancel-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "clearScenario"
+        }
+      ]
+    },
+    "event-submit-create": {
+      "id": "event-submit-create",
+      "screenId": "screen-list",
+      "name": "Submit create form",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-create-submit-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "callApi",
+          "apiOperationId": "api-create-task"
+        }
+      ]
+    },
+    "event-edit-launch-task": {
+      "id": "event-edit-launch-task",
+      "screenId": "screen-list",
+      "name": "Open the launch task",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-edit-launch-task-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "navigate",
+          "destinationScreenId": "screen-edit"
+        }
+      ]
+    },
+    "event-save-task": {
+      "id": "event-save-task",
+      "screenId": "screen-edit",
+      "name": "Save task",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-save-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "callApi",
+          "apiOperationId": "api-save-task"
+        }
+      ]
+    },
+    "event-cancel-task-edit": {
+      "id": "event-cancel-task-edit",
+      "screenId": "screen-edit",
+      "name": "Ask to discard changes",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-cancel-edit-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "setScenario",
+          "scenarioId": "scenario-edit-confirm-exit"
+        }
+      ]
+    },
+    "event-discard-task-changes": {
+      "id": "event-discard-task-changes",
+      "screenId": "screen-edit",
+      "name": "Discard and leave",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-discard-confirm-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "navigate",
+          "destinationScreenId": "screen-list"
+        }
+      ]
+    },
+    "event-continue-task-editing": {
+      "id": "event-continue-task-editing",
+      "screenId": "screen-edit",
+      "name": "Continue editing",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "inline",
+          "componentId": "comp-discard-stay-btn"
+        }
+      },
+      "actions": [
+        {
+          "type": "clearScenario"
         }
       ]
     }
   },
   "apiOperations": {
-    "load-home": {
-      "id": "load-home",
-      "screenId": "home",
-      "name": "Load home",
-      "method": "GET",
-      "path": "/api/home",
-      "requestBindings": [],
+    "api-create-task": {
+      "id": "api-create-task",
+      "screenId": "screen-list",
+      "name": "Create task",
+      "method": "POST",
+      "path": "/tasks",
+      "requestBindings": [
+        {
+          "source": {
+            "type": "inline",
+            "componentId": "comp-create-title-input"
+          },
+          "targetPath": "title"
+        }
+      ],
       "successScenarioId": null,
-      "errorScenarioId": "loading"
+      "errorScenarioId": "scenario-list-create-error"
+    },
+    "api-save-task": {
+      "id": "api-save-task",
+      "screenId": "screen-edit",
+      "name": "Save task",
+      "method": "PATCH",
+      "path": "/tasks/:taskId",
+      "requestBindings": [
+        {
+          "source": {
+            "type": "inline",
+            "componentId": "comp-task-name-input"
+          },
+          "targetPath": "title"
+        },
+        {
+          "source": {
+            "type": "inline",
+            "componentId": "comp-task-status-select"
+          },
+          "targetPath": "status"
+        }
+      ],
+      "successScenarioId": "scenario-edit-success",
+      "errorScenarioId": "scenario-edit-error"
     }
   }
 }

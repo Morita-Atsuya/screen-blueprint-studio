@@ -25,8 +25,8 @@ export function renderInspector(
   initialState.ui = {
     ...initialState.ui,
     activeScreenId: screen.id,
-    activeStateId: activeStateId || screen.defaultStateId,
-    selectedComponentId: component.id,
+    activeStateId: activeStateId || null,
+    selection: { type: 'screenInlineComponent', componentId: component.id },
     rightPanelTab: 'inspector',
   }
 

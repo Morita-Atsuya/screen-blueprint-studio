@@ -1,208 +1,609 @@
-import type { ComponentLayout, ProjectDocument, Screen, EntityId } from './model'
-import { CONTAINER_KINDS, LEAF_KINDS } from './model'
+import {
+  CONTAINER_KINDS,
+  LEAF_KINDS,
+  type ComponentDefinition,
+  type ComponentDefinitionNode,
+  type ComponentKind,
+  type DefinitionComponentConfig,
+  type EntityId,
+  type ProjectDocument,
+  type PublicProp,
+  type PublicPropFieldV3,
+  type Screen,
+  type ValidationRule,
+  type VariantNodeOverride,
+  isInlineDefinitionNode,
+  isInlineScreenComponent,
+} from './model'
+import {
+  assertCanonicalRootPlacementsV3,
+  assertUniqueVariantPropertyCombinationsV3,
+  resolveComponentDefinitionRefV3,
+} from './canonicalProjectSpecV3'
+import { validateSizingContext, isRootSizing } from './componentSizing'
+import { resolveComponentTarget, resolvePublicPropFieldType, resolveScreenNodes, MAX_DEFINITION_NESTING_DEPTH, MAX_RESOLVED_SCREEN_NODE_COUNT } from './definitionResolver'
 import { DomainError } from './errors'
 import {
-  validateComponentOverride,
+  componentTargetRefEquals,
+  componentTargetRefKey,
+  inlineTargetRef,
+} from './componentTargets'
+import {
+  getOwnEntity,
+  hasOwnEntity,
+} from './entityMap'
+import {
+  validateComponentConfig,
   validateProjectDocumentMetadata,
-  validateScreenComponent,
+  validateDefinitionComponentConfig,
 } from './runtimeValidation'
-import { getOwnEntity, hasOwnEntity } from './entityMap'
-import { isRootSizing, validateSizingContext } from './componentSizing'
 
-export function validateInvariants(doc: ProjectDocument): void {
-  validateProjectDocumentMetadata(doc)
-  const { project, screens, components } = doc
+const VARIANT_FIELD_TO_PUBLIC_PROP_FIELD: Partial<Record<keyof NonNullable<VariantNodeOverride['config']>, PublicPropFieldV3>> = {
+  layout: 'config.layout',
+  gap: 'config.gap',
+  columns: 'config.columns',
+  justify: 'config.justify',
+  align: 'config.align',
+  wrap: 'config.wrap',
+  text: 'config.text',
+  style: 'config.style',
+  label: 'config.label',
+  inputType: 'config.inputType',
+  required: 'config.required',
+  placeholder: 'config.placeholder',
+  defaultValue: 'config.defaultValue',
+  variant: 'config.variant',
+  confirmationMessage: 'config.confirmationMessage',
+  preventDoubleSubmit: 'config.preventDoubleSubmit',
+  source: 'config.source',
+  alt: 'config.alt',
+  fit: 'config.fit',
+  aspectRatio: 'config.aspectRatio',
+  placeholderStyle: 'config.placeholderStyle',
+  openMode: 'config.openMode',
+}
 
-  // 1. screenIds uniqueness and existence
-  const screenIdSet = new Set(project.screenIds)
-  if (screenIdSet.size !== project.screenIds.length) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Project screenIds contains duplicates')
-  }
-  for (const sid of project.screenIds) {
-    if (!hasOwnEntity(screens, sid)) {
-      throw new DomainError('INVARIANT_VIOLATION', `Screen ${sid} referenced in project.screenIds but not found`)
+function validateValidationRules(rules: readonly ValidationRule[], label: string): void {
+  const ids = new Set<EntityId>()
+  const singletonTypes = new Set<ValidationRule['type']>()
+  const patterns = new Set<string>()
+  const customDescriptions = new Set<string>()
+  let minLength: number | null = null
+  let maxLength: number | null = null
+
+  for (const rule of rules) {
+    if (ids.has(rule.id)) {
+      throw new DomainError('INVARIANT_VIOLATION', `${label} has duplicate rule ID ${rule.id}`)
     }
-  }
-
-  // 2. at least one screen
-  if (project.screenIds.length === 0) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Project must have at least one screen')
-  }
-
-  for (const screen of Object.values(screens)) {
-    if (!screenIdSet.has(screen.id)) {
+    ids.add(rule.id)
+    if (!rule.message.trim()) {
+      throw new DomainError('INVARIANT_VIOLATION', `${label} rule ${rule.id} has an empty message`)
+    }
+    if (rule.type === 'pattern') {
+      const pattern = rule.value.trim()
+      if (!pattern || patterns.has(pattern)) {
+        throw new DomainError('INVARIANT_VIOLATION', `${label} has an empty or duplicate pattern`)
+      }
+      try {
+        new RegExp(pattern)
+      } catch {
+        throw new DomainError('INVARIANT_VIOLATION', `${label} has an invalid pattern`)
+      }
+      patterns.add(pattern)
+      continue
+    }
+    if (rule.type === 'custom') {
+      const description = rule.description.trim()
+      if (!description || customDescriptions.has(description)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `${label} has an empty or duplicate custom rule`,
+        )
+      }
+      customDescriptions.add(description)
+      continue
+    }
+    if (singletonTypes.has(rule.type)) {
       throw new DomainError(
         'INVARIANT_VIOLATION',
-        `Screen ${screen.id} is not listed in project.screenIds`,
+        `${label} has duplicate ${rule.type} rules`,
       )
     }
-    validateScreen(screen, doc)
+    singletonTypes.add(rule.type)
+    if (rule.type === 'minLength' || rule.type === 'maxLength') {
+      if (!Number.isSafeInteger(rule.value) || rule.value < 0) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `${label} ${rule.type} must be a non-negative safe integer`,
+        )
+      }
+      if (rule.type === 'minLength') minLength = rule.value
+      else maxLength = rule.value
+    }
+  }
+  if (minLength !== null && maxLength !== null && minLength > maxLength) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} minLength cannot exceed maxLength`,
+    )
+  }
+}
+
+function resolveDefinitionInlineNodePath(
+  document: ProjectDocument,
+  definition: ComponentDefinition,
+  nodePath: readonly EntityId[],
+  label: string,
+): Extract<ComponentDefinitionNode, { nodeType: 'inline' }> {
+  const root = getOwnEntity(definition.nodes, definition.rootNodeId)
+  if (!root || !isInlineDefinitionNode(root)) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} root must be an inline node`,
+    )
+  }
+  if (nodePath.length === 1 && nodePath[0] === definition.rootNodeId) {
+    return root
+  }
+  if (nodePath[0] === definition.rootNodeId) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} must omit the current definition root ID except when targeting the root itself`,
+    )
+  }
+  return resolveInlineChildPath(document, definition, root, nodePath, label)
+}
+
+function resolveInlineChildPath(
+  document: ProjectDocument,
+  definition: ComponentDefinition,
+  current: Extract<ComponentDefinitionNode, { nodeType: 'inline' }>,
+  remaining: readonly EntityId[],
+  label: string,
+): Extract<ComponentDefinitionNode, { nodeType: 'inline' }> {
+  const [segment, ...rest] = remaining
+  if (!segment || !current.childIds.includes(segment)) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} targets an unknown child path segment ${segment ?? '(missing)'}`,
+    )
+  }
+  const nextNode = getOwnEntity(definition.nodes, segment)
+  if (!nextNode) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} targets a missing definition node ${segment}`,
+    )
+  }
+  if (nextNode.nodeType === 'inline') {
+    if (rest.length === 0) return nextNode
+    return resolveInlineChildPath(document, definition, nextNode, rest, label)
   }
 
-  // Orphan component check
-  for (const comp of Object.values(components)) {
-    validateScreenComponent(comp, `components.${comp.id}`)
-    if (!hasOwnEntity(screens, comp.screenId)) {
-      throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} references non-existent screen ${comp.screenId}`)
-    }
-    if (
-      comp.config.kind === 'link' &&
-      comp.config.destination.type === 'internal' &&
-      !hasOwnEntity(screens, comp.config.destination.screenId)
-    ) {
+  const nestedDefinition = resolveComponentDefinitionRefV3(document, nextNode.source.$ref)
+  const nestedRoot = getOwnEntity(nestedDefinition.nodes, nestedDefinition.rootNodeId)
+  if (!nestedRoot || !isInlineDefinitionNode(nestedRoot)) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Nested definition ${nestedDefinition.id} root must be an inline node`,
+    )
+  }
+  if (rest.length === 0 || rest[0] !== nestedDefinition.rootNodeId) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} must include nested definition root ${nestedDefinition.rootNodeId}`,
+    )
+  }
+  if (rest.length === 1) return nestedRoot
+  return resolveInlineChildPath(document, nestedDefinition, nestedRoot, rest.slice(1), label)
+}
+
+function resolvedPartsForDefinitionNode(
+  node: Extract<ComponentDefinitionNode, { nodeType: 'inline' }>,
+): {
+  kind: ComponentKind
+  common: typeof node.common
+  config: DefinitionComponentConfig
+  placement: typeof node.placement
+  sizing: typeof node.sizing
+} {
+  return {
+    kind: node.kind,
+    common: node.common,
+    config: node.config,
+    placement: node.placement,
+    sizing: node.sizing,
+  }
+}
+
+function validatePublicPropCompatibility(
+  document: ProjectDocument,
+  definition: ComponentDefinition,
+  prop: PublicProp,
+  propIndex: number,
+): void {
+  for (let bindingIndex = 0; bindingIndex < prop.bindings.length; bindingIndex += 1) {
+    const binding = prop.bindings[bindingIndex]!
+    const targetNode = resolveDefinitionInlineNodePath(
+      document,
+      definition,
+      binding.nodePath,
+      `Definition ${definition.id} publicProps[${propIndex}].bindings[${bindingIndex}]`,
+    )
+    const fieldType = resolvePublicPropFieldType(
+      resolvedPartsForDefinitionNode(targetNode),
+      binding.field,
+    )
+    if (fieldType === null) {
       throw new DomainError(
         'INVARIANT_VIOLATION',
-        `Link ${comp.id} references non-existent screen ${comp.config.destination.screenId}`,
+        `Definition ${definition.id} public prop ${prop.key} cannot bind ${binding.field} on ${targetNode.id}`,
       )
     }
-  }
-
-  for (const state of Object.values(doc.screenStates)) {
-    const owner = getOwnEntity(screens, state.screenId)
-    if (!owner || !owner.stateIds.includes(state.id)) {
+    if (fieldType !== prop.type) {
       throw new DomainError(
         'INVARIANT_VIOLATION',
-        `State ${state.id} is not listed by its owning screen`,
+        `Definition ${definition.id} public prop ${prop.key} type ${prop.type} is incompatible with ${binding.field} (${fieldType})`,
       )
     }
   }
 
-  // 3. route uniqueness
-  const routes = Object.values(screens).map(s => s.route)
-  if (new Set(routes).size !== routes.length) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Screen routes must be unique')
-  }
+}
 
-  // Validate API operations
-  for (const apiOp of Object.values(doc.apiOperations)) {
-    if (!hasOwnEntity(screens, apiOp.screenId)) {
-      throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} references non-existent screen ${apiOp.screenId}`)
+function validateInstanceProps(
+  definition: ComponentDefinition,
+  props: Readonly<Record<string, string | number | boolean>>,
+  label: string,
+): void {
+  const declarations = new Map(definition.publicProps.map(prop => [prop.key, prop]))
+  for (const [key, value] of Object.entries(props)) {
+    const declaration = declarations.get(key)
+    if (!declaration) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `${label} provides unknown public prop ${key}`,
+      )
     }
-    const boundComponentIds = new Set<EntityId>()
-    const targetPaths = new Set<string>()
-    for (const binding of apiOp.requestBindings) {
-      const component = getOwnEntity(components, binding.componentId)
-      if (!component) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding references non-existent component ${binding.componentId}`)
-      }
-      if (component.screenId !== apiOp.screenId) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding component belongs to a different screen`)
-      }
-      if (component.kind !== 'textInput' && component.kind !== 'select') {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding component must be an input`)
-      }
-      if (boundComponentIds.has(binding.componentId)) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} has duplicate binding component ${binding.componentId}`)
-      }
-      const targetPath = binding.targetPath.trim()
-      if (targetPath.length === 0) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} binding targetPath must not be empty`)
-      }
-      if (targetPaths.has(targetPath)) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} has duplicate binding targetPath ${targetPath}`)
-      }
-      boundComponentIds.add(binding.componentId)
-      targetPaths.add(targetPath)
-    }
-    if (apiOp.successStateId !== null) {
-      const st = getOwnEntity(doc.screenStates, apiOp.successStateId)
-      if (!st) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} successStateId ${apiOp.successStateId} not found`)
-      }
-      if (st.screenId !== apiOp.screenId) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} successStateId belongs to a different screen`)
-      }
-    }
-    if (apiOp.errorStateId !== null) {
-      const st = getOwnEntity(doc.screenStates, apiOp.errorStateId)
-      if (!st) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} errorStateId ${apiOp.errorStateId} not found`)
-      }
-      if (st.screenId !== apiOp.screenId) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${apiOp.id} errorStateId belongs to a different screen`)
-      }
+    const valid = declaration.type === 'enum'
+      ? typeof value === 'string' && declaration.values.includes(value)
+      : declaration.type === 'number'
+        ? typeof value === 'number' && Number.isFinite(value)
+        : typeof value === declaration.type
+    if (!valid) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `${label} public prop ${key} must be a valid ${declaration.type} value`,
+      )
     }
   }
+}
 
-  // Validate event actions
-  for (const event of Object.values(doc.events)) {
-    const eventScreen = getOwnEntity(screens, event.screenId)
-    if (!eventScreen) {
-      throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} references non-existent screen ${event.screenId}`)
+function validateVariantOverrideCompatibility(
+  definition: ComponentDefinition,
+  nodeId: EntityId,
+  override: VariantNodeOverride,
+): void {
+  const node = getOwnEntity(definition.nodes, nodeId)
+  if (!node) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} variant targets missing node ${nodeId}`,
+    )
+  }
+  if (!isInlineDefinitionNode(node)) {
+    if (override.common || override.config) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition ${definition.id} variant cannot override common/config on nested instance ${nodeId}`,
+      )
     }
-    if (!eventScreen.eventIds.includes(event.id)) {
-      throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} is not listed by screen ${event.screenId}`)
-    }
-    const triggerComponent = getOwnEntity(components, event.trigger.componentId)
-    if (!triggerComponent) {
-      throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} trigger references non-existent component ${event.trigger.componentId}`)
-    }
-    if (triggerComponent.screenId !== event.screenId) {
-      throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} trigger component belongs to a different screen`)
-    }
-    for (const action of event.actions) {
-      if (action.type === 'setState') {
-        const state = getOwnEntity(doc.screenStates, action.stateId)
-        if (!state) {
-          throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} action references non-existent state ${action.stateId}`)
+    return
+  }
+
+  if (override.config) {
+    const nextConfig = {
+      ...node.config,
+      ...override.config,
+    } as DefinitionComponentConfig
+    validateDefinitionComponentConfig(
+      nextConfig,
+      node.kind,
+      `Definition ${definition.id} variant ${nodeId} config`,
+    )
+    for (const [field, value] of Object.entries(override.config)) {
+      if (field === 'destination') {
+        if (node.config.kind !== 'link') {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Definition ${definition.id} variant cannot override destination on ${node.kind}`,
+          )
         }
-        if (state.screenId !== event.screenId) {
-          throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} state action belongs to a different screen`)
-        }
+        void value
+        continue
       }
-      if (action.type === 'callApi') {
-        const apiOperation = getOwnEntity(doc.apiOperations, action.apiOperationId)
-        if (!apiOperation) {
-          throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} action references non-existent API operation ${action.apiOperationId}`)
-        }
-        if (apiOperation.screenId !== event.screenId) {
-          throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} API action belongs to a different screen`)
-        }
-      }
-      if (action.type === 'navigate' && !hasOwnEntity(screens, action.destinationScreenId)) {
-        throw new DomainError('INVARIANT_VIOLATION', `Event ${event.id} action references non-existent destination screen ${action.destinationScreenId}`)
+      const publicField = VARIANT_FIELD_TO_PUBLIC_PROP_FIELD[
+        field as keyof typeof VARIANT_FIELD_TO_PUBLIC_PROP_FIELD
+      ]
+      if (!publicField) continue
+      const fieldType = resolvePublicPropFieldType(
+        resolvedPartsForDefinitionNode(node),
+        publicField,
+      )
+      if (fieldType === null) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${definition.id} variant cannot override ${field} on ${node.kind}`,
+        )
       }
     }
   }
 }
 
-function validateScreen(screen: Screen, doc: ProjectDocument): void {
-  const { components, screenStates, events } = doc
-
-  // Each screen has one page root and zero or more independent modal roots.
-  const root = getOwnEntity(components, screen.rootComponentId)
-  if (!root) {
-    throw new DomainError('INVARIANT_VIOLATION', `Root component ${screen.rootComponentId} not found`)
+function validateDefinitionStructure(
+  definition: ComponentDefinition,
+  document: ProjectDocument,
+): void {
+  const root = getOwnEntity(definition.nodes, definition.rootNodeId)
+  if (!root || !isInlineDefinitionNode(root)) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} root node ${definition.rootNodeId} must resolve to an inline node`,
+    )
   }
-  if (root.kind !== 'page') {
-    throw new DomainError('INVARIANT_VIOLATION', `Root component must be kind 'page'`)
-  }
-  if (root.screenId !== screen.id) {
-    throw new DomainError('INVARIANT_VIOLATION', `Root component must belong to screen ${screen.id}`)
-  }
-
   if (root.parentId !== null) {
-    throw new DomainError('INVARIANT_VIOLATION', `Root component must have parentId null`)
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} root node must have parentId null`,
+    )
   }
 
+  const reached = new Set<EntityId>()
+  const visiting = new Set<EntityId>()
+  function visit(nodeId: EntityId, expectedParentId: EntityId | null): void {
+    if (visiting.has(nodeId)) {
+      throw new DomainError('INVARIANT_VIOLATION', `Cycle detected at definition node ${nodeId}`)
+    }
+    if (reached.has(nodeId)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition node ${nodeId} is reachable from more than one parent`,
+      )
+    }
+    const node = getOwnEntity(definition.nodes, nodeId)
+    if (!node) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition ${definition.id} node ${nodeId} is missing`,
+      )
+    }
+    if (node.parentId !== expectedParentId) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition node ${nodeId} has inconsistent parentId`,
+      )
+    }
+    visiting.add(nodeId)
+    reached.add(nodeId)
+    if (isInlineDefinitionNode(node)) {
+      const config = node.config
+      validateDefinitionComponentConfig(
+        config,
+        node.kind,
+        `Definition ${definition.id} node ${node.id} config`,
+      )
+      if (
+        config.kind === 'select' &&
+        !config.options.some(option => option.value === config.defaultValue)
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${definition.id} Select ${node.id} defaultValue must match one of its options`,
+        )
+      }
+      if (
+        config.kind === 'link' &&
+        config.destination.type === 'internal' &&
+        !hasOwnEntity(document.screens, config.destination.screenId)
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${definition.id} Link ${node.id} references non-existent screen ${config.destination.screenId}`,
+        )
+      }
+      if (LEAF_KINDS.includes(node.kind) && node.childIds.length > 0) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Leaf definition node ${nodeId} must not have children`,
+        )
+      }
+      if (node.childIds.length > 0 && !CONTAINER_KINDS.includes(node.kind)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Non-container definition node ${nodeId} must not have children`,
+        )
+      }
+      for (const childId of node.childIds) visit(childId, node.id)
+    } else {
+      if (node.childIds.length > 0) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Nested definition instance ${nodeId} must not have children`,
+        )
+      }
+      const nestedDefinition = resolveComponentDefinitionRefV3(document, node.source.$ref)
+      if (node.variantId !== null && !nestedDefinition.variants.some(variant => variant.id === node.variantId)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Nested definition instance ${nodeId} references missing variant ${node.variantId}`,
+        )
+      }
+      validateInstanceProps(
+        nestedDefinition,
+        node.props,
+        `Nested definition instance ${nodeId}`,
+      )
+    }
+    visiting.delete(nodeId)
+  }
+  visit(definition.rootNodeId, null)
+  if (reached.size !== Object.keys(definition.nodes).length) {
+    const orphan = Object.keys(definition.nodes).find(nodeId => !reached.has(nodeId))
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} node ${orphan ?? 'unknown'} is not reachable from the root`,
+    )
+  }
+
+  if (new Set(definition.publicProps.map(prop => prop.key)).size !== definition.publicProps.length) {
+    throw new DomainError('INVARIANT_VIOLATION', `Definition ${definition.id} public prop keys must be unique`)
+  }
+  if (
+    new Set(definition.variantProperties.map(property => property.key)).size !==
+      definition.variantProperties.length
+  ) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} variant property keys must be unique`,
+    )
+  }
+  if (new Set(definition.variants.map(variant => variant.id)).size !== definition.variants.length) {
+    throw new DomainError('INVARIANT_VIOLATION', `Definition ${definition.id} variant IDs must be unique`)
+  }
+  if (
+    definition.representativeVariantId !== null &&
+    !definition.variants.some(variant => variant.id === definition.representativeVariantId)
+  ) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Definition ${definition.id} representativeVariantId is missing`,
+    )
+  }
+
+  definition.publicProps.forEach((prop, index) =>
+    validatePublicPropCompatibility(document, definition, prop, index),
+  )
+
+  const propertyKeys = definition.variantProperties.map(property => property.key)
+  const propertyValuesByKey = new Map(
+    definition.variantProperties.map(property => [property.key, new Set(property.values)]),
+  )
+  definition.variants.forEach(variant => {
+    const keys = Object.keys(variant.propertyValues)
+    if (new Set(keys).size !== keys.length || keys.length !== propertyKeys.length) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition ${definition.id} variant ${variant.id} must define every variant property exactly once`,
+      )
+    }
+    for (const key of propertyKeys) {
+      const value = variant.propertyValues[key]
+      if (typeof value !== 'string' || !propertyValuesByKey.get(key)?.has(value)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${definition.id} variant ${variant.id} has an invalid value for ${key}`,
+        )
+      }
+    }
+    for (const [nodeId, override] of Object.entries(variant.nodeOverrides)) {
+      validateVariantOverrideCompatibility(definition, nodeId, override)
+    }
+  })
+  assertUniqueVariantPropertyCombinationsV3(definition)
+}
+
+function validateDefinitionGraph(document: ProjectDocument): void {
+  const memoExpandedCount = new Map<EntityId, number>()
+  const visiting = new Set<EntityId>()
+
+  function expandedCount(definitionId: EntityId, depth: number): number {
+    if (depth > MAX_DEFINITION_NESTING_DEPTH) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition nesting exceeds ${MAX_DEFINITION_NESTING_DEPTH}`,
+      )
+    }
+    if (visiting.has(definitionId)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition reference cycle detected at ${definitionId}`,
+      )
+    }
+    const cached = memoExpandedCount.get(definitionId)
+    if (cached !== undefined) return cached
+    const definition = getOwnEntity(document.componentDefinitions, definitionId)
+    if (!definition) {
+      throw new DomainError('INVARIANT_VIOLATION', `Missing definition ${definitionId}`)
+    }
+    visiting.add(definitionId)
+    let count = 0
+    for (const node of Object.values(definition.nodes)) {
+      if (isInlineDefinitionNode(node)) {
+        if (node.config.kind === 'textInput') {
+          validateValidationRules(
+            node.config.validationRules,
+            `Definition ${definition.id} node ${node.id}`,
+          )
+        }
+        count += 1
+        continue
+      }
+      const nestedDefinition = resolveComponentDefinitionRefV3(document, node.source.$ref)
+      if (nestedDefinition.id === definitionId) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${definitionId} cannot reference itself`,
+        )
+      }
+      count += expandedCount(nestedDefinition.id, depth + 1)
+    }
+    visiting.delete(definitionId)
+    if (count > MAX_RESOLVED_SCREEN_NODE_COUNT) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition ${definitionId} expands beyond ${MAX_RESOLVED_SCREEN_NODE_COUNT} nodes`,
+      )
+    }
+    memoExpandedCount.set(definitionId, count)
+    return count
+  }
+
+  Object.values(document.componentDefinitions).forEach(definition => {
+    validateDefinitionStructure(definition, document)
+    expandedCount(definition.id, 1)
+  })
+}
+
+function validateScreenComponentStructure(screen: Screen, document: ProjectDocument): void {
+  const root = getOwnEntity(document.components, screen.rootComponentId)
+  if (!root || !isInlineScreenComponent(root) || root.kind !== 'page') {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Screen ${screen.id} root must be an inline page component`,
+    )
+  }
+  if (root.parentId !== null || root.screenId !== screen.id) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `Screen ${screen.id} root must belong to the screen and have parentId null`,
+    )
+  }
   const rootIds = [screen.rootComponentId, ...screen.modalComponentIds]
   if (new Set(rootIds).size !== rootIds.length) {
     throw new DomainError('INVARIANT_VIOLATION', `Screen ${screen.id} root IDs must be unique`)
   }
   for (const modalId of screen.modalComponentIds) {
-    const modal = getOwnEntity(components, modalId)
-    if (!modal || modal.screenId !== screen.id || modal.kind !== 'modal' || modal.parentId !== null) {
+    const modal = getOwnEntity(document.components, modalId)
+    if (!modal || !isInlineScreenComponent(modal) || modal.kind !== 'modal' || modal.parentId !== null || modal.screenId !== screen.id) {
       throw new DomainError(
         'INVARIANT_VIOLATION',
-        `Modal root ${modalId} must be a parentless modal on screen ${screen.id}`,
+        `Modal root ${modalId} must be a parentless inline modal on screen ${screen.id}`,
       )
     }
   }
 
-  const screenComponents = Object.values(components).filter(c => c.screenId === screen.id)
+  const screenComponents = Object.values(document.components).filter(component => component.screenId === screen.id)
   const reached = new Set<EntityId>()
   const visiting = new Set<EntityId>()
-
   function visit(componentId: EntityId, expectedParentId: EntityId | null): void {
     if (visiting.has(componentId)) {
       throw new DomainError('INVARIANT_VIOLATION', `Cycle detected at component ${componentId}`)
@@ -213,7 +614,7 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
         `Component ${componentId} is reachable from more than one screen root`,
       )
     }
-    const component = getOwnEntity(components, componentId)
+    const component = getOwnEntity(document.components, componentId)
     if (!component || component.screenId !== screen.id) {
       throw new DomainError(
         'INVARIANT_VIOLATION',
@@ -228,11 +629,42 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     }
     visiting.add(componentId)
     reached.add(componentId)
-    for (const childId of component.childIds) visit(childId, component.id)
+    if (isInlineScreenComponent(component)) {
+      if (component.kind === 'page' && component.id !== screen.rootComponentId) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Page component ${component.id} must be the screen root`,
+        )
+      }
+      if (component.kind === 'modal' && !screen.modalComponentIds.includes(component.id)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Modal component ${component.id} must be a listed modal root`,
+        )
+      }
+      if (LEAF_KINDS.includes(component.kind) && component.childIds.length > 0) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Leaf component ${component.id} must not have children`,
+        )
+      }
+      if (component.childIds.length > 0 && !CONTAINER_KINDS.includes(component.kind)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Non-container component ${component.id} must not have children`,
+        )
+      }
+      for (const childId of component.childIds) visit(childId, component.id)
+    } else if (component.childIds.length > 0) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Definition instance ${component.id} must not have screen children`,
+      )
+    }
     visiting.delete(componentId)
   }
 
-  for (const rootId of rootIds) visit(rootId, null)
+  rootIds.forEach(rootId => visit(rootId, null))
   if (reached.size !== screenComponents.length) {
     const orphan = screenComponents.find(component => !reached.has(component.id))
     throw new DomainError(
@@ -241,141 +673,328 @@ function validateScreen(screen: Screen, doc: ProjectDocument): void {
     )
   }
 
-  for (const comp of screenComponents) {
-    const isPageRoot = comp.id === screen.rootComponentId
-    const isModalRoot = screen.modalComponentIds.includes(comp.id)
-    if (isPageRoot || isModalRoot) {
-      if (!isRootSizing(comp.sizing)) {
+  for (const component of screenComponents) {
+    if (component.parentId === null) {
+      const isListedRoot = rootIds.includes(component.id)
+      if (!isListedRoot) {
+        throw new DomainError('INVARIANT_VIOLATION', `Unlisted component root ${component.id}`)
+      }
+      if (!isRootSizing(component.sizing)) {
         throw new DomainError(
           'INVARIANT_VIOLATION',
-          `Independent root ${comp.id} must use fixed root sizing`,
+          `Independent root ${component.id} must use fixed root sizing`,
+        )
+      }
+      if (component.placement.mode !== 'flow') {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Independent root ${component.id} placement must remain flow`,
+        )
+      }
+      continue
+    }
+    const parent = getOwnEntity(document.components, component.parentId)
+    if (!parent || parent.screenId !== screen.id) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Component ${component.id} parent must exist in the same screen`,
+      )
+    }
+    if (!isInlineScreenComponent(parent) || !CONTAINER_KINDS.includes(parent.kind)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Component ${component.id} parent ${parent.id} must be an inline container`,
+      )
+    }
+    validateSizingContext(
+      component.sizing,
+      component.placement,
+      parent.config.kind === 'page' || parent.config.kind === 'container' || parent.config.kind === 'modal'
+        ? parent.config
+        : null,
+      `Component ${component.id} sizing`,
+    )
+  }
+}
+
+function validateScenarios(screen: Screen, document: ProjectDocument): void {
+  const seenScenarioIds = new Set(screen.scenarioIds)
+  if (seenScenarioIds.size !== screen.scenarioIds.length) {
+    throw new DomainError('INVARIANT_VIOLATION', `Screen ${screen.id} scenarioIds contains duplicates`)
+  }
+  for (const scenarioId of screen.scenarioIds) {
+    const scenario = getOwnEntity(document.screenScenarios, scenarioId)
+    if (!scenario || scenario.screenId !== screen.id) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Scenario ${scenarioId} is missing or belongs to a different screen`,
+      )
+    }
+  }
+  for (const scenario of Object.values(document.screenScenarios)) {
+    if (scenario.screenId !== screen.id) continue
+    if (!screen.scenarioIds.includes(scenario.id)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Scenario ${scenario.id} is not listed by its owning screen`,
+      )
+    }
+    const seenTargets = new Set<string>()
+    for (const entry of scenario.componentOverrides) {
+      const key = componentTargetRefKey(entry.target)
+      if (seenTargets.has(key)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Scenario ${scenario.id} has duplicate override target ${key}`,
+        )
+      }
+      seenTargets.add(key)
+      const targetNode = resolveComponentTarget(document, screen.id, entry.target, null)
+      if (entry.override.text !== undefined && targetNode.config.kind !== 'text') {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Scenario ${scenario.id} text override requires a text node target`,
+        )
+      }
+      if (
+        entry.override.value !== undefined &&
+        targetNode.config.kind !== 'textInput' &&
+        targetNode.config.kind !== 'select'
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Scenario ${scenario.id} value override requires an input/select target`,
+        )
+      }
+      if (
+        entry.override.value !== undefined &&
+        targetNode.config.kind === 'select' &&
+        !targetNode.config.options.some(option => option.value === entry.override.value)
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Scenario ${scenario.id} value override is not an option of Select target ${key}`,
+        )
+      }
+    }
+  }
+}
+
+function validateEvents(screen: Screen, document: ProjectDocument): void {
+  const seenEventIds = new Set(screen.eventIds)
+  if (seenEventIds.size !== screen.eventIds.length) {
+    throw new DomainError('INVARIANT_VIOLATION', `Screen ${screen.id} eventIds contains duplicates`)
+  }
+  for (const eventId of screen.eventIds) {
+    const event = getOwnEntity(document.events, eventId)
+    if (!event || event.screenId !== screen.id) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Event ${eventId} is missing or belongs to a different screen`,
+      )
+    }
+  }
+  for (const event of Object.values(document.events)) {
+    if (event.screenId !== screen.id) continue
+    if (!screen.eventIds.includes(event.id)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Event ${event.id} is not listed by its screen`,
+      )
+    }
+    resolveComponentTarget(document, screen.id, event.trigger.target, null)
+    for (const action of event.actions) {
+      if (action.type === 'setScenario') {
+        const scenario = getOwnEntity(document.screenScenarios, action.scenarioId)
+        if (!scenario || scenario.screenId !== screen.id) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Event ${event.id} references a scenario outside its screen`,
+          )
+        }
+      }
+      if (action.type === 'callApi') {
+        const apiOperation = getOwnEntity(document.apiOperations, action.apiOperationId)
+        if (!apiOperation || apiOperation.screenId !== screen.id) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Event ${event.id} references an API operation outside its screen`,
+          )
+        }
+      }
+      if (action.type === 'navigate' && !hasOwnEntity(document.screens, action.destinationScreenId)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Event ${event.id} references a missing destination screen`,
+        )
+      }
+    }
+  }
+}
+
+function validateApiOperations(screen: Screen, document: ProjectDocument): void {
+  for (const operation of Object.values(document.apiOperations)) {
+    if (operation.screenId !== screen.id) continue
+    const bindingTargets = new Set<string>()
+    const targetPaths = new Set<string>()
+    for (const binding of operation.requestBindings) {
+      const resolved = resolveComponentTarget(document, screen.id, binding.source, null)
+      if (resolved.config.kind !== 'textInput' && resolved.config.kind !== 'select') {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `API operation ${operation.id} binding source must resolve to an input component`,
+        )
+      }
+      const targetKey = componentTargetRefKey(binding.source)
+      if (bindingTargets.has(targetKey)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `API operation ${operation.id} has a duplicate binding source ${targetKey}`,
+        )
+      }
+      bindingTargets.add(targetKey)
+      const targetPath = binding.targetPath.trim()
+      if (targetPath.length === 0) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `API operation ${operation.id} binding targetPath must not be empty`,
+        )
+      }
+      if (targetPaths.has(targetPath)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `API operation ${operation.id} has duplicate binding targetPath ${targetPath}`,
+        )
+      }
+      targetPaths.add(targetPath)
+    }
+    if (operation.successScenarioId !== null) {
+      const scenario = getOwnEntity(document.screenScenarios, operation.successScenarioId)
+      if (!scenario || scenario.screenId !== screen.id) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `API operation ${operation.id} successScenarioId belongs to a different screen`,
+        )
+      }
+    }
+    if (operation.errorScenarioId !== null) {
+      const scenario = getOwnEntity(document.screenScenarios, operation.errorScenarioId)
+      if (!scenario || scenario.screenId !== screen.id) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `API operation ${operation.id} errorScenarioId belongs to a different screen`,
+        )
+      }
+    }
+  }
+}
+
+function validateScreenOwnedButtonLinks(screen: Screen, document: ProjectDocument): void {
+  for (const component of Object.values(document.components)) {
+    if (!isInlineScreenComponent(component) || component.screenId !== screen.id) continue
+    if (component.config.kind !== 'button' || component.config.eventId === null) continue
+    const event = getOwnEntity(document.events, component.config.eventId)
+    if (!event || event.screenId !== screen.id) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Button ${component.id} references an event outside its screen`,
+      )
+    }
+    if (!componentTargetRefEquals(event.trigger.target, inlineTargetRef(component.id))) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Button ${component.id} eventId must point to an event triggered by that same inline button`,
+      )
+    }
+  }
+}
+
+export function validateInvariants(doc: ProjectDocument): void {
+  validateProjectDocumentMetadata(doc)
+
+  const { project, screens, components } = doc
+  const screenIdSet = new Set(project.screenIds)
+  if (screenIdSet.size !== project.screenIds.length) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Project screenIds contains duplicates')
+  }
+  if (project.screenIds.length === 0) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Project must have at least one screen')
+  }
+  for (const screenId of project.screenIds) {
+    if (!hasOwnEntity(screens, screenId)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Screen ${screenId} referenced in project.screenIds but not found`,
+      )
+    }
+  }
+  for (const screen of Object.values(screens)) {
+    if (!screenIdSet.has(screen.id)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Screen ${screen.id} is not listed in project.screenIds`,
+      )
+    }
+  }
+
+  const routes = Object.values(screens).map(screen => screen.route)
+  if (new Set(routes).size !== routes.length) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Screen routes must be unique')
+  }
+
+  for (const component of Object.values(components)) {
+    if (!hasOwnEntity(screens, component.screenId)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Component ${component.id} references non-existent screen ${component.screenId}`,
+      )
+    }
+    if (isInlineScreenComponent(component)) {
+      validateComponentConfig(component.config, component.kind, `components.${component.id}.config`)
+      if (component.config.kind === 'textInput') {
+        validateValidationRules(component.config.validationRules, `TextInput ${component.id}`)
+      }
+      if (component.config.kind === 'select') {
+        const selectConfig = component.config
+        if (!selectConfig.options.some(option => option.value === selectConfig.defaultValue)) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Select ${component.id} defaultValue must match one of its options`,
+          )
+        }
+      }
+      if (
+        component.config.kind === 'link' &&
+        component.config.destination.type === 'internal' &&
+        !hasOwnEntity(screens, component.config.destination.screenId)
+      ) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Link ${component.id} references non-existent screen ${component.config.destination.screenId}`,
         )
       }
     } else {
-      const parent = comp.parentId ? getOwnEntity(components, comp.parentId) : undefined
-      const parentLayout: ComponentLayout | null = parent && (
-        parent.config.kind === 'page' ||
-        parent.config.kind === 'container' ||
-        parent.config.kind === 'modal'
-      ) ? parent.config : null
-      validateSizingContext(comp.sizing, comp.placement, parentLayout, `Component ${comp.id} sizing`)
-    }
-    if ((isPageRoot || isModalRoot) && comp.placement.mode !== 'flow') {
-      throw new DomainError(
-        'INVARIANT_VIOLATION',
-        `Independent root ${comp.id} placement must be flow`,
-      )
-    }
-    if (comp.parentId === null && !isPageRoot && !isModalRoot) {
-      throw new DomainError('INVARIANT_VIOLATION', `Unlisted component root ${comp.id}`)
-    }
-    if (comp.kind === 'page' && !isPageRoot) {
-      throw new DomainError('INVARIANT_VIOLATION', `Page component ${comp.id} must be the screen root`)
-    }
-    if (comp.kind === 'modal' && !isModalRoot) {
-      throw new DomainError('INVARIANT_VIOLATION', `Modal component ${comp.id} must be an independent root`)
-    }
-    if (!isPageRoot && !isModalRoot) {
-      if (comp.parentId === null) {
-        throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} requires a parent`)
+      const definition = resolveComponentDefinitionRefV3(doc, component.source.$ref)
+      if (component.variantId !== null && !definition.variants.some(variant => variant.id === component.variantId)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition instance ${component.id} references missing variant ${component.variantId}`,
+        )
       }
-      const parent = getOwnEntity(components, comp.parentId)
-      if (!parent || parent.screenId !== screen.id) {
-        throw new DomainError('INVARIANT_VIOLATION', `Component ${comp.id} parent not in same screen`)
-      }
-    }
-
-    if (comp.parentId !== null) {
-      const parent = getOwnEntity(components, comp.parentId)
-      if (!parent?.childIds.includes(comp.id)) {
-        throw new DomainError('INVARIANT_VIOLATION', `Parent ${comp.parentId} does not list ${comp.id} in childIds`)
-      }
-    }
-    for (const childId of comp.childIds) {
-      const child = getOwnEntity(components, childId)
-      if (!child || child.parentId !== comp.id) {
-        throw new DomainError('INVARIANT_VIOLATION', `Child ${childId} of ${comp.id} has inconsistent parentId`)
-      }
-    }
-
-    if (LEAF_KINDS.includes(comp.kind) && comp.childIds.length > 0) {
-      throw new DomainError('INVARIANT_VIOLATION', `Leaf component ${comp.id} (${comp.kind}) must have no children`)
-    }
-
-    if (comp.childIds.length > 0 && !CONTAINER_KINDS.includes(comp.kind)) {
-      throw new DomainError('INVARIANT_VIOLATION', `Non-container ${comp.id} (${comp.kind}) must not have children`)
-    }
-
-    if (comp.config.kind === 'button' && comp.config.eventId !== null) {
-      const event = getOwnEntity(events, comp.config.eventId)
-      if (!event || event.screenId !== screen.id) {
-        throw new DomainError('INVARIANT_VIOLATION', `Button ${comp.id} references an event outside its screen`)
-      }
+      validateInstanceProps(definition, component.props, `Definition instance ${component.id}`)
     }
   }
 
-  // fieldKey uniqueness per screen (only non-empty, trimmed keys)
-  const fieldKeys: string[] = []
-  for (const comp of screenComponents) {
-    if (comp.config.kind === 'textInput' || comp.config.kind === 'select') {
-      const trimmedKey = comp.config.fieldKey.trim()
-      if (trimmedKey) {
-        if (fieldKeys.includes(trimmedKey)) {
-          throw new DomainError('INVARIANT_VIOLATION', `Duplicate fieldKey '${trimmedKey}' in screen ${screen.id}`)
-        }
-        fieldKeys.push(trimmedKey)
-      }
-    }
+  validateDefinitionGraph(doc)
+
+  for (const screen of Object.values(screens)) {
+    validateScreenComponentStructure(screen, doc)
+    validateScenarios(screen, doc)
+    validateEvents(screen, doc)
+    validateApiOperations(screen, doc)
+    validateScreenOwnedButtonLinks(screen, doc)
+    resolveScreenNodes(doc, screen.id, null)
   }
 
-  // References exist; navigate can point to other screens.
-  for (const eventId of screen.eventIds) {
-    const event = getOwnEntity(events, eventId)
-    if (!event || event.screenId !== screen.id) {
-      throw new DomainError('INVARIANT_VIOLATION', `Event ${eventId} not found or belongs to different screen`)
-    }
-    for (const action of event.actions) {
-      if (action.type === 'setState') {
-        if (!hasOwnEntity(screenStates, action.stateId)) {
-          throw new DomainError('INVARIANT_VIOLATION', `State ${action.stateId} referenced by event action not found`)
-        }
-      }
-    }
-  }
-
-  // defaultStateId identifies one listed state.
-  for (const stateId of screen.stateIds) {
-    const state = getOwnEntity(screenStates, stateId)
-    if (!state || state.screenId !== screen.id) {
-      throw new DomainError('INVARIANT_VIOLATION', `State ${stateId} not found or belongs to different screen`)
-    }
-    if (
-      typeof state.componentOverrides !== 'object' ||
-      state.componentOverrides === null ||
-      Array.isArray(state.componentOverrides)
-    ) {
-      throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} componentOverrides must be an object`)
-    }
-    if (state.id === screen.defaultStateId && Object.keys(state.componentOverrides).length > 0) {
-      throw new DomainError('INVARIANT_VIOLATION', `Default state ${state.id} must not contain component overrides`)
-    }
-    for (const componentId of Object.keys(state.componentOverrides)) {
-      const component = getOwnEntity(components, componentId)
-      if (!component || component.screenId !== screen.id) {
-        throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} override references a component outside its screen`)
-      }
-      validateComponentOverride(
-        getOwnEntity(state.componentOverrides, componentId),
-        component,
-        `State ${state.id}.componentOverrides.${componentId}`,
-      )
-    }
-  }
-  const defaultState = getOwnEntity(screenStates, screen.defaultStateId)
-  if (!defaultState || defaultState.screenId !== screen.id) {
-    throw new DomainError('INVARIANT_VIOLATION', `defaultStateId ${screen.defaultStateId} must reference a state on screen ${screen.id}`)
-  }
-  if (!screen.stateIds.includes(screen.defaultStateId)) {
-    throw new DomainError('INVARIANT_VIOLATION', `defaultStateId not in screen.stateIds`)
-  }
+  assertCanonicalRootPlacementsV3(doc)
 }

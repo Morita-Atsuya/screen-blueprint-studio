@@ -5,7 +5,10 @@ import type {
   ComponentOverride,
   EntityId,
   ProjectDocument,
+  ScreenComponent,
 } from '../../domain/model'
+import { isInlineScreenComponent } from '../../domain/model'
+import { componentTargetRefEquals, findInlineScenarioOverride, inlineTargetRef } from '../../domain/componentTargets'
 
 export type InspectorSectionId =
   | 'basic'
@@ -156,17 +159,27 @@ function validationRules(config: ComponentConfig | undefined): unknown[] {
   return config?.kind === 'textInput' ? config.validationRules : []
 }
 
+function inlineConfig(component: ScreenComponent | undefined): ComponentConfig | undefined {
+  return component && isInlineScreenComponent(component) ? component.config : undefined
+}
+
+function inlineCommon(component: ScreenComponent | undefined): Record<string, unknown> {
+  return component && isInlineScreenComponent(component)
+    ? component.common as unknown as Record<string, unknown>
+    : {}
+}
+
 function behaviorProjection(document: ProjectDocument, componentId: EntityId): unknown {
   const component = getOwnEntity(document.components, componentId)
-  if (!component) return null
+  if (!component || !isInlineScreenComponent(component)) return null
   return {
     buttonEventId: component.config.kind === 'button' ? component.config.eventId : null,
     events: Object.values(document.events)
-      .filter(event => event.trigger.componentId === componentId)
+      .filter(event => componentTargetRefEquals(event.trigger.target, inlineTargetRef(componentId)))
       .sort((left, right) => left.id.localeCompare(right.id)),
     apiBindings: Object.values(document.apiOperations)
       .flatMap(operation => operation.requestBindings
-        .filter(binding => binding.componentId === componentId)
+        .filter(binding => componentTargetRefEquals(binding.source, inlineTargetRef(componentId)))
         .map(binding => ({
           operationId: operation.id,
           targetPath: binding.targetPath,
@@ -230,7 +243,7 @@ export function inspectorSectionChangeCounts(
   if (!after) return empty
 
   empty.basic = before
-    ? differenceCount(before.common, after.common) + (
+    ? differenceCount(inlineCommon(before), inlineCommon(after)) + (
         stableValue({
           screenId: before.screenId,
           parentId: before.parentId,
@@ -243,22 +256,22 @@ export function inspectorSectionChangeCounts(
       )
     : 1
   empty.content = differenceCount(
-    contentValues(before?.config),
-    contentValues(after.config),
+    contentValues(inlineConfig(before)),
+    contentValues(inlineConfig(after)),
   )
   empty.layout = differenceCount(
-    layoutValues(before?.config),
-    layoutValues(after.config),
+    layoutValues(inlineConfig(before)),
+    layoutValues(inlineConfig(after)),
   )
   empty.placement =
     (stableValue(before?.placement) === stableValue(after.placement) ? 0 : 1) +
     (stableValue(before?.sizing) === stableValue(after.sizing)
       ? 0
       : differenceCount(before?.sizing ?? {}, after.sizing))
-  empty.validation = stableValue(validationRules(before?.config)) ===
-    stableValue(validationRules(after.config))
+  empty.validation = stableValue(validationRules(inlineConfig(before))) ===
+    stableValue(validationRules(inlineConfig(after)))
     ? 0
-    : Math.max(validationRules(after.config).length, 1)
+    : Math.max(validationRules(inlineConfig(after)).length, 1)
   empty.behavior = stableValue(
     before ? behaviorProjection(baseDocument, componentId) : null,
   ) === stableValue(behaviorProjection(previewDocument, componentId))
@@ -266,12 +279,16 @@ export function inspectorSectionChangeCounts(
     : 1
   empty.stateOverrides = differenceCount(
     activeStateId
-      ? getOwnEntity(baseDocument.screenStates, activeStateId)
-        ?.componentOverrides[componentId] ?? {}
+      ? findInlineScenarioOverride(
+          getOwnEntity(baseDocument.screenScenarios, activeStateId),
+          componentId,
+        )?.override ?? {}
       : {},
     activeStateId
-      ? getOwnEntity(previewDocument.screenStates, activeStateId)
-        ?.componentOverrides[componentId] ?? {}
+      ? findInlineScenarioOverride(
+          getOwnEntity(previewDocument.screenScenarios, activeStateId),
+          componentId,
+        )?.override ?? {}
       : {},
   )
   return empty

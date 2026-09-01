@@ -9,14 +9,14 @@ import type { Locale } from '../../src/i18n/messages'
 import { sampleProject } from '../../src/sample/sampleProject'
 import { DEFAULT_COMPONENT_SIZING } from '../../src/domain/model'
 
-const STORAGE_KEY = 'screen-blueprint-studio:v1'
+const STORAGE_KEY = 'screen-blueprint-studio:workspace:v3'
 const LEFT_PANE_STORAGE_KEY = 'screen-blueprint-studio:left-pane-sections:v1'
 
 function activeChangeSet() {
   return {
     id: 'regression-change-set',
     summary: 'Accessibility review',
-    baseRevision: sampleProject.revision,
+    baseRevision: 0,
     baseDocument: sampleProject,
     operations: [],
     version: 0,
@@ -36,8 +36,8 @@ export function renderApp(locale: Locale): string {
   initialState.ui = {
     ...initialState.ui,
     activeScreenId: 'screen-edit',
-    activeStateId: 'state-edit-default',
-    selectedComponentId: 'comp-task-title-input',
+    activeStateId: null,
+    selection: { type: 'screenInlineComponent', componentId: 'comp-task-name-input' },
     rightPanelTab: 'inspector',
   }
 
@@ -117,8 +117,8 @@ export function mountReviewLockApp(locale: Locale = 'en') {
     ui: {
       ...state.ui,
       activeScreenId: 'screen-edit',
-      activeStateId: 'state-edit-success',
-      selectedComponentId: 'comp-task-title-input',
+      activeStateId: 'scenario-edit-success',
+      selection: { type: 'screenInlineComponent', componentId: 'comp-task-name-input' },
       rightPanelTab: 'inspector',
     },
   }))
@@ -163,8 +163,8 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           },
           position,
         }, `Add ${description}`)
-        add('regression-empty-container', 'comp-edit-section', 'Empty group')
-        add('regression-nested-container', 'comp-edit-section', 'Nested group')
+        add('regression-empty-container', 'comp-edit-page', 'Empty group')
+        add('regression-nested-container', 'comp-edit-page', 'Nested group')
         add('regression-inner-container', 'regression-nested-container', 'Inner group')
         useAppStore.getState().dispatch({
           type: 'updateComponentSpec',
@@ -184,7 +184,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           componentId: 'regression-inner-container',
           patch: { common: { description: 'Inner group' } },
         }, 'Name inner group')
-        useAppStore.getState().setActiveState('state-edit-default')
+        useAppStore.getState().setActiveState(null)
       })
     },
     addTreeStateBadgeFixture() {
@@ -211,7 +211,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
             wrap: false,
           },
         }, `Add ${description}`)
-        addContainer('regression-tree-level-1', 'comp-edit-section', 'Details group')
+        addContainer('regression-tree-level-1', 'comp-edit-page', 'Details group')
         addContainer('regression-tree-level-2', 'regression-tree-level-1', 'Feedback group')
         addContainer('regression-tree-level-3', 'regression-tree-level-2', 'Status group')
         useAppStore.getState().dispatch({
@@ -239,16 +239,19 @@ export function mountReviewLockApp(locale: Locale = 'en') {
             },
           },
         }, 'Set deep state presentation')
-        const success = useAppStore.getState().document.screenStates['state-edit-success']
+        const success = useAppStore.getState().document.screenScenarios['scenario-edit-success']
         useAppStore.getState().dispatch({
           type: 'updateScreenState',
           stateId: success.id,
           name: success.name,
           description: success.description,
-          overrides: {
+          overrides: [
             ...success.componentOverrides,
-            'regression-tree-state-message': { text: 'Ready for review' },
-          },
+            {
+              target: { type: 'inline', componentId: 'regression-tree-state-message' },
+              override: { text: 'Ready for review' },
+            },
+          ],
         }, 'Override deep state message')
         useAppStore.getState().setActiveState(success.id)
         const changeSet = useAppStore.getState().beginChangeSet('Update deep state message')
@@ -265,7 +268,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           type: 'addComponent',
           componentId: 'regression-viewport-container',
           screenId: 'screen-list',
-          parentId: 'comp-list-section',
+          parentId: 'comp-list-page',
           kind: 'container',
           placement: {
             mode: 'viewport',
@@ -305,7 +308,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
         }, 'Add nested overlay')
         useAppStore.getState().dispatch({
           type: 'updateComponentSpec',
-          componentId: 'comp-create-modal-title',
+          componentId: 'comp-create-title-input',
           patch: {
             placement: {
               mode: 'viewport',
@@ -316,7 +319,7 @@ export function mountReviewLockApp(locale: Locale = 'en') {
           },
         }, 'Project modal title')
         useAppStore.getState().setActiveScreen('screen-list')
-        useAppStore.getState().setActiveState('state-list-default')
+        useAppStore.getState().setActiveState('scenario-list-create')
       })
     },
     markInnerContainerChanged() {
@@ -362,7 +365,10 @@ export function mountReviewLockApp(locale: Locale = 'en') {
       return {
         activeScreenId: state.ui.activeScreenId,
         activeStateId: state.ui.activeStateId,
-        selectedComponentId: state.ui.selectedComponentId,
+        selectedComponentId:
+          state.ui.selection?.type === 'screenInlineComponent'
+            ? state.ui.selection.componentId
+            : null,
         rightPanelTab: state.ui.rightPanelTab,
         clipboardReady: Boolean(state.componentClipboard),
         clipboardRootComponentId: state.componentClipboard?.rootComponentId ?? null,

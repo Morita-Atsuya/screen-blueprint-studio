@@ -3,14 +3,20 @@ import type { ChangeSet, RejectedChangeSetRecord } from '../domain/collaboration
 import { validateInvariants } from '../domain/invariants'
 import { applyCommandWithoutRevision } from '../domain/applyCommand'
 import { CURRENT_SCHEMA_VERSION } from '../domain/model'
-import { migratePersistedData } from './migratePersistedData'
+import type { EditorSelection } from '../domain/editorSelection'
+import { parseEditorSelectionValue } from '../domain/editorSelection'
 
-const STORAGE_KEY = 'screen-blueprint-studio:v1'
-const REJECTED_KEY = 'screen-blueprint-studio:rejected:v1'
+const STORAGE_KEY = 'screen-blueprint-studio:workspace:v3'
+const LEGACY_STORAGE_KEYS = ['screen-blueprint-studio:v1']
+const REJECTED_KEY = 'screen-blueprint-studio:rejected:v3'
+const LEGACY_REJECTED_KEYS = ['screen-blueprint-studio:rejected:v1']
 
 export interface PersistedData {
+  revision: number
   document: ProjectDocument
   activeScreenId?: string
+  activeStateId?: string
+  selection?: EditorSelection
   activeChangeSet?: ChangeSet
 }
 
@@ -23,9 +29,12 @@ export type LoadResult =
   | { status: 'empty' }
   | {
       status: 'success'
+      revision: number
       document: ProjectDocument
       activeChangeSet?: ChangeSet
       activeScreenId?: string
+      activeStateId?: string
+      selection?: EditorSelection
       discardedActiveChangeSet?: DiscardedActiveChangeSet
     }
   | { status: 'invalid'; rawData: string; error: string }
@@ -40,6 +49,11 @@ const COMMAND_TYPES = new Set([
   'pasteComponent',
   'removeComponent',
   'updateComponentSpec',
+  'extractComponentDefinition',
+  'detachDefinitionInstance',
+  'putComponentDefinition',
+  'addDefinitionInstance',
+  'updateDefinitionInstance',
   'createScreenState',
   'updateScreenState',
   'removeScreenState',
@@ -49,6 +63,7 @@ const COMMAND_TYPES = new Set([
   'bindApiOperation',
   'updateApiOperation',
   'removeApiOperation',
+  'removeComponentDefinition',
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,8 +77,8 @@ function requireString(value: unknown, path: string): asserts value is string {
 }
 
 function requireNonNegativeInteger(value: unknown, path: string): asserts value is number {
-  if (!Number.isInteger(value) || (value as number) < 0) {
-    throw new Error(`${path} must be a non-negative integer`)
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`${path} must be a non-negative safe integer`)
   }
 }
 
@@ -71,7 +86,11 @@ function storage(): Storage {
   return globalThis.localStorage
 }
 
-function validateActiveChangeSet(value: unknown, document: ProjectDocument): ChangeSet {
+function validateActiveChangeSet(
+  value: unknown,
+  document: ProjectDocument,
+  revision: number,
+): ChangeSet {
   if (!isRecord(value)) throw new Error('activeChangeSet must be an object')
   requireString(value.id, 'activeChangeSet.id')
   requireString(value.summary, 'activeChangeSet.summary')
@@ -83,11 +102,8 @@ function validateActiveChangeSet(value: unknown, document: ProjectDocument): Cha
 
   const changeSet = value as unknown as ChangeSet
   validateInvariants(changeSet.baseDocument)
-  if (
-    changeSet.baseRevision !== document.revision ||
-    changeSet.baseDocument.revision !== document.revision
-  ) {
-    throw new Error('activeChangeSet base revision does not match the persisted document')
+  if (changeSet.baseRevision !== revision) {
+    throw new Error('activeChangeSet base revision does not match the persisted workspace revision')
   }
   if (JSON.stringify(changeSet.baseDocument) !== JSON.stringify(document)) {
     throw new Error('activeChangeSet.baseDocument does not match the persisted document')
@@ -109,16 +125,27 @@ function validateActiveChangeSet(value: unknown, document: ProjectDocument): Cha
     }
     preview = applyCommandWithoutRevision(preview, operation.command)
   })
-
   return changeSet
+}
+
+function rawPersistedValue(): string {
+  return storage().getItem(STORAGE_KEY) ?? ''
+}
+
+function legacyRawPersistedValue(): string {
+  for (const key of LEGACY_STORAGE_KEYS) {
+    const raw = storage().getItem(key)
+    if (raw) return raw
+  }
+  return ''
 }
 
 export function saveToStorage(data: PersistedData): boolean {
   try {
     storage().setItem(STORAGE_KEY, JSON.stringify(data))
     return true
-  } catch (e) {
-    console.warn('Failed to save to localStorage', e)
+  } catch (error) {
+    console.warn('Failed to save to localStorage', error)
     return false
   }
 }
@@ -126,11 +153,19 @@ export function saveToStorage(data: PersistedData): boolean {
 export function loadFromStorage(): LoadResult {
   let raw = ''
   try {
-    raw = storage().getItem(STORAGE_KEY) ?? ''
-  } catch (e) {
-    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+    raw = rawPersistedValue()
+    if (!raw) {
+      const legacyRaw = legacyRawPersistedValue()
+      if (!legacyRaw) return { status: 'empty' }
+      return {
+        status: 'invalid',
+        rawData: legacyRaw,
+        error: 'Unsupported persisted workspace format. Reset to the sample project to recover.',
+      }
+    }
+  } catch (error) {
+    return { status: 'invalid', rawData: raw, error: error instanceof Error ? error.message : String(error) }
   }
-  if (!raw) return { status: 'empty' }
 
   let parsed: unknown
   try {
@@ -138,37 +173,35 @@ export function loadFromStorage(): LoadResult {
     if (!isRecord(parsed) || !isRecord(parsed.document)) {
       throw new Error('Persisted data must contain a document')
     }
-  } catch (e) {
-    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+    requireNonNegativeInteger(parsed.revision, 'persisted.revision')
+  } catch (error) {
+    return { status: 'invalid', rawData: raw, error: error instanceof Error ? error.message : String(error) }
   }
 
-  let migration
-  try {
-    migration = migratePersistedData(parsed)
-  } catch (e) {
-    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
-  }
-  const data = migration.value as PersistedData
-  if (
-    (data.document as unknown as { schemaVersion?: unknown }).schemaVersion !==
-    CURRENT_SCHEMA_VERSION
-  ) {
+  const data = parsed as unknown as PersistedData
+  const selection = data.selection === undefined
+    ? undefined
+    : parseEditorSelectionValue(data.selection) ?? undefined
+  if (data.document.schemaVersion !== CURRENT_SCHEMA_VERSION) {
     return { status: 'invalid', rawData: raw, error: 'Unsupported schema version' }
   }
   try {
     validateInvariants(data.document)
-  } catch (e) {
-    return { status: 'invalid', rawData: raw, error: e instanceof Error ? e.message : String(e) }
+  } catch (error) {
+    return { status: 'invalid', rawData: raw, error: error instanceof Error ? error.message : String(error) }
   }
 
   if (data.activeChangeSet === undefined) {
-    if (migration.migrated) saveToStorage(data)
     return {
       status: 'success',
+      revision: data.revision,
       document: data.document,
       activeScreenId: data.activeScreenId,
+      activeStateId: data.activeStateId,
+      selection,
     }
   }
+
   if (
     isRecord(data.activeChangeSet) &&
     Array.isArray(data.activeChangeSet.operations) &&
@@ -182,27 +215,35 @@ export function loadFromStorage(): LoadResult {
       error: 'The saved change set contains human edits and requires explicit recovery',
     }
   }
+
   try {
-    const result = {
+    return {
       status: 'success',
+      revision: data.revision,
       document: data.document,
-      activeChangeSet: validateActiveChangeSet(data.activeChangeSet, data.document),
+      activeChangeSet: validateActiveChangeSet(data.activeChangeSet, data.document, data.revision),
       activeScreenId: data.activeScreenId,
-    } as const
-    if (migration.migrated) saveToStorage(data)
-    return result
-  } catch (e) {
-    const error = e instanceof Error ? e.message : String(e)
-    console.warn('Discarding invalid active change set', e)
+      activeStateId: data.activeStateId,
+      selection,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn('Discarding invalid active change set', error)
     const persisted = saveToStorage({
+      revision: data.revision,
       document: data.document,
       activeScreenId: data.activeScreenId,
+      activeStateId: data.activeStateId,
+      selection,
     })
     return {
       status: 'success',
+      revision: data.revision,
       document: data.document,
       activeScreenId: data.activeScreenId,
-      discardedActiveChangeSet: { error, persisted },
+      activeStateId: data.activeStateId,
+      selection,
+      discardedActiveChangeSet: { error: message, persisted },
     }
   }
 }
@@ -210,6 +251,7 @@ export function loadFromStorage(): LoadResult {
 export function removePersistedDocument(): boolean {
   try {
     storage().removeItem(STORAGE_KEY)
+    LEGACY_STORAGE_KEYS.forEach(key => storage().removeItem(key))
     return true
   } catch (error) {
     console.warn('Failed to remove persisted document', error)
@@ -222,14 +264,13 @@ export function clearStorage(): boolean {
   let rejectedRecordsRemoved = false
   try {
     storage().removeItem(REJECTED_KEY)
+    LEGACY_REJECTED_KEYS.forEach(key => storage().removeItem(key))
     rejectedRecordsRemoved = true
   } catch (error) {
     console.warn('Failed to remove rejected change set records', error)
   }
   return documentRemoved && rejectedRecordsRemoved
 }
-
-// ── Rejected change set records ──────────────────────────────
 
 function isRejectedRecord(value: unknown): value is RejectedChangeSetRecord {
   if (!isRecord(value)) return false
@@ -266,11 +307,10 @@ function isRejectedRecord(value: unknown): value is RejectedChangeSetRecord {
 export function saveRejectedRecord(record: RejectedChangeSetRecord): boolean {
   try {
     const existing = loadRejectedRecords()
-    const updated = [record, ...existing].slice(0, 20) // keep last 20
-    storage().setItem(REJECTED_KEY, JSON.stringify(updated))
+    storage().setItem(REJECTED_KEY, JSON.stringify([record, ...existing].slice(0, 20)))
     return true
-  } catch (e) {
-    console.warn('Failed to save rejected record', e)
+  } catch (error) {
+    console.warn('Failed to save rejected record', error)
     return false
   }
 }
@@ -278,6 +318,8 @@ export function saveRejectedRecord(record: RejectedChangeSetRecord): boolean {
 export function loadRejectedRecords(): RejectedChangeSetRecord[] {
   try {
     const raw = storage().getItem(REJECTED_KEY)
+      ?? LEGACY_REJECTED_KEYS.map(key => storage().getItem(key)).find(Boolean)
+      ?? ''
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -289,14 +331,14 @@ export function loadRejectedRecords(): RejectedChangeSetRecord[] {
 
 export function downloadCorruptedData(): void {
   try {
-    const raw = storage().getItem(STORAGE_KEY)
+    const raw = rawPersistedValue() || legacyRawPersistedValue()
     if (!raw) return
     const blob = new Blob([raw], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `screen-blueprint-studio-corrupted-${new Date().toISOString()}.json`
-    a.click()
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `screen-blueprint-studio-corrupted-${new Date().toISOString()}.json`
+    anchor.click()
     URL.revokeObjectURL(url)
   } catch (error) {
     console.warn('Failed to download corrupted data', error)
@@ -304,12 +346,14 @@ export function downloadCorruptedData(): void {
 }
 
 export function downloadCurrentData(
+  revision: number,
   documentData: ProjectDocument,
   effectiveDocument: ProjectDocument,
 ): void {
   const raw = JSON.stringify(
     {
       exportedAt: new Date().toISOString(),
+      revision,
       document: documentData,
       effectiveDocument,
     },

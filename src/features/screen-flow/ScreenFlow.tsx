@@ -21,7 +21,7 @@ export function ScreenFlow({
     activeChangeSet,
     ui,
     setActiveScreen,
-    setSelectedComponent,
+    selectScreenComponent,
     setRightPanelTab,
   } = useAppStore()
   const flow = selectScreenFlow(
@@ -46,7 +46,7 @@ export function ScreenFlow({
       return
     }
     setActiveScreen(transition.source.screenId)
-    setSelectedComponent(transition.triggerComponentId)
+    selectScreenComponent(transition.triggerComponentId)
     setRightPanelTab('inspector')
     openScreenView(transition.triggerComponentId)
   }

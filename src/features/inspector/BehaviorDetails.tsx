@@ -332,11 +332,17 @@ function focusVisibleSectionTarget(
 function ActionDetails({ action }: { action: ResolvedEventAction }) {
   const { t } = useI18n()
   switch (action.type) {
-    case 'setState':
+    case 'setScenario':
       return (
         <div className={styles.actionContent}>
-          <strong>{t('behavior.action.setState')}</strong>
-          <span>{referenceLabel(action.state, t)}</span>
+          <strong>{t('behavior.action.setScenario')}</strong>
+          <span>{referenceLabel(action.scenario, t)}</span>
+        </div>
+      )
+    case 'clearScenario':
+      return (
+        <div className={styles.actionContent}>
+          <strong>{t('behavior.action.clearScenario')}</strong>
         </div>
       )
     case 'callApi':
@@ -376,19 +382,19 @@ function ApiSummary({ operation }: { operation: ResolvedApiReference }) {
 
 function ResultStates({ operation }: { operation: ResolvedApiReference }) {
   const { t } = useI18n()
-  if (!operation.successState && !operation.errorState) return null
+  if (!operation.successScenario && !operation.errorScenario) return null
   return (
     <dl className={styles.resultStates}>
-      {operation.successState ? (
+      {operation.successScenario ? (
         <>
-          <dt>{t('behavior.successState')}</dt>
-          <dd>{referenceLabel(operation.successState, t)}</dd>
+          <dt>{t('behavior.successScenario')}</dt>
+          <dd>{referenceLabel(operation.successScenario, t)}</dd>
         </>
       ) : null}
-      {operation.errorState ? (
+      {operation.errorScenario ? (
         <>
-          <dt>{t('behavior.errorState')}</dt>
-          <dd>{referenceLabel(operation.errorState, t)}</dd>
+          <dt>{t('behavior.errorScenario')}</dt>
+          <dd>{referenceLabel(operation.errorScenario, t)}</dd>
         </>
       ) : null}
     </dl>

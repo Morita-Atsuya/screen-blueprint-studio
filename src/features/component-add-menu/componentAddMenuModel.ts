@@ -1,5 +1,5 @@
 import type { EntityId, ProjectDocument } from '../../domain/model'
-import { CONTAINER_KINDS } from '../../domain/model'
+import { CONTAINER_KINDS, isInlineScreenComponent } from '../../domain/model'
 import { getOwnEntity } from '../../domain/entityMap'
 import { canAcceptDrop } from '../../dnd/editorDnd'
 import type { ComponentDropData, EditorDragData } from '../../dnd/editorDnd'
@@ -59,7 +59,7 @@ export function resolveComponentInsertTargets(
   if (!component) return []
 
   const targets: ComponentInsertTarget[] = []
-  if (CONTAINER_KINDS.includes(component.kind)) {
+  if (isInlineScreenComponent(component) && CONTAINER_KINDS.includes(component.kind)) {
     const inside = validTarget(
       document,
       'inside',
@@ -72,7 +72,7 @@ export function resolveComponentInsertTargets(
 
   if (component.parentId) {
     const parent = getOwnEntity(document.components, component.parentId)
-    const index = parent?.childIds.indexOf(component.id) ?? -1
+    const index = parent ? (parent.childIds as readonly string[]).indexOf(component.id) : -1
     if (parent && index >= 0) {
       const before = validTarget(
         document,

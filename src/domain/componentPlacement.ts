@@ -5,7 +5,7 @@ import type {
   ProjectDocument,
   ScreenComponent,
 } from './model'
-import { CONTAINER_KINDS } from './model'
+import { CONTAINER_KINDS, isInlineScreenComponent } from './model'
 import { getOwnEntity } from './entityMap'
 import { DomainError } from './errors'
 import { validateSizingContext } from './componentSizing'
@@ -59,7 +59,7 @@ function moveContext(
     return invalid('stale')
   }
   if (component.screenId !== newParent.screenId) return invalid('crossScreen')
-  if (!CONTAINER_KINDS.includes(newParent.kind)) {
+  if (!isInlineScreenComponent(newParent) || !CONTAINER_KINDS.includes(newParent.kind)) {
     return invalid('parentCannotContainChildren')
   }
 
@@ -75,7 +75,7 @@ function moveContext(
   }
 
   const oldParent = getOwnEntity(document.components, component.parentId)
-  if (!oldParent) return invalid('stale')
+  if (!oldParent || !isInlineScreenComponent(oldParent)) return invalid('stale')
   const oldIndex = oldParent.childIds.indexOf(component.id)
   if (oldIndex < 0) return invalid('stale')
   try {
@@ -175,7 +175,7 @@ export function classifyComponentAdd(
   const parent = getOwnEntity(document.components, parentId)
   if (!parent) return invalid('stale')
   if (parent.screenId !== screen.id) return invalid('crossScreen')
-  if (!CONTAINER_KINDS.includes(parent.kind)) {
+  if (!isInlineScreenComponent(parent) || !CONTAINER_KINDS.includes(parent.kind)) {
     return invalid('parentCannotContainChildren')
   }
   const nextPosition = position ?? parent.childIds.length
@@ -198,7 +198,7 @@ export function classifyPaletteDrop(
 ): ComponentAddOutcome {
   const targetParent = getOwnEntity(document.components, targetParentId)
   if (!targetParent || targetParent.screenId !== screenId) return invalid('stale')
-  if (!CONTAINER_KINDS.includes(targetParent.kind)) {
+  if (!isInlineScreenComponent(targetParent) || !CONTAINER_KINDS.includes(targetParent.kind)) {
     return invalid('parentCannotContainChildren')
   }
   if (

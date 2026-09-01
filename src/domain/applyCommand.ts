@@ -1,12 +1,19 @@
-import type { EntityId, ProjectDocument } from './model'
+import type {
+  ComponentConfig,
+  ComponentDefinition,
+  EntityId,
+  ProjectDocument,
+  ScreenComponent,
+  ScreenComponentConfig,
+} from './model'
 import { assertNever } from './assertNever'
 import {
   CONTAINER_KINDS,
   DEFAULT_COMPONENT_LAYOUT,
   DEFAULT_COMPONENT_PLACEMENT,
   ROOT_COMPONENT_SIZING,
+  isInlineScreenComponent,
 } from './model'
-import type { ComponentConfig } from './model'
 import type { ComponentSubtreeSnapshot, DomainCommand } from './commands'
 import { DomainError } from './errors'
 import { validateInvariants } from './invariants'
@@ -28,11 +35,29 @@ import {
 } from './componentPlacement'
 import {
   cloneComponentConfig,
+  cloneComponentDefinition,
   cloneComponentOverride,
   cloneDomainCommand,
+  cloneFieldBinding,
   cloneProjectDocument,
   cloneScreenComponent,
+  cloneScreenScenario,
 } from './modelClone'
+import {
+  buildDetachTargetRewriteMap,
+  buildExtractionTargetRewriteMap,
+  collectDefinitionUses,
+  definitionNodePathKey,
+  mapGeneratedNodePaths,
+  mapTargetIntoCopiedSubtree,
+  resolveDefinitionInlineNodeAtPath,
+  rewriteScreenTargetRefs,
+  targetBelongsToRemovedScreenComponents,
+} from './definitionTransactions'
+import {
+  componentDefinitionRefV3,
+} from './canonicalProjectSpecV3'
+import { resolveScreenNodes } from './definitionResolver'
 
 function requireExactKeys(
   value: object,
@@ -56,96 +81,84 @@ export function nextRevision(revision: number): number {
   return revision + 1
 }
 
-// Remove component and all its descendants; returns IDs removed
 function removeSubtree(componentId: EntityId, doc: ProjectDocument): EntityId[] {
   const removed: EntityId[] = []
-  function rec(id: EntityId) {
-    const comp = getOwnEntity(doc.components, id)
-    if (!comp) return
-    for (const childId of [...comp.childIds]) rec(childId)
+  function visit(id: EntityId): void {
+    const component = getOwnEntity(doc.components, id)
+    if (!component) return
+    component.childIds.forEach(visit)
     removed.push(id)
     deleteOwnEntity(doc.components, id)
   }
-  rec(componentId)
+  visit(componentId)
   return removed
 }
 
-// Clean up references to removed component IDs
-function cleanupComponentRefs(removedIds: Set<EntityId>, doc: ProjectDocument): void {
-  // 1. Remove component overrides in states
-  for (const state of Object.values(doc.screenStates)) {
-    for (const id of removedIds) {
-      deleteOwnEntity(state.componentOverrides, id)
+function cleanupComponentRefs(removedIds: ReadonlySet<EntityId>, doc: ProjectDocument): void {
+  for (const scenario of Object.values(doc.screenScenarios)) {
+    scenario.componentOverrides = scenario.componentOverrides
+      .filter(entry => !targetBelongsToRemovedScreenComponents(entry.target, removedIds))
+      .map(entry => ({ target: structuredClone(entry.target), override: { ...entry.override } }))
+  }
+
+  const eventsToRemove = Object.values(doc.events)
+    .filter(event => targetBelongsToRemovedScreenComponents(event.trigger.target, removedIds))
+    .map(event => event.id)
+  for (const eventId of eventsToRemove) {
+    const event = getOwnEntity(doc.events, eventId)
+    if (!event) continue
+    const screen = getOwnEntity(doc.screens, event.screenId)
+    if (screen) screen.eventIds = screen.eventIds.filter(candidate => candidate !== eventId)
+    deleteOwnEntity(doc.events, eventId)
+    for (const component of Object.values(doc.components)) {
+      if (
+        isInlineScreenComponent(component) &&
+        component.config.kind === 'button' &&
+        component.config.eventId === eventId
+      ) {
+        component.config.eventId = null
+      }
     }
   }
 
-  // 2. Remove/fix events that reference removed components
-  for (const [eventId, event] of Object.entries(doc.events)) {
-    if (removedIds.has(event.trigger.componentId)) {
-      deleteOwnEntity(doc.events, eventId)
-      const screen = getOwnEntity(doc.screens, event.screenId)
-      if (screen) {
-        screen.eventIds = screen.eventIds.filter(id => id !== eventId)
-      }
-      for (const component of Object.values(doc.components)) {
-        if (component.config.kind === 'button' && component.config.eventId === eventId) {
-          component.config.eventId = null
-        }
-      }
-    }
-  }
-
-  // 3. Clean up API operation request bindings
-  for (const apiOp of Object.values(doc.apiOperations)) {
-    apiOp.requestBindings = apiOp.requestBindings.filter(b => !removedIds.has(b.componentId))
+  for (const operation of Object.values(doc.apiOperations)) {
+    operation.requestBindings = operation.requestBindings
+      .filter(binding => !targetBelongsToRemovedScreenComponents(binding.source, removedIds))
+      .map(cloneFieldBinding)
   }
 }
 
-// Clean up API operations belonging to a screen, plus callApi event actions
 function cleanupScreenApiOps(screenId: EntityId, doc: ProjectDocument): void {
-  const opsToRemove = Object.keys(doc.apiOperations).filter(
-    id => getOwnEntity(doc.apiOperations, id)?.screenId === screenId
+  const removedOperationIds = Object.keys(doc.apiOperations).filter(id =>
+    getOwnEntity(doc.apiOperations, id)?.screenId === screenId,
   )
-  const opIdSet = new Set(opsToRemove)
-
-  for (const opId of opsToRemove) {
-    deleteOwnEntity(doc.apiOperations, opId)
+  const removedSet = new Set(removedOperationIds)
+  for (const operationId of removedOperationIds) {
+    deleteOwnEntity(doc.apiOperations, operationId)
   }
-
-  // Remove callApi actions that reference now-deleted operations
-  for (const [eventId, event] of Object.entries(doc.events)) {
-    event.actions = event.actions.filter(action => {
-      if (action.type === 'callApi' && opIdSet.has(action.apiOperationId)) return false
-      return true
-    })
-    // If event has no actions left and would be invalid, remove it entirely is NOT done here
-    // (events with no actions are still valid in our model)
-    setOwnEntity(doc.events, eventId, event)
-  }
-}
-
-// Nullify success/error state references on API ops when a state is removed
-function cleanupStateRefsInApiOps(stateId: EntityId, doc: ProjectDocument): void {
-  for (const apiOp of Object.values(doc.apiOperations)) {
-    if (apiOp.successStateId === stateId) apiOp.successStateId = null
-    if (apiOp.errorStateId === stateId) apiOp.errorStateId = null
-  }
-}
-
-// Nullify setState event actions that reference a removed state
-function cleanupStateRefsInEvents(stateId: EntityId, doc: ProjectDocument): void {
   for (const event of Object.values(doc.events)) {
-    event.actions = event.actions.filter(action => {
-      if (action.type === 'setState' && action.stateId === stateId) return false
-      return true
-    })
+    event.actions = event.actions.filter(action =>
+      action.type !== 'callApi' || !removedSet.has(action.apiOperationId),
+    )
   }
 }
 
-function duplicatedFieldKey(
-  sourceKey: string,
-  usedKeys: Set<string>,
-): string {
+function cleanupScenarioRefsInApiOps(scenarioId: EntityId, doc: ProjectDocument): void {
+  for (const operation of Object.values(doc.apiOperations)) {
+    if (operation.successScenarioId === scenarioId) operation.successScenarioId = null
+    if (operation.errorScenarioId === scenarioId) operation.errorScenarioId = null
+  }
+}
+
+function cleanupScenarioRefsInEvents(scenarioId: EntityId, doc: ProjectDocument): void {
+  for (const event of Object.values(doc.events)) {
+    event.actions = event.actions.filter(action =>
+      action.type !== 'setScenario' || action.scenarioId !== scenarioId,
+    )
+  }
+}
+
+function duplicatedFieldKey(sourceKey: string, usedKeys: Set<string>): string {
   const normalized = sourceKey.trim()
   if (!normalized) return ''
   const base = `${normalized}_copy`
@@ -160,9 +173,10 @@ function duplicatedFieldKey(
 }
 
 function duplicateComponentConfig(
-  config: ComponentConfig,
+  config: ScreenComponentConfig,
   usedFieldKeys: Set<string>,
-): ComponentConfig {
+  mappedEventId: EntityId | null,
+): ScreenComponentConfig {
   const copied = cloneComponentConfig(config)
   switch (copied.kind) {
     case 'textInput':
@@ -172,7 +186,7 @@ function duplicateComponentConfig(
         fieldKey: duplicatedFieldKey(copied.fieldKey, usedFieldKeys),
       }
     case 'button':
-      return { ...copied, eventId: null }
+      return { ...copied, eventId: mappedEventId }
     case 'page':
     case 'container':
     case 'text':
@@ -185,118 +199,89 @@ function duplicateComponentConfig(
   }
 }
 
-function snapshotSubtreeIds(snapshot: ComponentSubtreeSnapshot): EntityId[] {
-  const root = getOwnEntity(snapshot.components, snapshot.rootComponentId)
-  if (!root) {
-    throw new DomainError('NOT_FOUND', 'Copied component root is missing')
-  }
-  if (root.kind === 'page' || root.kind === 'modal') {
-    throw new DomainError('INVALID_PARENT', 'Independent screen roots cannot be copied')
-  }
-
-  const result: EntityId[] = []
-  const visited = new Set<EntityId>()
-  function visit(componentId: EntityId, expectedParentId?: EntityId): void {
-    if (visited.has(componentId)) {
-      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree contains a cycle')
-    }
-    const component = getOwnEntity(snapshot.components, componentId)
-    if (
-      !component ||
-      component.id !== componentId ||
-      component.screenId !== snapshot.sourceScreenId ||
-      (expectedParentId !== undefined && component.parentId !== expectedParentId)
-    ) {
-      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree is inconsistent')
-    }
-    visited.add(componentId)
-    result.push(componentId)
-    component.childIds.forEach(childId => visit(childId, component.id))
-  }
-  visit(root.id)
-  if (result.length !== Object.keys(snapshot.components).length) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Copied component snapshot contains unrelated components')
-  }
-  for (const overrides of Object.values(snapshot.stateOverrides)) {
-    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
-      throw new DomainError('INVARIANT_VIOLATION', 'Copied state overrides must be objects')
-    }
-    for (const [componentId, override] of Object.entries(overrides)) {
-      if (
-        !visited.has(componentId) ||
-        !override ||
-        typeof override !== 'object' ||
-        Array.isArray(override)
-      ) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Copied state override is invalid')
-      }
-    }
-  }
-  return result
+function screenConfigToDefinitionConfig(
+  config: ScreenComponentConfig,
+): ComponentDefinition['nodes'][string] extends { config: infer Config } ? Config : never {
+  const copied = cloneComponentConfig(config)
+  if (copied.kind !== 'button') return copied as never
+  const { eventId: _eventId, ...definitionConfig } = copied
+  return definitionConfig as never
 }
 
-function validatedComponentIdMap(
-  document: ProjectDocument,
-  sourceIds: EntityId[],
-  componentIdMap: Record<EntityId, EntityId>,
+function validatedIdMap(
+  existing: Record<string, unknown>,
+  sourceIds: readonly EntityId[],
+  rawMap: Record<EntityId, EntityId>,
+  label: string,
 ): Map<EntityId, EntityId> {
-  if (
-    typeof componentIdMap !== 'object' ||
-    componentIdMap === null ||
-    Array.isArray(componentIdMap)
-  ) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Component ID map must be an object')
+  if (typeof rawMap !== 'object' || rawMap === null || Array.isArray(rawMap)) {
+    throw new DomainError('INVARIANT_VIOLATION', `${label} must be an object`)
   }
-  const mappedSourceIds = Object.keys(componentIdMap)
   if (
-    mappedSourceIds.length !== sourceIds.length ||
-    sourceIds.some(id => !hasOwnEntity(componentIdMap, id))
+    Object.keys(rawMap).length !== sourceIds.length ||
+    sourceIds.some(id => !Object.prototype.hasOwnProperty.call(rawMap, id))
   ) {
     throw new DomainError(
       'INVARIANT_VIOLATION',
-      'Component ID map must contain the complete source subtree',
+      `${label} must contain the complete source mapping`,
     )
   }
-
-  const validated = new Map<EntityId, EntityId>()
-  for (const sourceId of mappedSourceIds) {
-    if (!isSafeEntityId(sourceId)) {
-      throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe source ID')
+  const mapped = new Map<EntityId, EntityId>()
+  for (const sourceId of sourceIds) {
+    const targetId = rawMap[sourceId]
+    if (!isSafeEntityId(targetId)) {
+      throw new DomainError('INVARIANT_VIOLATION', `${label} contains an unsafe target ID`)
     }
-    const newId = getOwnEntity(componentIdMap, sourceId)
-    if (!isSafeEntityId(newId)) {
-      throw new DomainError('INVARIANT_VIOLATION', 'Component ID map contains an unsafe new ID')
+    if (Object.prototype.hasOwnProperty.call(existing, targetId)) {
+      throw new DomainError('INVARIANT_VIOLATION', `${label} target ${targetId} already exists`)
     }
-    if (hasOwnEntity(document.components, newId)) {
-      throw new DomainError('INVARIANT_VIOLATION', `Component ${newId} already exists`)
-    }
-    validated.set(sourceId, newId)
+    mapped.set(sourceId, targetId)
   }
-  if (new Set(validated.values()).size !== validated.size) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Duplicated component IDs must be unique')
+  if (new Set(mapped.values()).size !== mapped.size) {
+    throw new DomainError('INVARIANT_VIOLATION', `${label} targets must be unique`)
   }
-  return validated
+  return mapped
 }
 
-function applyComponentSubtreeCopy(
+function buildUsedFieldKeys(document: ProjectDocument, screenId: EntityId): Set<string> {
+  return new Set(
+    Object.values(document.components).flatMap(component => {
+      if (!isInlineScreenComponent(component) || component.screenId !== screenId) return []
+      const config = component.config
+      if (config.kind !== 'textInput' && config.kind !== 'select') return []
+      const fieldKey = config.fieldKey.trim()
+      return fieldKey ? [fieldKey] : []
+    }),
+  )
+}
+
+function copySnapshotIntoDocument(
   document: ProjectDocument,
   snapshot: ComponentSubtreeSnapshot,
   destinationScreenId: EntityId,
   destinationParentId: EntityId,
   position: number,
   componentIdMap: Record<EntityId, EntityId>,
-  copyStateOverrides: boolean,
+  eventIdMap: Record<EntityId, EntityId>,
+  apiOperationIdMap: Record<EntityId, EntityId>,
+  copyScenarioOverrides: boolean,
 ): EntityId {
-  const sourceIds = snapshotSubtreeIds(snapshot)
-  const mappedIds = validatedComponentIdMap(document, sourceIds, componentIdMap)
+  const sourceIds = Object.keys(snapshot.components)
+  const mappedComponents = validatedIdMap(document.components, sourceIds, componentIdMap, 'Component ID map')
+  const mappedEvents = validatedIdMap(document.events, Object.keys(snapshot.events), eventIdMap, 'Event ID map')
+  const mappedApiOperations = validatedIdMap(
+    document.apiOperations,
+    Object.keys(snapshot.apiOperations),
+    apiOperationIdMap,
+    'API operation ID map',
+  )
   const root = getOwnEntity(snapshot.components, snapshot.rootComponentId)
-  const destinationScreen = getOwnEntity(document.screens, destinationScreenId)
   const destinationParent = getOwnEntity(document.components, destinationParentId)
-  if (!root || !destinationScreen || !destinationParent) {
+  if (!root || !destinationParent || !isInlineScreenComponent(destinationParent)) {
     throw new DomainError('NOT_FOUND', 'Paste destination is unavailable')
   }
   if (
-    destinationParent.screenId !== destinationScreen.id ||
+    destinationParent.screenId !== destinationScreenId ||
     !CONTAINER_KINDS.includes(destinationParent.kind) ||
     !Number.isInteger(position) ||
     position < 0 ||
@@ -305,72 +290,447 @@ function applyComponentSubtreeCopy(
     throw new DomainError('INVALID_PARENT', 'Paste destination cannot contain the copied subtree')
   }
 
-  const usedFieldKeys = new Set(
-    Object.values(document.components).flatMap(component => {
-      if (component.screenId !== destinationScreenId) return []
-      const config = component.config
-      if (config.kind !== 'textInput' && config.kind !== 'select') return []
-      const fieldKey = config.fieldKey.trim()
-      return fieldKey ? [fieldKey] : []
-    }),
-  )
-
+  const usedFieldKeys = buildUsedFieldKeys(document, destinationScreenId)
   for (const sourceId of sourceIds) {
     const sourceComponent = getOwnEntity(snapshot.components, sourceId)
-    const newId = mappedIds.get(sourceId)
-    if (!sourceComponent || !newId) {
-      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree changed during paste')
+    const copiedId = mappedComponents.get(sourceId)
+    if (!sourceComponent || !copiedId) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied component subtree is incomplete')
     }
-    const parentId = sourceId === root.id
+    const parentId = sourceId === snapshot.rootComponentId
       ? destinationParent.id
       : sourceComponent.parentId
-        ? mappedIds.get(sourceComponent.parentId)
+        ? mappedComponents.get(sourceComponent.parentId)
         : undefined
     if (!parentId) {
       throw new DomainError('INVARIANT_VIOLATION', 'Copied component parent is missing')
     }
-    setOwnEntity(document.components, newId, {
-      ...cloneScreenComponent(sourceComponent),
-      id: newId,
+    if (sourceComponent.nodeType === 'definitionInstance') {
+      const cloned = cloneScreenComponent(sourceComponent) as Extract<
+        ScreenComponent,
+        { nodeType: 'definitionInstance' }
+      >
+      setOwnEntity(document.components, copiedId, {
+        ...cloned,
+        id: copiedId,
+        screenId: destinationScreenId,
+        parentId,
+      })
+      continue
+    }
+    const cloned = cloneScreenComponent(sourceComponent) as Extract<
+      ScreenComponent,
+      { nodeType: 'inline' }
+    >
+    const mappedEventId = sourceComponent.config.kind === 'button' && sourceComponent.config.eventId !== null
+      ? mappedEvents.get(sourceComponent.config.eventId) ?? null
+      : null
+    setOwnEntity(document.components, copiedId, {
+      ...cloned,
+      id: copiedId,
       screenId: destinationScreenId,
       parentId,
       childIds: sourceComponent.childIds.map(childId => {
-        const copiedChildId = mappedIds.get(childId)
+        const copiedChildId = mappedComponents.get(childId)
         if (!copiedChildId) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Copied component child is missing')
+          throw new DomainError('INVARIANT_VIOLATION', 'Copied child mapping is missing')
         }
         return copiedChildId
       }),
-      config: duplicateComponentConfig(sourceComponent.config, usedFieldKeys),
+      config: duplicateComponentConfig(sourceComponent.config, usedFieldKeys, mappedEventId),
     })
   }
 
-  const copiedRootId = mappedIds.get(root.id)
+  const copiedRootId = mappedComponents.get(snapshot.rootComponentId)
   if (!copiedRootId) {
-    throw new DomainError('INVARIANT_VIOLATION', 'Copied root component ID is missing')
+    throw new DomainError('INVARIANT_VIOLATION', 'Copied root component is missing')
   }
   destinationParent.childIds.splice(position, 0, copiedRootId)
 
-  if (copyStateOverrides) {
-    for (const [stateId, overrides] of Object.entries(snapshot.stateOverrides)) {
-      const state = getOwnEntity(document.screenStates, stateId)
-      if (!state || state.screenId !== destinationScreenId) {
-        throw new DomainError('INVALID_REFERENCE', `Copied state ${stateId} is unavailable`)
-      }
-      for (const [sourceId, override] of Object.entries(overrides)) {
-        const copiedId = mappedIds.get(sourceId)
-        if (!copiedId || !getOwnEntity(snapshot.components, sourceId)) {
-          throw new DomainError('INVARIANT_VIOLATION', 'Copied state override is invalid')
+  for (const [sourceOperationId, operation] of Object.entries(snapshot.apiOperations)) {
+    const copiedId = mappedApiOperations.get(sourceOperationId)
+    if (!copiedId) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied API operation mapping is missing')
+    }
+    setOwnEntity(document.apiOperations, copiedId, {
+      ...operation,
+      id: copiedId,
+      screenId: destinationScreenId,
+      requestBindings: operation.requestBindings.map(binding => ({
+        targetPath: binding.targetPath,
+        source: mapTargetIntoCopiedSubtree(binding.source, mappedComponents),
+      })),
+    })
+  }
+
+  const destinationScreen = getOwnEntity(document.screens, destinationScreenId)
+  if (!destinationScreen) {
+    throw new DomainError('NOT_FOUND', `Screen ${destinationScreenId} not found`)
+  }
+  for (const [sourceEventId, event] of Object.entries(snapshot.events)) {
+    const copiedId = mappedEvents.get(sourceEventId)
+    if (!copiedId) {
+      throw new DomainError('INVARIANT_VIOLATION', 'Copied event mapping is missing')
+    }
+    setOwnEntity(document.events, copiedId, {
+      ...event,
+      id: copiedId,
+      screenId: destinationScreenId,
+      trigger: {
+        ...event.trigger,
+        target: mapTargetIntoCopiedSubtree(event.trigger.target, mappedComponents),
+      },
+      actions: event.actions.map(action => {
+        switch (action.type) {
+          case 'callApi':
+            return {
+              type: 'callApi' as const,
+              apiOperationId: mappedApiOperations.get(action.apiOperationId) ?? action.apiOperationId,
+            }
+          case 'setScenario':
+            return { ...action }
+          case 'clearScenario':
+            return { type: 'clearScenario' as const }
+          case 'navigate':
+            return { ...action }
         }
-        setOwnEntity(
-          state.componentOverrides,
-          copiedId,
-          cloneComponentOverride(override),
-        )
+      }),
+    })
+    destinationScreen.eventIds.push(copiedId)
+  }
+
+  if (copyScenarioOverrides) {
+    for (const [scenarioId, overrides] of Object.entries(snapshot.scenarioOverrides)) {
+      const scenario = getOwnEntity(document.screenScenarios, scenarioId)
+      if (!scenario || scenario.screenId !== destinationScreenId) {
+        throw new DomainError('INVALID_REFERENCE', `Scenario ${scenarioId} is unavailable`)
       }
+      scenario.componentOverrides.push(
+        ...overrides.map(entry => ({
+          target: mapTargetIntoCopiedSubtree(entry.target, mappedComponents),
+          override: cloneComponentOverride(entry.override),
+        })),
+      )
     }
   }
   return copiedRootId
+}
+
+function createInlineButtonEventIndex(document: ProjectDocument, screenId: EntityId): Map<EntityId, EntityId | null> {
+  const matches = new Map<EntityId, EntityId[]>()
+  for (const event of Object.values(document.events)) {
+    if (event.screenId !== screenId || event.trigger.target.type !== 'inline') continue
+    const list = matches.get(event.trigger.target.componentId) ?? []
+    list.push(event.id)
+    matches.set(event.trigger.target.componentId, list)
+  }
+  return new Map(
+    Array.from(matches.entries()).map(([componentId, eventIds]) => [
+      componentId,
+      eventIds.length === 1 ? eventIds[0]! : null,
+    ]),
+  )
+}
+
+function replaceChildReference(
+  parent: Extract<ScreenComponent, { nodeType: 'inline' }>,
+  oldId: EntityId,
+  newId: EntityId,
+): void {
+  const index = parent.childIds.indexOf(oldId)
+  if (index < 0) {
+    throw new DomainError('INVARIANT_VIOLATION', `Parent ${parent.id} does not contain ${oldId}`)
+  }
+  parent.childIds.splice(index, 1, newId)
+}
+
+function collectInlineSubtree(document: ProjectDocument, rootId: EntityId): Extract<ScreenComponent, { nodeType: 'inline' }>[] {
+  const result: Extract<ScreenComponent, { nodeType: 'inline' }>[] = []
+  const visited = new Set<EntityId>()
+  function visit(componentId: EntityId): void {
+    if (visited.has(componentId)) return
+    visited.add(componentId)
+    const component = getOwnEntity(document.components, componentId)
+    if (!component || !isInlineScreenComponent(component)) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `Component ${componentId} must be an inline screen component for extraction`,
+      )
+    }
+    result.push(component)
+    component.childIds.forEach(visit)
+  }
+  visit(rootId)
+  return result
+}
+
+function validateExtractedDefinition(
+  document: ProjectDocument,
+  definition: ComponentDefinition,
+  sourceComponents: readonly Extract<ScreenComponent, { nodeType: 'inline' }>[],
+  componentIdToNodePath: Record<EntityId, [EntityId, ...EntityId[]]>,
+): void {
+  if (Object.keys(definition.nodes).length !== sourceComponents.length) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'Extracted definition nodes must correspond exactly to the source subtree',
+    )
+  }
+  if (Object.keys(componentIdToNodePath).length !== sourceComponents.length) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'componentIdToNodePath must map the complete source subtree',
+    )
+  }
+  const mappedNodeIds = new Set<string>()
+  for (const component of sourceComponents) {
+    const nodePath = componentIdToNodePath[component.id]
+    if (!nodePath) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `Missing extracted nodePath mapping for component ${component.id}`,
+      )
+    }
+    const targetNode = resolveDefinitionInlineNodeAtPath(
+      {
+        ...document,
+        componentDefinitions: {
+          ...document.componentDefinitions,
+          [definition.id]: definition,
+        },
+      },
+      componentDefinitionRefV3(definition.id),
+      nodePath,
+    )
+    mappedNodeIds.add(targetNode.id)
+    if (targetNode.kind !== component.kind) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `Mapped definition node ${targetNode.id} must preserve kind ${component.kind}`,
+      )
+    }
+    if (component.id === sourceComponents[0]!.id) {
+      if (definition.rootNodeId !== targetNode.id) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'The extracted root component must map to definition.rootNodeId',
+        )
+      }
+      if (JSON.stringify(targetNode.placement) !== JSON.stringify(DEFAULT_COMPONENT_PLACEMENT)) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'Extracted definition root placement must be flow',
+        )
+      }
+      if (JSON.stringify(targetNode.sizing) !== JSON.stringify(ROOT_COMPONENT_SIZING)) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'Extracted definition root sizing must be fixed root sizing',
+        )
+      }
+    } else {
+      if (JSON.stringify(targetNode.placement) !== JSON.stringify(component.placement)) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `Extracted definition node ${targetNode.id} must preserve placement`,
+        )
+      }
+      if (JSON.stringify(targetNode.sizing) !== JSON.stringify(component.sizing)) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `Extracted definition node ${targetNode.id} must preserve sizing`,
+        )
+      }
+    }
+    if (JSON.stringify(targetNode.common) !== JSON.stringify(component.common)) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `Extracted definition node ${targetNode.id} must preserve common fields`,
+      )
+    }
+    if (
+      JSON.stringify(targetNode.config) !==
+        JSON.stringify(screenConfigToDefinitionConfig(component.config))
+    ) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `Extracted definition node ${targetNode.id} must preserve allowed config fields`,
+      )
+    }
+  }
+  if (mappedNodeIds.size !== sourceComponents.length) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'Extracted nodePath mappings must resolve to unique definition nodes',
+    )
+  }
+}
+
+function materializeDetachedComponents(
+  document: ProjectDocument,
+  instance: Extract<ScreenComponent, { nodeType: 'definitionInstance' }>,
+  generatedComponents: ReadonlyArray<{ nodePath: [EntityId, ...EntityId[]]; componentId: EntityId }>,
+): Extract<ScreenComponent, { nodeType: 'inline' }>[] {
+  const resolved = resolveScreenNodes(document, instance.screenId, null)
+  const instanceNodes = resolved.orderedNodes.filter(node => node.instanceId === instance.id)
+  const generatedByPath = mapGeneratedNodePaths(generatedComponents)
+  if (generatedByPath.size !== instanceNodes.length) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'generatedComponents must contain a complete mapping for the detached instance',
+    )
+  }
+  const mappedRuntimeIds = new Map<string, EntityId>()
+  for (const node of instanceNodes) {
+    const pathKey = definitionNodePathKey(node.nodePath ?? [])
+    const componentId = generatedByPath.get(pathKey)
+    if (!componentId) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `Missing detached component ID for node path ${pathKey}`,
+      )
+    }
+    if (hasOwnEntity(document.components, componentId)) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Detached component ID ${componentId} already exists`,
+      )
+    }
+    mappedRuntimeIds.set(node.id, componentId)
+  }
+
+  return instanceNodes.map(node => {
+    const componentId = mappedRuntimeIds.get(node.id)
+    if (!componentId) {
+      throw new DomainError('INVARIANT_VIOLATION', `Detached component mapping missing for ${node.id}`)
+    }
+    const eventIdMap = createInlineButtonEventIndex(document, instance.screenId)
+    const config = structuredClone(node.config) as ScreenComponentConfig
+    if (config.kind === 'button') {
+      config.eventId = eventIdMap.get(componentId) ?? null
+    }
+    return {
+      nodeType: 'inline',
+      id: componentId,
+      screenId: instance.screenId,
+      parentId: node.parentId ? mappedRuntimeIds.get(node.parentId) ?? instance.parentId : instance.parentId,
+      childIds: node.childIds.map(childRuntimeId => {
+        const childId = mappedRuntimeIds.get(childRuntimeId)
+        if (!childId) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Detached child mapping missing for ${childRuntimeId}`,
+          )
+        }
+        return childId
+      }),
+      kind: node.kind,
+      placement: structuredClone(node.placement),
+      sizing: structuredClone(node.sizing),
+      common: structuredClone(node.common),
+      config,
+    }
+  })
+}
+
+function applyDetachDefinitionInstance(
+  document: ProjectDocument,
+  instanceId: EntityId,
+  generatedComponents: ReadonlyArray<{ nodePath: [EntityId, ...EntityId[]]; componentId: EntityId }>,
+): void {
+  const instance = getOwnEntity(document.components, instanceId)
+  if (!instance || instance.nodeType !== 'definitionInstance') {
+    throw new DomainError('NOT_FOUND', `Definition instance ${instanceId} not found`)
+  }
+  const parent = instance.parentId ? getOwnEntity(document.components, instance.parentId) : undefined
+  if (!parent || !isInlineScreenComponent(parent)) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'Detaching a root-level definition instance is not supported',
+    )
+  }
+  const detached = materializeDetachedComponents(document, instance, generatedComponents)
+  const rootComponent = detached.find(component => component.parentId === instance.parentId)
+  if (!rootComponent) {
+    throw new DomainError('INVARIANT_VIOLATION', 'Detached root component is missing')
+  }
+
+  const rewrites = buildDetachTargetRewriteMap(instance.id, generatedComponents)
+  rewriteScreenTargetRefs(document, instance.screenId, rewrites)
+  replaceChildReference(parent, instance.id, rootComponent.id)
+  deleteOwnEntity(document.components, instance.id)
+  detached.forEach(component => {
+    setOwnEntity(document.components, component.id, component)
+  })
+
+  const buttonEventIds = createInlineButtonEventIndex(document, instance.screenId)
+  for (const component of detached) {
+    if (component.config.kind === 'button') {
+      component.config.eventId = buttonEventIds.get(component.id) ?? null
+    }
+  }
+}
+
+function applyExtractDefinition(
+  document: ProjectDocument,
+  sourceRootComponentId: EntityId,
+  sourceScreenId: EntityId,
+  definition: ComponentDefinition,
+  replacementInstanceId: EntityId,
+  componentIdToNodePath: Record<EntityId, [EntityId, ...EntityId[]]>,
+): void {
+  if (hasOwnEntity(document.componentDefinitions, definition.id)) {
+    throw new DomainError('INVARIANT_VIOLATION', `Definition ${definition.id} already exists`)
+  }
+  if (hasOwnEntity(document.components, replacementInstanceId)) {
+    throw new DomainError('INVARIANT_VIOLATION', `Component ${replacementInstanceId} already exists`)
+  }
+  const sourceRoot = getOwnEntity(document.components, sourceRootComponentId)
+  if (!sourceRoot || !isInlineScreenComponent(sourceRoot) || sourceRoot.screenId !== sourceScreenId) {
+    throw new DomainError(
+      'NOT_FOUND',
+      `Source component ${sourceRootComponentId} must be an inline screen component`,
+    )
+  }
+  if (sourceRoot.parentId === null) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'Extracting a screen root or modal root into a shared definition is not supported',
+    )
+  }
+  const parent = getOwnEntity(document.components, sourceRoot.parentId)
+  if (!parent || !isInlineScreenComponent(parent)) {
+    throw new DomainError('INVARIANT_VIOLATION', `Source parent ${sourceRoot.parentId} is unavailable`)
+  }
+  const sourceComponents = collectInlineSubtree(document, sourceRootComponentId)
+  validateExtractedDefinition(document, definition, sourceComponents, componentIdToNodePath)
+
+  setOwnEntity(document.componentDefinitions, definition.id, cloneComponentDefinition(definition))
+  rewriteScreenTargetRefs(
+    document,
+    sourceScreenId,
+    buildExtractionTargetRewriteMap(componentIdToNodePath, replacementInstanceId),
+  )
+  const sourceIndex = parent.childIds.indexOf(sourceRoot.id)
+  if (sourceIndex < 0) {
+    throw new DomainError('INVARIANT_VIOLATION', `Parent ${parent.id} does not contain ${sourceRoot.id}`)
+  }
+  parent.childIds.splice(sourceIndex, 1, replacementInstanceId)
+  setOwnEntity(document.components, replacementInstanceId, {
+    nodeType: 'definitionInstance',
+    id: replacementInstanceId,
+    screenId: sourceScreenId,
+    parentId: parent.id,
+    childIds: [],
+    placement: structuredClone(sourceRoot.placement),
+    sizing: structuredClone(sourceRoot.sizing),
+    source: { $ref: componentDefinitionRefV3(definition.id) },
+    variantId: null,
+    props: {},
+  })
+  sourceComponents.forEach(component => {
+    deleteOwnEntity(document.components, component.id)
+  })
 }
 
 export function applyCommandWithoutRevision(
@@ -381,32 +741,28 @@ export function applyCommandWithoutRevision(
   const command = cloneDomainCommand(inputCommand)
 
   switch (command.type) {
-    // ──────────── Screen commands ────────────
     case 'addScreen': {
       requireExactKeys(
         command,
-        ['type', 'screenId', 'rootComponentId', 'defaultStateId', 'name', 'route'],
+        ['type', 'screenId', 'rootComponentId', 'name', 'route', 'baseDescription'],
         'addScreen command',
       )
-      const { screenId, rootComponentId, defaultStateId, name, route } = command
-      if (
-        hasOwnEntity(next.screens, screenId) ||
-        hasOwnEntity(next.components, rootComponentId) ||
-        hasOwnEntity(next.screenStates, defaultStateId)
-      ) {
+      const { screenId, rootComponentId, name, route, baseDescription } = command
+      if (hasOwnEntity(next.screens, screenId) || hasOwnEntity(next.components, rootComponentId)) {
         throw new DomainError('INVARIANT_VIOLATION', 'New screen entity IDs must be unique')
       }
       setOwnEntity(next.screens, screenId, {
         id: screenId,
         name,
         route,
+        baseDescription: baseDescription ?? '',
         rootComponentId,
         modalComponentIds: [],
-        defaultStateId,
-        stateIds: [defaultStateId],
+        scenarioIds: [],
         eventIds: [],
       })
       setOwnEntity(next.components, rootComponentId, {
+        nodeType: 'inline',
         id: rootComponentId,
         screenId,
         parentId: null,
@@ -417,125 +773,123 @@ export function applyCommandWithoutRevision(
         common: { description: '', visible: true, enabled: true },
         config: { kind: 'page', ...DEFAULT_COMPONENT_LAYOUT },
       })
-      setOwnEntity(next.screenStates, defaultStateId, {
-        id: defaultStateId,
-        screenId,
-        name: 'Default',
-        description: '',
-        componentOverrides: {},
-      })
       next.project.screenIds.push(screenId)
       break
     }
 
     case 'updateScreen': {
-      requireExactKeys(command, ['type', 'screenId', 'name', 'route'], 'updateScreen command')
+      requireExactKeys(
+        command,
+        ['type', 'screenId', 'name', 'route', 'baseDescription'],
+        'updateScreen command',
+      )
       const screen = getOwnEntity(next.screens, command.screenId)
       if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
       if (command.name !== undefined) screen.name = command.name
       if (command.route !== undefined) screen.route = command.route
+      if (command.baseDescription !== undefined) screen.baseDescription = command.baseDescription
       break
     }
 
     case 'removeScreen': {
       requireExactKeys(command, ['type', 'screenId'], 'removeScreen command')
-      const { screenId } = command
-      const screen = getOwnEntity(next.screens, screenId)
-      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
-      if (next.project.screenIds.length <= 1) throw new DomainError('CANNOT_REMOVE_LAST_SCREEN', 'Cannot remove the last screen')
-
-      // Check navigation references from other screens.
+      const screen = getOwnEntity(next.screens, command.screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
+      if (next.project.screenIds.length <= 1) {
+        throw new DomainError('CANNOT_REMOVE_LAST_SCREEN', 'Cannot remove the last screen')
+      }
       for (const event of Object.values(next.events)) {
-        if (event.screenId === screenId) continue
-        for (const action of event.actions) {
-          if (action.type === 'navigate' && action.destinationScreenId === screenId) {
-            throw new DomainError('SCREEN_REFERENCED_BY_NAVIGATE', `Screen ${screenId} is referenced by a navigate action`)
-          }
+        if (event.screenId === screen.id) continue
+        if (event.actions.some(action => action.type === 'navigate' && action.destinationScreenId === screen.id)) {
+          throw new DomainError('SCREEN_REFERENCED_BY_NAVIGATE', `Screen ${screen.id} is referenced by a navigate action`)
         }
       }
       for (const component of Object.values(next.components)) {
         if (
-          component.screenId !== screenId &&
+          component.screenId !== screen.id &&
+          isInlineScreenComponent(component) &&
           component.config.kind === 'link' &&
           component.config.destination.type === 'internal' &&
-          component.config.destination.screenId === screenId
+          component.config.destination.screenId === screen.id
         ) {
           throw new DomainError(
             'SCREEN_REFERENCED_BY_LINK',
-            `Screen ${screenId} is referenced by link ${component.id}`,
+            `Screen ${screen.id} is referenced by link ${component.id}`,
           )
         }
+        for (const definition of Object.values(next.componentDefinitions)) {
+          for (const node of Object.values(definition.nodes)) {
+            if (
+              node.nodeType === 'inline' &&
+              node.config.kind === 'link' &&
+              node.config.destination.type === 'internal' &&
+              node.config.destination.screenId === screen.id
+            ) {
+              throw new DomainError(
+                'SCREEN_REFERENCED_BY_LINK',
+                `Screen ${screen.id} is referenced by Definition ${definition.id} link ${node.id}`,
+              )
+            }
+          }
+        }
       }
-
-      // Clean references before removing entities so no dangling IDs remain.
-      const screenComps = Object.values(next.components).filter(c => c.screenId === screenId)
-      const removedComponentIds = new Set(screenComps.map(c => c.id))
-      cleanupComponentRefs(removedComponentIds, next)
-      const removedStateIds = [...screen.stateIds]
-      for (const stateId of removedStateIds) {
-        cleanupStateRefsInApiOps(stateId, next)
-        cleanupStateRefsInEvents(stateId, next)
-      }
-      cleanupScreenApiOps(screenId, next)
-
-      // Remove all components in this screen
-      for (const id of removedComponentIds) deleteOwnEntity(next.components, id)
-
-      // Remove states
-      for (const stateId of removedStateIds) deleteOwnEntity(next.screenStates, stateId)
-      // Remove events
-      for (const eventId of screen.eventIds) deleteOwnEntity(next.events, eventId)
-      // Remove screen itself
-      deleteOwnEntity(next.screens, screenId)
-      next.project.screenIds = next.project.screenIds.filter(id => id !== screenId)
+      const removedIds = new Set(
+        Object.values(next.components)
+          .filter(component => component.screenId === screen.id)
+          .map(component => component.id),
+      )
+      cleanupComponentRefs(removedIds, next)
+      screen.scenarioIds.forEach(scenarioId => {
+        cleanupScenarioRefsInApiOps(scenarioId, next)
+        cleanupScenarioRefsInEvents(scenarioId, next)
+      })
+      cleanupScreenApiOps(screen.id, next)
+      removedIds.forEach(id => deleteOwnEntity(next.components, id))
+      screen.scenarioIds.forEach(id => deleteOwnEntity(next.screenScenarios, id))
+      screen.eventIds.forEach(id => deleteOwnEntity(next.events, id))
+      deleteOwnEntity(next.screens, screen.id)
+      next.project.screenIds = next.project.screenIds.filter(id => id !== screen.id)
       break
     }
 
-    // ──────────── Component commands ────────────
     case 'addComponent': {
       requireExactKeys(
         command,
         ['type', 'componentId', 'screenId', 'parentId', 'kind', 'placement', 'sizing', 'config', 'position'],
         'addComponent command',
       )
-      const {
-        componentId,
-        screenId,
-        parentId,
-        kind,
-        config,
-        position,
-        placement: componentPlacement,
-        sizing,
-      } = command
-      if (hasOwnEntity(next.components, componentId)) {
-        throw new DomainError('INVARIANT_VIOLATION', `Component ${componentId} already exists`)
-      }
-      const placement = classifyComponentAdd(next, screenId, parentId, kind, position)
+      const placement = classifyComponentAdd(
+        next,
+        command.screenId,
+        command.parentId,
+        command.kind,
+        command.position,
+      )
       if (placement.status === 'invalid') throw componentPlacementError(placement.reason)
-      const screen = getOwnEntity(next.screens, screenId)
-      if (!screen) throw componentPlacementError('stale')
-
-      setOwnEntity(next.components, componentId, {
-        id: componentId,
-        screenId,
-        parentId,
+      if (hasOwnEntity(next.components, command.componentId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `Component ${command.componentId} already exists`)
+      }
+      const screen = getOwnEntity(next.screens, command.screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
+      setOwnEntity(next.components, command.componentId, {
+        nodeType: 'inline',
+        id: command.componentId,
+        screenId: command.screenId,
+        parentId: command.parentId,
         childIds: [],
-        kind,
-        placement: componentPlacement,
-        sizing,
+        kind: command.kind,
+        placement: command.placement,
+        sizing: command.sizing,
         common: { description: '', visible: true, enabled: true },
-        config,
+        config: command.config,
       })
-      if (kind === 'modal') {
-        screen.modalComponentIds.splice(placement.position, 0, componentId)
+      if (command.kind === 'modal') {
+        screen.modalComponentIds.splice(placement.position, 0, command.componentId)
       } else {
-        if (parentId === null) {
-          throw componentPlacementError('componentConstraint')
-        }
-        const parent = getOwnEntity(next.components, parentId)
-        if (!parent) throw componentPlacementError('stale')
-        parent.childIds.splice(placement.position, 0, componentId)
+        if (command.parentId === null) throw componentPlacementError('componentConstraint')
+        const parent = getOwnEntity(next.components, command.parentId)
+        if (!parent || !isInlineScreenComponent(parent)) throw componentPlacementError('stale')
+        parent.childIds.splice(placement.position, 0, command.componentId)
       }
       break
     }
@@ -546,55 +900,53 @@ export function applyCommandWithoutRevision(
         ['type', 'componentId', 'newParentId', 'position'],
         'moveComponent command',
       )
-      const { componentId, newParentId, position } = command
-      const placement = classifyComponentMove(next, componentId, newParentId, position)
+      const placement = classifyComponentMove(next, command.componentId, command.newParentId, command.position)
       if (placement.status === 'invalid') throw componentPlacementError(placement.reason)
       if (placement.status === 'no-op') {
         throw new DomainError('INVARIANT_VIOLATION', 'Component is already at that position')
       }
-      const comp = getOwnEntity(next.components, componentId)
-      if (!comp || comp.parentId === null) throw componentPlacementError('stale')
-      const newParent = getOwnEntity(next.components, newParentId)
-      if (!newParent) throw componentPlacementError('stale')
-      const oldParent = getOwnEntity(next.components, comp.parentId)
-      if (!oldParent) throw componentPlacementError('stale')
-
-      oldParent.childIds = oldParent.childIds.filter(id => id !== componentId)
-
-      comp.parentId = newParentId
-      newParent.childIds.splice(placement.position, 0, componentId)
+      const component = getOwnEntity(next.components, command.componentId)
+      if (!component || component.parentId === null) throw componentPlacementError('stale')
+      const newParent = getOwnEntity(next.components, command.newParentId)
+      const oldParent = getOwnEntity(next.components, component.parentId)
+      if (!newParent || !oldParent || !isInlineScreenComponent(newParent) || !isInlineScreenComponent(oldParent)) {
+        throw componentPlacementError('stale')
+      }
+      oldParent.childIds = oldParent.childIds.filter(id => id !== command.componentId)
+      component.parentId = command.newParentId
+      newParent.childIds.splice(placement.position, 0, command.componentId)
       break
     }
 
     case 'duplicateComponent': {
       requireExactKeys(
         command,
-        ['type', 'componentId', 'componentIdMap'],
+        ['type', 'componentId', 'componentIdMap', 'eventIdMap', 'apiOperationIdMap'],
         'duplicateComponent command',
       )
       const source = getOwnEntity(next.components, command.componentId)
-      if (!source) {
-        throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
-      }
+      if (!source) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
       if (!source.parentId) {
         throw new DomainError('INVALID_PARENT', 'Independent screen roots cannot be duplicated')
       }
       const parent = getOwnEntity(next.components, source.parentId)
-      const sourcePosition = parent?.childIds.indexOf(source.id) ?? -1
-      if (!parent || sourcePosition < 0) {
+      const sourcePosition = parent && isInlineScreenComponent(parent) ? parent.childIds.indexOf(source.id) : -1
+      if (!parent || !isInlineScreenComponent(parent) || sourcePosition < 0) {
         throw new DomainError('INVARIANT_VIOLATION', 'Component parent is unavailable')
       }
       const snapshot = createComponentSubtreeSnapshot(next, source.id)
       if (!snapshot) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Component subtree cannot be duplicated')
+        throw new DomainError('INVALID_ARGUMENT', 'Component subtree cannot be duplicated safely')
       }
-      applyComponentSubtreeCopy(
+      copySnapshotIntoDocument(
         next,
         snapshot,
         source.screenId,
         parent.id,
         sourcePosition + 1,
         command.componentIdMap,
+        command.eventIdMap,
+        command.apiOperationIdMap,
         true,
       )
       break
@@ -611,34 +963,11 @@ export function applyCommandWithoutRevision(
           'destinationParentId',
           'position',
           'componentIdMap',
+          'eventIdMap',
+          'apiOperationIdMap',
         ],
         'pasteComponent command',
       )
-      if (
-        typeof command.snapshot !== 'object' ||
-        command.snapshot === null ||
-        Array.isArray(command.snapshot)
-      ) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Component snapshot must be an object')
-      }
-      requireExactKeys(
-        command.snapshot,
-        ['projectId', 'sourceScreenId', 'rootComponentId', 'components', 'stateOverrides'],
-        'component snapshot',
-      )
-      if (command.snapshot.projectId !== next.project.id) {
-        throw new DomainError('INVALID_REFERENCE', 'Copied component belongs to another project')
-      }
-      if (
-        typeof command.snapshot.components !== 'object' ||
-        command.snapshot.components === null ||
-        Array.isArray(command.snapshot.components) ||
-        typeof command.snapshot.stateOverrides !== 'object' ||
-        command.snapshot.stateOverrides === null ||
-        Array.isArray(command.snapshot.stateOverrides)
-      ) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Component snapshot data must be objects')
-      }
       const target = resolveComponentPasteTarget(next, command.destinationComponentId)
       if (
         !target ||
@@ -648,13 +977,15 @@ export function applyCommandWithoutRevision(
       ) {
         throw new DomainError('INVALID_REFERENCE', 'Paste destination changed or is unavailable')
       }
-      applyComponentSubtreeCopy(
+      copySnapshotIntoDocument(
         next,
         command.snapshot,
         command.destinationScreenId,
         command.destinationParentId,
         command.position,
         command.componentIdMap,
+        command.eventIdMap,
+        command.apiOperationIdMap,
         command.snapshot.sourceScreenId === command.destinationScreenId,
       )
       break
@@ -662,27 +993,25 @@ export function applyCommandWithoutRevision(
 
     case 'removeComponent': {
       requireExactKeys(command, ['type', 'componentId'], 'removeComponent command')
-      const comp = getOwnEntity(next.components, command.componentId)
-      if (!comp) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
-      const screen = getOwnEntity(next.screens, comp.screenId)
+      const component = getOwnEntity(next.components, command.componentId)
+      if (!component) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
+      const screen = getOwnEntity(next.screens, component.screenId)
       if (!screen) throw new DomainError('INVARIANT_VIOLATION', 'Component owner screen not found')
-      if (comp.id === screen.rootComponentId) {
+      if (component.id === screen.rootComponentId) {
         throw new DomainError('CANNOT_REMOVE_ROOT', 'Cannot remove the page root component')
       }
-
-      if (comp.parentId === null) {
-        if (comp.kind !== 'modal' || !screen.modalComponentIds.includes(comp.id)) {
+      if (component.parentId === null) {
+        if (!isInlineScreenComponent(component) || component.kind !== 'modal' || !screen.modalComponentIds.includes(component.id)) {
           throw new DomainError('INVARIANT_VIOLATION', 'Only listed modal roots can be removed')
         }
-        screen.modalComponentIds = screen.modalComponentIds.filter(id => id !== comp.id)
+        screen.modalComponentIds = screen.modalComponentIds.filter(id => id !== component.id)
       } else {
-        const parent = getOwnEntity(next.components, comp.parentId)
-        if (parent) {
-          parent.childIds = parent.childIds.filter(id => id !== command.componentId)
+        const parent = getOwnEntity(next.components, component.parentId)
+        if (parent && isInlineScreenComponent(parent)) {
+          parent.childIds = parent.childIds.filter(id => id !== component.id)
         }
       }
-
-      const removed = removeSubtree(command.componentId, next)
+      const removed = removeSubtree(component.id, next)
       cleanupComponentRefs(new Set(removed), next)
       break
     }
@@ -693,45 +1022,200 @@ export function applyCommandWithoutRevision(
       if (Object.keys(command.patch).length === 0) {
         throw new DomainError('INVARIANT_VIOLATION', 'updateComponentSpec patch must not be empty')
       }
-      const comp = getOwnEntity(next.components, command.componentId)
-      if (!comp) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
-      const { patch } = command
-      if (patch.common) comp.common = { ...comp.common, ...patch.common }
-      if (patch.config) comp.config = { ...comp.config, ...patch.config } as typeof comp.config
-      if (patch.placement) {
-        if (comp.parentId === null && patch.placement.mode !== 'flow') {
+      const component = getOwnEntity(next.components, command.componentId)
+      if (!component) throw new DomainError('NOT_FOUND', `Component ${command.componentId} not found`)
+      if (!isInlineScreenComponent(component)) {
+        if (command.patch.common || command.patch.config) {
           throw new DomainError(
-            'INVARIANT_VIOLATION',
-            'Independent root placement must remain flow',
+            'INVALID_ARGUMENT',
+            'Definition instances only support placement and sizing updates',
           )
         }
-        comp.placement = patch.placement
+        if (command.patch.placement) {
+          if (component.parentId === null && command.patch.placement.mode !== 'flow') {
+            throw new DomainError('INVARIANT_VIOLATION', 'Independent root placement must remain flow')
+          }
+          component.placement = command.patch.placement
+        }
+        if (command.patch.sizing) component.sizing = command.patch.sizing
+        break
       }
-      if (patch.sizing) comp.sizing = patch.sizing
+      if (command.patch.common) component.common = { ...component.common, ...command.patch.common }
+      if (command.patch.config) {
+        if ('kind' in command.patch.config && command.patch.config.kind !== component.kind) {
+          throw new DomainError('INVALID_ARGUMENT', 'Component kind cannot be changed')
+        }
+        component.config = { ...component.config, ...command.patch.config } as ComponentConfig
+      }
+      if (command.patch.placement) {
+        if (component.parentId === null && command.patch.placement.mode !== 'flow') {
+          throw new DomainError('INVARIANT_VIOLATION', 'Independent root placement must remain flow')
+        }
+        component.placement = command.patch.placement
+      }
+      if (command.patch.sizing) component.sizing = command.patch.sizing
       break
     }
 
-    // ──────────── State commands ────────────
+    case 'extractComponentDefinition': {
+      requireExactKeys(
+        command,
+        [
+          'type',
+          'sourceRootComponentId',
+          'sourceScreenId',
+          'definition',
+          'replacementInstanceId',
+          'componentIdToNodePath',
+        ],
+        'extractComponentDefinition command',
+      )
+      applyExtractDefinition(
+        next,
+        command.sourceRootComponentId,
+        command.sourceScreenId,
+        command.definition,
+        command.replacementInstanceId,
+        command.componentIdToNodePath,
+      )
+      break
+    }
+
+    case 'detachDefinitionInstance': {
+      requireExactKeys(
+        command,
+        ['type', 'instanceId', 'generatedComponents'],
+        'detachDefinitionInstance command',
+      )
+      applyDetachDefinitionInstance(next, command.instanceId, command.generatedComponents)
+      break
+    }
+
+    case 'putComponentDefinition': {
+      requireExactKeys(
+        command,
+        ['type', 'mode', 'definition'],
+        'putComponentDefinition command',
+      )
+      const existing = getOwnEntity(next.componentDefinitions, command.definition.id)
+      if (command.mode === 'create' && existing) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${command.definition.id} already exists`,
+        )
+      }
+      if (command.mode === 'update' && !existing) {
+        throw new DomainError('NOT_FOUND', `Definition ${command.definition.id} not found`)
+      }
+      setOwnEntity(
+        next.componentDefinitions,
+        command.definition.id,
+        cloneComponentDefinition(command.definition),
+      )
+      break
+    }
+
+    case 'addDefinitionInstance': {
+      requireExactKeys(
+        command,
+        [
+          'type',
+          'componentId',
+          'screenId',
+          'parentId',
+          'position',
+          'definitionId',
+          'variantId',
+          'props',
+          'placement',
+          'sizing',
+        ],
+        'addDefinitionInstance command',
+      )
+      if (hasOwnEntity(next.components, command.componentId)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Component ${command.componentId} already exists`,
+        )
+      }
+      const parent = getOwnEntity(next.components, command.parentId)
+      const definition = getOwnEntity(next.componentDefinitions, command.definitionId)
+      if (
+        !parent ||
+        !isInlineScreenComponent(parent) ||
+        parent.screenId !== command.screenId ||
+        !CONTAINER_KINDS.includes(parent.kind)
+      ) {
+        throw new DomainError('INVALID_PARENT', 'Definition Instance requires a screen container')
+      }
+      if (!definition) {
+        throw new DomainError('NOT_FOUND', `Definition ${command.definitionId} not found`)
+      }
+      const position = command.position ?? parent.childIds.length
+      if (!Number.isInteger(position) || position < 0 || position > parent.childIds.length) {
+        throw new DomainError('INVALID_ARGUMENT', 'Definition Instance position is invalid')
+      }
+      setOwnEntity(next.components, command.componentId, {
+        nodeType: 'definitionInstance',
+        id: command.componentId,
+        screenId: command.screenId,
+        parentId: command.parentId,
+        childIds: [],
+        source: { $ref: componentDefinitionRefV3(definition.id) },
+        variantId: command.variantId,
+        props: { ...command.props },
+        placement: { ...command.placement },
+        sizing: { ...command.sizing },
+      })
+      parent.childIds.splice(position, 0, command.componentId)
+      break
+    }
+
+    case 'updateDefinitionInstance': {
+      requireExactKeys(
+        command,
+        ['type', 'componentId', 'variantId', 'props', 'placement', 'sizing'],
+        'updateDefinitionInstance command',
+      )
+      const instance = getOwnEntity(next.components, command.componentId)
+      if (!instance || instance.nodeType !== 'definitionInstance') {
+        throw new DomainError(
+          'NOT_FOUND',
+          `Definition Instance ${command.componentId} not found`,
+        )
+      }
+      if (command.variantId !== undefined) instance.variantId = command.variantId
+      if (command.props !== undefined) instance.props = { ...command.props }
+      if (command.placement !== undefined) instance.placement = { ...command.placement }
+      if (command.sizing !== undefined) instance.sizing = { ...command.sizing }
+      break
+    }
+
     case 'createScreenState': {
       requireExactKeys(
         command,
         ['type', 'stateId', 'screenId', 'name', 'description', 'overrides'],
         'createScreenState command',
       )
-      const { stateId, screenId, name, description, overrides } = command
-      const screen = getOwnEntity(next.screens, screenId)
-      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
-      if (hasOwnEntity(next.screenStates, stateId)) {
-        throw new DomainError('INVARIANT_VIOLATION', `State ${stateId} already exists`)
+      const screen = getOwnEntity(next.screens, command.screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
+      if (hasOwnEntity(next.screenScenarios, command.stateId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `Scenario ${command.stateId} already exists`)
       }
-      setOwnEntity(next.screenStates, stateId, {
-        id: stateId,
-        screenId,
-        name,
-        description: description ?? '',
-        componentOverrides: overrides ?? {},
+      setOwnEntity(next.screenScenarios, command.stateId, {
+        id: command.stateId,
+        screenId: command.screenId,
+        name: command.name,
+        description: command.description ?? '',
+        componentOverrides: command.overrides ? cloneScreenScenario({
+          id: command.stateId,
+          screenId: command.screenId,
+          name: command.name,
+          description: command.description ?? '',
+          componentOverrides: command.overrides,
+        }).componentOverrides : [],
       })
-      screen.stateIds.push(stateId)
+      screen.scenarioIds.push(command.stateId)
       break
     }
 
@@ -741,59 +1225,63 @@ export function applyCommandWithoutRevision(
         ['type', 'stateId', 'name', 'description', 'overrides'],
         'updateScreenState command',
       )
-      const state = getOwnEntity(next.screenStates, command.stateId)
-      if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
-      const owner = getOwnEntity(next.screens, state.screenId)
-      if (!owner) {
-        throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} owner screen not found`)
+      const scenario = getOwnEntity(next.screenScenarios, command.stateId)
+      if (!scenario) throw new DomainError('NOT_FOUND', `Scenario ${command.stateId} not found`)
+      if (command.name !== undefined) scenario.name = command.name
+      if (command.description !== undefined) scenario.description = command.description
+      if (command.overrides !== undefined) {
+        scenario.componentOverrides = cloneScreenScenario({
+          ...scenario,
+          componentOverrides: command.overrides,
+        }).componentOverrides
       }
-      if (state.id === owner.defaultStateId && command.overrides !== undefined) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          'Default state overrides cannot be changed',
-        )
-      }
-      if (command.name !== undefined) state.name = command.name
-      if (command.description !== undefined) state.description = command.description
-      if (command.overrides !== undefined) state.componentOverrides = command.overrides
       break
     }
 
     case 'removeScreenState': {
       requireExactKeys(command, ['type', 'stateId'], 'removeScreenState command')
-      const state = getOwnEntity(next.screenStates, command.stateId)
-      if (!state) throw new DomainError('NOT_FOUND', `State ${command.stateId} not found`)
-      const screen = getOwnEntity(next.screens, state.screenId)
+      const scenario = getOwnEntity(next.screenScenarios, command.stateId)
+      if (!scenario) throw new DomainError('NOT_FOUND', `Scenario ${command.stateId} not found`)
+      const screen = getOwnEntity(next.screens, scenario.screenId)
       if (!screen) {
-        throw new DomainError('INVARIANT_VIOLATION', `State ${state.id} owner screen not found`)
+        throw new DomainError('INVARIANT_VIOLATION', `Scenario ${scenario.id} owner screen not found`)
       }
-      if (state.id === screen.defaultStateId) {
-        throw new DomainError('INVARIANT_VIOLATION', 'Cannot remove the default state')
-      }
-      screen.stateIds = screen.stateIds.filter(id => id !== command.stateId)
-      // Cleanup API op success/error state refs
-      cleanupStateRefsInApiOps(command.stateId, next)
-      // Cleanup setState event actions
-      cleanupStateRefsInEvents(command.stateId, next)
-      deleteOwnEntity(next.screenStates, command.stateId)
+      screen.scenarioIds = screen.scenarioIds.filter(id => id !== scenario.id)
+      cleanupScenarioRefsInApiOps(scenario.id, next)
+      cleanupScenarioRefsInEvents(scenario.id, next)
+      deleteOwnEntity(next.screenScenarios, scenario.id)
       break
     }
 
-    // ──────────── Event commands ────────────
     case 'connectEvent': {
       requireExactKeys(
         command,
         ['type', 'eventId', 'screenId', 'name', 'trigger', 'actions'],
         'connectEvent command',
       )
-      const { eventId, screenId, name, trigger, actions } = command
-      const screen = getOwnEntity(next.screens, screenId)
-      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
-      if (hasOwnEntity(next.events, eventId)) {
-        throw new DomainError('INVARIANT_VIOLATION', `Event ${eventId} already exists`)
+      const screen = getOwnEntity(next.screens, command.screenId)
+      if (!screen) throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
+      if (hasOwnEntity(next.events, command.eventId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `Event ${command.eventId} already exists`)
       }
-      setOwnEntity(next.events, eventId, { id: eventId, screenId, name, trigger, actions })
-      if (!screen.eventIds.includes(eventId)) screen.eventIds.push(eventId)
+      setOwnEntity(next.events, command.eventId, {
+        id: command.eventId,
+        screenId: command.screenId,
+        name: command.name,
+        trigger: command.trigger,
+        actions: command.actions,
+      })
+      if (!screen.eventIds.includes(command.eventId)) screen.eventIds.push(command.eventId)
+      if (command.trigger.target.type === 'inline') {
+        const component = getOwnEntity(next.components, command.trigger.target.componentId)
+        if (
+          component &&
+          isInlineScreenComponent(component) &&
+          component.config.kind === 'button'
+        ) {
+          component.config.eventId = command.eventId
+        }
+      }
       break
     }
 
@@ -810,11 +1298,25 @@ export function applyCommandWithoutRevision(
       event.actions = command.actions
       for (const component of Object.values(next.components)) {
         if (
+          isInlineScreenComponent(component) &&
           component.config.kind === 'button' &&
           component.config.eventId === command.eventId &&
-          component.id !== command.trigger.componentId
+          !(
+            command.trigger.target.type === 'inline' &&
+            command.trigger.target.componentId === component.id
+          )
         ) {
           component.config.eventId = null
+        }
+      }
+      if (command.trigger.target.type === 'inline') {
+        const component = getOwnEntity(next.components, command.trigger.target.componentId)
+        if (
+          component &&
+          isInlineScreenComponent(component) &&
+          component.config.kind === 'button'
+        ) {
+          component.config.eventId = command.eventId
         }
       }
       break
@@ -825,17 +1327,20 @@ export function applyCommandWithoutRevision(
       const event = getOwnEntity(next.events, command.eventId)
       if (!event) throw new DomainError('NOT_FOUND', `Event ${command.eventId} not found`)
       const screen = getOwnEntity(next.screens, event.screenId)
-      if (screen) screen.eventIds = screen.eventIds.filter(id => id !== command.eventId)
+      if (screen) screen.eventIds = screen.eventIds.filter(id => id !== event.id)
       for (const component of Object.values(next.components)) {
-        if (component.config.kind === 'button' && component.config.eventId === command.eventId) {
+        if (
+          isInlineScreenComponent(component) &&
+          component.config.kind === 'button' &&
+          component.config.eventId === event.id
+        ) {
           component.config.eventId = null
         }
       }
-      deleteOwnEntity(next.events, command.eventId)
+      deleteOwnEntity(next.events, event.id)
       break
     }
 
-    // ──────────── API commands ────────────
     case 'bindApiOperation': {
       requireExactKeys(
         command,
@@ -847,27 +1352,26 @@ export function applyCommandWithoutRevision(
           'method',
           'path',
           'requestBindings',
-          'successStateId',
-          'errorStateId',
+          'successScenarioId',
+          'errorScenarioId',
         ],
         'bindApiOperation command',
       )
-      const { operationId, screenId, name, method, path, requestBindings, successStateId, errorStateId } = command
-      if (!hasOwnEntity(next.screens, screenId)) {
-        throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
+      if (!hasOwnEntity(next.screens, command.screenId)) {
+        throw new DomainError('NOT_FOUND', `Screen ${command.screenId} not found`)
       }
-      if (hasOwnEntity(next.apiOperations, operationId)) {
-        throw new DomainError('INVARIANT_VIOLATION', `API operation ${operationId} already exists`)
+      if (hasOwnEntity(next.apiOperations, command.operationId)) {
+        throw new DomainError('INVARIANT_VIOLATION', `API operation ${command.operationId} already exists`)
       }
-      setOwnEntity(next.apiOperations, operationId, {
-        id: operationId,
-        screenId,
-        name,
-        method,
-        path,
-        requestBindings: requestBindings ?? [],
-        successStateId: successStateId ?? null,
-        errorStateId: errorStateId ?? null,
+      setOwnEntity(next.apiOperations, command.operationId, {
+        id: command.operationId,
+        screenId: command.screenId,
+        name: command.name,
+        method: command.method,
+        path: command.path,
+        requestBindings: command.requestBindings ?? [],
+        successScenarioId: command.successScenarioId ?? null,
+        errorScenarioId: command.errorScenarioId ?? null,
       })
       break
     }
@@ -882,8 +1386,8 @@ export function applyCommandWithoutRevision(
           'method',
           'path',
           'requestBindings',
-          'successStateId',
-          'errorStateId',
+          'successScenarioId',
+          'errorScenarioId',
         ],
         'updateApiOperation command',
       )
@@ -895,23 +1399,41 @@ export function applyCommandWithoutRevision(
       operation.method = command.method
       operation.path = command.path
       operation.requestBindings = command.requestBindings
-      operation.successStateId = command.successStateId
-      operation.errorStateId = command.errorStateId
+      operation.successScenarioId = command.successScenarioId
+      operation.errorScenarioId = command.errorScenarioId
       break
     }
 
     case 'removeApiOperation': {
       requireExactKeys(command, ['type', 'operationId'], 'removeApiOperation command')
-      const op = getOwnEntity(next.apiOperations, command.operationId)
-      if (!op) throw new DomainError('NOT_FOUND', `API operation ${command.operationId} not found`)
-      // Remove callApi references to this operation in events
-      for (const event of Object.values(next.events)) {
-        event.actions = event.actions.filter(action => {
-          if (action.type === 'callApi' && action.apiOperationId === command.operationId) return false
-          return true
-        })
+      const operation = getOwnEntity(next.apiOperations, command.operationId)
+      if (!operation) {
+        throw new DomainError('NOT_FOUND', `API operation ${command.operationId} not found`)
       }
-      deleteOwnEntity(next.apiOperations, command.operationId)
+      for (const event of Object.values(next.events)) {
+        event.actions = event.actions.filter(action =>
+          action.type !== 'callApi' || action.apiOperationId !== operation.id,
+        )
+      }
+      deleteOwnEntity(next.apiOperations, operation.id)
+      break
+    }
+
+    case 'removeComponentDefinition': {
+      requireExactKeys(command, ['type', 'definitionId'], 'removeComponentDefinition command')
+      const definition = getOwnEntity(next.componentDefinitions, command.definitionId)
+      if (!definition) {
+        throw new DomainError('NOT_FOUND', `Definition ${command.definitionId} not found`)
+      }
+      const uses = collectDefinitionUses(next, definition.id)
+      if (uses.screenInstanceIds.length > 0 || uses.nestedDefinitionNodeIds.length > 0) {
+        throw new DomainError(
+          'INVALID_REFERENCE',
+          `Definition ${definition.id} is still in use`,
+          uses,
+        )
+      }
+      deleteOwnEntity(next.componentDefinitions, definition.id)
       break
     }
 
@@ -929,18 +1451,13 @@ export function applyCommandWithoutRevision(
 }
 
 export function applyCommand(doc: ProjectDocument, command: DomainCommand): ProjectDocument {
-  const revision = nextRevision(doc.revision)
-  const next = applyCommandWithoutRevision(doc, command)
-  next.revision = revision
-  return next
+  return applyCommandWithoutRevision(doc, command)
 }
 
 export function applyTransaction(doc: ProjectDocument, commands: DomainCommand[]): ProjectDocument {
-  const revision = nextRevision(doc.revision)
   let current = cloneProjectDocument(doc)
   for (const command of commands) {
     current = applyCommandWithoutRevision(current, command)
   }
-  current.revision = revision
   return current
 }

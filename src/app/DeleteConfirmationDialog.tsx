@@ -92,7 +92,7 @@ export function DeleteConfirmationDialog() {
   }
 
   const activeState = ui.activeStateId
-    ? getOwnEntity(effectiveDocument.screenStates, ui.activeStateId)
+    ? getOwnEntity(effectiveDocument.screenScenarios, ui.activeStateId)
     : undefined
   const targetLabel = resolveTargetLabel(
     effectiveDocument,
@@ -197,11 +197,11 @@ function resolveTargetLabel(
     case 'component': {
       const component = getOwnEntity(document.components, id)
       return component
-        ? getComponentDisplayLabel(effectiveComponent(component, activeState), locale)
+        ? getComponentDisplayLabel(effectiveComponent(document, component, activeState), locale)
         : fallback
     }
     case 'state':
-      return getOwnEntity(document.screenStates, id)?.name ?? fallback
+      return getOwnEntity(document.screenScenarios, id)?.name ?? fallback
     case 'event':
       return getOwnEntity(document.events, id)?.name ?? fallback
     case 'api':

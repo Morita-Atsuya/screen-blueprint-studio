@@ -1,24 +1,36 @@
-import type { EntityId, ScreenState } from './model'
+import type { ComponentTargetRef, EntityId, ScreenState } from './model'
 import type { ComponentOverride } from './model'
 import type { UpdateScreenStateCommand } from './commands'
-import { deleteOwnEntity, getOwnEntity, setOwnEntity } from './entityMap'
+import {
+  findInlineScenarioOverride,
+  findScenarioOverride,
+  inlineTargetRef,
+  replaceScenarioOverride,
+} from './componentTargets'
+
+export function createResetTargetOverrideCommand(
+  state: ScreenState,
+  target: ComponentTargetRef,
+): UpdateScreenStateCommand | null {
+  const override = findScenarioOverride(state, target)?.override
+  if (!override || Object.keys(override).length === 0) return null
+  return {
+    type: 'updateScreenState',
+    stateId: state.id,
+    overrides: replaceScenarioOverride(state.componentOverrides, target, null),
+  }
+}
 
 export function createResetComponentOverrideCommand(
   state: ScreenState,
   componentId: EntityId,
 ): UpdateScreenStateCommand | null {
-  const override = getOwnEntity(state.componentOverrides, componentId)
+  const override = findInlineScenarioOverride(state, componentId)?.override
   if (!override || Object.keys(override).length === 0) return null
-
-  const overrides = Object.assign(
-    Object.create(null),
-    state.componentOverrides,
-  ) as ScreenState['componentOverrides']
-  deleteOwnEntity(overrides, componentId)
   return {
     type: 'updateScreenState',
     stateId: state.id,
-    overrides,
+    overrides: replaceScenarioOverride(state.componentOverrides, inlineTargetRef(componentId), null),
   }
 }
 
@@ -30,7 +42,7 @@ export function createSetComponentOverrideFieldCommand<
   key: Key,
   value: ComponentOverride[Key] | undefined,
 ): UpdateScreenStateCommand | null {
-  const current = getOwnEntity(state.componentOverrides, componentId)
+  const current = findInlineScenarioOverride(state, componentId)?.override
   const hasCurrentField = current
     ? Object.prototype.hasOwnProperty.call(current, key)
     : false
@@ -41,24 +53,51 @@ export function createSetComponentOverrideFieldCommand<
     return null
   }
 
-  const overrides = Object.assign(
-    Object.create(null),
-    state.componentOverrides,
-  ) as ScreenState['componentOverrides']
-  const componentOverride = { ...(current ?? {}) }
+  const nextOverride = { ...(current ?? {}) }
   if (value === undefined) {
-    delete componentOverride[key]
+    delete nextOverride[key]
   } else {
-    componentOverride[key] = value
-  }
-  if (Object.keys(componentOverride).length === 0) {
-    deleteOwnEntity(overrides, componentId)
-  } else {
-    setOwnEntity(overrides, componentId, componentOverride)
+    nextOverride[key] = value
   }
   return {
     type: 'updateScreenState',
     stateId: state.id,
-    overrides,
+    overrides: replaceScenarioOverride(
+      state.componentOverrides,
+      inlineTargetRef(componentId),
+      Object.keys(nextOverride).length === 0 ? null : nextOverride,
+    ),
+  }
+}
+
+export function createSetTargetOverrideFieldCommand<
+  Key extends keyof ComponentOverride,
+>(
+  state: ScreenState,
+  target: ComponentTargetRef,
+  key: Key,
+  value: ComponentOverride[Key] | undefined,
+): UpdateScreenStateCommand | null {
+  const current = findScenarioOverride(state, target)?.override
+  const hasCurrentField = current
+    ? Object.prototype.hasOwnProperty.call(current, key)
+    : false
+  if (
+    (value === undefined && !hasCurrentField) ||
+    (value !== undefined && hasCurrentField && Object.is(current?.[key], value))
+  ) {
+    return null
+  }
+  const nextOverride = { ...(current ?? {}) }
+  if (value === undefined) delete nextOverride[key]
+  else nextOverride[key] = value
+  return {
+    type: 'updateScreenState',
+    stateId: state.id,
+    overrides: replaceScenarioOverride(
+      state.componentOverrides,
+      target,
+      Object.keys(nextOverride).length === 0 ? null : nextOverride,
+    ),
   }
 }

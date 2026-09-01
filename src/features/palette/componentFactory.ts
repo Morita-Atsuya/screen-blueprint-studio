@@ -12,6 +12,7 @@ import {
   DEFAULT_COMPONENT_SIZING,
   ROOT_COMPONENT_SIZING,
   PALETTE_COMPONENT_KINDS,
+  isInlineScreenComponent,
 } from '../../domain/model'
 import type { Locale } from '../../i18n/messages'
 import { translate } from '../../i18n/messages'
@@ -27,7 +28,10 @@ export const PALETTE_ITEMS: readonly PaletteItem[] =
 function generateUniqueFieldKey(doc: ProjectDocument): string {
   const usedKeys = new Set<string>()
   for (const component of Object.values(doc.components)) {
-    if (component.config.kind === 'textInput' || component.config.kind === 'select') {
+    if (
+      isInlineScreenComponent(component) &&
+      (component.config.kind === 'textInput' || component.config.kind === 'select')
+    ) {
       const fieldKey = component.config.fieldKey.trim()
       if (fieldKey) usedKeys.add(fieldKey)
     }

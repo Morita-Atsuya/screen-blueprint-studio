@@ -1,0 +1,281 @@
+.root {
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.library {
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.libraryHeader {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.libraryHeader h2,
+.panel h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.library button,
+.workspace button,
+.empty button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.library button:not(:disabled):hover,
+.workspace button:not(:disabled):hover,
+.empty button:not(:disabled):hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.definitionList,
+.propertyList,
+.nodeTree,
+.nodeTree ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.definitionList {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+
+.definitionList button {
+  display: grid;
+  width: 100%;
+  gap: 3px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.definitionList span,
+.muted,
+.nodeKind {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.definitionList .activeDefinition,
+.variantTabs .activeVariant,
+.nodeTree .activeNode {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  color: var(--accent-hover);
+}
+
+.workspace {
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.lockNotice {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-selected);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.usageImpact {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  padding: 0.75rem 1rem;
+}
+
+.usageImpact ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.25rem 1rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--text-muted);
+}
+
+.definitionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.definitionHeader > div:first-child {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(160px, 0.45fr) minmax(220px, 1fr);
+  gap: 12px;
+}
+
+.workspace label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.workspace input,
+.workspace textarea,
+.workspace select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.workspace textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.headerActions,
+.panelTitle,
+.variantTabs {
+  display: flex;
+  gap: 6px;
+}
+
+.headerActions {
+  flex: 0 0 auto;
+}
+
+.headerActions button,
+.panel button,
+.empty button {
+  padding: 5px 9px;
+  font-size: 0.72rem;
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.panel > h3,
+.panelTitle {
+  margin-bottom: 12px;
+}
+
+.panelTitle {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panelTitle h3 {
+  margin: 0;
+}
+
+.nodeTree ul {
+  padding-left: 14px;
+}
+
+.nodeTree button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 7px;
+  border-color: transparent;
+  text-align: left;
+}
+
+.nodeTree code,
+.propertyList code {
+  color: var(--text-faint);
+  font-size: 0.64rem;
+}
+
+.propertyList {
+  display: grid;
+  gap: 6px;
+}
+
+.propertyList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.propertyList li > div {
+  display: grid;
+  min-width: 0;
+}
+
+.propertyList li > span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.variantTabs {
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 980px) {
+  .root {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .editorGrid,
+  .definitionHeader > div:first-child {
+    grid-template-columns: 1fr;
+  }
+}

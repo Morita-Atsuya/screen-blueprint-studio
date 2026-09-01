@@ -1,29 +1,45 @@
 import {
-  CURRENT_SCHEMA_VERSION,
+  CANONICAL_PROJECT_KIND_V3,
+  CANONICAL_PROJECT_SCHEMA_URL_V3,
   COMPONENT_KINDS,
+  COMPONENT_SIZE_TOKENS,
+  CURRENT_SCHEMA_VERSION,
+  EVENT_ACTION_TYPES_V3,
+  EVENT_TRIGGER_TYPES_V3,
+  HTTP_METHODS_V3,
   PLACEMENT_ANCHORS,
   PLACEMENT_INSET_TOKENS,
-  COMPONENT_SIZE_TOKENS,
+  PUBLIC_PROP_FIELDS_V3,
+  PUBLIC_PROP_TYPES_V3,
+  SCREEN_FIELDS_V3,
+  VARIANT_COMMON_OVERRIDE_FIELDS_V3,
+  VARIANT_CONFIG_OVERRIDE_FIELDS_V3,
+  VARIANT_NODE_OVERRIDE_FIELDS_V3,
+  type ApiOperation,
+  type CommonComponentSpec,
+  type ComponentConfig,
+  type ComponentDefinition,
+  type ComponentDefinitionNode,
+  type ComponentOverride,
+  type ComponentPlacement,
+  type ComponentSizing,
+  type EventAction,
+  type EventTrigger,
+  type FieldBinding,
+  type Project,
+  type ProjectDocument,
+  type PublicProp,
+  type PublicPropBinding,
+  type Screen,
+  type ScreenComponent,
+  type ScreenEvent,
+  type ScreenScenario,
+  type ValidationRule,
+  type VariantConfigOverride,
+  type VariantNodeOverride,
+  type VariantProperty,
 } from './model'
-import type {
-  ApiOperation,
-  CommonComponentSpec,
-  ComponentConfig,
-  ComponentKind,
-  ComponentOverride,
-  ComponentPlacement,
-  ComponentSizing,
-  EventAction,
-  EventTrigger,
-  FieldBinding,
-  Project,
-  ProjectDocument,
-  Screen,
-  ScreenEvent,
-  ScreenComponent,
-  ScreenState,
-  ValidationRule,
-} from './model'
+import { parseComponentDefinitionRefV3 } from './canonicalProjectSpecV3'
 import { isSafeExternalUrl, isSafePortableUrl } from './portableUrl'
 import { DomainError } from './errors'
 import { isSafeEntityId } from './entityMap'
@@ -60,6 +76,11 @@ function string(value: unknown, path: string): asserts value is string {
   if (typeof value !== 'string') fail(path, 'must be a string')
 }
 
+function nonEmptyString(value: unknown, path: string): asserts value is string {
+  string(value, path)
+  if (value.trim().length === 0) fail(path, 'must contain non-whitespace characters')
+}
+
 function entityId(value: unknown, path: string): asserts value is string {
   if (!isSafeEntityId(value)) fail(path, 'must be a safe, non-empty entity ID')
 }
@@ -78,10 +99,6 @@ function entityIdArray(value: unknown, path: string): asserts value is string[] 
   if (new Set(value).size !== value.length) fail(path, 'must not contain duplicates')
 }
 
-function entityMap(value: unknown, path: string): UnknownRecord {
-  return record(value, path)
-}
-
 function enumValue<T extends string | number>(
   value: unknown,
   allowed: readonly T[],
@@ -90,11 +107,41 @@ function enumValue<T extends string | number>(
   if (!allowed.includes(value as T)) fail(path, `must be one of: ${allowed.join(', ')}`)
 }
 
-function validateFieldBinding(value: unknown, path: string): asserts value is FieldBinding {
-  const binding = record(value, path)
-  exactKeys(binding, ['componentId', 'targetPath'], [], path)
-  entityId(binding.componentId, `${path}.componentId`)
-  string(binding.targetPath, `${path}.targetPath`)
+function entityMap(value: unknown, path: string): UnknownRecord {
+  return record(value, path)
+}
+
+function validateValidationRule(value: unknown, path: string): asserts value is ValidationRule {
+  const rule = record(value, path)
+  string(rule.type, `${path}.type`)
+  entityId(rule.id, `${path}.id`)
+  switch (rule.type) {
+    case 'required':
+    case 'email':
+      exactKeys(rule, ['id', 'type', 'message'], [], path)
+      string(rule.message, `${path}.message`)
+      return
+    case 'minLength':
+    case 'maxLength':
+      exactKeys(rule, ['id', 'type', 'value', 'message'], [], path)
+      if (!Number.isInteger(rule.value) || (rule.value as number) < 0) {
+        fail(`${path}.value`, 'must be a non-negative integer')
+      }
+      string(rule.message, `${path}.message`)
+      return
+    case 'pattern':
+      exactKeys(rule, ['id', 'type', 'value', 'message'], [], path)
+      nonEmptyString(rule.value, `${path}.value`)
+      string(rule.message, `${path}.message`)
+      return
+    case 'custom':
+      exactKeys(rule, ['id', 'type', 'description', 'message'], [], path)
+      nonEmptyString(rule.description, `${path}.description`)
+      string(rule.message, `${path}.message`)
+      return
+    default:
+      fail(`${path}.type`, 'is invalid')
+  }
 }
 
 export function validateProject(value: unknown, path = 'project'): asserts value is Project {
@@ -107,42 +154,15 @@ export function validateProject(value: unknown, path = 'project'): asserts value
 
 export function validateScreen(value: unknown, path = 'screen'): asserts value is Screen {
   const screen = record(value, path)
-  exactKeys(
-    screen,
-    ['id', 'name', 'route', 'rootComponentId', 'modalComponentIds', 'defaultStateId', 'stateIds', 'eventIds'],
-    [],
-    path,
-  )
+  exactKeys(screen, SCREEN_FIELDS_V3, [], path)
   entityId(screen.id, `${path}.id`)
   string(screen.name, `${path}.name`)
   string(screen.route, `${path}.route`)
+  string(screen.baseDescription, `${path}.baseDescription`)
   entityId(screen.rootComponentId, `${path}.rootComponentId`)
   entityIdArray(screen.modalComponentIds, `${path}.modalComponentIds`)
-  entityId(screen.defaultStateId, `${path}.defaultStateId`)
-  entityIdArray(screen.stateIds, `${path}.stateIds`)
+  entityIdArray(screen.scenarioIds, `${path}.scenarioIds`)
   entityIdArray(screen.eventIds, `${path}.eventIds`)
-}
-
-export function validateScreenComponent(
-  value: unknown,
-  path = 'component',
-): asserts value is ScreenComponent {
-  const component = record(value, path)
-  exactKeys(
-    component,
-    ['id', 'screenId', 'parentId', 'childIds', 'kind', 'placement', 'sizing', 'common', 'config'],
-    [],
-    path,
-  )
-  entityId(component.id, `${path}.id`)
-  entityId(component.screenId, `${path}.screenId`)
-  if (component.parentId !== null) entityId(component.parentId, `${path}.parentId`)
-  entityIdArray(component.childIds, `${path}.childIds`)
-  enumValue(component.kind, COMPONENT_KINDS, `${path}.kind`)
-  validateComponentPlacement(component.placement, `${path}.placement`)
-  validateComponentSizing(component.sizing, `${path}.sizing`)
-  validateCommonComponentSpec(component.common, `${path}.common`)
-  validateComponentConfig(component.config, component.kind, `${path}.config`)
 }
 
 export function validateComponentSizing(
@@ -180,92 +200,26 @@ export function validateComponentPlacement(
       enumValue(placement.inset, PLACEMENT_INSET_TOKENS, `${path}.inset`)
       return
     case 'overlay':
-    case 'viewport': {
+    case 'viewport':
       exactKeys(placement, ['mode', 'anchor', 'insetX', 'insetY'], [], path)
       enumValue(placement.anchor, PLACEMENT_ANCHORS, `${path}.anchor`)
       enumValue(placement.insetX, PLACEMENT_INSET_TOKENS, `${path}.insetX`)
       enumValue(placement.insetY, PLACEMENT_INSET_TOKENS, `${path}.insetY`)
-      const horizontallyCentered = placement.anchor === 'topCenter' ||
-        placement.anchor === 'center' ||
-        placement.anchor === 'bottomCenter'
-      const verticallyCentered = placement.anchor === 'centerLeft' ||
-        placement.anchor === 'center' ||
-        placement.anchor === 'centerRight'
-      if (horizontallyCentered && placement.insetX !== 'none') {
+      if (
+        ['topCenter', 'center', 'bottomCenter'].includes(placement.anchor) &&
+        placement.insetX !== 'none'
+      ) {
         fail(`${path}.insetX`, 'must be none for a horizontally centered anchor')
       }
-      if (verticallyCentered && placement.insetY !== 'none') {
+      if (
+        ['centerLeft', 'center', 'centerRight'].includes(placement.anchor) &&
+        placement.insetY !== 'none'
+      ) {
         fail(`${path}.insetY`, 'must be none for a vertically centered anchor')
       }
       return
-    }
     default:
       fail(`${path}.mode`, 'is invalid')
-  }
-}
-
-export function validateScreenState(
-  value: unknown,
-  path = 'screenState',
-): asserts value is ScreenState {
-  const state = record(value, path)
-  exactKeys(
-    state,
-    ['id', 'screenId', 'name', 'description', 'componentOverrides'],
-    [],
-    path,
-  )
-  entityId(state.id, `${path}.id`)
-  entityId(state.screenId, `${path}.screenId`)
-  string(state.name, `${path}.name`)
-  string(state.description, `${path}.description`)
-  record(state.componentOverrides, `${path}.componentOverrides`)
-}
-
-export function validateProjectDocumentMetadata(
-  value: unknown,
-  path = 'document',
-): asserts value is ProjectDocument {
-  const document = record(value, path)
-  exactKeys(
-    document,
-    [
-      'schemaVersion',
-      'revision',
-      'project',
-      'screens',
-      'components',
-      'screenStates',
-      'events',
-      'apiOperations',
-    ],
-    [],
-    path,
-  )
-  if (document.schemaVersion !== CURRENT_SCHEMA_VERSION) {
-    fail(`${path}.schemaVersion`, `must equal ${CURRENT_SCHEMA_VERSION}`)
-  }
-  if (!Number.isSafeInteger(document.revision) || (document.revision as number) < 0) {
-    fail(`${path}.revision`, 'must be a non-negative safe integer')
-  }
-  validateProject(document.project, `${path}.project`)
-
-  const validators = [
-    ['screens', entityMap(document.screens, `${path}.screens`), validateScreen],
-    ['components', entityMap(document.components, `${path}.components`), validateScreenComponent],
-    ['screenStates', entityMap(document.screenStates, `${path}.screenStates`), validateScreenState],
-    ['events', entityMap(document.events, `${path}.events`), validateScreenEvent],
-    ['apiOperations', entityMap(document.apiOperations, `${path}.apiOperations`), validateApiOperation],
-  ] as const
-
-  for (const [collectionName, collection, validateEntity] of validators) {
-    for (const [key, entity] of Object.entries(collection)) {
-      entityId(key, `${path}.${collectionName} key`)
-      validateEntity(entity, `${path}.${collectionName}.${key}`)
-      if ((entity as UnknownRecord).id !== key) {
-        fail(`${path}.${collectionName}.${key}.id`, `must match record key ${key}`)
-      }
-    }
   }
 }
 
@@ -280,14 +234,552 @@ export function validateCommonComponentSpec(
   boolean(common.enabled, `${path}.enabled`)
 }
 
+function validateImageSource(source: unknown, path: string): void {
+  string(source, path)
+  if (source.length > 0 && !isSafePortableUrl(source)) {
+    fail(path, 'must be a safe portable URL')
+  }
+}
+
+function validateLinkDestination(value: unknown, path: string): void {
+  const destination = record(value, path)
+  string(destination.type, `${path}.type`)
+  switch (destination.type) {
+    case 'internal':
+      exactKeys(destination, ['type', 'screenId'], [], path)
+      entityId(destination.screenId, `${path}.screenId`)
+      return
+    case 'external':
+      exactKeys(destination, ['type', 'url'], [], path)
+      string(destination.url, `${path}.url`)
+      if (!isSafeExternalUrl(destination.url)) {
+        fail(`${path}.url`, 'must be a safe external URL')
+      }
+      return
+    case 'resource':
+      exactKeys(destination, ['type', 'resourceId', 'url', 'displayName'], [], path)
+      nonEmptyString(destination.resourceId, `${path}.resourceId`)
+      string(destination.url, `${path}.url`)
+      if (!isSafePortableUrl(destination.url)) {
+        fail(`${path}.url`, 'must be a safe portable URL')
+      }
+      nonEmptyString(destination.displayName, `${path}.displayName`)
+      return
+    default:
+      fail(`${path}.type`, 'is invalid')
+  }
+}
+
+function validateComponentConfigCommonFields(
+  config: UnknownRecord,
+  kind: ComponentConfig['kind'],
+  path: string,
+  allowButtonEventId: boolean,
+): void {
+  switch (kind) {
+    case 'page':
+    case 'container':
+    case 'modal':
+      exactKeys(config, ['kind', 'layout', 'gap', 'columns', 'justify', 'align', 'wrap'], [], path)
+      enumValue(config.layout, ['vertical', 'horizontal', 'grid'], `${path}.layout`)
+      enumValue(config.gap, ['none', 'sm', 'md', 'lg'], `${path}.gap`)
+      enumValue(config.columns, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${path}.columns`)
+      enumValue(config.justify, ['start', 'center', 'end', 'between'], `${path}.justify`)
+      enumValue(config.align, ['start', 'center', 'end', 'stretch'], `${path}.align`)
+      boolean(config.wrap, `${path}.wrap`)
+      return
+    case 'text':
+      exactKeys(config, ['kind', 'text', 'style'], [], path)
+      string(config.text, `${path}.text`)
+      enumValue(config.style, ['heading1', 'heading2', 'heading3', 'body', 'caption'], `${path}.style`)
+      return
+    case 'textInput':
+      exactKeys(
+        config,
+        ['kind', 'fieldKey', 'label', 'inputType', 'required', 'placeholder', 'defaultValue', 'validationRules'],
+        [],
+        path,
+      )
+      string(config.fieldKey, `${path}.fieldKey`)
+      string(config.label, `${path}.label`)
+      enumValue(config.inputType, ['text', 'email', 'password'], `${path}.inputType`)
+      boolean(config.required, `${path}.required`)
+      string(config.placeholder, `${path}.placeholder`)
+      string(config.defaultValue, `${path}.defaultValue`)
+      if (!Array.isArray(config.validationRules)) fail(`${path}.validationRules`, 'must be an array')
+      config.validationRules.forEach((rule, index) =>
+        validateValidationRule(rule, `${path}.validationRules[${index}]`),
+      )
+      return
+    case 'select':
+      exactKeys(config, ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue'], [], path)
+      string(config.fieldKey, `${path}.fieldKey`)
+      string(config.label, `${path}.label`)
+      boolean(config.required, `${path}.required`)
+      if (!Array.isArray(config.options)) fail(`${path}.options`, 'must be an array')
+      config.options.forEach((option, index) => {
+        const item = record(option, `${path}.options[${index}]`)
+        exactKeys(item, ['value', 'label'], [], `${path}.options[${index}]`)
+        string(item.value, `${path}.options[${index}].value`)
+        string(item.label, `${path}.options[${index}].label`)
+      })
+      string(config.defaultValue, `${path}.defaultValue`)
+      return
+    case 'button':
+      exactKeys(
+        config,
+        allowButtonEventId
+          ? ['kind', 'label', 'variant', 'eventId', 'confirmationMessage', 'preventDoubleSubmit']
+          : ['kind', 'label', 'variant', 'confirmationMessage', 'preventDoubleSubmit'],
+        [],
+        path,
+      )
+      string(config.label, `${path}.label`)
+      enumValue(config.variant, ['primary', 'secondary', 'danger'], `${path}.variant`)
+      if (allowButtonEventId) {
+        if (config.eventId !== null) entityId(config.eventId, `${path}.eventId`)
+      }
+      nullableString(config.confirmationMessage, `${path}.confirmationMessage`)
+      boolean(config.preventDoubleSubmit, `${path}.preventDoubleSubmit`)
+      return
+    case 'image':
+      exactKeys(config, ['kind', 'source', 'alt', 'fit', 'aspectRatio', 'placeholderStyle'], [], path)
+      validateImageSource(config.source, `${path}.source`)
+      nonEmptyString(config.alt, `${path}.alt`)
+      enumValue(config.fit, ['contain', 'cover'], `${path}.fit`)
+      enumValue(config.aspectRatio, ['auto', 'square', '4:3', '16:9'], `${path}.aspectRatio`)
+      enumValue(config.placeholderStyle, ['icon', 'skeleton'], `${path}.placeholderStyle`)
+      return
+    case 'link':
+      exactKeys(config, ['kind', 'label', 'destination', 'openMode'], [], path)
+      nonEmptyString(config.label, `${path}.label`)
+      validateLinkDestination(config.destination, `${path}.destination`)
+      enumValue(config.openMode, ['sameContext', 'newContext', 'download'], `${path}.openMode`)
+      if (
+        record(config.destination, `${path}.destination`).type === 'internal' &&
+        config.openMode !== 'sameContext'
+      ) {
+        fail(`${path}.openMode`, 'internal destinations require sameContext')
+      }
+      if (
+        record(config.destination, `${path}.destination`).type === 'external' &&
+        config.openMode === 'download'
+      ) {
+        fail(`${path}.openMode`, 'download is only valid for resource destinations')
+      }
+      return
+  }
+}
+
+export function validateComponentConfig(
+  value: unknown,
+  kind: ComponentConfig['kind'],
+  path = 'component.config',
+): asserts value is ComponentConfig {
+  const config = record(value, path)
+  exactKeys(config, ['kind'], Object.keys(config).filter(key => key !== 'kind'), path)
+  if (config.kind !== kind) fail(`${path}.kind`, `must equal ${kind}`)
+  validateComponentConfigCommonFields(config, kind, path, true)
+}
+
+export function validateDefinitionComponentConfig(
+  value: unknown,
+  kind: ComponentConfig['kind'],
+  path = 'definitionNode.config',
+): void {
+  const config = record(value, path)
+  if (config.kind !== kind) fail(`${path}.kind`, `must equal ${kind}`)
+  validateComponentConfigCommonFields(config, kind, path, false)
+}
+
+function validateDefinitionSource(value: unknown, path: string): void {
+  const source = record(value, path)
+  exactKeys(source, ['$ref'], [], path)
+  string(source.$ref, `${path}.$ref`)
+  if (parseComponentDefinitionRefV3(source.$ref) === null) {
+    fail(`${path}.$ref`, 'must be a local componentDefinitions RFC 6901 reference')
+  }
+}
+
+function validatePublicPropBinding(value: unknown, path: string): asserts value is PublicPropBinding {
+  const binding = record(value, path)
+  exactKeys(binding, ['nodePath', 'field'], [], path)
+  if (!Array.isArray(binding.nodePath) || binding.nodePath.length === 0) {
+    fail(`${path}.nodePath`, 'must be a non-empty array of stable node IDs')
+  }
+  binding.nodePath.forEach((item, index) => entityId(item, `${path}.nodePath[${index}]`))
+  enumValue(binding.field, PUBLIC_PROP_FIELDS_V3, `${path}.field`)
+}
+
+function validatePublicProp(value: unknown, path: string): asserts value is PublicProp {
+  const prop = record(value, path)
+  string(prop.type, `${path}.type`)
+  switch (prop.type) {
+    case 'string':
+    case 'boolean':
+    case 'number':
+      exactKeys(prop, ['key', 'name', 'description', 'type', 'bindings'], [], path)
+      break
+    case 'enum':
+      exactKeys(prop, ['key', 'name', 'description', 'type', 'bindings', 'values'], [], path)
+      if (!Array.isArray(prop.values) || prop.values.length === 0) {
+        fail(`${path}.values`, 'must be a non-empty array')
+      }
+      prop.values.forEach((item, index) => nonEmptyString(item, `${path}.values[${index}]`))
+      if (new Set(prop.values).size !== prop.values.length) {
+        fail(`${path}.values`, 'must not contain duplicates')
+      }
+      break
+    default:
+      fail(`${path}.type`, `must be one of: ${PUBLIC_PROP_TYPES_V3.join(', ')}`)
+  }
+  nonEmptyString(prop.key, `${path}.key`)
+  string(prop.name, `${path}.name`)
+  string(prop.description, `${path}.description`)
+  if (!Array.isArray(prop.bindings)) fail(`${path}.bindings`, 'must be an array')
+  prop.bindings.forEach((binding, index) => validatePublicPropBinding(binding, `${path}.bindings[${index}]`))
+}
+
+function validateVariantProperty(value: unknown, path: string): asserts value is VariantProperty {
+  const property = record(value, path)
+  exactKeys(property, ['key', 'name', 'description', 'values'], [], path)
+  nonEmptyString(property.key, `${path}.key`)
+  string(property.name, `${path}.name`)
+  string(property.description, `${path}.description`)
+  if (!Array.isArray(property.values) || property.values.length === 0) {
+    fail(`${path}.values`, 'must be a non-empty array')
+  }
+  property.values.forEach((item, index) => nonEmptyString(item, `${path}.values[${index}]`))
+  if (new Set(property.values).size !== property.values.length) {
+    fail(`${path}.values`, 'must not contain duplicates')
+  }
+}
+
+function validateVariantConfigOverride(
+  value: unknown,
+  path: string,
+): asserts value is VariantConfigOverride {
+  const override = record(value, path)
+  exactKeys(override, [], VARIANT_CONFIG_OVERRIDE_FIELDS_V3, path)
+  for (const [key, fieldValue] of Object.entries(override)) {
+    switch (key) {
+      case 'layout':
+        enumValue(fieldValue, ['vertical', 'horizontal', 'grid'], `${path}.layout`)
+        break
+      case 'gap':
+        enumValue(fieldValue, ['none', 'sm', 'md', 'lg'], `${path}.gap`)
+        break
+      case 'columns':
+        enumValue(fieldValue, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${path}.columns`)
+        break
+      case 'justify':
+        enumValue(fieldValue, ['start', 'center', 'end', 'between'], `${path}.justify`)
+        break
+      case 'align':
+        enumValue(fieldValue, ['start', 'center', 'end', 'stretch'], `${path}.align`)
+        break
+      case 'wrap':
+      case 'required':
+      case 'preventDoubleSubmit':
+        boolean(fieldValue, `${path}.${key}`)
+        break
+      case 'text':
+      case 'label':
+      case 'placeholder':
+      case 'defaultValue':
+      case 'source':
+      case 'alt':
+        string(fieldValue, `${path}.${key}`)
+        break
+      case 'style':
+        enumValue(fieldValue, ['heading1', 'heading2', 'heading3', 'body', 'caption'], `${path}.style`)
+        break
+      case 'inputType':
+        enumValue(fieldValue, ['text', 'email', 'password'], `${path}.inputType`)
+        break
+      case 'variant':
+        enumValue(fieldValue, ['primary', 'secondary', 'danger'], `${path}.variant`)
+        break
+      case 'confirmationMessage':
+        nullableString(fieldValue, `${path}.confirmationMessage`)
+        break
+      case 'fit':
+        enumValue(fieldValue, ['contain', 'cover'], `${path}.fit`)
+        break
+      case 'aspectRatio':
+        enumValue(fieldValue, ['auto', 'square', '4:3', '16:9'], `${path}.aspectRatio`)
+        break
+      case 'placeholderStyle':
+        enumValue(fieldValue, ['icon', 'skeleton'], `${path}.placeholderStyle`)
+        break
+      case 'destination':
+        validateLinkDestination(fieldValue, `${path}.destination`)
+        break
+      case 'openMode':
+        enumValue(fieldValue, ['sameContext', 'newContext', 'download'], `${path}.openMode`)
+        break
+      default:
+        fail(`${path}.${key}`, 'is not allowed')
+    }
+  }
+}
+
+function validateVariantNodeOverride(
+  value: unknown,
+  path: string,
+): asserts value is VariantNodeOverride {
+  const override = record(value, path)
+  exactKeys(override, [], VARIANT_NODE_OVERRIDE_FIELDS_V3, path)
+  if (override.common !== undefined) {
+    const common = record(override.common, `${path}.common`)
+    exactKeys(common, [], VARIANT_COMMON_OVERRIDE_FIELDS_V3, `${path}.common`)
+    if (common.description !== undefined) string(common.description, `${path}.common.description`)
+    if (common.visible !== undefined) boolean(common.visible, `${path}.common.visible`)
+    if (common.enabled !== undefined) boolean(common.enabled, `${path}.common.enabled`)
+  }
+  if (override.config !== undefined) {
+    validateVariantConfigOverride(override.config, `${path}.config`)
+  }
+  if (override.placement !== undefined) {
+    validateComponentPlacement(override.placement, `${path}.placement`)
+  }
+  if (override.sizing !== undefined) {
+    validateComponentSizing(override.sizing, `${path}.sizing`)
+  }
+}
+
+function validateComponentDefinitionNode(
+  value: unknown,
+  path: string,
+): asserts value is ComponentDefinitionNode {
+  const node = record(value, path)
+  string(node.nodeType, `${path}.nodeType`)
+  switch (node.nodeType) {
+    case 'inline':
+      exactKeys(
+        node,
+        ['nodeType', 'id', 'parentId', 'childIds', 'kind', 'placement', 'sizing', 'common', 'config'],
+        [],
+        path,
+      )
+      entityId(node.id, `${path}.id`)
+      if (node.parentId !== null) entityId(node.parentId, `${path}.parentId`)
+      entityIdArray(node.childIds, `${path}.childIds`)
+      enumValue(node.kind, COMPONENT_KINDS, `${path}.kind`)
+      validateComponentPlacement(node.placement, `${path}.placement`)
+      validateComponentSizing(node.sizing, `${path}.sizing`)
+      validateCommonComponentSpec(node.common, `${path}.common`)
+      validateDefinitionComponentConfig(node.config, node.kind, `${path}.config`)
+      return
+    case 'definitionInstance':
+      exactKeys(
+        node,
+        ['nodeType', 'id', 'parentId', 'childIds', 'placement', 'sizing', 'source', 'props', 'variantId'],
+        [],
+        path,
+      )
+      entityId(node.id, `${path}.id`)
+      if (node.parentId !== null) entityId(node.parentId, `${path}.parentId`)
+      if (!Array.isArray(node.childIds) || node.childIds.length !== 0) {
+        fail(`${path}.childIds`, 'must be an empty array')
+      }
+      validateComponentPlacement(node.placement, `${path}.placement`)
+      validateComponentSizing(node.sizing, `${path}.sizing`)
+      validateDefinitionSource(node.source, `${path}.source`)
+      const props = record(node.props, `${path}.props`)
+      for (const [key, propValue] of Object.entries(props)) {
+        nonEmptyString(key, `${path}.props key`)
+        if (
+          typeof propValue !== 'string' &&
+          typeof propValue !== 'boolean' &&
+          typeof propValue !== 'number'
+        ) {
+          fail(`${path}.props.${key}`, 'must be a string, boolean, or number')
+        }
+      }
+      if (node.variantId !== null) entityId(node.variantId, `${path}.variantId`)
+      return
+    default:
+      fail(`${path}.nodeType`, 'is invalid')
+  }
+}
+
+function validateComponentDefinition(
+  value: unknown,
+  path: string,
+): asserts value is ComponentDefinition {
+  const definition = record(value, path)
+  exactKeys(
+    definition,
+    ['id', 'name', 'description', 'rootNodeId', 'nodes', 'publicProps', 'variantProperties', 'variants', 'representativeVariantId'],
+    [],
+    path,
+  )
+  entityId(definition.id, `${path}.id`)
+  string(definition.name, `${path}.name`)
+  string(definition.description, `${path}.description`)
+  entityId(definition.rootNodeId, `${path}.rootNodeId`)
+  const nodes = entityMap(definition.nodes, `${path}.nodes`)
+  for (const [key, node] of Object.entries(nodes)) {
+    entityId(key, `${path}.nodes key`)
+    validateComponentDefinitionNode(node, `${path}.nodes.${key}`)
+    if (record(node, `${path}.nodes.${key}`).id !== key) {
+      fail(`${path}.nodes.${key}.id`, `must match record key ${key}`)
+    }
+  }
+  if (!Array.isArray(definition.publicProps)) fail(`${path}.publicProps`, 'must be an array')
+  definition.publicProps.forEach((prop, index) => validatePublicProp(prop, `${path}.publicProps[${index}]`))
+  if (!Array.isArray(definition.variantProperties)) fail(`${path}.variantProperties`, 'must be an array')
+  definition.variantProperties.forEach((property, index) =>
+    validateVariantProperty(property, `${path}.variantProperties[${index}]`),
+  )
+  if (!Array.isArray(definition.variants)) fail(`${path}.variants`, 'must be an array')
+  definition.variants.forEach((variant, index) => {
+    const item = record(variant, `${path}.variants[${index}]`)
+    exactKeys(item, ['id', 'name', 'propertyValues', 'nodeOverrides'], [], `${path}.variants[${index}]`)
+    entityId(item.id, `${path}.variants[${index}].id`)
+    string(item.name, `${path}.variants[${index}].name`)
+    const propertyValues = entityMap(item.propertyValues, `${path}.variants[${index}].propertyValues`)
+    for (const [key, fieldValue] of Object.entries(propertyValues)) {
+      nonEmptyString(key, `${path}.variants[${index}].propertyValues key`)
+      string(fieldValue, `${path}.variants[${index}].propertyValues.${key}`)
+    }
+    const nodeOverrides = entityMap(item.nodeOverrides, `${path}.variants[${index}].nodeOverrides`)
+    for (const [key, override] of Object.entries(nodeOverrides)) {
+      entityId(key, `${path}.variants[${index}].nodeOverrides key`)
+      validateVariantNodeOverride(override, `${path}.variants[${index}].nodeOverrides.${key}`)
+    }
+  })
+  if (definition.representativeVariantId !== null) {
+    entityId(definition.representativeVariantId, `${path}.representativeVariantId`)
+  }
+}
+
+export function validateScreenComponent(
+  value: unknown,
+  path = 'component',
+): asserts value is ScreenComponent {
+  const component = record(value, path)
+  string(component.nodeType, `${path}.nodeType`)
+  switch (component.nodeType) {
+    case 'inline':
+      exactKeys(
+        component,
+        ['nodeType', 'id', 'screenId', 'parentId', 'childIds', 'kind', 'placement', 'sizing', 'common', 'config'],
+        [],
+        path,
+      )
+      entityId(component.id, `${path}.id`)
+      entityId(component.screenId, `${path}.screenId`)
+      if (component.parentId !== null) entityId(component.parentId, `${path}.parentId`)
+      entityIdArray(component.childIds, `${path}.childIds`)
+      enumValue(component.kind, COMPONENT_KINDS, `${path}.kind`)
+      validateComponentPlacement(component.placement, `${path}.placement`)
+      validateComponentSizing(component.sizing, `${path}.sizing`)
+      validateCommonComponentSpec(component.common, `${path}.common`)
+      validateComponentConfig(component.config, component.kind, `${path}.config`)
+      return
+    case 'definitionInstance':
+      exactKeys(
+        component,
+        ['nodeType', 'id', 'screenId', 'parentId', 'childIds', 'placement', 'sizing', 'source', 'props', 'variantId'],
+        [],
+        path,
+      )
+      entityId(component.id, `${path}.id`)
+      entityId(component.screenId, `${path}.screenId`)
+      if (component.parentId !== null) entityId(component.parentId, `${path}.parentId`)
+      if (!Array.isArray(component.childIds) || component.childIds.length !== 0) {
+        fail(`${path}.childIds`, 'must be an empty array')
+      }
+      validateComponentPlacement(component.placement, `${path}.placement`)
+      validateComponentSizing(component.sizing, `${path}.sizing`)
+      validateDefinitionSource(component.source, `${path}.source`)
+      const props = record(component.props, `${path}.props`)
+      for (const [key, propValue] of Object.entries(props)) {
+        nonEmptyString(key, `${path}.props key`)
+        if (
+          typeof propValue !== 'string' &&
+          typeof propValue !== 'boolean' &&
+          typeof propValue !== 'number'
+        ) {
+          fail(`${path}.props.${key}`, 'must be a string, boolean, or number')
+        }
+      }
+      if (component.variantId !== null) entityId(component.variantId, `${path}.variantId`)
+      return
+    default:
+      fail(`${path}.nodeType`, 'is invalid')
+  }
+}
+
+export function validateComponentTargetRef(
+  value: unknown,
+  path = 'target',
+): asserts value is EventTrigger['target'] {
+  const target = record(value, path)
+  string(target.type, `${path}.type`)
+  switch (target.type) {
+    case 'inline':
+      exactKeys(target, ['type', 'componentId'], [], path)
+      entityId(target.componentId, `${path}.componentId`)
+      return
+    case 'definitionNode':
+      exactKeys(target, ['type', 'instanceId', 'nodePath'], [], path)
+      entityId(target.instanceId, `${path}.instanceId`)
+      if (!Array.isArray(target.nodePath) || target.nodePath.length === 0) {
+        fail(`${path}.nodePath`, 'must be a non-empty array')
+      }
+      target.nodePath.forEach((item, index) => entityId(item, `${path}.nodePath[${index}]`))
+      return
+    default:
+      fail(`${path}.type`, 'is invalid')
+  }
+}
+
+export function validateComponentOverride(
+  value: unknown,
+  path = 'componentOverride',
+): asserts value is ComponentOverride {
+  const override = record(value, path)
+  exactKeys(override, [], ['visible', 'enabled', 'text', 'value'], path)
+  if (override.visible !== undefined) boolean(override.visible, `${path}.visible`)
+  if (override.enabled !== undefined) boolean(override.enabled, `${path}.enabled`)
+  if (override.text !== undefined) string(override.text, `${path}.text`)
+  if (override.value !== undefined) string(override.value, `${path}.value`)
+}
+
+function validateScenarioComponentOverride(value: unknown, path: string): void {
+  const override = record(value, path)
+  exactKeys(override, ['target', 'override'], [], path)
+  validateComponentTargetRef(override.target, `${path}.target`)
+  validateComponentOverride(override.override, `${path}.override`)
+}
+
+export function validateScreenState(
+  value: unknown,
+  path = 'screenScenario',
+): asserts value is ScreenScenario {
+  const scenario = record(value, path)
+  exactKeys(scenario, ['id', 'screenId', 'name', 'description', 'componentOverrides'], [], path)
+  entityId(scenario.id, `${path}.id`)
+  entityId(scenario.screenId, `${path}.screenId`)
+  string(scenario.name, `${path}.name`)
+  string(scenario.description, `${path}.description`)
+  if (!Array.isArray(scenario.componentOverrides)) fail(`${path}.componentOverrides`, 'must be an array')
+  scenario.componentOverrides.forEach((entry, index) =>
+    validateScenarioComponentOverride(entry, `${path}.componentOverrides[${index}]`),
+  )
+}
+
 export function validateEventTrigger(
   value: unknown,
   path = 'event.trigger',
 ): asserts value is EventTrigger {
   const trigger = record(value, path)
-  exactKeys(trigger, ['type', 'componentId'], [], path)
-  enumValue(trigger.type, ['click', 'submit'], `${path}.type`)
-  entityId(trigger.componentId, `${path}.componentId`)
+  exactKeys(trigger, ['type', 'target'], [], path)
+  enumValue(trigger.type, EVENT_TRIGGER_TYPES_V3, `${path}.type`)
+  validateComponentTargetRef(trigger.target, `${path}.target`)
 }
 
 export function validateEventAction(
@@ -297,9 +789,12 @@ export function validateEventAction(
   const action = record(value, path)
   string(action.type, `${path}.type`)
   switch (action.type) {
-    case 'setState':
-      exactKeys(action, ['type', 'stateId'], [], path)
-      entityId(action.stateId, `${path}.stateId`)
+    case 'setScenario':
+      exactKeys(action, ['type', 'scenarioId'], [], path)
+      entityId(action.scenarioId, `${path}.scenarioId`)
+      return
+    case 'clearScenario':
+      exactKeys(action, ['type'], [], path)
       return
     case 'callApi':
       exactKeys(action, ['type', 'apiOperationId'], [], path)
@@ -310,7 +805,7 @@ export function validateEventAction(
       entityId(action.destinationScreenId, `${path}.destinationScreenId`)
       return
     default:
-      fail(`${path}.type`, 'is invalid')
+      fail(`${path}.type`, `must be one of: ${EVENT_ACTION_TYPES_V3.join(', ')}`)
   }
 }
 
@@ -330,6 +825,13 @@ export function validateScreenEvent(
   )
 }
 
+function validateFieldBinding(value: unknown, path: string): asserts value is FieldBinding {
+  const binding = record(value, path)
+  exactKeys(binding, ['source', 'targetPath'], [], path)
+  validateComponentTargetRef(binding.source, `${path}.source`)
+  string(binding.targetPath, `${path}.targetPath`)
+}
+
 export function validateApiOperation(
   value: unknown,
   path = 'apiOperation',
@@ -344,8 +846,8 @@ export function validateApiOperation(
       'method',
       'path',
       'requestBindings',
-      'successStateId',
-      'errorStateId',
+      'successScenarioId',
+      'errorScenarioId',
     ],
     [],
     path,
@@ -353,7 +855,7 @@ export function validateApiOperation(
   entityId(operation.id, `${path}.id`)
   entityId(operation.screenId, `${path}.screenId`)
   string(operation.name, `${path}.name`)
-  enumValue(operation.method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], `${path}.method`)
+  enumValue(operation.method, HTTP_METHODS_V3, `${path}.method`)
   string(operation.path, `${path}.path`)
   if (!Array.isArray(operation.requestBindings)) {
     fail(`${path}.requestBindings`, 'must be an array')
@@ -361,296 +863,70 @@ export function validateApiOperation(
   operation.requestBindings.forEach((binding, index) =>
     validateFieldBinding(binding, `${path}.requestBindings[${index}]`),
   )
-  if (operation.successStateId !== null) {
-    entityId(operation.successStateId, `${path}.successStateId`)
-  }
-  if (operation.errorStateId !== null) {
-    entityId(operation.errorStateId, `${path}.errorStateId`)
-  }
+  if (operation.successScenarioId !== null) entityId(operation.successScenarioId, `${path}.successScenarioId`)
+  if (operation.errorScenarioId !== null) entityId(operation.errorScenarioId, `${path}.errorScenarioId`)
 }
 
-function validateValidationRule(value: unknown, path: string): asserts value is ValidationRule {
-  const rule = record(value, path)
-  string(rule.type, `${path}.type`)
-  const common = ['id', 'type', 'message']
-  if (rule.type === 'minLength' || rule.type === 'maxLength' || rule.type === 'pattern') {
-    exactKeys(rule, [...common, 'value'], [], path)
-  } else if (rule.type === 'custom') {
-    exactKeys(rule, [...common, 'description'], [], path)
-  } else if (rule.type === 'required' || rule.type === 'email') {
-    exactKeys(rule, common, [], path)
-  } else {
-    fail(`${path}.type`, 'is invalid')
-  }
-  string(rule.id, `${path}.id`)
-  string(rule.message, `${path}.message`)
-  if (rule.message.trim().length === 0) fail(`${path}.message`, 'must not be empty')
-  if (rule.type === 'minLength' || rule.type === 'maxLength') {
-    if (!Number.isSafeInteger(rule.value) || (rule.value as number) < 0) {
-      fail(`${path}.value`, 'must be a non-negative safe integer')
-    }
-  }
-  if (rule.type === 'pattern') {
-    string(rule.value, `${path}.value`)
-    if (rule.value.trim().length === 0) fail(`${path}.value`, 'must not be empty')
-    try {
-      new RegExp(rule.value)
-    } catch {
-      fail(`${path}.value`, 'must be a valid regular expression')
-    }
-  }
-  if (rule.type === 'custom') {
-    string(rule.description, `${path}.description`)
-    if (rule.description.trim().length === 0) fail(`${path}.description`, 'must not be empty')
-  }
-}
-
-const VALIDATION_RULE_SINGLETON_TYPES = new Set(['required', 'email', 'minLength', 'maxLength'])
-
-function validateValidationRules(value: unknown, path: string): asserts value is ValidationRule[] {
-  if (!Array.isArray(value)) fail(path, 'must be an array')
-  value.forEach((rule, index) => validateValidationRule(rule, `${path}[${index}]`))
-  const rules = value as ValidationRule[]
-
-  const seenIds = new Set<string>()
-  const seenSingletonTypes = new Set<string>()
-  const seenPatternValues = new Set<string>()
-  const seenCustomDescriptions = new Set<string>()
-
-  rules.forEach((rule, index) => {
-    if (seenIds.has(rule.id)) fail(`${path}[${index}].id`, 'must be unique within validationRules')
-    seenIds.add(rule.id)
-
-    if (VALIDATION_RULE_SINGLETON_TYPES.has(rule.type)) {
-      if (seenSingletonTypes.has(rule.type)) {
-        fail(`${path}[${index}]`, `duplicates another '${rule.type}' rule`)
-      }
-      seenSingletonTypes.add(rule.type)
-    }
-
-    if (rule.type === 'pattern') {
-      const normalized = rule.value.trim()
-      if (seenPatternValues.has(normalized)) {
-        fail(`${path}[${index}].value`, 'duplicates another pattern rule')
-      }
-      seenPatternValues.add(normalized)
-    }
-
-    if (rule.type === 'custom') {
-      const normalized = rule.description.trim()
-      if (seenCustomDescriptions.has(normalized)) {
-        fail(`${path}[${index}].description`, 'duplicates another custom rule')
-      }
-      seenCustomDescriptions.add(normalized)
-    }
-  })
-
-  const minRule = rules.find((rule): rule is Extract<ValidationRule, { type: 'minLength' }> =>
-    rule.type === 'minLength',
-  )
-  const maxRule = rules.find((rule): rule is Extract<ValidationRule, { type: 'maxLength' }> =>
-    rule.type === 'maxLength',
-  )
-  if (minRule && maxRule && minRule.value > maxRule.value) {
-    fail(path, 'minLength must not exceed maxLength')
-  }
-}
-
-export function validateComponentConfig(
+export function validateProjectDocumentMetadata(
   value: unknown,
-  expectedKind?: ComponentKind,
-  path = 'component.config',
-): asserts value is ComponentConfig {
-  const config = record(value, path)
-  string(config.kind, `${path}.kind`)
-  if (expectedKind !== undefined && config.kind !== expectedKind) {
-    fail(`${path}.kind`, `must match component kind ${expectedKind}`)
+  path = 'document',
+): asserts value is ProjectDocument {
+  const document = record(value, path)
+  exactKeys(
+    document,
+    [
+      '$schema',
+      'kind',
+      'schemaVersion',
+      'project',
+      'componentDefinitions',
+      'screens',
+      'components',
+      'screenScenarios',
+      'events',
+      'apiOperations',
+    ],
+    [],
+    path,
+  )
+  if (document.$schema !== CANONICAL_PROJECT_SCHEMA_URL_V3) {
+    fail(`${path}.$schema`, `must equal ${CANONICAL_PROJECT_SCHEMA_URL_V3}`)
   }
+  if (document.kind !== CANONICAL_PROJECT_KIND_V3) {
+    fail(`${path}.kind`, `must equal ${CANONICAL_PROJECT_KIND_V3}`)
+  }
+  if (document.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    fail(`${path}.schemaVersion`, `must equal ${CURRENT_SCHEMA_VERSION}`)
+  }
+  validateProject(document.project, `${path}.project`)
 
-  switch (config.kind) {
-    case 'page':
-    case 'modal':
-    case 'container':
-      exactKeys(
-        config,
-        ['kind', 'layout', 'gap', 'columns', 'justify', 'align', 'wrap'],
-        [],
-        path,
-      )
-      validateComponentLayout(config, path)
-      return
-    case 'text':
-      exactKeys(config, ['kind', 'text', 'style'], [], path)
-      string(config.text, `${path}.text`)
-      enumValue(
-        config.style,
-        ['heading1', 'heading2', 'heading3', 'body', 'caption'],
-        `${path}.style`,
-      )
-      return
-    case 'textInput':
-      exactKeys(
-        config,
-        [
-          'kind',
-          'fieldKey',
-          'label',
-          'inputType',
-          'required',
-          'placeholder',
-          'defaultValue',
-          'validationRules',
-        ],
-        [],
-        path,
-      )
-      string(config.fieldKey, `${path}.fieldKey`)
-      string(config.label, `${path}.label`)
-      enumValue(config.inputType, ['text', 'email', 'password'], `${path}.inputType`)
-      boolean(config.required, `${path}.required`)
-      string(config.placeholder, `${path}.placeholder`)
-      string(config.defaultValue, `${path}.defaultValue`)
-      validateValidationRules(config.validationRules, `${path}.validationRules`)
-      return
-    case 'select':
-      exactKeys(
-        config,
-        ['kind', 'fieldKey', 'label', 'required', 'options', 'defaultValue'],
-        [],
-        path,
-      )
-      string(config.fieldKey, `${path}.fieldKey`)
-      string(config.label, `${path}.label`)
-      boolean(config.required, `${path}.required`)
-      if (!Array.isArray(config.options)) fail(`${path}.options`, 'must be an array')
-      const optionValues = new Set<string>()
-      config.options.forEach((option, index) => {
-        const optionRecord = record(option, `${path}.options[${index}]`)
-        exactKeys(optionRecord, ['value', 'label'], [], `${path}.options[${index}]`)
-        string(optionRecord.value, `${path}.options[${index}].value`)
-        string(optionRecord.label, `${path}.options[${index}].label`)
-        if (optionRecord.value.trim().length === 0) {
-          fail(`${path}.options[${index}].value`, 'must not be empty')
-        }
-        if (optionValues.has(optionRecord.value)) {
-          fail(`${path}.options[${index}].value`, 'must be unique')
-        }
-        optionValues.add(optionRecord.value)
-      })
-      string(config.defaultValue, `${path}.defaultValue`)
-      if (config.defaultValue !== '' && !optionValues.has(config.defaultValue)) {
-        fail(`${path}.defaultValue`, 'must match a select option or be empty')
-      }
-      return
-    case 'button':
-      exactKeys(
-        config,
-        ['kind', 'label', 'variant', 'eventId', 'confirmationMessage', 'preventDoubleSubmit'],
-        [],
-        path,
-      )
-      string(config.label, `${path}.label`)
-      enumValue(config.variant, ['primary', 'secondary', 'danger'], `${path}.variant`)
-      nullableString(config.eventId, `${path}.eventId`)
-      nullableString(config.confirmationMessage, `${path}.confirmationMessage`)
-      boolean(config.preventDoubleSubmit, `${path}.preventDoubleSubmit`)
-      return
-    case 'image':
-      exactKeys(config, ['kind', 'source', 'alt', 'fit', 'aspectRatio', 'placeholderStyle'], [], path)
-      string(config.source, `${path}.source`)
-      if (!isSafePortableUrl(config.source, true)) {
-        fail(`${path}.source`, 'must be empty or a safe relative, HTTP, or HTTPS URL')
-      }
-      string(config.alt, `${path}.alt`)
-      if (config.alt.trim().length === 0) fail(`${path}.alt`, 'must not be empty')
-      enumValue(config.fit, ['contain', 'cover'], `${path}.fit`)
-      enumValue(config.aspectRatio, ['auto', 'square', '4:3', '16:9'], `${path}.aspectRatio`)
-      enumValue(config.placeholderStyle, ['icon', 'skeleton'], `${path}.placeholderStyle`)
-      return
-    case 'link': {
-      exactKeys(config, ['kind', 'label', 'destination', 'openMode'], [], path)
-      string(config.label, `${path}.label`)
-      if (config.label.trim().length === 0) fail(`${path}.label`, 'must not be empty')
-      const destination = record(config.destination, `${path}.destination`)
-      string(destination.type, `${path}.destination.type`)
-      switch (destination.type) {
-        case 'internal':
-          exactKeys(destination, ['type', 'screenId'], [], `${path}.destination`)
-          entityId(destination.screenId, `${path}.destination.screenId`)
-          enumValue(config.openMode, ['sameContext'], `${path}.openMode`)
-          return
-        case 'external':
-          exactKeys(destination, ['type', 'url'], [], `${path}.destination`)
-          string(destination.url, `${path}.destination.url`)
-          if (!isSafeExternalUrl(destination.url)) {
-            fail(`${path}.destination.url`, 'must be an absolute HTTP or HTTPS URL')
-          }
-          enumValue(config.openMode, ['sameContext', 'newContext'], `${path}.openMode`)
-          return
-        case 'resource':
-          exactKeys(
-            destination,
-            ['type', 'resourceId', 'url', 'displayName'],
-            [],
-            `${path}.destination`,
-          )
-          string(destination.resourceId, `${path}.destination.resourceId`)
-          if (destination.resourceId.trim().length === 0) {
-            fail(`${path}.destination.resourceId`, 'must not be empty')
-          }
-          string(destination.url, `${path}.destination.url`)
-          if (!isSafePortableUrl(destination.url)) {
-            fail(`${path}.destination.url`, 'must be a safe relative, HTTP, or HTTPS URL')
-          }
-          string(destination.displayName, `${path}.destination.displayName`)
-          if (destination.displayName.trim().length === 0) {
-            fail(`${path}.destination.displayName`, 'must not be empty')
-          }
-          enumValue(
-            config.openMode,
-            ['sameContext', 'newContext', 'download'],
-            `${path}.openMode`,
-          )
-          return
-        default:
-          fail(`${path}.destination.type`, 'is invalid')
-      }
+  const componentDefinitions = entityMap(
+    document.componentDefinitions,
+    `${path}.componentDefinitions`,
+  )
+  for (const [key, definition] of Object.entries(componentDefinitions)) {
+    entityId(key, `${path}.componentDefinitions key`)
+    validateComponentDefinition(definition, `${path}.componentDefinitions.${key}`)
+    if (record(definition, `${path}.componentDefinitions.${key}`).id !== key) {
+      fail(`${path}.componentDefinitions.${key}.id`, `must match record key ${key}`)
     }
-    default:
-      fail(`${path}.kind`, `is not a supported component kind: ${String(config.kind)}`)
   }
-}
 
-function validateComponentLayout(config: UnknownRecord, path: string): void {
-  enumValue(config.layout, ['vertical', 'horizontal', 'grid'], `${path}.layout`)
-  enumValue(config.gap, ['none', 'sm', 'md', 'lg'], `${path}.gap`)
-  enumValue(config.columns, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${path}.columns`)
-  enumValue(config.justify, ['start', 'center', 'end', 'between'], `${path}.justify`)
-  enumValue(config.align, ['start', 'center', 'end', 'stretch'], `${path}.align`)
-  boolean(config.wrap, `${path}.wrap`)
-}
+  const validators = [
+    ['screens', entityMap(document.screens, `${path}.screens`), validateScreen],
+    ['components', entityMap(document.components, `${path}.components`), validateScreenComponent],
+    ['screenScenarios', entityMap(document.screenScenarios, `${path}.screenScenarios`), validateScreenState],
+    ['events', entityMap(document.events, `${path}.events`), validateScreenEvent],
+    ['apiOperations', entityMap(document.apiOperations, `${path}.apiOperations`), validateApiOperation],
+  ] as const
 
-export function validateComponentOverride(
-  value: unknown,
-  component: ScreenComponent,
-  path: string,
-): asserts value is ComponentOverride {
-  const override = record(value, path)
-  const optionalKeys = ['visible', 'enabled']
-  if (component.kind === 'text') optionalKeys.push('text')
-  if (component.kind === 'textInput' || component.kind === 'select') optionalKeys.push('value')
-  exactKeys(override, [], optionalKeys, path)
-
-  if (override.visible !== undefined) boolean(override.visible, `${path}.visible`)
-  if (override.enabled !== undefined) boolean(override.enabled, `${path}.enabled`)
-  if (override.text !== undefined) string(override.text, `${path}.text`)
-  if (override.value !== undefined) {
-    string(override.value, `${path}.value`)
-    if (
-      component.config.kind === 'select' &&
-      !component.config.options.some(option => option.value === override.value)
-    ) {
-      fail(`${path}.value`, 'must match a select option')
+  for (const [collectionName, collection, validateEntity] of validators) {
+    for (const [key, entity] of Object.entries(collection)) {
+      entityId(key, `${path}.${collectionName} key`)
+      validateEntity(entity, `${path}.${collectionName}.${key}`)
+      if (record(entity, `${path}.${collectionName}.${key}`).id !== key) {
+        fail(`${path}.${collectionName}.${key}.id`, `must match record key ${key}`)
+      }
     }
   }
 }

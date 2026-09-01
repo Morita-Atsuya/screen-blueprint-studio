@@ -1,11 +1,12 @@
 import type { ChangeSet } from './collaboration'
 import { replayChangeSetOperations } from './changeSetReplay'
-import { getOwnEntity, hasOwnEntity } from './entityMap'
+import { getOwnEntity } from './entityMap'
 import type {
   EntityId,
   ProjectDocument,
   ScreenComponent,
 } from './model'
+import { targetRootScreenComponentId } from './componentTargets'
 
 export type ComponentChangeStatus = 'added' | 'modified'
 
@@ -44,7 +45,7 @@ function componentPosition(
     const parent = getOwnEntity(document.components, component.parentId)
     return {
       context: 'child',
-      index: parent?.childIds.indexOf(component.id) ?? -1,
+      index: parent ? (parent.childIds as readonly string[]).indexOf(component.id) : -1,
     }
   }
   const screen = getOwnEntity(document.screens, component.screenId)
@@ -56,23 +57,24 @@ function componentPosition(
 }
 
 function componentOverrides(document: ProjectDocument, component: ScreenComponent) {
-  return Object.values(document.screenStates)
-    .filter(state =>
-      state.screenId === component.screenId &&
-      hasOwnEntity(state.componentOverrides, component.id)
+  return Object.values(document.screenScenarios)
+    .filter(scenario =>
+      scenario.screenId === component.screenId &&
+      scenario.componentOverrides.some(entry => targetRootScreenComponentId(entry.target) === component.id)
     )
-    .map(state => ({
-      stateId: state.id,
-      override: state.componentOverrides[component.id],
+    .map(scenario => ({
+      stateId: scenario.id,
+      override: scenario.componentOverrides
+        .filter(entry => targetRootScreenComponentId(entry.target) === component.id)
+        .map(entry => ({ target: entry.target, override: entry.override })),
     }))
     .sort((left, right) => left.stateId.localeCompare(right.stateId))
 }
 
 function componentEventRelations(document: ProjectDocument, componentId: EntityId) {
   const triggered = Object.values(document.events)
-    .filter(event => event.trigger.componentId === componentId)
+    .filter(event => targetRootScreenComponentId(event.trigger.target) === componentId)
     .sort((left, right) => left.id.localeCompare(right.id))
-
   return { triggered }
 }
 
@@ -80,7 +82,7 @@ function componentApiBindings(document: ProjectDocument, componentId: EntityId) 
   return Object.values(document.apiOperations)
     .flatMap(operation =>
       operation.requestBindings.flatMap((binding, index) =>
-        binding.componentId === componentId
+        targetRootScreenComponentId(binding.source) === componentId
           ? [{
               operationId: operation.id,
               bindingIndex: index,
@@ -91,7 +93,7 @@ function componentApiBindings(document: ProjectDocument, componentId: EntityId) 
     )
     .sort((left, right) =>
       left.operationId.localeCompare(right.operationId) ||
-      left.bindingIndex - right.bindingIndex
+      left.bindingIndex - right.bindingIndex,
     )
 }
 
@@ -110,7 +112,7 @@ function componentOrder(document: ProjectDocument): Map<EntityId, number> {
   const visited = new Set<EntityId>()
   let index = 0
 
-  function visit(componentId: EntityId) {
+  function visit(componentId: EntityId): void {
     if (visited.has(componentId)) return
     visited.add(componentId)
     const component = getOwnEntity(document.components, componentId)
@@ -169,7 +171,7 @@ export function compareComponentChanges(
   removedComponents.sort((left, right) =>
     (baseOrder.get(left.componentId) ?? Number.MAX_SAFE_INTEGER) -
       (baseOrder.get(right.componentId) ?? Number.MAX_SAFE_INTEGER) ||
-    left.componentId.localeCompare(right.componentId)
+    left.componentId.localeCompare(right.componentId),
   )
 
   return { statuses, removedComponents }

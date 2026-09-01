@@ -27,6 +27,7 @@ import {
 } from './paneWidths'
 import logoMarkUrl from '../../brand/logo-mark.svg'
 import { BUILD_FEATURE_FLAGS } from '../config/buildFeatureFlags'
+import { DefinitionEditor } from '../features/definitions/DefinitionEditor'
 import styles from './App.module.css'
 
 function browserStorage(): Storage | undefined {
@@ -92,7 +93,7 @@ export function App() {
     resolveInitialRightPaneWidth(browserStorage()),
   )
   const [resizingPane, setResizingPane] = useState<'left' | 'right' | null>(null)
-  const [editorView, setEditorView] = useState<'screen' | 'flow'>('screen')
+  const [editorView, setEditorView] = useState<'screen' | 'flow' | 'definition'>('screen')
   const { left: leftPaneWidth, right: rightPaneWidth } = resolvePaneWidths(
     preferredLeftPaneWidth,
     preferredRightPaneWidth,
@@ -123,6 +124,10 @@ export function App() {
   useEffect(() => {
     rightPaneWidthRef.current = rightPaneWidth
   }, [rightPaneWidth])
+
+  useEffect(() => {
+    if (ui.selection?.type === 'definitionEditorNode') setEditorView('definition')
+  }, [ui.selection])
 
   useEffect(() => {
     if (!toast) return
@@ -293,7 +298,7 @@ export function App() {
   // ── Main UI ─────────────────────────────────────────────────
   return (
     <EditorDndProvider>
-      <EditorKeyboardShortcuts readOnlyEditorView={editorView === 'flow'} />
+      <EditorKeyboardShortcuts readOnlyEditorView={editorView !== 'screen'} />
       <div className={`${styles.root} ${resizingPane ? styles.resizing : ''}`}>
         <header className={styles.header}>
           <span className={styles.logo}>
@@ -388,7 +393,7 @@ export function App() {
 
           <main
             className={styles.editor}
-            data-read-only-editor-view={editorView === 'flow' || undefined}
+            data-read-only-editor-view={editorView !== 'screen' || undefined}
           >
             <div
               className={styles.editorViewSwitch}
@@ -413,8 +418,16 @@ export function App() {
               >
                 {t('editor.flowView')}
               </button>
+              <button
+                type="button"
+                className={editorView === 'definition' ? styles.editorViewActive : ''}
+                aria-pressed={editorView === 'definition'}
+                onClick={() => setEditorView('definition')}
+              >
+                {t('editor.definitionView')}
+              </button>
             </div>
-            {activeScreen ? (
+            {activeScreen && editorView !== 'definition' ? (
               <section
                 ref={screenContextRef}
                 className={styles.screenContext}
@@ -458,6 +471,13 @@ export function App() {
               data-editor-view="flow"
             >
               <ScreenFlow openScreenView={openScreenView} />
+            </div>
+            <div
+              className={styles.editorViewPanel}
+              hidden={editorView !== 'definition'}
+              data-editor-view="definition"
+            >
+              <DefinitionEditor />
             </div>
           </main>
 

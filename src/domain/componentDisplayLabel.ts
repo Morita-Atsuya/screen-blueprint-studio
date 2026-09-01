@@ -1,11 +1,15 @@
 import { getOwnEntity } from './entityMap'
 import type { EntityId, ProjectDocument, ScreenComponent, ScreenState } from './model'
+import type { EffectiveScreenComponent } from './selectors'
 import { effectiveComponent } from './selectors'
 import type { Locale, MessageKey } from '../i18n/messages'
 import { translate } from '../i18n/messages'
 import { assertNever } from './assertNever'
 
-export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], MessageKey> = {
+export const COMPONENT_KIND_MESSAGE_KEYS: Record<
+  Extract<ScreenComponent, { nodeType: 'inline' }>['kind'],
+  MessageKey
+> = {
   page: 'component.page',
   container: 'component.container',
   text: 'component.text',
@@ -20,19 +24,23 @@ export const COMPONENT_KIND_MESSAGE_KEYS: Record<ScreenComponent['kind'], Messag
 function readableText(value: string, fallback: string, maxLength = 32): string {
   const normalized = value.trim().replace(/\s+/g, ' ')
   if (!normalized) return fallback
-
   const characters = Array.from(normalized)
   if (characters.length <= maxLength) return normalized
   return `${characters.slice(0, maxLength - 1).join('')}…`
 }
 
 export function getComponentDisplayLabel(
-  component: ScreenComponent,
+  component: ScreenComponent | EffectiveScreenComponent,
   locale: Locale = 'en',
 ): string {
+  if (component.nodeType === 'definitionInstance') {
+    const base = 'definitionName' in component && typeof component.definitionName === 'string'
+      ? component.definitionName
+      : translate(locale, 'component.container')
+    return readableText(base, base)
+  }
   const fallback = translate(locale, COMPONENT_KIND_MESSAGE_KEYS[component.kind])
   const config = component.config
-
   switch (config.kind) {
     case 'page':
     case 'modal':
@@ -54,16 +62,15 @@ export function getComponentDisplayLabel(
 }
 
 export function getComponentTreeLabel(
-  component: ScreenComponent,
+  component: ScreenComponent | EffectiveScreenComponent,
   locale: Locale = 'en',
 ): string {
   const label = getComponentDisplayLabel(component, locale)
+  if (component.nodeType === 'definitionInstance') return label
   const config = component.config
   if (config.kind !== 'textInput' && config.kind !== 'select') return label
-
   const value = config.kind === 'select'
-    ? config.options.find(option => option.value === config.defaultValue)?.label ??
-      config.defaultValue
+    ? config.options.find(option => option.value === config.defaultValue)?.label ?? config.defaultValue
     : config.defaultValue
   if (!value.trim()) return label
   return readableText(`${label}: ${value}`, label)
@@ -71,14 +78,13 @@ export function getComponentTreeLabel(
 
 export function getComponentHierarchyLabel(
   document: ProjectDocument,
-  component: ScreenComponent,
+  component: ScreenComponent | EffectiveScreenComponent,
   locale: Locale = 'en',
 ): string {
   const screen = getOwnEntity(document.screens, component.screenId)
-  const modalIndex = component.parentId === null && component.kind === 'modal'
+  const modalIndex = component.parentId === null && component.nodeType === 'inline' && component.kind === 'modal'
     ? screen?.modalComponentIds.indexOf(component.id) ?? -1
     : -1
-
   return modalIndex >= 0
     ? translate(locale, 'canvas.modalFrameLabel', { number: modalIndex + 1 })
     : getComponentDisplayLabel(component, locale)
@@ -130,7 +136,7 @@ export function getComponentSelectionContext(
     componentId: component.id,
     label: getComponentHierarchyLabel(
       document,
-      effectiveComponent(component, activeState),
+      effectiveComponent(document, component, activeState),
       locale,
     ),
   }))
@@ -138,7 +144,7 @@ export function getComponentSelectionContext(
   return {
     screenId: screen.id,
     screenName: readableText(screen.name, translate(locale, 'component.page'), 48),
-    targetLabel: hierarchy[hierarchy.length - 1].label,
+    targetLabel: hierarchy[hierarchy.length - 1]!.label,
     hierarchy,
   }
 }
