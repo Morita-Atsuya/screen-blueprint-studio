@@ -87,14 +87,13 @@ WebMCPは実験的な機能です。対応するChrome buildで次のflagを有�
 chrome://flags/#enable-webmcp-testing
 ```
 
-Chromeを再起動してアプリを開き、Chrome DevToolsでWebMCPを確認します。現行releaseは11個のtoolを登録します。
+Chromeを再起動してアプリを開き、Chrome DevToolsでWebMCPを確認します。現行releaseは10個のtoolを登録します。
 
 | Tool | 役割 |
 | --- | --- |
 | `get_current_screen_context` | effectiveなactive screen、selection、revision、proposal metadataを読む |
 | `get_component` | componentまたはcanonicalなresolved targetを読む |
 | `get_pending_change_set` | active proposalとreview diffを読む |
-| `begin_change_set` | AI proposalを開始 |
 | `change_screen_structure` | screenを追加、更新、削除 |
 | `change_component_structure` | componentを追加、移動、複製、削除 |
 | `update_component_spec` | componentの内容、配置、size、種類別設定を更新 |
@@ -105,10 +104,10 @@ Chromeを再起動してアプリを開き、Chrome DevToolsでWebMCPを確認�
 
 Manual checkの例:
 
-1. 11個のtoolが一度だけ登録され、console errorがないことを確認します。
+1. 10個のtoolが一度だけ登録され、console errorがないことを確認します。
 2. `get_current_screen_context`を実行し、表示中のactive screenとselectionが返ることを確認します。
-3. `begin_change_set`でproposalを開始します。
-4. 戻り値のchange-set ID、confirmed revision、change-set versionを使い、型付きwriteを1件実行します。
+3. 型付きwriteを1件実行し、proposalがatomicに作成され、change-set ID、base revision、version、operation ID、生成entity IDが返ることを確認します。
+4. 関連する2件目のwriteを実行し、agentがrevision／version引数を運ばなくても同じproposalへ追加されることを確認します。
 5. `get_pending_change_set`のsummary／field diffとアプリ上のpreviewを比較します。
 6. 人向けUIでproposalを反映または破棄し、review lockが解除されることを確認します。
 

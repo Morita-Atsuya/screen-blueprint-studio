@@ -87,14 +87,13 @@ WebMCP is experimental. Use a compatible Chrome build, enable:
 chrome://flags/#enable-webmcp-testing
 ```
 
-Restart Chrome, open the application, and inspect WebMCP in Chrome DevTools. The current release registers 11 tools:
+Restart Chrome, open the application, and inspect WebMCP in Chrome DevTools. The current release registers 10 tools:
 
 | Tool | Role |
 | --- | --- |
 | `get_current_screen_context` | Read the effective active screen, selection, revision, and proposal metadata |
 | `get_component` | Read a component or canonical resolved target |
 | `get_pending_change_set` | Read the active proposal and review diff |
-| `begin_change_set` | Start an AI proposal |
 | `change_screen_structure` | Add, update, or remove screens |
 | `change_component_structure` | Add, move, duplicate, or remove components |
 | `update_component_spec` | Update component content, placement, sizing, or kind-specific settings |
@@ -105,10 +104,10 @@ Restart Chrome, open the application, and inspect WebMCP in Chrome DevTools. The
 
 A useful manual check is:
 
-1. Confirm that all 11 tools register once without console errors.
+1. Confirm that all 10 tools register once without console errors.
 2. Run `get_current_screen_context` and verify that it reports the visible active screen and current selection.
-3. Start a proposal with `begin_change_set`.
-4. Submit one typed write using the returned change-set ID, confirmed revision, and change-set version.
+3. Submit one typed write and confirm that it atomically creates a proposal and returns the change-set ID, base revision, version, operation ID, and any created entity IDs.
+4. Submit a related second write and confirm that it appends to the same proposal without agent-carried revision or version arguments.
 5. Read `get_pending_change_set` and compare its summary and field diff with the preview in the application.
 6. Apply or discard the proposal in the human UI and confirm that the review lock clears.
 

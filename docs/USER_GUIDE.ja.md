@@ -91,9 +91,9 @@ Text Inputでは、required、最小／最大長、pattern、email形式、記�
 
 ## WebMCPでAIと作業する
 
-人は視覚的なworkspaceを使い、AI agentは名前と型を持つ11個のWebMCP toolを使います。どちらも同じlive Screen、selection、resolved component、state、Event、APIを読み取ります。
+人は視覚的なworkspaceを使い、AI agentは名前と型を持つ10個のWebMCP toolを使います。どちらも同じlive Screen、selection、resolved component、state、Event、APIを読み取ります。
 
-AIのwriteはchange setを開始します。Operationはeffective previewとChanges panelへ表示され、確定projectはまだ変わりません。Review中はdocumentを変更するcontrol、drag and drop、Undo、Redoがlockされますが、selection、inspection、Canvasのpan／zoom、Flowは利用できます。Proposalを反映すると確定history 1件になり、破棄するとprojectは変更されません。
+最初の有効なAI writeは、change set作成とoperation追加をatomicに行います。後続writeは同じproposalへ追加され、最初のwriteが失敗した場合は空のreview lockを残しません。Operationはeffective previewとChanges panelへ表示され、確定projectはまだ変わりません。Review中はdocumentを変更するcontrol、drag and drop、Undo、Redoがlockされますが、selection、inspection、Canvasのpan／zoom、Flowは利用できます。Proposalを反映すると確定history 1件になり、破棄するとprojectは変更されません。
 
 WebMCPには対応する実験版Chromeが必要です。`document.modelContext`がないbrowserではtool registrationをskipし、人向けeditorはすべて利用できます。設定とtool一覧は[開発ガイド](./DEVELOPMENT.ja.md)を参照してください。
 

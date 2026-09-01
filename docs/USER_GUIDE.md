@@ -91,9 +91,9 @@ Text Input components also support ordered validation rules for required values,
 
 ## Work with AI through WebMCP
 
-People use the visual workspace; AI agents use 11 named and typed WebMCP tools. Both read the same live Screen, selection, resolved components, states, Events, and APIs.
+People use the visual workspace; AI agents use 10 named and typed WebMCP tools. Both read the same live Screen, selection, resolved components, states, Events, and APIs.
 
-An AI write begins a change set. Its operations appear in the effective preview and Changes panel while the confirmed project remains unchanged. During review, document-changing controls, drag and drop, Undo, and Redo are locked, but selection, inspection, Canvas pan and zoom, and Flow remain available. Apply the proposal to make it one confirmed history entry, or discard it to leave the project unchanged.
+The first valid AI write atomically creates a change set and adds its operation; later writes append to that proposal. A failed first write does not leave an empty review lock. Operations appear in the effective preview and Changes panel while the confirmed project remains unchanged. During review, document-changing controls, drag and drop, Undo, and Redo are locked, but selection, inspection, Canvas pan and zoom, and Flow remain available. Apply the proposal to make it one confirmed history entry, or discard it to leave the project unchanged.
 
 WebMCP requires a compatible experimental Chrome build. Browsers without `document.modelContext` skip tool registration while retaining the full human editor. Setup and the tool list are in the [development guide](./DEVELOPMENT.md).
 

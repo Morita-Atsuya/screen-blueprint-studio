@@ -498,9 +498,9 @@ interface CollaborationState {
 ```text
 確定モデル
   ├─ 人間が編集 ────────────────> 確定モデル + history
-  └─ AIがbegin_change_set
+  └─ AIの最初の有効なmutation
        ↓
-     active change set
+     active change set作成 + command追加（atomic）
        ├─ AIがcommand追加
        ├─ 人間はpreview・差分を確認
        ├─ 人間のdocument編集とUndo／Redoをlock
@@ -510,12 +510,13 @@ interface CollaborationState {
 
 active change set中はreview lockとし、人間によるProjectDocument変更を中央store入口で拒否する。Inspector、Screen／state／Event／API／Validation編集、追加・削除・複製・Paste、DnD、Undo／RedoもUIで無効化し、確定document、base document、operations、version、history、永続化payloadを変更しない。選択、Treeの開閉、Canvasのzoom/pan/fit、Flow／Changes閲覧、locale、pane resize、アプリ内Copyは継続できる。UI上部にlock理由と反映／破棄導線を表示する。
 
-change setの`version`はAI operation追加ごとに1増加し、`operations.length`と一致する。WebMCPのwrite toolは`expectedRevision`と`expectedChangeSetVersion`を受け取り、次を検証する。
+change setの`version`はAI operation追加ごとに1増加し、`operations.length`と一致する。WebMCPのmutationはchange set IDやrevision／versionをagentから受け取らず、storeが次を一つのtransactionで検証する。
 
-- `expectedRevision === activeChangeSet.baseRevision === document.revision`
-- `expectedChangeSetVersion === activeChangeSet.version`
+- active change setがない場合は、commandをclone・検証・preview適用した後に、現在の確定revisionをbaseとしてchange set作成と最初のoperation追加を同時に行う
+- active change setがある場合は、`activeChangeSet.baseRevision === document.revision`を確認して同じsetへ追加する
+- command適用失敗時は、新規の空change setを残さず、既存change setのversion／operationsも変更しない
 
-これにより、別タブで確定モデルが更新された場合と、tool呼び出しの間に別のAI operationが追加された場合の両方でstale writeを拒否できる。
+これにより、安全性をagentの手順記憶へ依存させず、別タブなどで確定モデルが更新されたstale writeも拒否できる。
 
 ### 8.3 反映
 
@@ -631,30 +632,28 @@ AI writeは必ずWebMCP change setへ追加し、確定には人間向けUIで�
 | `get_component` | ID指定または選択中componentの仕様を取得 | component、state override、関連event/API |
 | `get_pending_change_set` | 未反映の変更セットを取得 | raw AI operations、review用operation summaries/diff、base revision。base document本体は返さない |
 
-### 11.2 Change set開始
+### 11.2 Change set transaction
 
-| Tool | 目的 | 主な入力 |
-| --- | --- | --- |
-| `begin_change_set` | AI変更をまとめる作業単位を開始 | `summary` |
-
-active change setがすでに存在する場合は新規作成せず、既存IDを含む明示的エラーを返す。
+Publicな開始toolは設けない。最初の有効なmutationが、tool名とoperationから決定論的なsummaryを作り、change set作成とoperation追加をatomicに行う。active change setがある場合、後続mutationは同じproposalへ追加する。別taskを混ぜないようread resultとtool descriptionで注意を返すが、人が反映または破棄するまで正当な複数operationを継続できる。
 
 ### 11.3 更新
 
 | Tool | 目的 | 主な入力 |
 | --- | --- | --- |
-| `change_screen_structure` | screenの追加、更新、削除 | `changeSetId`, `operation`, operation別のtyped fields |
-| `change_component_structure` | componentの追加、複製、移動、subtree削除 | `changeSetId`, `operation`, operation別のtyped fields |
-| `update_component_spec` | componentの編集可能仕様を更新 | `changeSetId`, `componentId`, typed `patch` |
-| `upsert_screen_state` | 状態の追加、更新、削除 | `changeSetId`, `operation`, state fields |
-| `connect_behavior` | event/API操作の追加、ID保持更新、削除 | `changeSetId`, `operation`, eventまたはAPI fields |
+| `change_screen_structure` | screenの追加、更新、削除 | `operation`, operation別のtyped fields |
+| `change_component_structure` | componentの追加、複製、移動、subtree削除 | `operation`, operation別のtyped fields |
+| `update_component_spec` | componentの編集可能仕様を更新 | `componentId`, typed `patch` |
+| `upsert_screen_state` | 状態の追加、更新、削除 | `operation`, state fields |
+| `connect_behavior` | event/API操作の追加、ID保持更新、削除 | `operation`, eventまたはAPI fields |
+| `manage_component_definition` | Definition、公開property、Variantの管理 | `operation`, operation別のtyped fields |
+| `manage_definition_instance` | Instance追加・更新、extract、detach | `operation`, operation別のtyped fields |
 
 AIによる更新toolは次を共通要件とする。
 
-1. active change setのIDが必須
-2. `expectedRevision`と`expectedChangeSetVersion`が一致しない場合は失敗
-3. command適用後に不変条件を検証
-4. 成功時はoperation ID、確定revision、change set versionを返す
+1. operation固有入力とcommandを、store state変更前にclone・検証・preview適用する
+2. active change setがなければ作成と最初のoperation追加をatomicに行い、あれば安全にappendする
+3. 失敗時は新規／既存change setを変更しない
+4. 成功時はchange set ID／base revision／version、operation ID、生成entity IDを返す
 5. 確定モデルを変更せず、UIを即座にpreview更新する
 
 `change_component_structure`は巨大な汎用編集toolではなく、component treeだけを対象にしたdiscriminated operationである。
@@ -754,7 +753,7 @@ type DomainErrorCode =
   | "CHANGE_SET_ALREADY_ACTIVE";
 ```
 
-UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`、`message`、`details`を含む失敗結果を返す。成功形へのfallbackや部分成功は行わない。`expectedRevision`／`expectedChangeSetVersion`の欠落・型・範囲エラーは`INVALID_ARGUMENT`、有効な整数と現在値の不一致だけは`REVISION_CONFLICT`とし、後者の場合だけ最新contextを取得して再試行する。
+UIはtoastと該当フォームのinline errorで表示する。WebMCPは`code`、`message`、`details`を含む失敗結果を返す。成功形へのfallbackや部分成功は行わない。Operation固有入力の不足・型・範囲エラーは`INVALID_ARGUMENT`、active change setのbase revisionと現在の確定revisionが一致しない場合は`REVISION_CONFLICT`とし、後者では最新contextを取得して人のreview状態を確認する。
 
 ## 13. 永続化
 
@@ -862,9 +861,8 @@ WebMCP testing対応Chromeでは最後に、実API登録、context read、change
 
 1. TypeScript型定義とfeature detection
 2. 3 read tools
-3. `begin_change_set`
-4. 5 write tools
-5. WebMCP状態表示とtool handler tests
+3. 7 mutation toolsとatomic proposal transaction
+4. WebMCP状態表示とtool handler tests
 
 完了条件: エージェントが選択中componentを読み、状態・API失敗仕様を変更セットへ追加し、UIへ未反映差分として表示できる。
 

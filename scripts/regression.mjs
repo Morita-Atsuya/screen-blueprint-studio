@@ -1640,12 +1640,13 @@ await test('recovery blocks mutations and exposes only recovery context', async 
   const pending = byName('get_pending_change_set').execute({})
   assert(pending.ok && pending.data.recovery?.status === 'invalid', 'pending read omitted recovery status')
   const writeNames = [
-    'begin_change_set',
     'change_screen_structure',
     'change_component_structure',
     'update_component_spec',
     'upsert_screen_state',
     'connect_behavior',
+    'manage_component_definition',
+    'manage_definition_instance',
   ]
   for (const name of writeNames) {
     const result = byName(name).execute({})
@@ -2399,14 +2400,7 @@ await test('domain commands isolate every nested payload from returned documents
   memoryStorage.clear()
   const webModule = await import(moduleUrl(toolsBundle, 'command-isolation-webmcp'))
   const webTool = name => webModule.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const webBegin = webTool('begin_change_set').execute({
-    summary: 'WebMCP payload isolation',
-  })
-  assert(webBegin.ok, 'WebMCP isolation change set did not start')
   const webInput = {
-    changeSetId: webBegin.data.changeSetId,
-    expectedRevision: webBegin.data.baseRevision,
-    expectedChangeSetVersion: 0,
     componentId: 'comp-task-name-input',
     patch: {
       config: {
@@ -3439,13 +3433,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
     memoryStorage.clear()
     const module = await import(moduleUrl(toolsBundle, 'prototype-webmcp'))
     const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-    const begin = byName('begin_change_set').execute({ summary: 'Prototype ID checks' })
-    assert(begin.ok, 'prototype change set did not begin')
-    const common = {
-      changeSetId: begin.data.changeSetId,
-      expectedRevision: begin.data.baseRevision,
-      expectedChangeSetVersion: 0,
-    }
+    const common = {}
     const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
     const beforePrototype = snapshotObjectPrototype()
     const dangerousIds = ['__proto__', 'constructor', 'prototype', 'toString', 'hasOwnProperty']
@@ -3471,10 +3459,10 @@ await test('event actions and API bindings reject cross-screen references', asyn
         }],
       ]
       for (const [toolName, input] of cases) {
-        const beforeCount = pending().operationCount
+        const beforeCount = pending()?.operationCount ?? 0
         const result = byName(toolName).execute(input)
         assert(!result.ok, `${toolName} accepted dangerous ID ${id}`)
-        assert(pending().operationCount === beforeCount, `${toolName} changed ops for ${id}`)
+        assert((pending()?.operationCount ?? 0) === beforeCount, `${toolName} changed ops for ${id}`)
         assert(({}).name === undefined && ({}).polluted === undefined, `${toolName} polluted prototype`)
       }
     }
@@ -3487,12 +3475,11 @@ await test('event actions and API bindings reject cross-screen references', asyn
       method: 'GET',
       path: '/ghost',
     })
-    assert(!ghostApi.ok && pending().operationCount === 0, 'ghost screen API was retained')
+    assert(!ghostApi.ok && pending() === null, 'ghost screen API created a proposal')
     assertObjectPrototypeUnchanged(beforePrototype, 'WebMCP changed Object.prototype')
 
     const restoredStore = await freshStore('prototype-webmcp-accept')
-    assert(restoredStore.getState().activeChangeSet?.operations.length === 0, 'invalid ops persisted')
-    restoredStore.getState().acceptChangeSet()
+    assert(restoredStore.getState().activeChangeSet === null, 'invalid ops persisted')
     const reloadedStore = await freshStore('prototype-webmcp-reload')
     assert(reloadedStore.getState().activeChangeSet === null, 'empty validated change set remained active')
     assert(reloadedStore.getState().document.apiOperations['ghost-api'] === undefined, 'ghost API survived reload')
@@ -3555,7 +3542,7 @@ await test('WebMCP tool catalog stays within ChatGPT compatibility budgets', asy
   localStorage.clear()
   const { WEBMCP_TOOLS } = await import(moduleUrl(toolsBundle, 'schema-budget'))
   const metrics = measureToolSchemas(WEBMCP_TOOLS)
-  assert(metrics.toolCount === 11, `expected 11 tools, got ${metrics.toolCount}`)
+  assert(metrics.toolCount === 10, `expected 10 tools, got ${metrics.toolCount}`)
   assert(metrics.totalBytes <= 35_000, `schema total is ${metrics.totalBytes} bytes`)
   assert(
     metrics.maxIndividualBytes <= 8_000,
@@ -3574,11 +3561,11 @@ await test('WebMCP tool catalog stays within ChatGPT compatibility budgets', asy
   console.log(`WebMCP schema metrics: ${JSON.stringify(metrics)}`)
 })
 
-await test('eleven tools register and invalid writes fail without adding operations', async () => {
+await test('ten tools register and invalid first writes leave no proposal', async () => {
   localStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'invalid-writes'))
   const tools = module.WEBMCP_TOOLS
-  assert(tools.length === 11, `expected 11 tools, got ${tools.length}`)
+  assert(tools.length === 10, `expected 10 tools, got ${tools.length}`)
 
   const registered = []
   document.modelContext = {
@@ -3589,16 +3576,11 @@ await test('eleven tools register and invalid writes fail without adding operati
   }
   const registrationSucceeded = await module.registerWebMCPTools()
   assert(registrationSucceeded, 'valid Promise registrations reported failure')
-  assert(registered.length === 11, `expected 11 registered tools, got ${registered.length}`)
+  assert(registered.length === 10, `expected 10 registered tools, got ${registered.length}`)
 
   const byName = name => tools.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Invalid writes' })
-  assert(begin.ok, 'begin_change_set failed')
-  const common = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-    expectedChangeSetVersion: 0,
-  }
+  assert(!byName('begin_change_set'), 'begin_change_set remains public')
+  const common = {}
   const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
   const invalidCases = [
     ['change_component_structure', {
@@ -3869,11 +3851,12 @@ await test('eleven tools register and invalid writes fail without adding operati
   ]
 
   for (const [toolName, input] of invalidCases) {
-    const before = pending().operationCount
+    const before = pending()?.operationCount ?? 0
     const result = byName(toolName).execute(input)
     assert(!result.ok && result.error.code, `${toolName} returned a false success`)
-    assert(pending().operationCount === before, `${toolName} added an invalid operation`)
+    assert((pending()?.operationCount ?? 0) === before, `${toolName} added an invalid operation`)
   }
+  assert(pending() === null, 'an invalid first write left an empty proposal or review lock')
 })
 
 await test('WebMCP registration awaits failures, aborts partial tools, and leaves UI startup available', async () => {
@@ -3931,20 +3914,15 @@ await test('representative screen/component/state/event/API writes reach the cha
   localStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'representative-writes'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Representative writes' })
-  assert(begin.ok, 'begin_change_set failed')
-  const revision = begin.data.baseRevision
-  const changeSetId = begin.data.changeSetId
   let version = 0
 
   const execute = (name, input) => {
-    const result = byName(name).execute({
-      changeSetId,
-      expectedRevision: revision,
-      expectedChangeSetVersion: version,
-      ...input,
-    })
+    const result = byName(name).execute(input)
     assert(result.ok, `${name} failed: ${JSON.stringify(result)}`)
+    assert(
+      result.data.proposalStatus === (version === 0 ? 'created' : 'continued'),
+      `${name} returned the wrong proposal continuation status`,
+    )
     version = result.data.changeSetVersion
     return result
   }
@@ -4118,9 +4096,6 @@ await test('representative screen/component/state/event/API writes reach the cha
     `WebMCP modal add did not create a readable independent root: ${JSON.stringify(addedModal)}`,
   )
   const invalidNestedModal = byName('change_component_structure').execute({
-    changeSetId,
-    expectedRevision: revision,
-    expectedChangeSetVersion: version,
     operation: 'add',
     screenId: 'screen-list',
     parentId: 'comp-list-page',
@@ -4223,19 +4198,10 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
   localStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'definition-node-and-result-ids'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Edit Definitions and collect IDs' })
-  assert(begin.ok, 'Definition edit change set did not begin')
-  const common = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-  }
+  const common = {}
   let version = 0
   const execute = (name, input) => {
-    const result = byName(name).execute({
-      ...common,
-      expectedChangeSetVersion: version,
-      ...input,
-    })
+    const result = byName(name).execute(input)
     assert(result.ok, `${name} failed: ${JSON.stringify(result)}`)
     version = result.data.changeSetVersion
     return result
@@ -4361,7 +4327,6 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
   const operationCountBeforeInvalidPath = pending().operationCount
   const invalidPath = byName('manage_component_definition').execute({
     ...common,
-    expectedChangeSetVersion: version,
     operation: 'updateNode',
     definitionId: 'shared/task-card',
     nodePath: ['task-card-title', 'task-card-action'],
@@ -4609,16 +4574,9 @@ await test('WebMCP reads are compact, discoverable, and serializable', async () 
     `default active screen summary is incomplete or ${initialBytes} bytes`,
   )
   console.log(`WebMCP fresh TaskFlow context: ${initialBytes} bytes`)
-  const begin = byName('begin_change_set').execute({ summary: 'Read surface review' })
-  assert(begin.ok, 'read surface change set failed to begin')
-  let version = begin.data.changeSetVersion
+  let version = 0
   const write = input => {
-    const result = byName('connect_behavior').execute({
-      changeSetId: begin.data.changeSetId,
-      expectedRevision: begin.data.baseRevision,
-      expectedChangeSetVersion: version,
-      ...input,
-    })
+    const result = byName('connect_behavior').execute(input)
     assert(result.ok, `read fixture write failed: ${JSON.stringify(result)}`)
     version = result.data.changeSetVersion
   }
@@ -4643,6 +4601,8 @@ await test('WebMCP reads are compact, discoverable, and serializable', async () 
   assert(
     context.ok &&
       context.data.activeChangeSet.operationCount === 2 &&
+      context.data.proposalState.status === 'active' &&
+      context.data.proposalState.nextMutation === 'appendsToActiveProposal' &&
       context.data.activeChangeSet.baseDocument === undefined &&
       context.data.activeChangeSet.operations === undefined,
     'context duplicates raw change set document or operations',
@@ -4650,6 +4610,7 @@ await test('WebMCP reads are compact, discoverable, and serializable', async () 
   assert(
     pending.ok &&
       pending.data.activeChangeSet.baseDocument === undefined &&
+      pending.data.proposalState.status === 'active' &&
       pending.data.activeChangeSet.operations === undefined &&
       pending.data.activeChangeSet.operationSummaries.length === 2 &&
       pending.data.activeChangeSet.operationSummaries.every(operation =>
@@ -5015,13 +4976,7 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
         component.label === 'Priority'),
     `Priority demo context/detail was incomplete: ${JSON.stringify({ firstContext, statusDetail })}`,
   )
-  const firstReview = firstTool('begin_change_set').execute({
-    summary: 'Add Priority after Status',
-  })
   const addPriority = firstTool('change_component_structure').execute({
-    changeSetId: firstReview.data.changeSetId,
-    expectedRevision: firstReview.data.baseRevision,
-    expectedChangeSetVersion: firstReview.data.changeSetVersion,
     operation: 'add',
     screenId: 'screen-edit',
     parentId: statusPlacement.parentId,
@@ -5043,6 +4998,11 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
     },
   })
   assert(addPriority.ok, `Priority proposal failed: ${JSON.stringify(addPriority)}`)
+  assert(
+    addPriority.data.proposalStatus === 'created' &&
+      addPriority.data.changeSetVersion === 1,
+    'Priority mutation did not automatically create the proposal',
+  )
   const proposedContext = firstTool('get_current_screen_context').execute({})
   const proposedPriorityId = addPriority.data.createdComponentId
   const proposedPriority = firstTool('get_component').execute({
@@ -5057,9 +5017,6 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
   }).data.detail.value
   assert(proposedPriority && savingState, 'Priority or Saving state was missing from the proposal')
   const integratePriority = firstTool('upsert_screen_state').execute({
-    changeSetId: firstReview.data.changeSetId,
-    expectedRevision: firstReview.data.baseRevision,
-    expectedChangeSetVersion: addPriority.data.changeSetVersion,
     operation: 'update',
     stateId: savingState.id,
     overrides: [
@@ -5126,13 +5083,7 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
     'second agent did not re-read the human-corrected live model',
   )
 
-  const secondReview = secondTool('begin_change_set').execute({
-    summary: 'Bind Priority to Update Task',
-  })
   const updateApi = secondTool('connect_behavior').execute({
-    changeSetId: secondReview.data.changeSetId,
-    expectedRevision: secondReview.data.baseRevision,
-    expectedChangeSetVersion: secondReview.data.changeSetVersion,
     operation: 'updateApi',
     operationId: updateTask.id,
     name: updateTask.name,
@@ -11195,13 +11146,7 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
   memoryStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'legacy-heading-webmcp'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Reject legacy Heading' })
-  assert(begin.ok, 'legacy Heading change set did not begin')
-  const common = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-    expectedChangeSetVersion: 0,
-  }
+  const common = {}
   const addTool = byName('change_component_structure')
   const schemaJson = JSON.stringify(addTool.inputSchema)
   assert(
@@ -11220,8 +11165,8 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
   })
   assert(!webResult.ok, 'WebMCP accepted legacy Heading')
   assert(
-    byName('get_pending_change_set').execute({}).data.activeChangeSet.operationCount === 0,
-    'rejected Heading changed pending operations',
+    byName('get_pending_change_set').execute({}).data.activeChangeSet === null,
+    'rejected Heading created an empty proposal',
   )
 
   const { createCanvasComponentPreview } = await import(
@@ -11290,13 +11235,7 @@ await test('component name metadata is rejected across document, command, and We
   memoryStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'legacy-name-webmcp'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Reject legacy component names' })
-  assert(begin.ok, 'legacy-name change set did not begin')
-  const common = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-    expectedChangeSetVersion: 0,
-  }
+  const common = {}
   const addTool = byName('change_component_structure')
   const updateTool = byName('update_component_spec')
   assert(
@@ -11324,8 +11263,8 @@ await test('component name metadata is rejected across document, command, and We
   })
   assert(!updateResult.ok, 'WebMCP update accepted legacy component name')
   assert(
-    byName('get_pending_change_set').execute({}).data.activeChangeSet.operationCount === 0,
-    'legacy component name changed the pending operations',
+    byName('get_pending_change_set').execute({}).data.activeChangeSet === null,
+    'legacy component name created an empty proposal',
   )
   const componentResult = byName('get_component').execute({ componentId: 'comp-list-summary' })
   assert(componentResult.ok && !Object.hasOwn(componentResult.data.component, 'name'), 'read tool returned component name')
@@ -11373,13 +11312,7 @@ await test('structural components reject content titles across every write path'
   memoryStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'structural-title-webmcp'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Reject structural titles' })
-  assert(begin.ok, 'structural-title change set did not begin')
-  const common = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-    expectedChangeSetVersion: 0,
-  }
+  const common = {}
   const addTool = byName('change_component_structure')
   const updateTool = byName('update_component_spec')
   assert(
@@ -11403,8 +11336,8 @@ await test('structural components reject content titles across every write path'
   })
   assert(!updateResult.ok, 'WebMCP update accepted a structural title')
   assert(
-    byName('get_pending_change_set').execute({}).data.activeChangeSet.operationCount === 0,
-    'rejected structural titles changed pending operations',
+    byName('get_pending_change_set').execute({}).data.activeChangeSet === null,
+    'rejected structural titles created an empty proposal',
   )
 
   const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
@@ -11998,15 +11931,9 @@ await test('Select state values share one validated effective path', async () =>
   memoryStorage.clear()
   const module = await import(moduleUrl(toolsBundle, 'select-state-webmcp'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const begin = byName('begin_change_set').execute({ summary: 'Select state values' })
-  assert(begin.ok, 'Select WebMCP change set did not begin')
-  const common = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-  }
+  const common = {}
   const validResult = byName('upsert_screen_state').execute({
     ...common,
-    expectedChangeSetVersion: 0,
     operation: 'update',
     stateId: 'state-edit-saving',
     overrides: {
@@ -12022,7 +11949,6 @@ await test('Select state values share one validated effective path', async () =>
   const invalidWebMcpInputs = [
     ['upsert_screen_state', {
       ...common,
-      expectedChangeSetVersion: 1,
       operation: 'update',
       stateId: 'state-edit-saving',
       overrides: {
@@ -12031,7 +11957,6 @@ await test('Select state values share one validated effective path', async () =>
     }],
     ['update_component_spec', {
       ...common,
-      expectedChangeSetVersion: 1,
       componentId: 'comp-task-assignee-select',
       patch: {
         config: {
@@ -12041,7 +11966,6 @@ await test('Select state values share one validated effective path', async () =>
     }],
     ['update_component_spec', {
       ...common,
-      expectedChangeSetVersion: 1,
       componentId: 'comp-task-assignee-select',
       patch: { config: { defaultValue: 'owner' } },
     }],
@@ -12281,6 +12205,7 @@ await test('AI writes expose only the change set review flow', async () => {
       'nextOffsets',
       'page',
       'project',
+      'proposalState',
       'rejectedChangeSets',
       'revision',
       'screens',
@@ -13647,110 +13572,154 @@ await test('Validation rules editor enforces invariants and commits as one human
   )
 })
 
-await test('WebMCP separates invalid version arguments from retryable conflicts', async () => {
+await test('WebMCP mutations atomically create and continue reviewable proposals', async () => {
+  const firstMutationCases = [
+    ['change_screen_structure', {
+      operation: 'update',
+      screenId: 'screen-list',
+      name: 'Task list from agent',
+    }],
+    ['change_component_structure', {
+      operation: 'add',
+      screenId: 'screen-list',
+      parentId: 'comp-list-page',
+      kind: 'text',
+      placement: { mode: 'flow' },
+      sizing: defaultSizing(),
+      config: { kind: 'text', text: 'Agent text', style: 'body' },
+    }],
+    ['update_component_spec', {
+      componentId: 'comp-list-summary',
+      patch: { common: { description: 'Agent summary' } },
+    }],
+    ['upsert_screen_state', {
+      operation: 'create',
+      screenId: 'screen-list',
+      name: 'Agent state',
+    }],
+    ['connect_behavior', {
+      operation: 'bindApi',
+      screenId: 'screen-list',
+      name: 'Agent API',
+      method: 'GET',
+      path: '/agent',
+    }],
+    ['manage_component_definition', {
+      operation: 'updateMeta',
+      definitionId: 'shared/task-card',
+      name: 'Task card from agent',
+    }],
+    ['manage_definition_instance', {
+      operation: 'add',
+      screenId: 'screen-list',
+      parentId: 'comp-list-page',
+      definitionId: 'shared/task-card',
+    }],
+  ]
+
+  for (const [index, [toolName, input]] of firstMutationCases.entries()) {
+    memoryStorage.clear()
+    const { WEBMCP_TOOLS } = await import(
+      moduleUrl(toolsBundle, `automatic-proposal-family-${index}`)
+    )
+    const byName = name => WEBMCP_TOOLS.find(tool => tool.name === name)
+    const before = byName('get_current_screen_context').execute({})
+    const result = byName(toolName).execute(input)
+    const pending = byName('get_pending_change_set').execute({})
+    const after = byName('get_current_screen_context').execute({})
+    assert(
+      result.ok &&
+        result.data.proposalStatus === 'created' &&
+        result.data.changeSetVersion === 1 &&
+        result.data.baseRevision === before.data.revision &&
+        typeof result.data.operationId === 'string' &&
+        typeof result.data.changeSetId === 'string',
+      `${toolName} did not create a proposal on its first mutation: ${JSON.stringify(result)}`,
+    )
+    assert(
+      pending.data.activeChangeSet.id === result.data.changeSetId &&
+        pending.data.activeChangeSet.operationCount === 1 &&
+        pending.data.activeChangeSet.summary.includes(toolName.replaceAll('_', ' ')) &&
+        pending.data.proposalState.humanDecisionRequired &&
+        after.data.revision === before.data.revision,
+      `${toolName} bypassed review or returned an incomplete proposal`,
+    )
+  }
+
   memoryStorage.clear()
-  const { WEBMCP_TOOLS } = await import(moduleUrl(toolsBundle, 'version-error-semantics'))
+  const { WEBMCP_TOOLS } = await import(moduleUrl(toolsBundle, 'automatic-proposal-atomicity'))
   const byName = name => WEBMCP_TOOLS.find(tool => tool.name === name)
-  const writeToolNames = [
-    'change_screen_structure',
-    'change_component_structure',
-    'update_component_spec',
-    'upsert_screen_state',
-    'connect_behavior',
-  ]
-  for (const toolName of writeToolNames) {
-    const schema = byName(toolName).inputSchema
-    const branches = schema.oneOf ?? [schema]
-    for (const branch of branches) {
-      for (const argument of ['expectedRevision', 'expectedChangeSetVersion']) {
-        const property = branch.properties?.[argument]
-        assert(
-          property?.type === 'integer' &&
-            property.minimum === 0 &&
-            property.description.includes('REVISION_CONFLICT') &&
-            branch.required.includes(argument),
-          `${toolName} schema does not require a documented non-negative ${argument}`,
-        )
-      }
-    }
+  const mutationNames = firstMutationCases.map(([name]) => name)
+  assert(
+    !byName('begin_change_set') &&
+      !byName('accept_change_set') &&
+      !byName('reject_change_set'),
+    'the public catalog exposes proposal lifecycle decisions',
+  )
+  for (const toolName of mutationNames) {
+    const schemaText = JSON.stringify(byName(toolName).inputSchema)
+    assert(
+      !schemaText.includes('"changeSetId"') &&
+        !schemaText.includes('"expectedRevision"') &&
+        !schemaText.includes('"expectedChangeSetVersion"'),
+      `${toolName} still exposes agent-carried proposal plumbing`,
+    )
   }
 
-  const begin = byName('begin_change_set').execute({ summary: 'Version error semantics' })
-  assert(begin.ok, 'version semantics change set did not begin')
-  const baseInput = {
-    changeSetId: begin.data.changeSetId,
-    expectedRevision: begin.data.baseRevision,
-    expectedChangeSetVersion: 0,
+  const invalidFirst = byName('update_component_spec').execute({
+    componentId: 'ghost',
+    patch: { common: { description: 'Never applied' } },
+  })
+  assert(!invalidFirst.ok, 'invalid first mutation returned success')
+  assert(
+    byName('get_pending_change_set').execute({}).data.activeChangeSet === null &&
+      byName('get_current_screen_context').execute({}).data.proposalState.status === 'none',
+    'invalid first mutation left an empty proposal or review lock',
+  )
+
+  const created = byName('update_component_spec').execute({
     componentId: 'comp-list-summary',
-    patch: { common: { description: 'Version semantics' } },
-  }
-  const invalidArguments = [
-    ['expectedRevision', undefined],
-    ['expectedRevision', null],
-    ['expectedRevision', '1'],
-    ['expectedRevision', 0.5],
-    ['expectedRevision', -1],
-    ['expectedChangeSetVersion', undefined],
-    ['expectedChangeSetVersion', null],
-    ['expectedChangeSetVersion', '0'],
-    ['expectedChangeSetVersion', 0.5],
-    ['expectedChangeSetVersion', -1],
-  ]
-
-  for (const [argument, value] of invalidArguments) {
-    const input = { ...baseInput, [argument]: value }
-    if (value === undefined) delete input[argument]
-    const result = byName('update_component_spec').execute(input)
-    assert(
-      !result.ok &&
-        result.error.code === 'INVALID_ARGUMENT' &&
-        result.error.details?.argument === argument,
-      `${argument}=${String(value)} did not return INVALID_ARGUMENT`,
-    )
-    const active = byName('get_pending_change_set').execute({}).data.activeChangeSet
-    assert(
-      active.version === 0 && active.operationCount === 0,
-      `${argument}=${String(value)} consumed a change set version`,
-    )
-  }
-
-  for (const staleInput of [
-    { ...baseInput, expectedRevision: begin.data.baseRevision + 1 },
-    { ...baseInput, expectedChangeSetVersion: 1 },
-  ]) {
-    const result = byName('update_component_spec').execute(staleInput)
-    assert(
-      !result.ok &&
-        result.error.code === 'REVISION_CONFLICT' &&
-        result.error.details.actualRevision === begin.data.baseRevision &&
-        result.error.details.actualChangeSetVersion === 0,
-      'a valid but stale revision/version did not return a retryable conflict',
-    )
-  }
-
-  const corrected = byName('update_component_spec').execute(baseInput)
-  assert(
-    corrected.ok && corrected.data.changeSetVersion === 1,
-    'corrected arguments could not retry without restarting the change set',
-  )
-  const staleRetry = byName('update_component_spec').execute({
-    ...baseInput,
-    patch: { common: { description: 'Stale retry' } },
+    patch: { common: { description: 'First proposal operation' } },
   })
   assert(
-    !staleRetry.ok &&
-      staleRetry.error.code === 'REVISION_CONFLICT' &&
-      staleRetry.error.details.actualChangeSetVersion === 1,
-    'stale retry did not return the current change set version',
+    created.ok &&
+      created.data.proposalStatus === 'created' &&
+      created.data.changeSetVersion === 1,
+    `valid first mutation did not create a proposal: ${JSON.stringify(created)}`,
   )
-  const refreshedRetry = byName('update_component_spec').execute({
-    ...baseInput,
-    expectedChangeSetVersion: staleRetry.error.details.actualChangeSetVersion,
-    patch: { common: { description: 'Refreshed retry' } },
+  const beforeFailure = byName('get_pending_change_set').execute({})
+  const failedAppend = byName('update_component_spec').execute({
+    componentId: 'comp-list-summary',
+    patch: { config: { unknown: true } },
   })
+  const afterFailure = byName('get_pending_change_set').execute({})
+  assert(!failedAppend.ok, 'invalid append returned success')
   assert(
-    refreshedRetry.ok && refreshedRetry.data.changeSetVersion === 2,
-    'refreshing after REVISION_CONFLICT did not allow retry',
+    JSON.stringify(afterFailure.data.activeChangeSet) ===
+      JSON.stringify(beforeFailure.data.activeChangeSet),
+    'invalid append changed the existing proposal operations or version',
+  )
+
+  const continued = byName('change_screen_structure').execute({
+    operation: 'update',
+    screenId: 'screen-list',
+    name: 'Task list continued',
+  })
+  const pending = byName('get_pending_change_set').execute({})
+  assert(
+    continued.ok &&
+      continued.data.proposalStatus === 'continued' &&
+      continued.data.changeSetId === created.data.changeSetId &&
+      continued.data.changeSetVersion === 2 &&
+      pending.data.activeChangeSet.operationCount === 2 &&
+      pending.data.proposalState.nextMutation === 'appendsToActiveProposal' &&
+      pending.data.proposalState.continuationNotice.includes('same review task'),
+    'a second valid mutation did not continue the active proposal safely',
+  )
+  assert(
+    byName('get_current_screen_context').execute({}).data.revision ===
+      created.data.baseRevision,
+    'WebMCP mutation wrote directly to the confirmed document',
   )
 })
 

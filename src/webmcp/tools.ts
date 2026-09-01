@@ -117,8 +117,9 @@ type ToolResult<T extends JsonObject = JsonObject> = ToolSuccess<T> | ToolFailur
 
 const CLOSED_OBJECT = { additionalProperties: false } as const
 const AGENT_WORKFLOW =
-  'Read get_current_screen_context first. Writes require begin_change_set IDs and the latest ' +
-  'changeSetVersion; review with get_pending_change_set. Only a human can Accept or Reject.'
+  'Read get_current_screen_context first. The first valid mutation automatically creates a reviewable ' +
+  'proposal; later mutations append to it. Check get_pending_change_set before mixing unrelated work. ' +
+  'Only a human can Accept or Reject.'
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -345,7 +346,8 @@ function withWriteFailure<T extends JsonObject>(operation: () => T): ToolResult<
 }
 
 function appendCommand(
-  input: JsonObject,
+  toolName: string,
+  operation: string,
   command: DomainCommand,
   resultData: JsonObject = {},
 ): JsonObject {
@@ -356,67 +358,21 @@ function appendCommand(
       error: state.recoveryState.error,
     })
   }
-  const changeSetId = requiredString(input, 'changeSetId')
-  const expectedRevision = requiredNonNegativeInteger(input, 'expectedRevision')
-  const expectedChangeSetVersion = requiredNonNegativeInteger(
-    input,
-    'expectedChangeSetVersion',
-  )
-  const active = state.activeChangeSet
-
-  if (!active || active.id !== changeSetId) {
-    throw new DomainError('CHANGE_SET_REQUIRED', 'No matching active change set', {
-      requestedChangeSetId: changeSetId,
-      activeChangeSetId: active?.id ?? null,
-    })
-  }
-  if (
-    expectedRevision !== state.revision ||
-    expectedRevision !== active.baseRevision ||
-    expectedChangeSetVersion !== active.version
-  ) {
-    throw new DomainError('REVISION_CONFLICT', 'The document or change set version is stale', {
-      expectedRevision,
-      actualRevision: state.revision,
-      expectedChangeSetVersion,
-      actualChangeSetVersion: active.version,
-    })
-  }
-
-  const previousCount = active.operations.length
-  state.dispatchToChangeSet(changeSetId, command, 'agent')
-  const updated = useAppStore.getState().activeChangeSet
-  if (!updated || updated.operations.length !== previousCount + 1) {
-    throw new DomainError('INVARIANT_VIOLATION', 'The operation was not added to the change set')
-  }
+  const summary = `AI proposal: ${toolName.split('_').join(' ')} (${operation})`
+  const dispatched = state.dispatchAgentCommand(command, summary)
+  const updated = dispatched.changeSet
   return {
-    operationId: updated.operations[updated.operations.length - 1]!.id,
+    operationId: dispatched.operationId,
     changeSetId: updated.id,
     changeSetVersion: updated.version,
-    revision: state.revision,
+    baseRevision: updated.baseRevision,
+    revision: updated.baseRevision,
+    proposalStatus: dispatched.proposalCreated ? 'created' : 'continued',
+    continuationNotice: dispatched.proposalCreated
+      ? 'Created a reviewable proposal. Related mutations will append until a human accepts or rejects it.'
+      : 'Appended to the existing proposal. Check get_pending_change_set before adding unrelated work.',
     ...resultData,
   }
-}
-
-const writeBaseProperties = {
-  changeSetId: {
-    type: 'string',
-    minLength: 1,
-    description: 'ID returned by begin_change_set for the one active agent proposal.',
-  },
-  expectedRevision: {
-    type: 'integer',
-    minimum: 0,
-    description:
-      'Confirmed revision returned by begin_change_set. Re-read context after REVISION_CONFLICT.',
-  },
-  expectedChangeSetVersion: {
-    type: 'integer',
-    minimum: 0,
-    description:
-      'Latest version returned by begin_change_set or the preceding successful write. ' +
-      'Re-read pending state after REVISION_CONFLICT.',
-  },
 }
 
 function writeOperationSchema(
@@ -427,16 +383,10 @@ function writeOperationSchema(
   return {
     type: 'object',
     properties: {
-      ...writeBaseProperties,
       operation: { type: 'string', enum: operations },
       ...properties,
     },
-    required: [
-      'changeSetId',
-      'expectedRevision',
-      'expectedChangeSetVersion',
-      'operation',
-    ],
+    required: ['operation'],
     ...CLOSED_OBJECT,
   }
 }
@@ -565,6 +515,17 @@ function compactChangeSet(
             : null,
         }
       : {}),
+  }
+}
+
+function proposalState(changeSet: ChangeSet | null): JsonObject {
+  return {
+    status: changeSet ? 'active' : 'none',
+    nextMutation: changeSet ? 'appendsToActiveProposal' : 'createsReviewableProposal',
+    humanDecisionRequired: true,
+    continuationNotice: changeSet
+      ? 'Continue only for the same review task; inspect the pending proposal before unrelated work.'
+      : 'The next valid mutation creates a reviewable proposal for human review.',
   }
 }
 
@@ -843,6 +804,7 @@ const getCurrentScreenContext: ToolDefinition = {
       revision: state.revision,
       documentView: 'effective',
       activeChangeSet: compactChangeSet(state.activeChangeSet),
+      proposalState: proposalState(state.activeChangeSet),
       rejectedChangeSets: {
         count: state.rejectedRecords.length,
         recent: state.rejectedRecords.slice(0, 5).map(record => ({
@@ -1054,6 +1016,7 @@ const getPendingChangeSet: ToolDefinition = {
       }
       return {
         activeChangeSet: compactChangeSet(state.activeChangeSet, true, offset),
+        proposalState: proposalState(state.activeChangeSet),
         confirmedRevision: state.revision,
         rejectedChangeSets: {
           count: state.rejectedRecords.length,
@@ -1064,36 +1027,6 @@ const getPendingChangeSet: ToolDefinition = {
             operationCount: record.operationCount,
           })),
         },
-      }
-    })
-  },
-}
-
-const beginChangeSet: ToolDefinition = {
-  name: 'begin_change_set',
-  description:
-    'Begin one agent proposal after reading current context. Returns the ID, confirmed revision, ' +
-    'and version required by every write. Fails while another proposal is active. ' + AGENT_WORKFLOW,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      summary: {
-        type: 'string',
-        minLength: 1,
-        description: 'Concise human-readable intent shown in the review bar.',
-      },
-    },
-    required: ['summary'],
-    ...CLOSED_OBJECT,
-  },
-  execute(input) {
-    return withWriteFailure(() => {
-      requireExactKeys(input, ['summary'], 'begin_change_set input')
-      const changeSet = useAppStore.getState().beginChangeSet(requiredString(input, 'summary'))
-      return {
-        changeSetId: changeSet.id,
-        baseRevision: changeSet.baseRevision,
-        changeSetVersion: changeSet.version,
       }
     })
   },
@@ -1121,7 +1054,7 @@ const changeScreenStructure: ToolDefinition = {
       if (operation === 'add') {
         requireExactKeys(
           input,
-          [...Object.keys(writeBaseProperties), 'operation', 'name', 'route'],
+          ['operation', 'name', 'route'],
           'change_screen_structure add input',
         )
         const screenId = nanoid()
@@ -1140,7 +1073,7 @@ const changeScreenStructure: ToolDefinition = {
       } else if (operation === 'update') {
         requireExactKeys(
           input,
-          [...Object.keys(writeBaseProperties), 'operation', 'screenId', 'name', 'route'],
+          ['operation', 'screenId', 'name', 'route'],
           'change_screen_structure update input',
         )
         command = {
@@ -1152,7 +1085,7 @@ const changeScreenStructure: ToolDefinition = {
       } else if (operation === 'remove') {
         requireExactKeys(
           input,
-          [...Object.keys(writeBaseProperties), 'operation', 'screenId'],
+          ['operation', 'screenId'],
           'change_screen_structure remove input',
         )
         command = {
@@ -1162,7 +1095,7 @@ const changeScreenStructure: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported screen operation: ${operation}`)
       }
-      return appendCommand(input, command, resultData)
+      return appendCommand('change_screen_structure', operation, command, resultData)
     })
   },
 }
@@ -1194,9 +1127,6 @@ const changeComponentStructure: ToolDefinition = {
       let resultData: JsonObject = {}
       if (operation === 'add') {
         requireExactKeys(input, [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
           'operation',
           'screenId',
           'parentId',
@@ -1228,9 +1158,6 @@ const changeComponentStructure: ToolDefinition = {
         resultData = { createdComponentId: componentId }
       } else if (operation === 'move') {
         requireExactKeys(input, [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
           'operation',
           'componentId',
           'newParentId',
@@ -1244,9 +1171,6 @@ const changeComponentStructure: ToolDefinition = {
         }
       } else if (operation === 'duplicate') {
         requireExactKeys(input, [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
           'operation',
           'componentId',
         ], 'change_component_structure duplicate input')
@@ -1270,9 +1194,6 @@ const changeComponentStructure: ToolDefinition = {
         resultData = { createdComponentId }
       } else if (operation === 'remove') {
         requireExactKeys(input, [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
           'operation',
           'componentId',
         ], 'change_component_structure remove input')
@@ -1280,7 +1201,7 @@ const changeComponentStructure: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported component operation: ${operation}`)
       }
-      return appendCommand(input, command, resultData)
+      return appendCommand('change_component_structure', operation, command, resultData)
     })
   },
 }
@@ -1293,7 +1214,6 @@ const updateComponentSpec: ToolDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      ...writeBaseProperties,
       componentId: { type: 'string', minLength: 1 },
       patch: {
         type: 'object',
@@ -1315,15 +1235,12 @@ const updateComponentSpec: ToolDefinition = {
         ...CLOSED_OBJECT,
       },
     },
-    required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'componentId', 'patch'],
+    required: ['componentId', 'patch'],
     ...CLOSED_OBJECT,
   },
   execute(input) {
     return withWriteFailure(() => {
       requireExactKeys(input, [
-        'changeSetId',
-        'expectedRevision',
-        'expectedChangeSetVersion',
         'componentId',
         'patch',
       ], 'update_component_spec input')
@@ -1386,7 +1303,7 @@ const updateComponentSpec: ToolDefinition = {
         validateComponentSizing(sizing, 'patch.sizing')
         patch.sizing = sizing
       }
-      return appendCommand(input, {
+      return appendCommand('update_component_spec', 'update', {
         type: 'updateComponentSpec',
         componentId,
         patch,
@@ -1420,7 +1337,6 @@ const upsertScreenState: ToolDefinition = {
         requireExactKeys(
           input,
           [
-            ...Object.keys(writeBaseProperties),
             'operation',
             'screenId',
             'name',
@@ -1443,7 +1359,6 @@ const upsertScreenState: ToolDefinition = {
         requireExactKeys(
           input,
           [
-            ...Object.keys(writeBaseProperties),
             'operation',
             'stateId',
             'name',
@@ -1463,14 +1378,14 @@ const upsertScreenState: ToolDefinition = {
       } else if (operation === 'remove') {
         requireExactKeys(
           input,
-          [...Object.keys(writeBaseProperties), 'operation', 'stateId'],
+          ['operation', 'stateId'],
           'upsert_screen_state remove input',
         )
         command = { type: 'removeScreenState', stateId: requiredString(input, 'stateId') }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported state operation: ${operation}`)
       }
-      return appendCommand(input, command, resultData)
+      return appendCommand('upsert_screen_state', operation, command, resultData)
     })
   },
 }
@@ -1515,7 +1430,6 @@ const connectBehavior: ToolDefinition = {
         requireExactKeys(
           input,
           [
-            ...Object.keys(writeBaseProperties),
             'operation',
             'screenId',
             'name',
@@ -1545,7 +1459,6 @@ const connectBehavior: ToolDefinition = {
         requireExactKeys(
           input,
           [
-            ...Object.keys(writeBaseProperties),
             'operation',
             'eventId',
             'name',
@@ -1572,7 +1485,7 @@ const connectBehavior: ToolDefinition = {
       } else if (operation === 'removeEvent') {
         requireExactKeys(
           input,
-          [...Object.keys(writeBaseProperties), 'operation', 'eventId'],
+          ['operation', 'eventId'],
           'connect_behavior removeEvent input',
         )
         command = { type: 'removeEvent', eventId: requiredString(input, 'eventId') }
@@ -1580,7 +1493,6 @@ const connectBehavior: ToolDefinition = {
         requireExactKeys(
           input,
           [
-            ...Object.keys(writeBaseProperties),
             'operation',
             'screenId',
             'name',
@@ -1612,7 +1524,6 @@ const connectBehavior: ToolDefinition = {
         requireExactKeys(
           input,
           [
-            ...Object.keys(writeBaseProperties),
             'operation',
             'operationId',
             'name',
@@ -1641,14 +1552,14 @@ const connectBehavior: ToolDefinition = {
       } else if (operation === 'removeApi') {
         requireExactKeys(
           input,
-          [...Object.keys(writeBaseProperties), 'operation', 'operationId'],
+          ['operation', 'operationId'],
           'connect_behavior removeApi input',
         )
         command = { type: 'removeApiOperation', operationId: requiredString(input, 'operationId') }
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported behavior operation: ${operation}`)
       }
-      return appendCommand(input, command, resultData)
+      return appendCommand('connect_behavior', operation, command, resultData)
     })
   },
 }
@@ -1701,7 +1612,7 @@ const manageComponentDefinition: ToolDefinition = {
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
-      const baseKeys = [...Object.keys(writeBaseProperties), 'operation']
+      const baseKeys = ['operation']
       const allowedKeys: Record<string, string[]> = {
         create: [...baseKeys, 'name', 'description'],
         updateMeta: [...baseKeys, 'definitionId', 'name', 'description'],
@@ -1739,7 +1650,7 @@ const manageComponentDefinition: ToolDefinition = {
           requiredString(input, 'name'),
         )
         definition.description = optionalString(input, 'description') ?? ''
-        return appendCommand(input, {
+        return appendCommand('manage_component_definition', operation, {
           type: 'putComponentDefinition',
           mode: 'create',
           definition,
@@ -1752,7 +1663,11 @@ const manageComponentDefinition: ToolDefinition = {
       const current = getOwnEntity(document.componentDefinitions, definitionId)
       if (!current) throw new DomainError('NOT_FOUND', `Definition ${definitionId} not found`)
       if (operation === 'remove') {
-        return appendCommand(input, { type: 'removeComponentDefinition', definitionId })
+        return appendCommand(
+          'manage_component_definition',
+          operation,
+          { type: 'removeComponentDefinition', definitionId },
+        )
       }
       if (operation === 'duplicate') {
         const duplicate = duplicateComponentDefinition(
@@ -1761,7 +1676,7 @@ const manageComponentDefinition: ToolDefinition = {
           optionalString(input, 'name') ?? `${current.name} copy`,
           nanoid,
         )
-        return appendCommand(input, {
+        return appendCommand('manage_component_definition', operation, {
           type: 'putComponentDefinition',
           mode: 'create',
           definition: duplicate,
@@ -1893,7 +1808,7 @@ const manageComponentDefinition: ToolDefinition = {
       } else {
         throw new DomainError('INVALID_REFERENCE', `Unsupported Definition operation: ${operation}`)
       }
-      return appendCommand(input, {
+      return appendCommand('manage_component_definition', operation, {
         type: 'putComponentDefinition',
         mode: 'update',
         definition,
@@ -1930,7 +1845,7 @@ const manageDefinitionInstance: ToolDefinition = {
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
-      const baseKeys = [...Object.keys(writeBaseProperties), 'operation']
+      const baseKeys = ['operation']
       const allowedKeys: Record<string, string[]> = {
         add: [
           ...baseKeys,
@@ -1969,7 +1884,7 @@ const manageDefinitionInstance: ToolDefinition = {
           requiredString(input, 'name'),
           nanoid,
         )
-        return appendCommand(input, command, {
+        return appendCommand('manage_definition_instance', operation, command, {
           createdDefinitionId: command.definition.id,
           createdInstanceId: command.replacementInstanceId,
         })
@@ -1980,7 +1895,7 @@ const manageDefinitionInstance: ToolDefinition = {
           requiredString(input, 'componentId'),
           nanoid,
         )
-        return appendCommand(input, command, {
+        return appendCommand('manage_definition_instance', operation, command, {
           createdComponentIds: command.generatedComponents.map(entry => entry.componentId),
         })
       }
@@ -2008,7 +1923,7 @@ const manageDefinitionInstance: ToolDefinition = {
           : requiredRecord(input, 'placement')
         validateComponentPlacement(placement, 'placement')
         const componentId = `instance-${nanoid()}`
-        return appendCommand(input, {
+        return appendCommand('manage_definition_instance', operation, {
           type: 'addDefinitionInstance',
           componentId,
           screenId: requiredString(input, 'screenId'),
@@ -2053,7 +1968,7 @@ const manageDefinitionInstance: ToolDefinition = {
           : requiredRecord(input, 'placement')
         if (placement) validateComponentPlacement(placement, 'placement')
         const componentId = requiredString(input, 'componentId')
-        return appendCommand(input, {
+        return appendCommand('manage_definition_instance', operation, {
           type: 'updateDefinitionInstance',
           componentId,
           variantId: input.variantId === undefined
@@ -2075,7 +1990,6 @@ export const WEBMCP_TOOLS: ToolDefinition[] = [
   getCurrentScreenContext,
   getComponent,
   getPendingChangeSet,
-  beginChangeSet,
   changeScreenStructure,
   changeComponentStructure,
   updateComponentSpec,

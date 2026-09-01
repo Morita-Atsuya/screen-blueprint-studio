@@ -26,7 +26,7 @@ Screen Blueprint Studioは、目で確認できるワイヤーフレームと構
 
 ## 人とAIが共有するひとつの作業環境
 
-人はdrag and drop、画面状態、Canvas、Tree、Inspectorを使って視覚的に操作します。AI agentは11個のWebMCP toolを使い、現在の画面や選択箇所を読み取り、画面、component、state、behavior、shared componentの変更を、名前と型を持つ操作として提案します。
+人はdrag and drop、画面状態、Canvas、Tree、Inspectorを使って視覚的に操作します。AI agentは10個のWebMCP toolを使い、現在の画面や選択箇所を読み取り、画面、component、state、behavior、shared componentの変更を、名前と型を持つ操作として提案します。
 
 人とAIは同じlive page modelを利用します。AIの提案はアプリ内のchange setとして表示され、人が結果をpreviewしてから反映または破棄します。この確認手順は、別のexportや承認systemではなく、製品独自の共同作業modelです。
 

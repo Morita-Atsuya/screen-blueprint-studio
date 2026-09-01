@@ -694,9 +694,6 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
   assert(connectBehavior, 'connect_behavior tool is missing')
   const validate = new Ajv2020({ strict: false }).compile(connectBehavior.inputSchema)
   const base = {
-    changeSetId: 'change-set',
-    expectedRevision: 0,
-    expectedChangeSetVersion: 0,
     operation: 'connectEvent',
     screenId: 'screen-list',
     name: 'Open state',
@@ -743,9 +740,6 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
   )
   assert(
     validate({
-      changeSetId: 'change-set',
-      expectedRevision: 0,
-      expectedChangeSetVersion: 0,
       operation: 'bindApi',
       screenId: 'screen-list',
       name: 'Open task',
@@ -760,9 +754,6 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
   )
   assert(
     !validate({
-      changeSetId: 'change-set',
-      expectedRevision: 0,
-      expectedChangeSetVersion: 0,
       operation: 'bindApi',
       screenId: 'screen-list',
       name: 'Invalid',
@@ -797,9 +788,6 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
   }]
   assert(
     validateComponentStructure({
-      changeSetId: 'change-set',
-      expectedRevision: 0,
-      expectedChangeSetVersion: 0,
       operation: 'add',
       screenId: 'screen-list',
       parentId: 'comp-list-page',

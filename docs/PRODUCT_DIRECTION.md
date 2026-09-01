@@ -186,12 +186,13 @@ get_pending_change_set
 変更セット操作:
 
 ```text
-begin_change_set
 change_screen_structure
 change_component_structure
 update_component_spec
 upsert_screen_state
 connect_behavior
+manage_component_definition
+manage_definition_instance
 ```
 
 後続候補となる生成:

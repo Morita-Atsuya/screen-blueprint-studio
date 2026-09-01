@@ -74,6 +74,12 @@ export interface RecoveryState {
   error: string
 }
 
+export interface AgentProposalDispatchResult {
+  changeSet: ChangeSet
+  operationId: EntityId
+  proposalCreated: boolean
+}
+
 export interface PendingDeleteRequest {
   id: EntityId
   command: DeleteCommand
@@ -111,6 +117,7 @@ export interface AppStore {
   pasteComponent(destinationComponentId: EntityId, label: string): boolean
   beginChangeSet(summary: string): ChangeSet
   dispatchToChangeSet(changeSetId: EntityId, command: DomainCommand, source?: 'agent'): void
+  dispatchAgentCommand(command: DomainCommand, summary: string): AgentProposalDispatchResult
   acceptChangeSet(historyLabel?: string): void
   rejectChangeSet(): void
   undo(): void
@@ -659,6 +666,91 @@ export const useAppStore = create<AppStore>((set, get) => {
         })
       }
       return true
+    },
+
+    dispatchAgentCommand(command, summary) {
+      requireWritable()
+      if (!summary.trim()) {
+        throw new DomainError('INVALID_ARGUMENT', 'Agent proposal summary must not be empty')
+      }
+      const state = get()
+      const active = state.activeChangeSet
+      if (active && active.baseRevision !== state.revision) {
+        throw new DomainError(
+          'REVISION_CONFLICT',
+          'The active proposal no longer matches the confirmed revision',
+          {
+            activeBaseRevision: active.baseRevision,
+            confirmedRevision: state.revision,
+          },
+        )
+      }
+      const isolatedCommand = cloneDomainCommand(command)
+      const previewDocument = active ? state.effectiveDocument : state.document
+      if (isolatedCommand.type === 'moveComponent') {
+        const outcome = classifyComponentMove(
+          previewDocument,
+          isolatedCommand.componentId,
+          isolatedCommand.newParentId,
+          isolatedCommand.position,
+        )
+        if (outcome.status === 'no-op') {
+          throw new DomainError('INVALID_ARGUMENT', 'The component move would not change the proposal')
+        }
+      }
+      let effectiveDocument: ProjectDocument
+      try {
+        effectiveDocument = applyCommandWithoutRevision(previewDocument, isolatedCommand)
+      } catch (error) {
+        const domainError = toDomainError(error)
+        set({ toast: createErrorToast(domainErrorMessage(domainError.code)) })
+        throw domainError
+      }
+      const operation = {
+        id: nanoid(),
+        source: 'agent' as const,
+        command: isolatedCommand,
+        issuedAt: new Date().toISOString(),
+      }
+      const proposalCreated = active === null
+      const changeSet: ChangeSet = active
+        ? {
+            ...active,
+            version: active.version + 1,
+            operations: [...active.operations, operation],
+          }
+        : {
+            id: nanoid(),
+            summary,
+            baseRevision: state.revision,
+            version: 1,
+            baseDocument: state.document,
+            operations: [operation],
+            createdAt: new Date().toISOString(),
+          }
+      const reconciledUi = reconcileUiState(effectiveDocument, state.ui)
+      const nextUi = state.reviewDraftProtectionIds.length > 0
+        ? {
+            ...reconciledUi,
+            activeScreenId: state.ui.activeScreenId,
+            activeStateId: state.ui.activeStateId,
+            selection: state.ui.selection,
+          }
+        : reconciledUi
+      set({
+        activeChangeSet: changeSet,
+        effectiveDocument,
+        ui: nextUi,
+        reviewDraftDocument: proposalCreated && state.reviewDraftProtectionIds.length > 0
+          ? state.document
+          : state.reviewDraftDocument,
+      })
+      markPersistence(persistIfAvailable(state.revision, state.document, changeSet, nextUi))
+      return {
+        changeSet,
+        operationId: operation.id,
+        proposalCreated,
+      }
     },
 
     beginChangeSet(summary) {

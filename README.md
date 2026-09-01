@@ -26,7 +26,7 @@ Screen Blueprint Studio keeps the visible wireframe and its structured specifica
 
 ## One workspace for people and AI
 
-People work visually with drag and drop, screen states, the Canvas, the Tree, and the Inspector. AI agents work through 11 WebMCP tools that expose named, typed operations for reading the current screen and selection or proposing changes to screens, components, states, behavior, and shared components.
+People work visually with drag and drop, screen states, the Canvas, the Tree, and the Inspector. AI agents work through 10 WebMCP tools that expose named, typed operations for reading the current screen and selection or proposing changes to screens, components, states, behavior, and shared components.
 
 Both use the same live page model. AI proposals appear as change sets inside the application, where a person can preview the result and then apply or discard it. This review step is part of the product's collaboration model rather than a separate export or approval system.
 
