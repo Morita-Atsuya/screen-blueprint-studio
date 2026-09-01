@@ -6,6 +6,10 @@ import {
 } from '../domain/editorSelection'
 import { resolveScreenNodes } from '../domain/definitionResolver'
 import type { EntityId, ProjectDocument } from '../domain/model'
+import {
+  componentTargetRefKey,
+  definitionNodeTargetRef,
+} from '../domain/componentTargets'
 
 export type EditorShortcut =
   | 'delete-selection'
@@ -185,7 +189,7 @@ export function resolveHierarchyEditorSelection(
 
   const resolved = resolveScreenNodes(document, selection.screenId, null)
   const selected = resolved.nodesByTarget[
-    `definition:${selection.instanceId}:${selection.nodePath.join('/')}`
+    componentTargetRefKey(definitionNodeTargetRef(selection.instanceId, selection.nodePath))
   ]
   if (!selected) return null
   let targetRuntimeId: string | undefined

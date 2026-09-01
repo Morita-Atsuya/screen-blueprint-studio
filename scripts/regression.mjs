@@ -4088,6 +4088,13 @@ await test('representative screen/component/state/event/API writes reach the cha
     overrides: [{
       target: { type: 'inline', componentId: 'comp-list-summary' },
       override: { text: 'Could not load users.' },
+    }, {
+      target: {
+        type: 'collectionItemNode',
+        collectionId: 'comp-launch-task-card',
+        nodePath: ['task-card-action'],
+      },
+        override: { enabled: false },
     }],
   })
 

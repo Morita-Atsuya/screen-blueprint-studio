@@ -107,6 +107,55 @@ export function resolveCollectionValue(
     : resolveJsonPointer(item, source.path, label)
 }
 
+function collectionPropValue(
+  value: JsonValue | undefined,
+  label: string,
+): PublicPropValue {
+  if (
+    typeof value !== 'string' &&
+    typeof value !== 'number' &&
+    typeof value !== 'boolean'
+  ) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} must resolve to a non-null scalar`,
+    )
+  }
+  return value
+}
+
+export function resolveCollectionTemplateDefaults(
+  config: CollectionComponentConfig,
+): {
+  props: Record<string, PublicPropValue>
+  variantId: EntityId | null
+  visible: boolean
+} {
+  const props = { ...config.itemTemplate.props }
+  for (const binding of config.propBindings) {
+    if (binding.source.type === 'literal') {
+      props[binding.propKey] = collectionPropValue(
+        binding.source.value,
+        `Collection prop ${binding.propKey}`,
+      )
+    }
+  }
+
+  const matchingVariant = config.variantSelection.cases.find(rule =>
+    rule.source.type === 'literal' && rule.source.value === rule.equals)
+  const variantId = matchingVariant?.variantId ??
+    config.variantSelection.fallbackVariantId ??
+    config.itemTemplate.variantId
+
+  const visible = config.visibility?.source.type === 'literal'
+    ? config.visibility.source.value === config.visibility.equals
+      ? config.visibility.visibleWhenMatched
+      : config.visibility.fallback
+    : true
+
+  return { props, variantId, visible }
+}
+
 export function collectionItemKey(
   item: JsonObject,
   itemKeyPath: string,
@@ -134,8 +183,10 @@ export function resolveCollectionItem(
   variantId: EntityId | null
   visible: boolean
 } {
-  const props = { ...config.itemTemplate.props }
+  const defaults = resolveCollectionTemplateDefaults(config)
+  const props = { ...defaults.props }
   for (const binding of config.propBindings) {
+    if (binding.source.type === 'literal') continue
     const result = resolveCollectionValue(
       item,
       binding.source,
@@ -147,17 +198,10 @@ export function resolveCollectionItem(
         `Collection prop ${binding.propKey} source is missing`,
       )
     }
-    if (
-      typeof result.value !== 'string' &&
-      typeof result.value !== 'number' &&
-      typeof result.value !== 'boolean'
-    ) {
-      throw new DomainError(
-        'INVARIANT_VIOLATION',
-        `Collection prop ${binding.propKey} must resolve to a non-null scalar`,
-      )
-    }
-    props[binding.propKey] = result.value
+    props[binding.propKey] = collectionPropValue(
+      result.value,
+      `Collection prop ${binding.propKey}`,
+    )
   }
 
   const matchingVariant = config.variantSelection.cases.find(rule => {

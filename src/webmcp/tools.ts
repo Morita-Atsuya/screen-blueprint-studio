@@ -186,6 +186,21 @@ function componentTargetFromInput(value: unknown, path: string): ComponentTarget
       nodePath: value.nodePath as [string, ...string[]],
     }
   }
+  if (value.type === 'collectionItemNode') {
+    requireExactKeys(value, ['type', 'collectionId', 'nodePath'], path)
+    if (
+      !Array.isArray(value.nodePath) ||
+      value.nodePath.length === 0 ||
+      !value.nodePath.every(segment => typeof segment === 'string' && segment.length > 0)
+    ) {
+      throw new DomainError('INVALID_REFERENCE', `${path}.nodePath must be non-empty strings`)
+    }
+    return {
+      type: 'collectionItemNode',
+      collectionId: requiredString(value, 'collectionId'),
+      nodePath: value.nodePath as [string, ...string[]],
+    }
+  }
   throw new DomainError('INVALID_REFERENCE', `${path}.type is invalid`)
 }
 
@@ -363,6 +378,20 @@ const componentTargetSchema = {
         },
       },
       required: ['type', 'instanceId', 'nodePath'],
+      ...CLOSED_OBJECT,
+    },
+    {
+      type: 'object',
+      properties: {
+        type: { const: 'collectionItemNode' },
+        collectionId: { type: 'string', minLength: 1 },
+        nodePath: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', minLength: 1 },
+        },
+      },
+      required: ['type', 'collectionId', 'nodePath'],
       ...CLOSED_OBJECT,
     },
   ],

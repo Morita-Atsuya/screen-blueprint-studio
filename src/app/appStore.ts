@@ -939,32 +939,36 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     setActiveState(stateId) {
       requireWritable()
-      set(state => ({
-        ui: reconcileUiState(state.effectiveDocument, { ...state.ui, activeStateId: stateId }),
-      }))
+      const state = get()
+      const nextUi = reconcileUiState(state.effectiveDocument, {
+        ...state.ui,
+        activeStateId: stateId,
+      })
+      set({ ui: nextUi })
+      markPersistence(persistIfAvailable(state.revision, state.document, state.activeChangeSet, nextUi))
     },
 
     setSelection(selection) {
       requireWritable()
-      set(state => ({
-        ui: reconcileUiState(state.effectiveDocument, {
-          ...state.ui,
-          selection: selection ? cloneEditorSelection(selection) : null,
-        }),
-      }))
+      const state = get()
+      const nextUi = reconcileUiState(state.effectiveDocument, {
+        ...state.ui,
+        selection: selection ? cloneEditorSelection(selection) : null,
+      })
+      set({ ui: nextUi })
+      markPersistence(persistIfAvailable(state.revision, state.document, state.activeChangeSet, nextUi))
     },
 
     selectScreenComponent(componentId) {
       requireWritable()
-      set(state => {
-        const activeScreenId = state.ui.activeScreenId
-        const selection = componentId && activeScreenId
-          ? screenComponentSelection(state.effectiveDocument, activeScreenId, componentId)
-          : null
-        return {
-          ui: reconcileUiState(state.effectiveDocument, { ...state.ui, selection }),
-        }
-      })
+      const state = get()
+      const activeScreenId = state.ui.activeScreenId
+      const selection = componentId && activeScreenId
+        ? screenComponentSelection(state.effectiveDocument, activeScreenId, componentId)
+        : null
+      const nextUi = reconcileUiState(state.effectiveDocument, { ...state.ui, selection })
+      set({ ui: nextUi })
+      markPersistence(persistIfAvailable(state.revision, state.document, state.activeChangeSet, nextUi))
     },
 
     setRightPanelTab(tab) {

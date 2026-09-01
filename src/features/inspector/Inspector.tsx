@@ -117,6 +117,8 @@ export function Inspector() {
   } = useAppStore()
   const [sectionPreferences, setSectionPreferences] = useState<Record<string, boolean>>({})
   const [validationErrorCounts, setValidationErrorCounts] = useState<Record<string, number>>({})
+  const [collectionVariantPathDrafts, setCollectionVariantPathDrafts] =
+    useState<Record<string, string>>({})
   const handleValidationErrorCount = useCallback((componentId: string, count: number) => {
     setValidationErrorCounts(current =>
       current[componentId] === count ? current : { ...current, [componentId]: count },
@@ -1268,6 +1270,10 @@ export function Inspector() {
               {collectionDefinition.variants.map(variant => {
                 const rule = cfg.variantSelection.cases.find(candidate =>
                   candidate.variantId === variant.id && candidate.source.type === 'item')
+                const pathDraftKey = `${comp.id}:${variant.id}`
+                const rulePath = rule?.source.type === 'item'
+                  ? rule.source.path
+                  : collectionVariantPathDrafts[pathDraftKey] ?? '/status'
                 return (
                   <Field
                     key={variant.id}
@@ -1280,7 +1286,7 @@ export function Inspector() {
                         draftId={`component:${comp.id}:config.variantSelection.${variant.id}.path`}
                         className={styles.input}
                         aria-label={t('collection.rulePath')}
-                        value={rule?.source.type === 'item' ? rule.source.path : '/status'}
+                        value={rulePath}
                         validate={path => {
                           try {
                             parseJsonPointer(path, t('collection.rulePath'))
@@ -1290,7 +1296,13 @@ export function Inspector() {
                           }
                         }}
                         onCommit={path => {
-                          if (!rule) return true
+                          if (!rule) {
+                            setCollectionVariantPathDrafts(current => ({
+                              ...current,
+                              [pathDraftKey]: path,
+                            }))
+                            return true
+                          }
                           const cases = cfg.variantSelection.cases.filter(candidate =>
                             candidate.variantId !== variant.id)
                           cases.push({ ...rule, source: { type: 'item', path } })
@@ -1316,7 +1328,7 @@ export function Inspector() {
                           }
                         }}
                         onCommit={value => {
-                          return updateConfig({
+                          const updated = updateConfig({
                             variantSelection: {
                               ...cfg.variantSelection,
                               cases: [
@@ -1326,9 +1338,7 @@ export function Inspector() {
                                   ? [{
                                       source: {
                                         type: 'item' as const,
-                                        path: rule?.source.type === 'item'
-                                          ? rule.source.path
-                                          : '/status',
+                                        path: rulePath,
                                       },
                                       equals: parseJsonScalar(value),
                                       variantId: variant.id,
@@ -1337,6 +1347,18 @@ export function Inspector() {
                               ],
                             },
                           }, 'Variant match')
+                          if (updated) {
+                            setCollectionVariantPathDrafts(current => {
+                              const next = { ...current }
+                              if (value) {
+                                delete next[pathDraftKey]
+                              } else {
+                                next[pathDraftKey] = rulePath
+                              }
+                              return next
+                            })
+                          }
+                          return updated
                         }}
                       />
                     </div>

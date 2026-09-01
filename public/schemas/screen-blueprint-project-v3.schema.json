@@ -738,6 +738,14 @@
         }
       }
     },
+    "jsonPointer": {
+      "type": "string",
+      "pattern": "^(?:/(?:[^~/]|~[01])*)*$"
+    },
+    "nonEmptyJsonPointer": {
+      "type": "string",
+      "pattern": "^/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*$"
+    },
     "collectionValueSource": {
       "oneOf": [
         {
@@ -746,7 +754,7 @@
           "required": ["type", "path"],
           "properties": {
             "type": { "const": "item" },
-            "path": { "type": "string" }
+            "path": { "$ref": "#/$defs/jsonPointer" }
           }
         },
         {
@@ -792,7 +800,7 @@
                 { "type": "null" }
               ]
             },
-            "itemsPath": { "type": "string" },
+            "itemsPath": { "$ref": "#/$defs/jsonPointer" },
             "previewItems": {
               "type": "array",
               "maxItems": 20,
@@ -800,7 +808,7 @@
             }
           }
         },
-        "itemKeyPath": { "type": "string", "minLength": 1 },
+        "itemKeyPath": { "$ref": "#/$defs/nonEmptyJsonPointer" },
         "itemTemplate": {
           "type": "object",
           "additionalProperties": false,
@@ -1578,6 +1586,35 @@
                 "properties": {
                   "kind": {
                     "const": "link"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "collection"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "collection"
                   }
                 },
                 "required": [

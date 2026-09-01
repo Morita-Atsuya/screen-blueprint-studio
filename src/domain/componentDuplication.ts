@@ -99,6 +99,16 @@ function collectSnapshotDependencies(
   }
 
   const apiOperations = Object.create(null) as ComponentSubtreeSnapshot['apiOperations']
+  const collectionApiOperationIds = new Set(
+    sourceIds.flatMap(componentId => {
+      const component = getOwnEntity(document.components, componentId)
+      return component?.nodeType === 'inline' &&
+        component.config.kind === 'collection' &&
+        component.config.dataSource.apiOperationId !== null
+        ? [component.config.dataSource.apiOperationId]
+        : []
+    }),
+  )
   for (const operation of Object.values(document.apiOperations)) {
     if (operation.screenId !== sourceScreenId) continue
     const matchedBindings = operation.requestBindings.filter(binding =>
@@ -107,7 +117,8 @@ function collectSnapshotDependencies(
     const referencedByCopiedEvent = Object.values(events).some(event =>
       event.actions.some(action => action.type === 'callApi' && action.apiOperationId === operation.id),
     )
-    if (matchedBindings.length === 0 && !referencedByCopiedEvent) continue
+    const referencedByCollection = collectionApiOperationIds.has(operation.id)
+    if (matchedBindings.length === 0 && !referencedByCopiedEvent && !referencedByCollection) continue
     if (matchedBindings.length !== operation.requestBindings.length) return null
     apiOperations[operation.id] = {
       ...operation,

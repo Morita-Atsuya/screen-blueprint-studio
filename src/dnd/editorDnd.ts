@@ -102,7 +102,7 @@ export function resolveEditorDrop(
       target.screenId,
       target.parentId,
       target.position,
-      drag.kind,
+      drag.type === 'definitionPalette' ? 'container' : drag.kind,
     )
     return outcome.status === 'moved'
       ? { ...outcome, action: 'add' }

@@ -33,7 +33,17 @@ import {
   findScenarioOverride,
   inlineTargetRef,
 } from './componentTargets'
-import { resolveCollectionItem } from './collection'
+import {
+  resolveCollectionItem,
+  resolveCollectionTemplateDefaults,
+} from './collection'
+import { getOwnEntity } from './entityMap'
+import {
+  validateCommonComponentSpec,
+  validateComponentPlacement,
+  validateComponentSizing,
+  validateDefinitionComponentConfig,
+} from './runtimeValidation'
 
 export const MAX_DEFINITION_NESTING_DEPTH = 10
 export const MAX_RESOLVED_SCREEN_NODE_COUNT = 500
@@ -810,6 +820,10 @@ function resolveDefinitionEntry(
       target,
     )?.override,
   )
+  validateCommonComponentSpec(parts.common, 'Resolved Definition common')
+  validateDefinitionComponentConfig(parts.config, parts.kind, 'Resolved Definition config')
+  validateComponentPlacement(parts.placement, 'Resolved Definition placement')
+  validateComponentSizing(parts.sizing, 'Resolved Definition sizing')
 
   const runtimeId = toRuntimeId(target, context.collectionContext)
   const resolved = pushResolvedNode(context.accumulator, {
@@ -1041,7 +1055,11 @@ export function resolveComponentTarget(
   activeScenarioId: EntityId | null = null,
 ): ResolvedRuntimeNode {
   const resolved = resolveScreenNodes(document, screenId, activeScenarioId)
-  const node = resolved.nodesByTarget[componentTargetRefKey(target)]
+  const targetKey = componentTargetRefKey(target)
+  const node = resolved.nodesByTarget[targetKey] ??
+    (target.type === 'collectionItemNode'
+      ? resolveCollectionTemplateTarget(document, screenId, target, activeScenarioId)
+      : undefined)
   if (!node) {
     throw new DomainError(
       'NOT_FOUND',
@@ -1049,6 +1067,63 @@ export function resolveComponentTarget(
     )
   }
   return node
+}
+
+function resolveCollectionTemplateTarget(
+  document: ProjectDocument,
+  screenId: EntityId,
+  target: Extract<ComponentTargetRef, { type: 'collectionItemNode' }>,
+  activeScenarioId: EntityId | null,
+): ResolvedRuntimeNode | undefined {
+  const collection = getOwnEntity(document.components, target.collectionId)
+  if (
+    collection?.nodeType !== 'inline' ||
+    collection.screenId !== screenId ||
+    collection.config.kind !== 'collection'
+  ) {
+    return undefined
+  }
+  const activeScenario = activeScenarioId
+    ? getOwnEntity(document.screenScenarios, activeScenarioId)
+    : undefined
+  const accumulator: ResolveAccumulator = {
+    orderedNodes: [],
+    nodesById: Object.create(null) as Record<string, MutableResolvedNode>,
+    nodesByTarget: Object.create(null) as Record<string, MutableResolvedNode>,
+    count: 0,
+  }
+  const templateDefaults = resolveCollectionTemplateDefaults(collection.config)
+  resolveDefinitionExpansion(
+    {
+      id: collection.id,
+      screenId,
+      parentId: collection.id,
+      source: collection.config.itemTemplate.source,
+      props: templateDefaults.props,
+      variantId: templateDefaults.variantId,
+      placement: DEFAULT_COMPONENT_PLACEMENT,
+      sizing: DEFAULT_COMPONENT_SIZING,
+    },
+    {
+      document,
+      screenId,
+      activeScenario,
+      accumulator,
+      topLevelInstanceId: null,
+      topLevelScreenComponentId: collection.id,
+      collectionContext: {
+        collectionId: collection.id,
+        itemKey: '__canonical_template__',
+        itemIndex: 0,
+      },
+      pathPrefix: [],
+      parentRuntimeId: collection.id,
+      boundaryDepth: 1,
+      forcedBoundaryVisibility: templateDefaults.visible,
+      publicPropScopes: [],
+    },
+  )
+  return accumulator.nodesByTarget[componentTargetRefKey(target)]
 }
 
 export function resolveDefinitionInstanceRoot(

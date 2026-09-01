@@ -176,6 +176,7 @@ function duplicateComponentConfig(
   config: ScreenComponentConfig,
   usedFieldKeys: Set<string>,
   mappedEventId: EntityId | null,
+  mappedApiOperationId: EntityId | null,
 ): ScreenComponentConfig {
   const copied = cloneComponentConfig(config)
   switch (copied.kind) {
@@ -187,12 +188,19 @@ function duplicateComponentConfig(
       }
     case 'button':
       return { ...copied, eventId: mappedEventId }
+    case 'collection':
+      return {
+        ...copied,
+        dataSource: {
+          ...copied.dataSource,
+          apiOperationId: mappedApiOperationId,
+        },
+      }
     case 'page':
     case 'container':
     case 'text':
     case 'image':
     case 'link':
-    case 'collection':
     case 'modal':
       return copied
     default:
@@ -326,6 +334,11 @@ function copySnapshotIntoDocument(
     const mappedEventId = sourceComponent.config.kind === 'button' && sourceComponent.config.eventId !== null
       ? mappedEvents.get(sourceComponent.config.eventId) ?? null
       : null
+    const mappedApiOperationId =
+      sourceComponent.config.kind === 'collection' &&
+      sourceComponent.config.dataSource.apiOperationId !== null
+        ? mappedApiOperations.get(sourceComponent.config.dataSource.apiOperationId) ?? null
+        : null
     setOwnEntity(document.components, copiedId, {
       ...cloned,
       id: copiedId,
@@ -338,7 +351,12 @@ function copySnapshotIntoDocument(
         }
         return copiedChildId
       }),
-      config: duplicateComponentConfig(sourceComponent.config, usedFieldKeys, mappedEventId),
+      config: duplicateComponentConfig(
+        sourceComponent.config,
+        usedFieldKeys,
+        mappedEventId,
+        mappedApiOperationId,
+      ),
     })
   }
 

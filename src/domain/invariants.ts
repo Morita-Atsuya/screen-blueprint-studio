@@ -24,6 +24,7 @@ import { validateSizingContext, isRootSizing } from './componentSizing'
 import { resolveComponentTarget, resolvePublicPropFieldType, resolveScreenNodes, MAX_DEFINITION_NESTING_DEPTH, MAX_RESOLVED_SCREEN_NODE_COUNT } from './definitionResolver'
 import { DomainError } from './errors'
 import {
+  collectionItemNodeTargetRef,
   componentTargetRefEquals,
   componentTargetRefKey,
   inlineTargetRef,
@@ -523,7 +524,6 @@ function validateDefinitionStructure(
 }
 
 function validateDefinitionGraph(document: ProjectDocument): void {
-  const memoExpandedCount = new Map<EntityId, number>()
   const visiting = new Set<EntityId>()
 
   function expandedCount(definitionId: EntityId, depth: number): number {
@@ -539,8 +539,6 @@ function validateDefinitionGraph(document: ProjectDocument): void {
         `Definition reference cycle detected at ${definitionId}`,
       )
     }
-    const cached = memoExpandedCount.get(definitionId)
-    if (cached !== undefined) return cached
     const definition = getOwnEntity(document.componentDefinitions, definitionId)
     if (!definition) {
       throw new DomainError('INVARIANT_VIOLATION', `Missing definition ${definitionId}`)
@@ -574,7 +572,6 @@ function validateDefinitionGraph(document: ProjectDocument): void {
         `Definition ${definitionId} expands beyond ${MAX_RESOLVED_SCREEN_NODE_COUNT} nodes`,
       )
     }
-    memoExpandedCount.set(definitionId, count)
     return count
   }
 
@@ -724,6 +721,50 @@ function validateScreenComponentStructure(screen: Screen, document: ProjectDocum
         ? parent.config
         : null,
       `Component ${component.id} sizing`,
+    )
+  }
+}
+
+function validateResolvedScreenSemantics(
+  screen: Screen,
+  document: ProjectDocument,
+  resolved: ReturnType<typeof resolveScreenNodes>,
+): void {
+  for (const node of resolved.orderedNodes) {
+    const config = node.config
+    if (
+      config.kind === 'select' &&
+      !config.options.some(option => option.value === config.defaultValue)
+    ) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Resolved Select ${node.id} defaultValue must match one of its options`,
+      )
+    }
+    if (
+      config.kind === 'link' &&
+      config.destination.type === 'internal' &&
+      !hasOwnEntity(document.screens, config.destination.screenId)
+    ) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `Resolved Link ${node.id} references non-existent screen ${config.destination.screenId}`,
+      )
+    }
+    if (!node.parentId) continue
+    const parent = resolved.nodesById[node.parentId]
+    const parentLayout = parent && (
+      parent.config.kind === 'page' ||
+      parent.config.kind === 'container' ||
+      parent.config.kind === 'modal'
+    )
+      ? parent.config
+      : null
+    validateSizingContext(
+      node.sizing,
+      node.placement,
+      parentLayout,
+      `Resolved component ${node.id} sizing on screen ${screen.id}`,
     )
   }
 }
@@ -1090,6 +1131,14 @@ export function validateInvariants(doc: ProjectDocument): void {
             )
           }
         }
+        if (config.dataSource.previewItems.length === 0) {
+          resolveComponentTarget(
+            doc,
+            component.screenId,
+            collectionItemNodeTargetRef(component.id, [definition.rootNodeId]),
+            null,
+          )
+        }
       }
     } else {
       const definition = resolveComponentDefinitionRefV3(doc, component.source.$ref)
@@ -1111,7 +1160,11 @@ export function validateInvariants(doc: ProjectDocument): void {
     validateEvents(screen, doc)
     validateApiOperations(screen, doc)
     validateScreenOwnedButtonLinks(screen, doc)
-    resolveScreenNodes(doc, screen.id, null)
+    validateResolvedScreenSemantics(
+      screen,
+      doc,
+      resolveScreenNodes(doc, screen.id, null),
+    )
   }
 
   assertCanonicalRootPlacementsV3(doc)

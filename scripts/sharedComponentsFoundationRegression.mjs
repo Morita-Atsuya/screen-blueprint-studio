@@ -50,6 +50,7 @@ const definitionEditingBundle = join(work, 'definition-editing.mjs')
 const editorSelectionBundle = join(work, 'editor-selection.mjs')
 const componentTargetsBundle = join(work, 'component-targets.mjs')
 const collectionBundle = join(work, 'collection.mjs')
+const editorDndBundle = join(work, 'editor-dnd.mjs')
 
 bundle('src/sample/sampleProject.ts', sampleBundle)
 bundle('src/domain/applyCommand.ts', applyBundle)
@@ -66,11 +67,15 @@ bundle('src/domain/definitionEditing.ts', definitionEditingBundle)
 bundle('src/domain/editorSelection.ts', editorSelectionBundle)
 bundle('src/domain/componentTargets.ts', componentTargetsBundle)
 bundle('src/domain/collection.ts', collectionBundle)
+bundle('src/dnd/editorDnd.ts', editorDndBundle)
 
 const { sampleProject } = await import(moduleUrl(sampleBundle, 'sample'))
 const { applyCommandWithoutRevision } = await import(moduleUrl(applyBundle, 'apply'))
 const { validateInvariants } = await import(moduleUrl(invariantsBundle, 'invariants'))
-const { resolveScreenNodes } = await import(moduleUrl(resolverBundle, 'resolver'))
+const {
+  resolveComponentTarget,
+  resolveScreenNodes,
+} = await import(moduleUrl(resolverBundle, 'resolver'))
 const {
   componentDefinitionRefV3,
   CANONICAL_PROJECT_SCHEMA_URL_V3,
@@ -115,6 +120,7 @@ const {
   resolveCollectionItem,
   resolveJsonPointer,
 } = await import(moduleUrl(collectionBundle, 'collection'))
+const { resolveEditorDrop } = await import(moduleUrl(editorDndBundle, 'editor-dnd'))
 
 let passed = 0
 async function test(name, callback) {
@@ -170,6 +176,26 @@ await test('schema, example, and canonical constants stay aligned', async () => 
       component.nodeType === 'inline' && component.kind === 'collection'),
     'public example must demonstrate Collection',
   )
+
+  const collectionEntry = Object.entries(example.components).find(([, component]) =>
+    component.nodeType === 'inline' && component.kind === 'collection')
+  const container = Object.values(example.components).find(component =>
+    component.nodeType === 'inline' && component.kind === 'container')
+  assert(collectionEntry && container, 'public example fixtures are incomplete')
+  const mismatchedKind = clone(example)
+  mismatchedKind.components[collectionEntry[0]].config = clone(container.config)
+  assert(!validate(mismatchedKind), 'schema accepted mismatched Collection kind/config')
+
+  for (const field of ['itemsPath', 'itemKeyPath', 'bindingPath']) {
+    const malformed = clone(example)
+    const malformedCollection = malformed.components[collectionEntry[0]]
+    if (field === 'itemsPath') malformedCollection.config.dataSource.itemsPath = 'items'
+    if (field === 'itemKeyPath') malformedCollection.config.itemKeyPath = 'id'
+    if (field === 'bindingPath') {
+      malformedCollection.config.propBindings[0].source.path = 'title'
+    }
+    assert(!validate(malformed), `schema accepted malformed Collection ${field}`)
+  }
 })
 
 await test('Collection resolves bounded item data with stable canonical identity', async () => {
@@ -268,6 +294,124 @@ await test('Collection resolves bounded item data with stable canonical identity
   assert(
     withoutApi.components['comp-launch-task-card'].config.dataSource.apiOperationId === null,
     'API removal must explicitly disconnect Collection data sources',
+  )
+
+  const emptyCollection = clone(sampleProject)
+  emptyCollection.components['comp-launch-task-card'].config.dataSource.previewItems = []
+  validateInvariants(emptyCollection)
+  assert(
+    resolveComponentTarget(
+      emptyCollection,
+      'screen-list',
+      {
+        type: 'collectionItemNode',
+        collectionId: 'comp-launch-task-card',
+        nodePath: ['task-card-action'],
+      },
+    ).definitionNodeId === 'task-card-action',
+    'empty Collections must retain canonical Definition-node targets',
+  )
+
+  const invalidResolvedProp = clone(sampleProject)
+  invalidResolvedProp.componentDefinitions['shared/task-card'].publicProps.push({
+    key: 'columns',
+    name: 'Columns',
+    description: '',
+    type: 'number',
+    bindings: [{ nodePath: ['task-card-root'], field: 'config.columns' }],
+  })
+  invalidResolvedProp.components['comp-launch-task-card'].config.itemTemplate.props.columns = 99
+  await expectThrow('public props must not produce invalid resolved component configs', () =>
+    validateInvariants(invalidResolvedProp))
+  invalidResolvedProp.components[
+    'comp-launch-task-card'
+  ].config.dataSource.previewItems = []
+  await expectThrow('empty Collections must still validate resolved template props', () =>
+    validateInvariants(invalidResolvedProp))
+  const invalidEmptyLiteralProp = clone(invalidResolvedProp)
+  delete invalidEmptyLiteralProp.components[
+    'comp-launch-task-card'
+  ].config.itemTemplate.props.columns
+  invalidEmptyLiteralProp.components['comp-launch-task-card'].config.propBindings.push({
+    propKey: 'columns',
+    source: { type: 'literal', value: 99 },
+  })
+  await expectThrow('empty Collections must validate literal prop bindings', () =>
+    validateInvariants(invalidEmptyLiteralProp))
+
+  const apiBackedCollection = clone(sampleProject)
+  apiBackedCollection.components['comp-launch-task-card'].config.dataSource.apiOperationId =
+    'api-create-task'
+  const apiSnapshot = createComponentSubtreeSnapshot(
+    apiBackedCollection,
+    'comp-launch-task-card',
+  )
+  assert(
+    apiSnapshot === null,
+    'Collection snapshots must block incomplete API dependencies',
+  )
+
+  const selfContainedApiCollection = clone(sampleProject)
+  selfContainedApiCollection.apiOperations['api-collection'] = {
+    id: 'api-collection',
+    screenId: 'screen-list',
+    name: 'Load collection',
+    method: 'GET',
+    path: '/tasks',
+    requestBindings: [],
+    successScenarioId: null,
+    errorScenarioId: null,
+  }
+  selfContainedApiCollection.components[
+    'comp-launch-task-card'
+  ].config.dataSource.apiOperationId = 'api-collection'
+  const collectionDuplicate = createDuplicateComponentCommand(
+    selfContainedApiCollection,
+    'comp-launch-task-card',
+    (() => {
+      let index = 0
+      return () => `collection-copy-${index++}`
+    })(),
+  )
+  assert(collectionDuplicate, 'self-contained API-backed Collection must be duplicable')
+  const duplicatedCollectionDocument = applyCommandWithoutRevision(
+    selfContainedApiCollection,
+    collectionDuplicate,
+  )
+  const duplicatedCollectionId =
+    collectionDuplicate.componentIdMap['comp-launch-task-card']
+  const duplicatedApiId = collectionDuplicate.apiOperationIdMap['api-collection']
+  assert(
+    duplicatedCollectionDocument.components[
+      duplicatedCollectionId
+    ].config.dataSource.apiOperationId === duplicatedApiId &&
+      duplicatedCollectionDocument.apiOperations[duplicatedApiId]?.screenId === 'screen-list',
+    'duplicated Collections must remap their self-contained API source',
+  )
+
+  const modalDefinitionDrop = resolveEditorDrop(
+    sampleProject,
+    {
+      type: 'definitionPalette',
+      definitionId: 'shared/task-card',
+      kind: 'modal',
+      label: 'Modal-root Definition',
+      surface: 'canvas',
+    },
+    {
+      type: 'component-drop',
+      surface: 'canvas',
+      parentId: 'comp-task-list',
+      screenId: 'screen-list',
+      position: 0,
+      label: 'Task list',
+    },
+  )
+  assert(
+    modalDefinitionDrop.status === 'moved' &&
+      modalDefinitionDrop.parentId === 'comp-task-list' &&
+      modalDefinitionDrop.position === 0,
+    'Definition Palette drops must classify the outer Instance as a container child',
   )
 })
 
@@ -483,6 +627,12 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
     !validate({ ...base, actions: [{ type: 'setState', stateId: 'legacy-state' }] }),
     'connect_behavior still advertised the removed setState action',
   )
+  const getComponent = WEBMCP_TOOLS.find(tool => tool.name === 'get_component')
+  assert(
+    getComponent.inputSchema.properties.target.oneOf.some(branch =>
+      branch.properties.type.const === 'collectionItemNode'),
+    'WebMCP shared target schema must expose collectionItemNode',
+  )
 })
 
 await test('type compatibility and null distinctions are enforced', async () => {
@@ -594,6 +744,8 @@ await test('definition DAG cycles and depth limits are rejected', async () => {
     }
     previousDefinitionId = definitionId
   }
+  await expectThrow('unused leaf-first Definition chains must still enforce depth', () =>
+    validateInvariants(tooDeep))
   tooDeep.components['comp-list-header'].source.$ref = componentDefinitionRefV3(previousDefinitionId)
   await expectThrow('overly deep definition nesting should be rejected', () => validateInvariants(tooDeep))
 })
@@ -802,6 +954,37 @@ await test('shared component hardening preserves paths, nested props, and typed 
       nodePath: ['part:node'],
     }),
     'typed target keys must not collide when IDs contain delimiters',
+  )
+
+  const encodedInstanceDocument = clone(sampleProject)
+  encodedInstanceDocument.components['instance/encoded%'] = {
+    nodeType: 'definitionInstance',
+    id: 'instance/encoded%',
+    screenId: 'screen-list',
+    parentId: 'comp-list-page',
+    childIds: [],
+    source: { $ref: componentDefinitionRefV3('shared/header') },
+    props: {},
+    variantId: null,
+    placement: { mode: 'flow' },
+    sizing: { ...DEFAULT_COMPONENT_SIZING },
+  }
+  encodedInstanceDocument.components['comp-list-page'].childIds.push('instance/encoded%')
+  const encodedParentSelection = resolveHierarchyEditorSelection(
+    encodedInstanceDocument,
+    {
+      type: 'resolvedDefinitionNode',
+      screenId: 'screen-list',
+      instanceId: 'instance/encoded%',
+      nodePath: ['header-copy', 'header-title'],
+    },
+    'select-parent',
+  )
+  assert(
+    encodedParentSelection?.type === 'resolvedDefinitionNode' &&
+      encodedParentSelection.instanceId === 'instance/encoded%' &&
+      encodedParentSelection.nodePath.join('/') === 'header-copy',
+    'Definition hierarchy shortcuts must use encoded canonical target keys',
   )
 
   const nestedDocument = clone(sampleProject)
