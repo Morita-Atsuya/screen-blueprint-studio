@@ -383,6 +383,7 @@
       "screenId": "screen-list",
       "parentId": "comp-list-page",
       "childIds": [
+        "comp-example-collection",
         "comp-launch-task-card"
       ],
       "kind": "container",
@@ -402,6 +403,107 @@
         "justify": "start",
         "align": "stretch",
         "wrap": false
+      }
+    },
+    "comp-example-collection": {
+      "nodeType": "inline",
+      "sizing": {
+        "inlineSize": "auto",
+        "minWidth": "none",
+        "maxWidth": "none",
+        "gridSpan": 1,
+        "grow": 0,
+        "shrink": "allow"
+      },
+      "id": "comp-example-collection",
+      "screenId": "screen-list",
+      "parentId": "comp-task-list",
+      "childIds": [],
+      "kind": "collection",
+      "placement": {
+        "mode": "flow"
+      },
+      "common": {
+        "description": "Shared header collection example",
+        "visible": true,
+        "enabled": true
+      },
+      "config": {
+        "kind": "collection",
+        "dataSource": {
+          "apiOperationId": null,
+          "itemsPath": "/items",
+          "previewItems": [
+            {
+              "id": "example-1",
+              "title": "Planning",
+              "subtitle": "Ready for review",
+              "density": "comfortable",
+              "visible": true
+            },
+            {
+              "id": "example-2",
+              "title": "Delivery",
+              "subtitle": "Compact status",
+              "density": "compact",
+              "visible": true
+            }
+          ]
+        },
+        "itemKeyPath": "/id",
+        "itemTemplate": {
+          "source": {
+            "$ref": "#/componentDefinitions/shared~1header"
+          },
+          "props": {},
+          "variantId": "comfortable"
+        },
+        "propBindings": [
+          {
+            "propKey": "title",
+            "source": {
+              "type": "item",
+              "path": "/title"
+            }
+          },
+          {
+            "propKey": "subtitle",
+            "source": {
+              "type": "item",
+              "path": "/subtitle"
+            }
+          }
+        ],
+        "variantSelection": {
+          "cases": [
+            {
+              "source": {
+                "type": "item",
+                "path": "/density"
+              },
+              "equals": "comfortable",
+              "variantId": "comfortable"
+            },
+            {
+              "source": {
+                "type": "item",
+                "path": "/density"
+              },
+              "equals": "compact",
+              "variantId": "compact"
+            }
+          ],
+          "fallbackVariantId": "comfortable"
+        },
+        "visibility": {
+          "source": {
+            "type": "item",
+            "path": "/visible"
+          },
+          "equals": true,
+          "visibleWhenMatched": true,
+          "fallback": false
+        }
       }
     },
     "comp-launch-task-card": {

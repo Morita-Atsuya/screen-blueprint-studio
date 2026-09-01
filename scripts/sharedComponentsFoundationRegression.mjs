@@ -49,6 +49,7 @@ const webmcpToolsBundle = join(work, 'webmcp-tools.mjs')
 const definitionEditingBundle = join(work, 'definition-editing.mjs')
 const editorSelectionBundle = join(work, 'editor-selection.mjs')
 const componentTargetsBundle = join(work, 'component-targets.mjs')
+const collectionBundle = join(work, 'collection.mjs')
 
 bundle('src/sample/sampleProject.ts', sampleBundle)
 bundle('src/domain/applyCommand.ts', applyBundle)
@@ -64,6 +65,7 @@ bundle('src/webmcp/tools.ts', webmcpToolsBundle)
 bundle('src/domain/definitionEditing.ts', definitionEditingBundle)
 bundle('src/domain/editorSelection.ts', editorSelectionBundle)
 bundle('src/domain/componentTargets.ts', componentTargetsBundle)
+bundle('src/domain/collection.ts', collectionBundle)
 
 const { sampleProject } = await import(moduleUrl(sampleBundle, 'sample'))
 const { applyCommandWithoutRevision } = await import(moduleUrl(applyBundle, 'apply'))
@@ -108,6 +110,11 @@ const { parseEditorSelectionValue } = await import(
 const { componentTargetRefKey } = await import(
   moduleUrl(componentTargetsBundle, 'component-targets')
 )
+const {
+  MAX_COLLECTION_PREVIEW_ITEMS,
+  resolveCollectionItem,
+  resolveJsonPointer,
+} = await import(moduleUrl(collectionBundle, 'collection'))
 
 let passed = 0
 async function test(name, callback) {
@@ -157,6 +164,110 @@ await test('schema, example, and canonical constants stay aligned', async () => 
   assert(
     schema.$defs.inlineDefinitionNode.properties.config.$ref === '#/$defs/definitionComponentConfig',
     'definition nodes must use definition-local config schema',
+  )
+  assert(
+    Object.values(example.components).some(component =>
+      component.nodeType === 'inline' && component.kind === 'collection'),
+    'public example must demonstrate Collection',
+  )
+})
+
+await test('Collection resolves bounded item data with stable canonical identity', async () => {
+  const collection = sampleProject.components['comp-launch-task-card']
+  assert(
+    collection?.nodeType === 'inline' && collection.config.kind === 'collection',
+    'TaskFlow must include the task Collection',
+  )
+  const config = collection.config
+  const ready = resolveCollectionItem(config, config.dataSource.previewItems[0])
+  const blocked = resolveCollectionItem(config, config.dataSource.previewItems[1])
+  assert(
+    ready.itemKey === 'task-launch' &&
+      ready.variantId === 'task-ready' &&
+      ready.visible &&
+      ready.props.title === 'Launch onboarding checklist',
+    'Collection did not bind the ready item to props, Variant, visibility, and stable key',
+  )
+  assert(
+    blocked.itemKey === 'task-docs' &&
+      blocked.variantId === 'task-blocked' &&
+      blocked.visible,
+    'Collection exact scalar case selection did not choose one final Variant',
+  )
+
+  const fallbackConfig = clone(config)
+  fallbackConfig.dataSource.previewItems = [{
+    ...fallbackConfig.dataSource.previewItems[0],
+    id: 'fallback',
+    statusKey: 'unknown',
+  }]
+  assert(
+    resolveCollectionItem(
+      fallbackConfig,
+      fallbackConfig.dataSource.previewItems[0],
+    ).variantId === fallbackConfig.variantSelection.fallbackVariantId,
+    'Collection rule fallback did not win before itemTemplate.variantId',
+  )
+  fallbackConfig.variantSelection.fallbackVariantId = null
+  assert(
+    resolveCollectionItem(
+      fallbackConfig,
+      fallbackConfig.dataSource.previewItems[0],
+    ).variantId === fallbackConfig.itemTemplate.variantId,
+    'Collection itemTemplate Variant was not used as the final fallback',
+  )
+
+  const missing = resolveJsonPointer({ value: null }, '/missing')
+  const presentNull = resolveJsonPointer({ value: null }, '/value')
+  assert(
+    !missing.found && presentNull.found && presentNull.value === null,
+    'Collection JSON Pointer must distinguish missing from null',
+  )
+  assert(
+    resolveJsonPointer({ 'a/b': { '~key': 3 } }, '/a~1b/~0key').value === 3,
+    'Collection JSON Pointer escapes did not resolve from the item root',
+  )
+
+  const resolved = resolveScreenNodes(sampleProject, 'screen-list')
+  const collectionNodes = resolved.orderedNodes.filter(node =>
+    node.collectionId === collection.id)
+  assert(
+    collectionNodes.length > 0 &&
+      new Set(collectionNodes.map(node => node.id)).size === collectionNodes.length &&
+      collectionNodes.every(node =>
+        node.canonicalTarget.type === 'collectionItemNode' &&
+        node.canonicalTarget.collectionId === collection.id),
+    'Collection preview nodes must have unique runtime IDs and stable collectionItemNode targets',
+  )
+
+  const duplicateKeys = clone(sampleProject)
+  const duplicateCollection = duplicateKeys.components['comp-launch-task-card']
+  duplicateCollection.config.dataSource.previewItems[1].id = 'task-launch'
+  await expectThrow('duplicate Collection item keys must be rejected', () =>
+    validateInvariants(duplicateKeys))
+
+  const tooManyItems = clone(sampleProject)
+  tooManyItems.components['comp-launch-task-card'].config.dataSource.previewItems =
+    Array.from({ length: MAX_COLLECTION_PREVIEW_ITEMS + 1 }, (_, index) => ({ id: index }))
+  await expectThrow('unbounded Collection preview items must be rejected', () =>
+    validateInvariants(tooManyItems))
+
+  const uses = collectDefinitionUses(sampleProject, 'shared/task-card')
+  assert(
+    uses.screenInstanceIds.includes('comp-launch-task-card'),
+    'Definition deletion impact must include Collection item templates',
+  )
+
+  const withApiSource = clone(sampleProject)
+  withApiSource.components['comp-launch-task-card'].config.dataSource.apiOperationId =
+    'api-create-task'
+  const withoutApi = applyCommandWithoutRevision(withApiSource, {
+    type: 'removeApiOperation',
+    operationId: 'api-create-task',
+  })
+  assert(
+    withoutApi.components['comp-launch-task-card'].config.dataSource.apiOperationId === null,
+    'API removal must explicitly disconnect Collection data sources',
   )
 })
 

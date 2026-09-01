@@ -18,6 +18,7 @@ import {
   type ApiOperation,
   type CommonComponentSpec,
   type ComponentConfig,
+  type CollectionValueSource,
   type ComponentDefinition,
   type ComponentDefinitionNode,
   type ComponentOverride,
@@ -270,6 +271,45 @@ function validateLinkDestination(value: unknown, path: string): void {
   }
 }
 
+function validateJsonValue(value: unknown, path: string): void {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) return
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => validateJsonValue(entry, `${path}[${index}]`))
+    return
+  }
+  const item = record(value, path)
+  Object.entries(item).forEach(([key, entry]) => {
+    if (!key) fail(path, 'must not contain empty keys')
+    validateJsonValue(entry, `${path}.${key}`)
+  })
+}
+
+function validateCollectionValueSource(
+  value: unknown,
+  path: string,
+): asserts value is CollectionValueSource {
+  const source = record(value, path)
+  if (source.type === 'item') {
+    exactKeys(source, ['type', 'path'], [], path)
+    string(source.path, `${path}.path`)
+    return
+  }
+  if (source.type === 'literal') {
+    exactKeys(source, ['type', 'value'], [], path)
+    validateJsonValue(source.value, `${path}.value`)
+    if (typeof source.value === 'object' && source.value !== null) {
+      fail(`${path}.value`, 'must be a scalar')
+    }
+    return
+  }
+  fail(`${path}.type`, 'must be item or literal')
+}
+
 function validateComponentConfigCommonFields(
   config: UnknownRecord,
   kind: ComponentConfig['kind'],
@@ -368,6 +408,93 @@ function validateComponentConfigCommonFields(
         fail(`${path}.openMode`, 'download is only valid for resource destinations')
       }
       return
+    case 'collection': {
+      exactKeys(
+        config,
+        [
+          'kind',
+          'dataSource',
+          'itemKeyPath',
+          'itemTemplate',
+          'propBindings',
+          'variantSelection',
+          'visibility',
+        ],
+        [],
+        path,
+      )
+      const dataSource = record(config.dataSource, `${path}.dataSource`)
+      exactKeys(dataSource, ['apiOperationId', 'itemsPath', 'previewItems'], [], `${path}.dataSource`)
+      if (dataSource.apiOperationId !== null) {
+        entityId(dataSource.apiOperationId, `${path}.dataSource.apiOperationId`)
+      }
+      string(dataSource.itemsPath, `${path}.dataSource.itemsPath`)
+      if (!Array.isArray(dataSource.previewItems)) {
+        fail(`${path}.dataSource.previewItems`, 'must be an array')
+      }
+      dataSource.previewItems.forEach((item, index) => {
+        if (Array.isArray(item)) fail(`${path}.dataSource.previewItems[${index}]`, 'must be an object')
+        validateJsonValue(record(item, `${path}.dataSource.previewItems[${index}]`), `${path}.dataSource.previewItems[${index}]`)
+      })
+      string(config.itemKeyPath, `${path}.itemKeyPath`)
+      const template = record(config.itemTemplate, `${path}.itemTemplate`)
+      exactKeys(template, ['source', 'props', 'variantId'], [], `${path}.itemTemplate`)
+      validateDefinitionSource(template.source, `${path}.itemTemplate.source`)
+      const props = record(template.props, `${path}.itemTemplate.props`)
+      Object.entries(props).forEach(([key, value]) => {
+        nonEmptyString(key, `${path}.itemTemplate.props key`)
+        if (
+          typeof value !== 'string' &&
+          typeof value !== 'boolean' &&
+          (typeof value !== 'number' || !Number.isFinite(value))
+        ) fail(`${path}.itemTemplate.props.${key}`, 'must be a non-null scalar')
+      })
+      if (template.variantId !== null) {
+        entityId(template.variantId, `${path}.itemTemplate.variantId`)
+      }
+      if (!Array.isArray(config.propBindings)) fail(`${path}.propBindings`, 'must be an array')
+      config.propBindings.forEach((entry, index) => {
+        const binding = record(entry, `${path}.propBindings[${index}]`)
+        exactKeys(binding, ['propKey', 'source'], [], `${path}.propBindings[${index}]`)
+        nonEmptyString(binding.propKey, `${path}.propBindings[${index}].propKey`)
+        validateCollectionValueSource(binding.source, `${path}.propBindings[${index}].source`)
+      })
+      const variantSelection = record(config.variantSelection, `${path}.variantSelection`)
+      exactKeys(variantSelection, ['cases', 'fallbackVariantId'], [], `${path}.variantSelection`)
+      if (!Array.isArray(variantSelection.cases)) {
+        fail(`${path}.variantSelection.cases`, 'must be an array')
+      }
+      variantSelection.cases.forEach((entry, index) => {
+        const rule = record(entry, `${path}.variantSelection.cases[${index}]`)
+        exactKeys(rule, ['source', 'equals', 'variantId'], [], `${path}.variantSelection.cases[${index}]`)
+        validateCollectionValueSource(rule.source, `${path}.variantSelection.cases[${index}].source`)
+        validateJsonValue(rule.equals, `${path}.variantSelection.cases[${index}].equals`)
+        if (typeof rule.equals === 'object' && rule.equals !== null) {
+          fail(`${path}.variantSelection.cases[${index}].equals`, 'must be a scalar')
+        }
+        entityId(rule.variantId, `${path}.variantSelection.cases[${index}].variantId`)
+      })
+      if (variantSelection.fallbackVariantId !== null) {
+        entityId(variantSelection.fallbackVariantId, `${path}.variantSelection.fallbackVariantId`)
+      }
+      if (config.visibility !== null) {
+        const visibility = record(config.visibility, `${path}.visibility`)
+        exactKeys(
+          visibility,
+          ['source', 'equals', 'visibleWhenMatched', 'fallback'],
+          [],
+          `${path}.visibility`,
+        )
+        validateCollectionValueSource(visibility.source, `${path}.visibility.source`)
+        validateJsonValue(visibility.equals, `${path}.visibility.equals`)
+        if (typeof visibility.equals === 'object' && visibility.equals !== null) {
+          fail(`${path}.visibility.equals`, 'must be a scalar')
+        }
+        boolean(visibility.visibleWhenMatched, `${path}.visibility.visibleWhenMatched`)
+        boolean(visibility.fallback, `${path}.visibility.fallback`)
+      }
+      return
+    }
   }
 }
 
@@ -727,6 +854,14 @@ export function validateComponentTargetRef(
     case 'definitionNode':
       exactKeys(target, ['type', 'instanceId', 'nodePath'], [], path)
       entityId(target.instanceId, `${path}.instanceId`)
+      if (!Array.isArray(target.nodePath) || target.nodePath.length === 0) {
+        fail(`${path}.nodePath`, 'must be a non-empty array')
+      }
+      target.nodePath.forEach((item, index) => entityId(item, `${path}.nodePath[${index}]`))
+      return
+    case 'collectionItemNode':
+      exactKeys(target, ['type', 'collectionId', 'nodePath'], [], path)
+      entityId(target.collectionId, `${path}.collectionId`)
       if (!Array.isArray(target.nodePath) || target.nodePath.length === 0) {
         fail(`${path}.nodePath`, 'must be a non-empty array')
       }

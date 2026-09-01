@@ -192,6 +192,7 @@ function duplicateComponentConfig(
     case 'text':
     case 'image':
     case 'link':
+    case 'collection':
     case 'modal':
       return copied
     default:
@@ -1414,6 +1415,15 @@ export function applyCommandWithoutRevision(
         event.actions = event.actions.filter(action =>
           action.type !== 'callApi' || action.apiOperationId !== operation.id,
         )
+      }
+      for (const component of Object.values(next.components)) {
+        if (
+          component.nodeType === 'inline' &&
+          component.config.kind === 'collection' &&
+          component.config.dataSource.apiOperationId === operation.id
+        ) {
+          component.config.dataSource.apiOperationId = null
+        }
       }
       deleteOwnEntity(next.apiOperations, operation.id)
       break

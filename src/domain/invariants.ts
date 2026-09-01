@@ -37,6 +37,11 @@ import {
   validateProjectDocumentMetadata,
   validateDefinitionComponentConfig,
 } from './runtimeValidation'
+import {
+  parseJsonPointer,
+  resolveCollectionItem,
+  validateCollectionPreviewItems,
+} from './collection'
 
 const VARIANT_FIELD_TO_PUBLIC_PROP_FIELD: Partial<Record<keyof NonNullable<VariantNodeOverride['config']>, PublicPropFieldV3>> = {
   layout: 'config.layout',
@@ -385,6 +390,12 @@ function validateDefinitionStructure(
     visiting.add(nodeId)
     reached.add(nodeId)
     if (isInlineDefinitionNode(node)) {
+      if (node.kind === 'collection') {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Definition ${definition.id} cannot contain screen-owned Collection ${node.id}`,
+        )
+      }
       const config = node.config
       validateDefinitionComponentConfig(
         config,
@@ -972,6 +983,113 @@ export function validateInvariants(doc: ProjectDocument): void {
           'INVARIANT_VIOLATION',
           `Link ${component.id} references non-existent screen ${component.config.destination.screenId}`,
         )
+      }
+      if (component.config.kind === 'collection') {
+        const config = component.config
+        parseJsonPointer(config.dataSource.itemsPath, `Collection ${component.id} itemsPath`)
+        if (config.itemKeyPath === '') {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Collection ${component.id} itemKeyPath must not target the whole item`,
+          )
+        }
+        parseJsonPointer(config.itemKeyPath, `Collection ${component.id} itemKeyPath`)
+        validateCollectionPreviewItems(
+          config.dataSource.previewItems,
+          `Collection ${component.id} previewItems`,
+        )
+        const definition = resolveComponentDefinitionRefV3(doc, config.itemTemplate.source.$ref)
+        if (
+          config.dataSource.apiOperationId !== null &&
+          getOwnEntity(doc.apiOperations, config.dataSource.apiOperationId)?.screenId !== component.screenId
+        ) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Collection ${component.id} API source must belong to the same screen`,
+          )
+        }
+        if (
+          config.itemTemplate.variantId !== null &&
+          !definition.variants.some(variant => variant.id === config.itemTemplate.variantId)
+        ) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Collection ${component.id} template references a missing Variant`,
+          )
+        }
+        validateInstanceProps(
+          definition,
+          config.itemTemplate.props,
+          `Collection ${component.id} template`,
+        )
+        const bindingKeys = config.propBindings.map(binding => binding.propKey)
+        if (new Set(bindingKeys).size !== bindingKeys.length) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Collection ${component.id} prop bindings must be unique`,
+          )
+        }
+        for (const binding of config.propBindings) {
+          if (binding.source.type === 'item') {
+            parseJsonPointer(
+              binding.source.path,
+              `Collection ${component.id} prop ${binding.propKey}`,
+            )
+          }
+        }
+        for (const rule of config.variantSelection.cases) {
+          if (!definition.variants.some(variant => variant.id === rule.variantId)) {
+            throw new DomainError(
+              'INVARIANT_VIOLATION',
+              `Collection ${component.id} Variant rule references missing ${rule.variantId}`,
+            )
+          }
+          if (rule.source.type === 'item') {
+            parseJsonPointer(rule.source.path, `Collection ${component.id} Variant rule`)
+          }
+        }
+        if (
+          config.variantSelection.fallbackVariantId !== null &&
+          !definition.variants.some(
+            variant => variant.id === config.variantSelection.fallbackVariantId,
+          )
+        ) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `Collection ${component.id} fallback Variant is missing`,
+          )
+        }
+        if (config.visibility?.source.type === 'item') {
+          parseJsonPointer(
+            config.visibility.source.path,
+            `Collection ${component.id} visibility rule`,
+          )
+        }
+        const seenKeys = new Set<string>()
+        for (const item of config.dataSource.previewItems) {
+          const resolvedItem = resolveCollectionItem(config, item)
+          if (seenKeys.has(resolvedItem.itemKey)) {
+            throw new DomainError(
+              'INVARIANT_VIOLATION',
+              `Collection ${component.id} preview item keys must be unique`,
+            )
+          }
+          seenKeys.add(resolvedItem.itemKey)
+          validateInstanceProps(
+            definition,
+            resolvedItem.props,
+            `Collection ${component.id} item ${resolvedItem.itemKey}`,
+          )
+          if (
+            resolvedItem.variantId !== null &&
+            !definition.variants.some(variant => variant.id === resolvedItem.variantId)
+          ) {
+            throw new DomainError(
+              'INVARIANT_VIOLATION',
+              `Collection ${component.id} item ${resolvedItem.itemKey} Variant is missing`,
+            )
+          }
+        }
       }
     } else {
       const definition = resolveComponentDefinitionRefV3(doc, component.source.$ref)

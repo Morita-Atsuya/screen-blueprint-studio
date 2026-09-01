@@ -18,6 +18,7 @@ export const COMPONENT_KIND_MESSAGE_KEYS: Record<
   button: 'component.button',
   image: 'component.image',
   link: 'component.link',
+  collection: 'component.collection',
   modal: 'component.modal',
 }
 
@@ -56,6 +57,8 @@ export function getComponentDisplayLabel(
     case 'button':
     case 'link':
       return readableText(config.label, fallback)
+    case 'collection':
+      return readableText(component.common.description, fallback)
     default:
       return assertNever(config, 'component display label config')
   }

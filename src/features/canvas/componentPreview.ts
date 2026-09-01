@@ -70,6 +70,10 @@ export type CanvasComponentPreview =
       destination: LinkDestination
       openMode: LinkOpenMode
     }
+  | {
+      kind: 'collection'
+      rendersContent: true
+    }
 
 function textElement(style: TextStyle): 'h1' | 'h2' | 'h3' | 'p' | 'small' {
   switch (style) {
@@ -140,6 +144,8 @@ export function createCanvasComponentPreview(
         destination: { ...config.destination },
         openMode: config.openMode,
       }
+    case 'collection':
+      return { kind: config.kind, rendersContent: true }
     default:
       return assertNever(config, 'Canvas component config')
   }

@@ -44,6 +44,7 @@ export function componentHasContentSection(kind: ComponentKind): boolean {
     case 'button':
     case 'image':
     case 'link':
+    case 'collection':
       return true
     case 'page':
     case 'container':
@@ -64,6 +65,7 @@ export function componentHasLayoutSection(kind: ComponentKind): boolean {
     case 'button':
     case 'image':
     case 'link':
+    case 'collection':
       return false
   }
 }
@@ -151,6 +153,15 @@ function contentValues(config: ComponentConfig | undefined): Record<string, unkn
         label: config.label,
         destination: config.destination,
         openMode: config.openMode,
+      }
+    case 'collection':
+      return {
+        dataSource: config.dataSource,
+        itemKeyPath: config.itemKeyPath,
+        itemTemplate: config.itemTemplate,
+        propBindings: config.propBindings,
+        variantSelection: config.variantSelection,
+        visibility: config.visibility,
       }
   }
 }

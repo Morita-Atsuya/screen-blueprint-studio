@@ -18,6 +18,12 @@ import { resolveScreenNodes } from './definitionResolver'
 
 function toDefinitionConfig(config: ScreenComponentConfig): DefinitionComponentConfig {
   const copy = structuredClone(config)
+  if (copy.kind === 'collection') {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'A subtree containing a Collection cannot be extracted into a Definition',
+    )
+  }
   if (copy.kind === 'button') {
     const { eventId: _eventId, ...definitionConfig } = copy
     return definitionConfig

@@ -22,21 +22,34 @@ export function definitionNodeTargetRef(
   return { type: 'definitionNode', instanceId, nodePath: [...nodePath] }
 }
 
+export function collectionItemNodeTargetRef(
+  collectionId: EntityId,
+  nodePath: [EntityId, ...EntityId[]],
+): ComponentTargetRef {
+  return { type: 'collectionItemNode', collectionId, nodePath: [...nodePath] }
+}
+
 export function cloneComponentTargetRef(target: ComponentTargetRef): ComponentTargetRef {
   if (!isRecord(target)) {
     throw new DomainError('INVARIANT_VIOLATION', 'Component target must be an object')
   }
   return target.type === 'inline'
     ? { ...target }
-    : { type: 'definitionNode', instanceId: target.instanceId, nodePath: [...target.nodePath] }
+    : target.type === 'definitionNode'
+      ? { type: 'definitionNode', instanceId: target.instanceId, nodePath: [...target.nodePath] }
+      : { type: 'collectionItemNode', collectionId: target.collectionId, nodePath: [...target.nodePath] }
 }
 
 export function componentTargetRefKey(target: ComponentTargetRef): string {
   return target.type === 'inline'
     ? `inline:${encodeURIComponent(target.componentId)}`
-    : `definition:${encodeURIComponent(target.instanceId)}:${target.nodePath
-        .map(segment => encodeURIComponent(segment))
-        .join('/')}`
+    : target.type === 'definitionNode'
+      ? `definition:${encodeURIComponent(target.instanceId)}:${target.nodePath
+          .map(segment => encodeURIComponent(segment))
+          .join('/')}`
+      : `collection:${encodeURIComponent(target.collectionId)}:${target.nodePath
+          .map(segment => encodeURIComponent(segment))
+          .join('/')}`
 }
 
 export function componentTargetRefEquals(
@@ -47,7 +60,11 @@ export function componentTargetRefEquals(
 }
 
 export function targetRootScreenComponentId(target: ComponentTargetRef): EntityId {
-  return target.type === 'inline' ? target.componentId : target.instanceId
+  return target.type === 'inline'
+    ? target.componentId
+    : target.type === 'definitionNode'
+      ? target.instanceId
+      : target.collectionId
 }
 
 export function targetBelongsToScreenComponentSet(

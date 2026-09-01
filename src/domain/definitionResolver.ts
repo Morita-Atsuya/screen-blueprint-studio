@@ -20,16 +20,20 @@ import {
   type ScreenScenario,
   isInlineDefinitionNode,
   isInlineScreenComponent,
+  DEFAULT_COMPONENT_PLACEMENT,
+  DEFAULT_COMPONENT_SIZING,
 } from './model'
 import { resolveComponentDefinitionRefV3 } from './canonicalProjectSpecV3'
 import { DomainError } from './errors'
 import {
   cloneComponentTargetRef,
   componentTargetRefKey,
+  collectionItemNodeTargetRef,
   definitionNodeTargetRef,
   findScenarioOverride,
   inlineTargetRef,
 } from './componentTargets'
+import { resolveCollectionItem } from './collection'
 
 export const MAX_DEFINITION_NESTING_DEPTH = 10
 export const MAX_RESOLVED_SCREEN_NODE_COUNT = 500
@@ -42,6 +46,9 @@ export interface ResolvedRuntimeNode {
   definitionId: EntityId | null
   definitionNodeId: EntityId | null
   instanceId: EntityId | null
+  collectionId: EntityId | null
+  collectionItemKey: string | null
+  collectionItemIndex: number | null
   nodePath: [EntityId, ...EntityId[]] | null
   kind: ComponentKind
   placement: ComponentPlacement
@@ -93,11 +100,17 @@ interface DefinitionExpansionContext {
   screenId: EntityId
   activeScenario: ScreenScenario | undefined
   accumulator: ResolveAccumulator
-  topLevelInstanceId: EntityId
+  topLevelInstanceId: EntityId | null
+  collectionContext: {
+    collectionId: EntityId
+    itemKey: string
+    itemIndex: number
+  } | null
   topLevelScreenComponentId: EntityId
   pathPrefix: EntityId[]
   parentRuntimeId: string | null
   boundaryDepth: number
+  forcedBoundaryVisibility: boolean | null
   publicPropScopes: Array<{
     definition: ComponentDefinition
     props: Readonly<Record<string, PublicPropValue>>
@@ -141,6 +154,8 @@ function cloneAnyConfig(
       }
     case 'link':
       return { ...config, destination: { ...config.destination } }
+    case 'collection':
+      return structuredClone(config)
     case 'page':
     case 'container':
     case 'text':
@@ -151,8 +166,14 @@ function cloneAnyConfig(
   }
 }
 
-function toRuntimeId(target: ComponentTargetRef): string {
-  return componentTargetRefKey(target)
+function toRuntimeId(
+  target: ComponentTargetRef,
+  collectionContext: DefinitionExpansionContext['collectionContext'] = null,
+): string {
+  const targetKey = componentTargetRefKey(target)
+  return collectionContext
+    ? `${targetKey}:item:${encodeURIComponent(collectionContext.itemKey)}`
+    : targetKey
 }
 
 function assertResolvedNodeLimit(accumulator: ResolveAccumulator): void {
@@ -176,7 +197,7 @@ function pushResolvedNode(
   accumulator.count += 1
   accumulator.orderedNodes.push(resolved)
   accumulator.nodesById[resolved.id] = resolved
-  accumulator.nodesByTarget[componentTargetRefKey(resolved.canonicalTarget)] = resolved
+  accumulator.nodesByTarget[componentTargetRefKey(resolved.canonicalTarget)] ??= resolved
   return resolved
 }
 
@@ -349,6 +370,8 @@ function publicPropFieldType(
         : field.startsWith('config.')
           ? null
           : baseType
+    case 'collection':
+      return field.startsWith('config.') ? null : baseType
   }
 }
 
@@ -771,16 +794,24 @@ function resolveDefinitionEntry(
     }
   }
   parts = applyInstancePublicProps(context.publicPropScopes, currentPath, parts)
+  if (isBoundaryRoot && context.forcedBoundaryVisibility !== null) {
+    parts.common.visible = context.forcedBoundaryVisibility
+  }
+  const target = context.topLevelInstanceId
+    ? definitionNodeTargetRef(context.topLevelInstanceId, currentPath)
+    : collectionItemNodeTargetRef(
+        context.collectionContext!.collectionId,
+        currentPath,
+      )
   parts = applyComponentOverrideToParts(
     parts,
     findScenarioOverride(
       context.activeScenario,
-      definitionNodeTargetRef(context.topLevelInstanceId, currentPath),
+      target,
     )?.override,
   )
 
-  const target = definitionNodeTargetRef(context.topLevelInstanceId, currentPath)
-  const runtimeId = toRuntimeId(target)
+  const runtimeId = toRuntimeId(target, context.collectionContext)
   const resolved = pushResolvedNode(context.accumulator, {
     id: runtimeId,
     namespacedId: runtimeId,
@@ -789,6 +820,9 @@ function resolveDefinitionEntry(
     definitionId: definition.id,
     definitionNodeId: node.id,
     instanceId: context.topLevelInstanceId,
+    collectionId: context.collectionContext?.collectionId ?? null,
+    collectionItemKey: context.collectionContext?.itemKey ?? null,
+    collectionItemIndex: context.collectionContext?.itemIndex ?? null,
     nodePath: [...currentPath] as unknown as [EntityId, ...EntityId[]],
     kind: parts.kind,
     placement: clonePlacement(parts.placement),
@@ -861,6 +895,9 @@ function resolveInlineScreenNode(
     definitionId: null,
     definitionNodeId: null,
     instanceId: null,
+    collectionId: null,
+    collectionItemKey: null,
+    collectionItemIndex: null,
     nodePath: null,
     kind: parts.kind,
     placement: clonePlacement(parts.placement),
@@ -884,6 +921,51 @@ function resolveInlineScreenNode(
     return resolveScreenEntry(document, child, activeScenario, accumulator, runtimeId)
   })
   resolved.childIds = childIds
+  if (component.config.kind === 'collection') {
+    const collectionConfig = component.config
+    const seenItemKeys = new Set<string>()
+    collectionConfig.dataSource.previewItems.forEach((item, itemIndex) => {
+      const itemResolution = resolveCollectionItem(collectionConfig, item)
+      if (seenItemKeys.has(itemResolution.itemKey)) {
+        throw new DomainError(
+          'INVARIANT_VIOLATION',
+          `Collection ${component.id} has duplicate preview item key ${itemResolution.itemKey}`,
+        )
+      }
+      seenItemKeys.add(itemResolution.itemKey)
+      const rootId = resolveDefinitionExpansion(
+        {
+          id: component.id,
+          screenId: component.screenId,
+          parentId: component.id,
+          source: collectionConfig.itemTemplate.source,
+          props: itemResolution.props,
+          variantId: itemResolution.variantId,
+          placement: DEFAULT_COMPONENT_PLACEMENT,
+          sizing: DEFAULT_COMPONENT_SIZING,
+        },
+        {
+          document,
+          screenId: component.screenId,
+          activeScenario,
+          accumulator,
+          topLevelInstanceId: null,
+          topLevelScreenComponentId: component.id,
+          collectionContext: {
+            collectionId: component.id,
+            itemKey: itemResolution.itemKey,
+            itemIndex,
+          },
+          pathPrefix: [],
+          parentRuntimeId: runtimeId,
+          boundaryDepth: 1,
+          forcedBoundaryVisibility: itemResolution.visible,
+          publicPropScopes: [],
+        },
+      ).rootId
+      resolved.childIds.push(rootId)
+    })
+  }
   return runtimeId
 }
 
@@ -909,10 +991,12 @@ function resolveScreenEntry(
     activeScenario,
     accumulator,
     topLevelInstanceId: component.id,
+    collectionContext: null,
     topLevelScreenComponentId: component.id,
     pathPrefix: [],
     parentRuntimeId,
     boundaryDepth: 1,
+    forcedBoundaryVisibility: null,
     publicPropScopes: [],
   }).rootId
 }

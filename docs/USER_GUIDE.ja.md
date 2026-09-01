@@ -31,3 +31,11 @@ Gridは1〜12本の明示的な等幅trackを持ち、flow childは親のカラ�
 Paletteには利用可能なDefinitionが表示されます。Instance境界を選択すると、Variant、公開プロパティ、placement、sizingを編集できます。内部の解決済みnodeを選択すると、stableなInstanceとnode pathのidentityを確認し、Scenario targetとして利用し、元Definitionへ移動できます。解決済みnodeのBase fieldは直接編集できません。
 
 inline subtreeからDefinitionを抽出したり、通常のInstanceをinline componentへ戻したりできます。どちらもUndo 1回分のatomic操作で、関係するScenario、Event、API targetをrewriteして振る舞いを維持します。画面InstanceまたはネストしたDefinition参照が残るDefinitionの削除は拒否され、定義画面に影響件数を表示します。Definitionのネストは循環しないgraphに限定され、展開数にも上限があります。
+
+## コレクション
+
+**Collection**は、制限付きのcanonical preview sliceから1つのComponent Definitionを繰り返します。項目Definition、preview object、stableなitem key用JSON Pointerを指定します。response items pathはAPI response body基準、item key、公開プロパティbinding、Variant rule、visibility ruleは各item基準です。値の欠損と明示的な`null`は区別されます。
+
+各preview itemは、Definition Base、最終Variant 1つ、itemからbindした公開プロパティの順で完成したDefinitionへ解決されます。Variantは最初に一致したexact scalar case、rule fallback、item template Variantの順で1つだけ選ばれます。visibilityもexact scalar ruleで、一致時とfallbackの表示結果を明示します。Canvasはscreen-owned child componentを追加せずに解決済みitemを反復し、TreeはcanonicalなCollection境界を維持します。Event/API targetはCollection IDとstableなDefinition-local node pathを使います。
+
+preview exampleはCanvasで使う選択済みsliceであり、API response contractの二重正準ではありません。上限は20 object、32 KiB、nest 8階層です。item keyは一意なstringまたはnumberでなければなりません。Collectionが参照中のDefinitionは削除できません。参照中のAPI operationを削除すると、preview sliceを保ったままCollectionのdata sourceが明示的に切断されます。

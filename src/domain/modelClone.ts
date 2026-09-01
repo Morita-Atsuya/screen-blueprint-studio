@@ -138,6 +138,33 @@ export function cloneComponentConfig(config: ScreenComponentConfig): ScreenCompo
       }
     case 'link':
       return { ...config, destination: { ...config.destination } }
+    case 'collection':
+      return {
+        ...config,
+        dataSource: {
+          ...config.dataSource,
+          previewItems: structuredClone(config.dataSource.previewItems),
+        },
+        itemTemplate: {
+          source: { ...config.itemTemplate.source },
+          variantId: config.itemTemplate.variantId,
+          props: { ...config.itemTemplate.props },
+        },
+        propBindings: config.propBindings.map(binding => ({
+          ...binding,
+          source: { ...binding.source },
+        })),
+        variantSelection: {
+          fallbackVariantId: config.variantSelection.fallbackVariantId,
+          cases: config.variantSelection.cases.map(rule => ({
+            ...rule,
+            source: { ...rule.source },
+          })),
+        },
+        visibility: config.visibility
+          ? { ...config.visibility, source: { ...config.visibility.source } }
+          : null,
+      }
     case 'page':
     case 'container':
     case 'text':

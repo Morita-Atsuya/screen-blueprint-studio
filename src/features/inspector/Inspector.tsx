@@ -9,6 +9,7 @@ import type {
   ComponentPlacement,
   ComponentSizeToken,
   ComponentSizing,
+  JsonScalar,
   PlacementAnchor,
   PlacementInset,
   ProjectDocument,
@@ -54,6 +55,10 @@ import {
 } from '../../domain/stateOverrides'
 import { findScenarioOverride } from '../../domain/componentTargets'
 import { findInlineScenarioOverride } from '../../domain/componentTargets'
+import {
+  parseJsonPointer,
+  validateCollectionPreviewItems,
+} from '../../domain/collection'
 import { InspectorSection } from './InspectorSection'
 import type { InspectorSectionBadge } from './InspectorSection'
 import {
@@ -65,6 +70,19 @@ import {
   inspectorSectionPreferenceKey,
 } from './inspectorSections'
 import type { InspectorSectionId } from './inspectorSections'
+
+function parseJsonScalar(value: string): JsonScalar {
+  const parsed: unknown = JSON.parse(value)
+  if (
+    parsed !== null &&
+    typeof parsed !== 'string' &&
+    typeof parsed !== 'number' &&
+    typeof parsed !== 'boolean'
+  ) {
+    throw new Error('Value must be a JSON scalar')
+  }
+  return parsed
+}
 
 function resolvedNodeInspectorLabel(
   node: ReturnType<typeof resolveComponentTarget>,
@@ -453,6 +471,9 @@ export function Inspector() {
 
   const cfg = comp.config
   const linkDestination = cfg.kind === 'link' ? cfg.destination : undefined
+  const collectionDefinition = cfg.kind === 'collection'
+    ? resolveComponentDefinitionRefV3(inspectorDocument, cfg.itemTemplate.source.$ref)
+    : null
   const behavior = getComponentBehavior(inspectorDocument, comp.id)
   const eventEditor = getEventEditorContext(inspectorDocument, comp.id)
   const apiEditor = getApiEditorContext(inspectorDocument, comp.id, locale)
@@ -1066,7 +1087,362 @@ export function Inspector() {
               />
             )}</Field>
           )}
-          {linkDestination.type === 'resource' ? (
+            </>
+          )}
+          {cfg.kind === 'collection' && collectionDefinition ? (
+            <>
+              <Field label={t('collection.itemDefinition')}>{controlId => (
+                <select
+                  id={controlId}
+                  className={styles.input}
+                  value={collectionDefinition.id}
+                  onChange={event => {
+                    const nextDefinition = getOwnEntity(
+                      inspectorDocument.componentDefinitions,
+                      event.target.value,
+                    )
+                    if (!nextDefinition) return
+                    updateConfig({
+                      itemTemplate: {
+                        source: {
+                          $ref: `#/componentDefinitions/${nextDefinition.id
+                            .replace(/~/g, '~0')
+                            .replace(/\//g, '~1')}`,
+                        },
+                        variantId: nextDefinition.representativeVariantId,
+                        props: {},
+                      },
+                      propBindings: [],
+                      variantSelection: { cases: [], fallbackVariantId: null },
+                    }, 'item Definition')
+                  }}
+                >
+                  {Object.values(inspectorDocument.componentDefinitions).map(definition => (
+                    <option key={definition.id} value={definition.id}>{definition.name}</option>
+                  ))}
+                </select>
+              )}</Field>
+              <Field label={t('collection.apiSource')}>{controlId => (
+                <select
+                  id={controlId}
+                  className={styles.input}
+                  value={cfg.dataSource.apiOperationId ?? ''}
+                  onChange={event => updateConfig({
+                    dataSource: {
+                      ...cfg.dataSource,
+                      apiOperationId: event.target.value || null,
+                    },
+                  }, 'API source')}
+                >
+                  <option value="">{t('collection.previewOnly')}</option>
+                  {Object.values(inspectorDocument.apiOperations)
+                    .filter(operation => operation.screenId === comp.screenId)
+                    .map(operation => (
+                      <option key={operation.id} value={operation.id}>{operation.name}</option>
+                    ))}
+                </select>
+              )}</Field>
+              <Field label={t('collection.itemsPath')}>{controlId => (
+                <DraftTextField
+                  id={controlId}
+                  key={`${comp.id}:itemsPath`}
+                  draftId={`component:${comp.id}:config.dataSource.itemsPath`}
+                  className={styles.input}
+                  value={cfg.dataSource.itemsPath}
+                  onCommit={itemsPath => updateConfig({
+                    dataSource: { ...cfg.dataSource, itemsPath },
+                  }, 'items path')}
+                  validate={value => {
+                    try {
+                      parseJsonPointer(value)
+                      return null
+                    } catch {
+                      return t('collection.invalidPointer')
+                    }
+                  }}
+                />
+              )}</Field>
+              <Field label={t('collection.itemKeyPath')}>{controlId => (
+                <DraftTextField
+                  id={controlId}
+                  key={`${comp.id}:itemKeyPath`}
+                  draftId={`component:${comp.id}:config.itemKeyPath`}
+                  className={styles.input}
+                  value={cfg.itemKeyPath}
+                  onCommit={itemKeyPath => updateConfig({ itemKeyPath }, 'item key path')}
+                  validate={value => {
+                    try {
+                      if (!value) return t('collection.invalidPointer')
+                      parseJsonPointer(value)
+                      return null
+                    } catch {
+                      return t('collection.invalidPointer')
+                    }
+                  }}
+                />
+              )}</Field>
+              <Field label={t('collection.previewItems')}>{controlId => (
+                <DraftTextField
+                  id={controlId}
+                  key={`${comp.id}:previewItems`}
+                  draftId={`component:${comp.id}:config.dataSource.previewItems`}
+                  ariaLabel={t('collection.previewItems')}
+                  className={styles.textarea}
+                  multiline
+                  rows={8}
+                  value={JSON.stringify(cfg.dataSource.previewItems, null, 2)}
+                  validate={value => {
+                    try {
+                      const items = JSON.parse(value) as unknown
+                      if (
+                        !Array.isArray(items) ||
+                        items.some(item => !item || typeof item !== 'object' || Array.isArray(item))
+                      ) return t('collection.invalidPreviewItems')
+                      validateCollectionPreviewItems(items as never, 'previewItems')
+                      return null
+                    } catch {
+                      return t('collection.invalidPreviewItems')
+                    }
+                  }}
+                  onCommit={value => updateConfig({
+                    dataSource: {
+                      ...cfg.dataSource,
+                      previewItems: JSON.parse(value),
+                    },
+                  }, 'preview items')}
+                />
+              )}</Field>
+              {collectionDefinition.publicProps.map(prop => {
+                const binding = cfg.propBindings.find(candidate =>
+                  candidate.propKey === prop.key && candidate.source.type === 'item')
+                return (
+                  <Field
+                    key={prop.key}
+                    label={t('collection.propBinding', { prop: prop.name })}
+                  >{controlId => (
+                    <DraftTextField
+                      id={controlId}
+                      key={`${comp.id}:prop:${prop.key}`}
+                      draftId={`component:${comp.id}:config.propBindings.${prop.key}`}
+                      className={styles.input}
+                      value={binding?.source.type === 'item' ? binding.source.path : ''}
+                      placeholder="/field"
+                      validate={value => {
+                        try {
+                          if (value) parseJsonPointer(value)
+                          return null
+                        } catch {
+                          return t('collection.invalidPointer')
+                        }
+                      }}
+                      onCommit={path => updateConfig({
+                        propBindings: [
+                          ...cfg.propBindings.filter(candidate => candidate.propKey !== prop.key),
+                          ...(path
+                            ? [{ propKey: prop.key, source: { type: 'item' as const, path } }]
+                            : []),
+                        ],
+                      }, `prop ${prop.key}`)}
+                    />
+                  )}</Field>
+                )
+              })}
+              <Field label={t('collection.fallbackVariant')}>{controlId => (
+                <select
+                  id={controlId}
+                  className={styles.input}
+                  value={cfg.variantSelection.fallbackVariantId ?? ''}
+                  onChange={event => updateConfig({
+                    variantSelection: {
+                      ...cfg.variantSelection,
+                      fallbackVariantId: event.target.value || null,
+                    },
+                  }, 'fallback Variant')}
+                >
+                  <option value="">{t('definitions.baseVariant')}</option>
+                  {collectionDefinition.variants.map(variant => (
+                    <option key={variant.id} value={variant.id}>{variant.name}</option>
+                  ))}
+                </select>
+              )}</Field>
+              {collectionDefinition.variants.map(variant => {
+                const rule = cfg.variantSelection.cases.find(candidate =>
+                  candidate.variantId === variant.id && candidate.source.type === 'item')
+                return (
+                  <Field
+                    key={variant.id}
+                    label={t('collection.variantMatch', { variant: variant.name })}
+                  >{controlId => (
+                    <div className={styles.inlineField}>
+                      <DraftTextField
+                        id={controlId}
+                        key={`${comp.id}:${variant.id}:variantPath`}
+                        draftId={`component:${comp.id}:config.variantSelection.${variant.id}.path`}
+                        className={styles.input}
+                        aria-label={t('collection.rulePath')}
+                        value={rule?.source.type === 'item' ? rule.source.path : '/status'}
+                        validate={path => {
+                          try {
+                            parseJsonPointer(path, t('collection.rulePath'))
+                            return null
+                          } catch {
+                            return t('collection.invalidPointer')
+                          }
+                        }}
+                        onCommit={path => {
+                          if (!rule) return true
+                          const cases = cfg.variantSelection.cases.filter(candidate =>
+                            candidate.variantId !== variant.id)
+                          cases.push({ ...rule, source: { type: 'item', path } })
+                          return updateConfig({
+                            variantSelection: { ...cfg.variantSelection, cases },
+                          }, 'Variant rule path')
+                        }}
+                      />
+                      <DraftTextField
+                        key={`${comp.id}:${variant.id}:variantValue`}
+                        draftId={`component:${comp.id}:config.variantSelection.${variant.id}.equals`}
+                        className={styles.input}
+                        aria-label={t('collection.matchValue')}
+                        value={rule ? JSON.stringify(rule.equals) : ''}
+                        placeholder={t('collection.matchValue')}
+                        validate={value => {
+                          if (!value) return null
+                          try {
+                            parseJsonScalar(value)
+                            return null
+                          } catch {
+                            return t('collection.invalidScalar')
+                          }
+                        }}
+                        onCommit={value => {
+                          return updateConfig({
+                            variantSelection: {
+                              ...cfg.variantSelection,
+                              cases: [
+                                ...cfg.variantSelection.cases.filter(candidate =>
+                                  candidate.variantId !== variant.id),
+                                ...(value
+                                  ? [{
+                                      source: {
+                                        type: 'item' as const,
+                                        path: rule?.source.type === 'item'
+                                          ? rule.source.path
+                                          : '/status',
+                                      },
+                                      equals: parseJsonScalar(value),
+                                      variantId: variant.id,
+                                    }]
+                                  : []),
+                              ],
+                            },
+                          }, 'Variant match')
+                        }}
+                      />
+                    </div>
+                  )}</Field>
+                )
+              })}
+              <label className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={cfg.visibility !== null}
+                  onChange={event => updateConfig({
+                    visibility: event.target.checked
+                      ? {
+                          source: { type: 'item', path: '/visible' },
+                          equals: true,
+                          visibleWhenMatched: true,
+                          fallback: false,
+                        }
+                      : null,
+                  }, 'visibility rule')}
+                />
+                {t('collection.visibilityRule')}
+              </label>
+              {cfg.visibility ? (
+                <>
+                  <Field label={t('collection.visibilityPath')}>{controlId => (
+                    <DraftTextField
+                      id={controlId}
+                      key={`${comp.id}:visibilityPath`}
+                      draftId={`component:${comp.id}:config.visibility.path`}
+                      className={styles.input}
+                      value={cfg.visibility?.source.type === 'item'
+                        ? cfg.visibility.source.path
+                        : ''}
+                      validate={path => {
+                        try {
+                          parseJsonPointer(path, t('collection.visibilityPath'))
+                          return null
+                        } catch {
+                          return t('collection.invalidPointer')
+                        }
+                      }}
+                      onCommit={path => updateConfig({
+                        visibility: {
+                          ...cfg.visibility!,
+                          source: { type: 'item', path },
+                        },
+                      }, 'visibility path')}
+                    />
+                  )}</Field>
+                  <Field label={t('collection.matchValue')}>{controlId => (
+                    <DraftTextField
+                      id={controlId}
+                      key={`${comp.id}:visibilityValue`}
+                      draftId={`component:${comp.id}:config.visibility.equals`}
+                      className={styles.input}
+                      value={JSON.stringify(cfg.visibility!.equals)}
+                      validate={value => {
+                        try {
+                          parseJsonScalar(value)
+                          return null
+                        } catch {
+                          return t('collection.invalidScalar')
+                        }
+                      }}
+                      onCommit={value => updateConfig({
+                        visibility: {
+                          ...cfg.visibility!,
+                          equals: parseJsonScalar(value),
+                        },
+                      }, 'visibility match')}
+                    />
+                  )}</Field>
+                  <label className={styles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={cfg.visibility.visibleWhenMatched}
+                      onChange={event => updateConfig({
+                        visibility: {
+                          ...cfg.visibility!,
+                          visibleWhenMatched: event.target.checked,
+                        },
+                      }, 'matched visibility')}
+                    />
+                    {t('collection.visibleWhenMatched')}
+                  </label>
+                  <label className={styles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={cfg.visibility.fallback}
+                      onChange={event => updateConfig({
+                        visibility: {
+                          ...cfg.visibility!,
+                          fallback: event.target.checked,
+                        },
+                      }, 'fallback visibility')}
+                    />
+                    {t('collection.fallbackVisible')}
+                  </label>
+                </>
+              ) : null}
+            </>
+          ) : null}
+      {cfg.kind === 'link' && linkDestination ? (
+          <>
+            {linkDestination.type === 'resource' ? (
             <>
               <Field label={t('inspector.linkResourceId')}>{controlId => (
                 <DraftTextField
@@ -1116,7 +1492,7 @@ export function Inspector() {
             <p className={styles.reviewLock}>{t('inspector.downloadHelp')}</p>
           ) : null}
         </>
-      )}
+      ) : null}
         </InspectorSection>
       ) : null}
       {componentHasLayoutSection(cfg.kind) && (cfg.kind === 'page' ||

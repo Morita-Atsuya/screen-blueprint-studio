@@ -738,6 +738,163 @@
         }
       }
     },
+    "collectionValueSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path"],
+          "properties": {
+            "type": { "const": "item" },
+            "path": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "literal" },
+            "value": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "collectionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "dataSource",
+        "itemKeyPath",
+        "itemTemplate",
+        "propBindings",
+        "variantSelection",
+        "visibility"
+      ],
+      "properties": {
+        "kind": { "const": "collection" },
+        "dataSource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["apiOperationId", "itemsPath", "previewItems"],
+          "properties": {
+            "apiOperationId": {
+              "oneOf": [
+                { "$ref": "#/$defs/entityId" },
+                { "type": "null" }
+              ]
+            },
+            "itemsPath": { "type": "string" },
+            "previewItems": {
+              "type": "array",
+              "maxItems": 20,
+              "items": { "type": "object" }
+            }
+          }
+        },
+        "itemKeyPath": { "type": "string", "minLength": 1 },
+        "itemTemplate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "props", "variantId"],
+          "properties": {
+            "source": { "$ref": "#/$defs/definitionSource" },
+            "props": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "number" },
+                  { "type": "boolean" }
+                ]
+              }
+            },
+            "variantId": {
+              "oneOf": [
+                { "$ref": "#/$defs/entityId" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "propBindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["propKey", "source"],
+            "properties": {
+              "propKey": { "type": "string", "minLength": 1 },
+              "source": { "$ref": "#/$defs/collectionValueSource" }
+            }
+          }
+        },
+        "variantSelection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cases", "fallbackVariantId"],
+          "properties": {
+            "cases": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "equals", "variantId"],
+                "properties": {
+                  "source": { "$ref": "#/$defs/collectionValueSource" },
+                  "equals": {
+                    "oneOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "variantId": { "$ref": "#/$defs/entityId" }
+                }
+              }
+            },
+            "fallbackVariantId": {
+              "oneOf": [
+                { "$ref": "#/$defs/entityId" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "visibility": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "equals", "visibleWhenMatched", "fallback"],
+              "properties": {
+                "source": { "$ref": "#/$defs/collectionValueSource" },
+                "equals": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" },
+                    { "type": "null" }
+                  ]
+                },
+                "visibleWhenMatched": { "type": "boolean" },
+                "fallback": { "type": "boolean" }
+              }
+            }
+          ]
+        }
+      }
+    },
     "componentConfig": {
       "oneOf": [
         {
@@ -1133,6 +1290,9 @@
               }
             }
           ]
+        },
+        {
+          "$ref": "#/$defs/collectionConfig"
         },
         {
           "type": "object",
@@ -1532,6 +1692,7 @@
             "button",
             "image",
             "link",
+            "collection",
             "modal"
           ]
         },
@@ -2307,6 +2468,26 @@
             }
           }
         },
+        {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "collectionId",
+              "nodePath"
+            ],
+            "properties": {
+              "type": {
+                "const": "collectionItemNode"
+              },
+              "collectionId": {
+                "$ref": "#/$defs/entityId"
+              },
+              "nodePath": {
+                "$ref": "#/$defs/nodePath"
+              }
+            }
+          },
         {
           "type": "object",
           "additionalProperties": false,

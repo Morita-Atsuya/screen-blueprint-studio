@@ -116,7 +116,9 @@ export function summarizeDeleteImpact(
     target,
     counts,
     changedReferenceEntities,
-    requiresConfirmation: secondaryRemovalCount + nestedOrReferenceCount > 0,
+    requiresConfirmation:
+      secondaryRemovalCount + nestedOrReferenceCount > 0 ||
+      (target.kind === 'api' && componentChanges.changedIds.length > 0),
     fingerprint: stableStringify({
       target,
       removed: {

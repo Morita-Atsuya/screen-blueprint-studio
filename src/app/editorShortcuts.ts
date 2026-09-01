@@ -211,11 +211,13 @@ export function resolveHierarchyEditorSelection(
         target.canonicalTarget.instanceId,
         target.canonicalTarget.nodePath,
       )
-    : screenComponentSelection(
+    : target.canonicalTarget.type === 'inline'
+      ? screenComponentSelection(
         document,
         selection.screenId,
         target.canonicalTarget.componentId,
       )
+      : null
 }
 
 function isHierarchyShortcutScope(target: unknown): boolean {

@@ -31,3 +31,11 @@ Open **Definitions** in the main view to create, rename, describe, or duplicate 
 The Palette lists available Definitions. Select an Instance boundary to edit its Variant, public properties, placement, or sizing. Select a resolved node inside it to inspect its stable Instance-and-node-path identity, target it from a Scenario, and jump to its source Definition. Resolved nodes are sealed against direct base edits.
 
 You can extract an inline subtree into a Definition or detach a normal Instance back to inline components. Each operation is one atomic Undo step and rewrites affected Scenario, Event, and API targets to preserve behavior. Deleting a Definition is blocked while screen Instances or nested Definition references still use it; the Definitions view shows the affected reference counts. Nested Definitions must form an acyclic graph and stay within bounded expansion limits.
+
+## Collections
+
+Use a **Collection** to repeat one Component Definition from a bounded canonical preview slice. Choose the item Definition, provide preview objects, and set a stable item-key JSON Pointer. The response items path is relative to an API response body; item keys, public-property bindings, Variant rules, and visibility rules are relative to each item. Missing values and explicit `null` remain distinct.
+
+Each preview item resolves to one completed Definition: Definition base, one final Variant, then item-bound public properties. Variant selection uses the first exact scalar case, then the rule fallback, then the item template Variant. Visibility is also an exact scalar rule with explicit matched and fallback outcomes. Canvas repeats resolved items without adding screen-owned child components; Tree keeps the canonical Collection boundary, while Event and API targets use the Collection ID plus the stable Definition-local node path.
+
+Preview examples are the selected Canvas slice, not a second API response contract. They are limited to 20 objects, 32 KiB, and eight levels of nesting. Collection item keys must be unique strings or numbers. A referenced Definition cannot be deleted while a Collection uses it, and removing a referenced API operation explicitly disconnects the Collection data source while preserving its preview slice.

@@ -19,6 +19,36 @@ const portableUrl = {
     },
   ],
 } as const
+const jsonScalar = {
+  anyOf: [
+    { type: 'string' },
+    { type: 'number' },
+    { type: 'boolean' },
+    { type: 'null' },
+  ],
+} as const
+const collectionValueSource = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        type: { const: 'item' },
+        path: string,
+      },
+      required: ['type', 'path'],
+      ...closed,
+    },
+    {
+      type: 'object',
+      properties: {
+        type: { const: 'literal' },
+        value: jsonScalar,
+      },
+      required: ['type', 'value'],
+      ...closed,
+    },
+  ],
+} as const
 
 const layoutProperties = {
   layout: { type: 'string', enum: ['vertical', 'horizontal', 'grid'] },
@@ -365,6 +395,109 @@ const configVariants = [
     ],
   },
   {
+    kind: 'collection',
+    properties: {
+      kind: { const: 'collection' },
+      dataSource: {
+        type: 'object',
+        properties: {
+          apiOperationId: nullableString,
+          itemsPath: string,
+          previewItems: {
+            type: 'array',
+            maxItems: 20,
+            items: { type: 'object' },
+          },
+        },
+        required: ['apiOperationId', 'itemsPath', 'previewItems'],
+        ...closed,
+      },
+      itemKeyPath: nonEmptyString,
+      itemTemplate: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'object',
+            properties: { $ref: nonEmptyString },
+            required: ['$ref'],
+            ...closed,
+          },
+          props: {
+            type: 'object',
+            additionalProperties: {
+              anyOf: [
+                { type: 'string' },
+                { type: 'number' },
+                { type: 'boolean' },
+              ],
+            },
+          },
+          variantId: nullableString,
+        },
+        required: ['source', 'props', 'variantId'],
+        ...closed,
+      },
+      propBindings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            propKey: nonEmptyString,
+            source: collectionValueSource,
+          },
+          required: ['propKey', 'source'],
+          ...closed,
+        },
+      },
+      variantSelection: {
+        type: 'object',
+        properties: {
+          cases: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                source: collectionValueSource,
+                equals: jsonScalar,
+                variantId: nonEmptyString,
+              },
+              required: ['source', 'equals', 'variantId'],
+              ...closed,
+            },
+          },
+          fallbackVariantId: nullableString,
+        },
+        required: ['cases', 'fallbackVariantId'],
+        ...closed,
+      },
+      visibility: {
+        oneOf: [
+          { type: 'null' },
+          {
+            type: 'object',
+            properties: {
+              source: collectionValueSource,
+              equals: jsonScalar,
+              visibleWhenMatched: { type: 'boolean' },
+              fallback: { type: 'boolean' },
+            },
+            required: ['source', 'equals', 'visibleWhenMatched', 'fallback'],
+            ...closed,
+          },
+        ],
+      },
+    },
+    required: [
+      'kind',
+      'dataSource',
+      'itemKeyPath',
+      'itemTemplate',
+      'propBindings',
+      'variantSelection',
+      'visibility',
+    ],
+  },
+  {
     kind: 'modal',
     properties: { kind: { const: 'modal' }, ...layoutProperties },
     required: ['kind', ...layoutRequired],
@@ -420,6 +553,20 @@ export const componentOverridesSchema = {
               componentId: nonEmptyString,
             },
             required: ['type', 'componentId'],
+            ...closed,
+          },
+          {
+            type: 'object',
+            properties: {
+              type: { const: 'collectionItemNode' },
+              collectionId: nonEmptyString,
+              nodePath: {
+                type: 'array',
+                minItems: 1,
+                items: nonEmptyString,
+              },
+            },
+            required: ['type', 'collectionId', 'nodePath'],
             ...closed,
           },
           {

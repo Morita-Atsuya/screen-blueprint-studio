@@ -98,8 +98,13 @@ export function collectDefinitionUses(
   apiBindingCount: number
 } {
   const screenInstanceIds = Object.values(document.components).flatMap(component => {
-    if (component.nodeType !== 'definitionInstance') return []
-    const resolved = resolveComponentDefinitionRefV3(document, component.source.$ref)
+    const definitionRef = component.nodeType === 'definitionInstance'
+      ? component.source.$ref
+      : component.nodeType === 'inline' && component.config.kind === 'collection'
+        ? component.config.itemTemplate.source.$ref
+        : null
+    if (!definitionRef) return []
+    const resolved = resolveComponentDefinitionRefV3(document, definitionRef)
     return resolved.id === definitionId ? [component.id] : []
   })
   const nestedDefinitionNodeIds = Object.values(document.componentDefinitions).flatMap(definition =>
@@ -228,16 +233,23 @@ export function mapTargetIntoCopiedSubtree(
     }
     return { type: 'inline', componentId: mappedId }
   }
-  const mappedInstanceId = componentIdMap.get(target.instanceId)
-  if (!mappedInstanceId) {
+  const ownerId = target.type === 'definitionNode' ? target.instanceId : target.collectionId
+  const mappedOwnerId = componentIdMap.get(ownerId)
+  if (!mappedOwnerId) {
     throw new DomainError(
       'INVARIANT_VIOLATION',
-      `Missing mapped definition instance ID for copied target ${target.instanceId}`,
+      `Missing mapped resolved owner ID for copied target ${ownerId}`,
     )
   }
-  return {
-    type: 'definitionNode',
-    instanceId: mappedInstanceId,
-    nodePath: [...target.nodePath],
-  }
+  return target.type === 'definitionNode'
+    ? {
+        type: 'definitionNode',
+        instanceId: mappedOwnerId,
+        nodePath: [...target.nodePath],
+      }
+    : {
+        type: 'collectionItemNode',
+        collectionId: mappedOwnerId,
+        nodePath: [...target.nodePath],
+      }
 }

@@ -41,6 +41,7 @@ export const COMPONENT_KIND_CATALOG = [
   { kind: 'button', canContainChildren: false, placement: 'child', canvasContent: true },
   { kind: 'image', canContainChildren: false, placement: 'child', canvasContent: true },
   { kind: 'link', canContainChildren: false, placement: 'child', canvasContent: true },
+  { kind: 'collection', canContainChildren: false, placement: 'child', canvasContent: true },
   {
     kind: 'modal',
     canContainChildren: true,
@@ -179,11 +180,56 @@ export type ImageFit = 'contain' | 'cover'
 export type ImageAspectRatio = 'auto' | 'square' | '4:3' | '16:9'
 export type ImagePlaceholder = 'icon' | 'skeleton'
 export type OpaqueResourceId = string
+export type JsonScalar = string | number | boolean | null
+export type JsonValue =
+  | JsonScalar
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+export type JsonObject = { [key: string]: JsonValue }
 export type LinkDestination =
   | { type: 'internal'; screenId: EntityId }
   | { type: 'external'; url: string }
   | { type: 'resource'; resourceId: OpaqueResourceId; url: string; displayName: string }
 export type LinkOpenMode = 'sameContext' | 'newContext' | 'download'
+
+export type CollectionValueSource =
+  | { type: 'item'; path: string }
+  | { type: 'literal'; value: JsonScalar }
+
+export interface CollectionPropBinding {
+  propKey: string
+  source: CollectionValueSource
+}
+
+export interface CollectionVariantCase {
+  source: CollectionValueSource
+  equals: JsonScalar
+  variantId: EntityId
+}
+
+export interface CollectionVisibilityRule {
+  source: CollectionValueSource
+  equals: JsonScalar
+  visibleWhenMatched: boolean
+  fallback: boolean
+}
+
+export interface CollectionComponentConfig {
+  kind: 'collection'
+  dataSource: {
+    apiOperationId: EntityId | null
+    itemsPath: string
+    previewItems: JsonObject[]
+  }
+  itemKeyPath: string
+  itemTemplate: DefinitionInstanceFields
+  propBindings: CollectionPropBinding[]
+  variantSelection: {
+    cases: CollectionVariantCase[]
+    fallbackVariantId: EntityId | null
+  }
+  visibility: CollectionVisibilityRule | null
+}
 
 interface ButtonComponentConfigBase {
   label: string
@@ -238,6 +284,7 @@ export type ScreenComponentConfig =
       destination: LinkDestination
       openMode: LinkOpenMode
     }
+  | CollectionComponentConfig
   | ({ kind: 'modal' } & ComponentLayout)
 
 export type DefinitionComponentConfig =
@@ -559,6 +606,11 @@ export type ComponentTargetRef =
   | {
       type: 'definitionNode'
       instanceId: EntityId
+      nodePath: [EntityId, ...EntityId[]]
+    }
+  | {
+      type: 'collectionItemNode'
+      collectionId: EntityId
       nodePath: [EntityId, ...EntityId[]]
     }
 

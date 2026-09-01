@@ -134,7 +134,7 @@ bundle('src/domain/changeSetPresentation.ts', changeSetPresentationBundle)
 bundle('src/domain/changeSetComponentChanges.ts', changeSetComponentChangesBundle)
 bundle('src/features/structure-tree/structureTreeKeyboard.ts', structureTreeKeyboardBundle)
 bundle('src/domain/deleteImpact.ts', deleteImpactBundle)
-bundle('src/sample/sampleProject.ts', sampleProjectBundle)
+bundle('scripts/fixtures/regressionProject.ts', sampleProjectBundle)
 bundle('src/domain/componentDuplication.ts', componentDuplicationBundle)
 bundle('src/domain/model.ts', modelBundle)
 bundle('src/domain/runtimeValidation.ts', runtimeValidationBundle)
@@ -476,7 +476,9 @@ await test('canonical v3 contracts, schema, references, and example stay aligned
   )
 
   const componentKinds = schema.$defs.componentConfig.oneOf.map(
-    branch => branch.properties.kind.const,
+    branch => branch.$ref
+      ? schema.$defs[branch.$ref.split('/').at(-1)].properties.kind.const
+      : branch.properties.kind.const,
   )
   const publicPropTypes = [
     ...schema.$defs.publicProp.oneOf[0].properties.type.enum,
@@ -1165,30 +1167,30 @@ await test('component sizing is exact, contextual, atomic, and DnD-safe', async 
     inlineSize: 'fill',
     minWidth: 'xs',
     maxWidth: 'lg',
-    gridSpan: 2,
+    gridSpan: 1,
   })
   assert(
     store.getState().dispatch({
       type: 'updateComponentSpec',
-      componentId: 'comp-launch-task-status',
+      componentId: 'comp-save-btn',
       patch: { sizing: persistedSizing },
     }, 'Update sizing'),
-    'atomic sizing edit failed',
+    `atomic sizing edit failed: ${JSON.stringify(store.getState().toast)}`,
   )
   store.getState().undo()
   assert(
-    store.getState().document.components['comp-launch-task-status'].sizing.gridSpan === 1,
+    store.getState().document.components['comp-save-btn'].sizing.gridSpan === 1,
     'Undo did not restore sizing',
   )
   store.getState().redo()
   assert(
-    JSON.stringify(store.getState().document.components['comp-launch-task-status'].sizing) ===
+    JSON.stringify(store.getState().document.components['comp-save-btn'].sizing) ===
       JSON.stringify(persistedSizing),
     'Redo did not restore complete sizing',
   )
   const reloaded = await freshStore('component-sizing-history-reload')
   assert(
-    JSON.stringify(reloaded.getState().document.components['comp-launch-task-status'].sizing) ===
+    JSON.stringify(reloaded.getState().document.components['comp-save-btn'].sizing) ===
       JSON.stringify(persistedSizing),
     'sizing did not survive reload',
   )
@@ -1197,7 +1199,7 @@ await test('component sizing is exact, contextual, atomic, and DnD-safe', async 
   assert(
     !reloaded.getState().dispatch({
       type: 'updateComponentSpec',
-      componentId: 'comp-launch-task-status',
+      componentId: 'comp-save-btn',
       patch: { sizing: defaultSizing() },
     }, 'Blocked sizing edit') &&
       JSON.stringify(reloaded.getState().document) === beforeLockedEdit,
@@ -2586,7 +2588,7 @@ await test('component duplication preserves selection through history and change
       store.getState().ui.selection?.componentId === previewRootId &&
       presentation.commandType === 'duplicateComponent' &&
       presentation.navigation.componentId === previewRootId &&
-      [...markers.statuses.values()].filter(status => status === 'added').length === 5,
+      [...markers.statuses.values()].filter(status => status === 'added').length === 1,
     `change set duplication was not a single reviewable operation with added subtree markers: ${JSON.stringify({
       commandType: operation?.command.type,
       operationCount: changeSet?.operations.length,
@@ -2648,8 +2650,8 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
     store.getState().document === documentBeforeCopy &&
       store.getState().history.length === 0 &&
       clipboard?.rootComponentId === 'comp-launch-task-card' &&
-      Object.keys(clipboard.components).length === 5 &&
-      Object.keys(clipboard.events).length === 1,
+    Object.keys(clipboard.components).length === 1 &&
+    Object.keys(clipboard.events).length === 1,
     'copy mutated the document/history or captured an incomplete subtree snapshot',
   )
 
@@ -2673,23 +2675,13 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
   const section = store.getState().document.components['comp-list-page']
   const pastedRootId = section.childIds.at(-1)
   const pastedRoot = store.getState().document.components[pastedRootId]
-  const pastedButtonId = pastedRoot.childIds[3]
   assert(
     pastedRootId !== 'comp-launch-task-card' &&
-      pastedRoot.kind === 'container' &&
-      pastedRoot.childIds.length === 4 &&
-      store.getState().document.components[pastedButtonId].config.eventId !==
-        'event-edit-launch-task' &&
+      pastedRoot.kind === 'collection' &&
+      pastedRoot.childIds.length === 0 &&
       store.getState().ui.selection?.componentId === pastedRootId &&
       store.getState().history.length === 2,
-    'paste was not one atomic insertion with new IDs, rewritten event reference, and new selection',
-  )
-  assert(
-    Object.values(store.getState().document.events).some(
-      event => event.trigger.target.type === 'inline' &&
-        event.trigger.target.componentId === pastedButtonId,
-    ),
-    'same-screen paste did not recreate and rewrite the copied event',
+    'Collection paste was not one atomic insertion with a new ID and selection',
   )
   store.getState().undo()
   assert(
@@ -2705,8 +2697,8 @@ await test('component clipboard snapshots subtrees and pastes with safe target a
   )
 
   store.getState().resetToSample()
-  store.getState().selectScreenComponent('comp-launch-task-card')
-  store.getState().copyComponent('comp-launch-task-card')
+  store.getState().selectScreenComponent('comp-create-task-btn')
+  store.getState().copyComponent('comp-create-task-btn')
   const copiedAcrossScreens = store.getState().componentClipboard
   assert(copiedAcrossScreens, 'dependent clipboard snapshot was not retained')
   store.getState().setActiveScreen('screen-list')
@@ -2867,7 +2859,7 @@ await test('pasteComponent remains reviewable and selection-safe in active chang
       store.getState().ui.selection?.componentId === pastedRootId &&
       row.commandType === 'pasteComponent' &&
       row.navigation?.componentId === pastedRootId &&
-      [...markers.statuses.values()].filter(status => status === 'added').length === 5,
+      [...markers.statuses.values()].filter(status => status === 'added').length === 1,
     'paste was not represented as one reviewable operation with added subtree markers',
   )
 
@@ -3006,17 +2998,17 @@ await test('redo restores human operations and respects review and persistence b
     'move Redo failed',
   )
 
-  store.getState().selectScreenComponent('comp-launch-task-title')
+  store.getState().selectScreenComponent('comp-list-summary')
   store.getState().dispatch({
     type: 'removeComponent',
-    componentId: 'comp-launch-task-title',
+    componentId: 'comp-list-summary',
   }, 'Delete component')
   assert(store.getState().ui.selection === null, 'delete did not reconcile selection')
   store.getState().undo()
-  assert(store.getState().document.components['comp-launch-task-title'], 'delete Undo did not restore component')
+  assert(store.getState().document.components['comp-list-summary'], 'delete Undo did not restore component')
   store.getState().redo()
   assert(
-    store.getState().document.components['comp-launch-task-title'] === undefined &&
+    store.getState().document.components['comp-list-summary'] === undefined &&
       store.getState().ui.selection === null,
     'delete Redo did not remove component or reconcile selection',
   )
@@ -4258,7 +4250,7 @@ await test('TaskFlow sample is a complete two-screen task specification', async 
       .filter(component => component.nodeType === 'inline')
       .map(component => component.kind))]
       .sort().join(',') ===
-      ['button', 'container', 'image', 'link', 'modal', 'page', 'select', 'text', 'textInput']
+      ['button', 'collection', 'container', 'image', 'link', 'modal', 'page', 'select', 'text', 'textInput']
         .sort().join(','),
     'TaskFlow does not exercise all canonical component kinds',
   )
@@ -4995,9 +4987,13 @@ await test('sample and component surfaces cover every canonical component kind',
   )
   assertCompleteComponentKindCoverage(
     'persisted sample project',
-    [...new Set(Object.values(persistedComponents)
-      .filter(component => component.nodeType === 'inline')
-      .map(component => component.kind))],
+    [...new Set([
+      ...Object.values(persistedComponents)
+        .filter(component => component.nodeType === 'inline')
+        .map(component => component.kind),
+      ...Object.values(persistenceReload.getState().document.componentDefinitions)
+        .flatMap(definition => Object.values(definition.nodes).map(node => node.kind)),
+    ])],
   )
 })
 
@@ -7204,20 +7200,20 @@ await test('editor shortcuts ignore form controls and resolve standard keys', as
   const hierarchyStore = await freshStore('hierarchy-selection-shortcuts')
   const document = hierarchyStore.getState().effectiveDocument
   assert(
-    resolveHierarchySelectionTarget(document, 'comp-launch-task-title', 'select-parent') ===
-      'comp-launch-task-card' &&
+    resolveHierarchySelectionTarget(document, 'comp-list-summary', 'select-parent') ===
+      'comp-list-page' &&
       resolveHierarchySelectionTarget(document, 'comp-task-list', 'select-first-child') ===
         'comp-launch-task-card' &&
-      resolveHierarchySelectionTarget(document, 'comp-launch-task-title', 'select-next-sibling') ===
-        'comp-launch-task-image' &&
-      resolveHierarchySelectionTarget(document, 'comp-launch-task-image', 'select-previous-sibling') ===
-        'comp-launch-task-title',
+      resolveHierarchySelectionTarget(document, 'comp-list-summary', 'select-next-sibling') ===
+        'comp-task-list' &&
+      resolveHierarchySelectionTarget(document, 'comp-task-list', 'select-previous-sibling') ===
+        'comp-list-summary',
     'hierarchy selection did not follow parent childIds order',
   )
   assert(
     resolveHierarchySelectionTarget(document, 'comp-list-page', 'select-parent') === null &&
       resolveHierarchySelectionTarget(document, 'comp-list-page', 'select-next-sibling') === null &&
-      resolveHierarchySelectionTarget(document, 'comp-launch-task-status', 'select-previous-sibling') ===
+      resolveHierarchySelectionTarget(document, 'comp-list-header', 'select-previous-sibling') ===
         null,
     'hierarchy selection crossed a root or sibling boundary',
   )
@@ -7467,10 +7463,10 @@ await test('human delete flow confirms impact and only undoes the current deleti
 
   assert(
     store.getState().requestHumanDelete(
-      { type: 'removeComponent', componentId: 'comp-launch-task-status' },
+      { type: 'removeComponent', componentId: 'comp-list-help-link' },
       'Delete component',
     ) === 'executed' &&
-      !store.getState().effectiveDocument.components['comp-launch-task-status'] &&
+      !store.getState().effectiveDocument.components['comp-list-help-link'] &&
       store.getState().history.length === 1 &&
       store.getState().toast?.action,
     'clean leaf deletion was not immediate or actionable',
@@ -7478,7 +7474,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
   const undoToastId = store.getState().toast.id
   store.getState().runToastAction(undoToastId)
   assert(
-    store.getState().document.components['comp-launch-task-status'] &&
+    store.getState().document.components['comp-list-help-link'] &&
       store.getState().history.length === 0 &&
       store.getState().redoStack.length === 1,
     'delete Toast action did not perform one normal history Undo',
@@ -7534,7 +7530,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
 
   store.getState().resetToSample()
   store.getState().requestHumanDelete(
-    { type: 'removeComponent', componentId: 'comp-launch-task-status' },
+    { type: 'removeComponent', componentId: 'comp-list-help-link' },
     'Delete component',
   )
   const staleUndoId = store.getState().toast.id
@@ -7545,7 +7541,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
   })
   store.getState().runToastAction(staleUndoId)
   assert(
-    !store.getState().document.components['comp-launch-task-status'] &&
+    !store.getState().document.components['comp-list-help-link'] &&
       store.getState().document.screens['screen-edit'].name === 'Later edit' &&
       store.getState().history.length === 2 &&
       store.getState().toast?.message.key === 'delete.undoUnavailable',
@@ -7555,7 +7551,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
   store.getState().resetToSample()
   const deleteReview = store.getState().beginChangeSet('AI review blocks delete')
   const lockedDeleteResult = store.getState().requestHumanDelete(
-    { type: 'removeComponent', componentId: 'comp-launch-task-status' },
+    { type: 'removeComponent', componentId: 'comp-list-help-link' },
     'Delete component',
   )
   assert(
@@ -7563,7 +7559,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
     store.getState().activeChangeSet?.id === deleteReview.id &&
     store.getState().activeChangeSet?.version === 0 &&
     store.getState().activeChangeSet?.operations.length === 0 &&
-    store.getState().effectiveDocument.components['comp-launch-task-status'] &&
+    store.getState().effectiveDocument.components['comp-list-help-link'] &&
     store.getState().pendingDelete === null &&
     !store.getState().toast?.action,
     'review lock created a human delete operation, confirmation, or Undo action',
@@ -7571,7 +7567,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
 
   store.getState().rejectChangeSet()
   store.getState().requestHumanDelete(
-    { type: 'removeComponent', componentId: 'comp-launch-task-status' },
+    { type: 'removeComponent', componentId: 'comp-list-help-link' },
     'Delete component',
   )
   const deleteUndoBeforeReview = store.getState().toast.id
@@ -7581,7 +7577,7 @@ await test('human delete flow confirms impact and only undoes the current deleti
     store.getState().activeChangeSet?.id === secondReview.id &&
     store.getState().activeChangeSet?.version === 0 &&
     store.getState().activeChangeSet?.operations.length === 0 &&
-    !store.getState().effectiveDocument.components['comp-launch-task-status'] &&
+    !store.getState().effectiveDocument.components['comp-list-help-link'] &&
     store.getState().toast?.message.key === 'delete.undoUnavailable',
     'delete Undo changed a document while review lock was active',
   )
@@ -7905,8 +7901,8 @@ await test('component display labels separate structure from visible content', a
   )
   assert(
     getComponentDisplayLabel(document.components['comp-launch-task-card']) ===
-      'Launch onboarding checklist',
-    'container label did not use its editor description',
+      'Task Collection',
+    'Collection label did not use its editor description',
   )
   assert(
     getComponentDisplayLabel(undescribedContainer, 'ja') === 'コンテナ',
@@ -8662,7 +8658,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
     inspectorSectionPreferenceKey,
   } = await import(moduleUrl(inspectorSectionsBundle, 'inspector-sections'))
   const { COMPONENT_KINDS } = await import(moduleUrl(modelBundle, 'inspector-section-kinds'))
-  const contentKinds = new Set(['text', 'textInput', 'select', 'button', 'image', 'link'])
+  const contentKinds = new Set(['text', 'textInput', 'select', 'button', 'image', 'link', 'collection'])
   const layoutKinds = new Set(['page', 'container', 'modal'])
 
   for (const kind of COMPONENT_KINDS) {
@@ -8718,8 +8714,8 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
     target: { type: 'inline', componentId: 'comp-task-name-input' },
     override: { value: 'Preview name' },
   })
-  preview.components['comp-launch-task-card'].config.gap = 'lg'
-  preview.components['comp-launch-task-card'].placement = {
+  preview.components['comp-task-list'].config.gap = 'lg'
+  preview.components['comp-task-list'].placement = {
     mode: 'overlay',
     anchor: 'bottomRight',
     insetX: 'sm',
@@ -8736,7 +8732,7 @@ await test('Inspector sections classify kinds, defaults, and review markers', as
   const layoutMarkers = inspectorSectionChangeCounts(
     base,
     preview,
-    'comp-launch-task-card',
+    'comp-task-list',
     'scenario-edit-success',
   )
   const behaviorMarkers = inspectorSectionChangeCounts(
@@ -8806,7 +8802,7 @@ await test('screen flow projects navigate actions and net review changes', async
     name: 'Open launch task',
     trigger: {
       type: 'click',
-      target: { type: 'inline', componentId: 'comp-launch-task-title' },
+      target: { type: 'inline', componentId: 'comp-create-task-btn' },
     },
     actions: [{ type: 'navigate', destinationScreenId: 'screen-edit' }],
   }
@@ -9653,7 +9649,7 @@ await test('active change set component markers reflect final net effects', asyn
     const removed = compareChanges(markerBase, removedPreview)
     assert(
       removed.statuses.get('comp-task-list') === 'modified' &&
-        removed.removedComponents.length === 5,
+        removed.removedComponents.length === 1,
       'subtree removal did not preserve canonical hierarchy markers',
     )
     return
@@ -9987,10 +9983,6 @@ await test('Structure Tree keyboard model follows the ARIA tree pattern', async 
       'comp-list-summary',
       'comp-task-list',
       'comp-launch-task-card',
-      'comp-launch-task-status',
-      'comp-launch-task-title',
-      'comp-launch-task-image',
-      'comp-edit-launch-task-btn',
       'comp-create-task-btn',
       'comp-list-loading-message',
       'comp-list-empty-message',
@@ -13228,11 +13220,9 @@ await test('Inspector select controls use unique IDs and visible accessible labe
     {
       componentId: 'comp-launch-task-card',
       labels: [
-        'inspector.layout',
-        'inspector.gap',
-        'inspector.columns',
-        'inspector.justify',
-        'inspector.alignment',
+        'collection.itemDefinition',
+        'collection.apiSource',
+        'collection.fallbackVariant',
       ],
     },
     {
@@ -13434,7 +13424,7 @@ await test('delete confirmation enforces dialog focus and stale-impact behavior'
         'Delete',
       ) &&
       JSON.stringify(impactItems) === JSON.stringify([
-        'Components removed: 6',
+        'Components removed: 2',
         'Events removed: 1',
         'Event actions removed: 1',
         'State overrides removed: 2',

@@ -17,6 +17,8 @@ import {
 import type { Locale } from '../../i18n/messages'
 import { translate } from '../../i18n/messages'
 import { assertNever } from '../../domain/assertNever'
+import { DomainError } from '../../domain/errors'
+import { componentDefinitionRefV3 } from '../../domain/canonicalProjectSpecV3'
 
 export interface PaletteItem {
   kind: PaletteComponentKind
@@ -100,6 +102,32 @@ export function createDefaultComponentConfig(
         },
         openMode: 'newContext',
       }
+    case 'collection': {
+      const definition = Object.values(doc.componentDefinitions)[0]
+      if (!definition) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'Create a shared Definition before adding a Collection',
+        )
+      }
+      return {
+        kind,
+        dataSource: {
+          apiOperationId: null,
+          itemsPath: '',
+          previewItems: [{ id: 'item-1' }],
+        },
+        itemKeyPath: '/id',
+        itemTemplate: {
+          source: { $ref: componentDefinitionRefV3(definition.id) },
+          variantId: definition.representativeVariantId,
+          props: {},
+        },
+        propBindings: [],
+        variantSelection: { cases: [], fallbackVariantId: null },
+        visibility: null,
+      }
+    }
     case 'modal':
       return { kind, ...DEFAULT_COMPONENT_LAYOUT }
     default:

@@ -19,6 +19,7 @@ import {
   type ResolveScreenNodesResult,
   type ResolvedRuntimeNode,
 } from '../../domain/definitionResolver'
+import { resolveComponentDefinitionRefV3 } from '../../domain/canonicalProjectSpecV3'
 import { resolveEffectiveComponentState } from '../../domain/selectors'
 import { createResetComponentOverrideCommand } from '../../domain/stateOverrides'
 import {
@@ -772,6 +773,38 @@ function TreeNode({
             depth={depth + 1}
             locale={locale}
           />
+        </ul>
+      ) : null}
+      {baseComponent?.nodeType === 'inline' && baseComponent.config.kind === 'collection' ? (
+        <ul className={styles.children} role="group" data-collection-template-tree>
+          <li
+            role="treeitem"
+            aria-level={depth + 2}
+            aria-disabled="true"
+            className={styles.resolvedTreeItem}
+          >
+            <div
+              className={styles.node}
+              style={{ paddingInlineStart: `${8 + Math.min(depth + 1, 3) * 16}px` }}
+            >
+              <span className={styles.disclosurePlaceholder} aria-hidden="true" />
+              <span className={styles.nodeBody}>
+                <span className={styles.nodeLabel}>
+                  <span className={styles.kind}>{t('collection.itemTemplate')}</span>
+                  <span className={styles.name}>
+                    {resolveComponentDefinitionRefV3(
+                      document,
+                      baseComponent.config.itemTemplate.source.$ref,
+                    ).name}
+                    {' · '}
+                    {t('collection.previewCount', {
+                      count: baseComponent.config.dataSource.previewItems.length,
+                    })}
+                  </span>
+                </span>
+              </span>
+            </div>
+          </li>
         </ul>
       ) : null}
       {hasInlineChildren && !isCollapsed && (

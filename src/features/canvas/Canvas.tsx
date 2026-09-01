@@ -25,6 +25,7 @@ import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import {
   resolvedDefinitionNodeSelection,
+  screenComponentSelection,
   selectedScreenComponentId,
   selectionScreenComponentId,
 } from '../../domain/editorSelection'
@@ -791,7 +792,12 @@ function ResolvedCanvasNode({
   const selection = useAppStore(state => state.ui.selection)
   const setSelection = useAppStore(state => state.setSelection)
   const node = resolved.nodesById[runtimeId]
-  if (!node || !node.instanceId || !node.nodePath || !node.common.visible) return null
+  if (
+    !node ||
+    (!node.instanceId && !node.collectionId) ||
+    !node.nodePath ||
+    !node.common.visible
+  ) return null
   const isSelected = selection?.type === 'resolvedDefinitionNode' &&
     selection.instanceId === node.instanceId &&
     JSON.stringify(selection.nodePath) === JSON.stringify(node.nodePath)
@@ -807,7 +813,9 @@ function ResolvedCanvasNode({
       Boolean(child && child.placement.mode === 'overlay'))
   const label = resolvedNodeLabel(node, locale)
   const select = () => setSelection(
-    resolvedDefinitionNodeSelection(node.screenId, node.instanceId!, node.nodePath!),
+    node.instanceId
+      ? resolvedDefinitionNodeSelection(node.screenId, node.instanceId, node.nodePath!)
+      : screenComponentSelection(document, node.screenId, node.collectionId!),
   )
   const childrenStyle = layout
     ? {
@@ -843,6 +851,8 @@ function ResolvedCanvasNode({
       data-definition-id={node.definitionId ?? undefined}
       data-definition-node-id={node.definitionNodeId ?? undefined}
       data-instance-id={node.instanceId}
+      data-collection-id={node.collectionId ?? undefined}
+      data-collection-item-key={node.collectionItemKey ?? undefined}
       data-node-path={node.nodePath.join('/')}
       data-editor-selected={isSelected || undefined}
       data-placement-mode={node.placement.mode}
@@ -931,13 +941,26 @@ function CanvasComponent({
   const reviewLocked = useAppStore(state => Boolean(state.activeChangeSet))
   const base = getOwnEntity(document.components, componentId)
   const component = base ? effectiveComponent(document, base, activeState) : undefined
-  const resolvedInstance = base?.nodeType === 'definitionInstance'
+  const componentResolvedScreen = base && (
+    base.nodeType === 'definitionInstance' ||
+    (base.nodeType === 'inline' && base.kind === 'collection')
+  )
     ? resolvedScreen ?? resolveScreenNodes(document, base.screenId, activeState?.id ?? null)
+    : null
+  const resolvedInstance = base?.nodeType === 'definitionInstance'
+    ? componentResolvedScreen
     : null
   const resolvedInstanceRoot = resolvedInstance?.orderedNodes.find(node =>
     node.instanceId === base?.id &&
     node.instanceBoundary.isBoundaryRoot &&
     node.instanceBoundary.depth === 1)
+  const resolvedCollectionRoots = base?.nodeType === 'inline' && base.kind === 'collection'
+    ? componentResolvedScreen!.orderedNodes
+        .filter(node =>
+          node.collectionId === base.id &&
+          node.instanceBoundary.isBoundaryRoot &&
+          node.instanceBoundary.depth === 1)
+    : []
   const displayName = component
     ? getComponentDisplayLabel(component, locale)
     : ''
@@ -1104,6 +1127,34 @@ function CanvasComponent({
       ) : (
         <ComponentView comp={component} document={document} t={t} />
       )}
+      {base?.nodeType === 'inline' && base.kind === 'collection' ? (
+        <div
+          className={styles.collectionItems}
+          role="list"
+          aria-label={t('collection.previewItems')}
+          data-collection-preview
+        >
+          {resolvedCollectionRoots.map(root => (
+            <div
+              key={root.id}
+              className={styles.collectionItem}
+              role="listitem"
+              data-collection-preview-key={root.collectionItemKey ?? undefined}
+            >
+              <ResolvedCanvasNode
+                runtimeId={root.id}
+                resolved={componentResolvedScreen!}
+                document={document}
+                locale={locale}
+                t={t}
+              />
+            </div>
+          ))}
+          {resolvedCollectionRoots.length === 0 ? (
+            <div className={styles.collectionEmpty}>{t('collection.emptyPreview')}</div>
+          ) : null}
+        </div>
+      ) : null}
       {isContainer && base?.nodeType === 'inline' && (
         <SortableContext
           items={component.childIds.map(id => draggableComponentId('canvas', id))}
@@ -1318,6 +1369,8 @@ function ComponentView({
         </a>
       )
     }
+    case 'collection':
+      return null
     case 'modal':
       return null
   }
