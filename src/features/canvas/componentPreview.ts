@@ -19,6 +19,14 @@ export function resolveImagePreviewStatus(
   return failedSource === source ? 'failed' : 'ready'
 }
 
+export function resolveImagePlaceholderLabel(
+  description: string,
+  alt: string,
+  fallback: string,
+): string {
+  return description.trim() || alt.trim() || fallback
+}
+
 export type CanvasComponentPreview =
   | {
       kind: 'page' | 'container' | 'modal'

@@ -25,7 +25,7 @@ Descriptions on structural components are editor metadata that help identify gro
 
 ### Images and links
 
-Use **Image** when an image is part of the screen specification rather than decoration. Set a portable relative URL or absolute HTTP(S) URL, meaningful alt text, constrained fit, aspect ratio, and placeholder style. An unset source and a network loading failure appear as explicit wireframe placeholders.
+Use **Image** when an image is part of the screen specification rather than decoration. Describe its purpose with the component description, and set meaningful alt text, constrained fit, aspect ratio, and placeholder style. The standard Inspector does not ask wireframe authors to type a runtime image URL. Existing imported documents and resolved Collection or Definition data may still provide a portable relative or HTTP(S) source for preview; otherwise the Canvas shows a low-fidelity image placeholder. A loading failure falls back to the same placeholder.
 
 Use **Link** for navigation to an internal Screen, an external HTTP(S) URL, or a logical resource. Internal links open in the same context. External links may use the same or a new context. Resource links may request a download, although browsers and servers may ignore that request. A resource ID is an opaque identifier, not a reference to a project-level asset catalog.
 

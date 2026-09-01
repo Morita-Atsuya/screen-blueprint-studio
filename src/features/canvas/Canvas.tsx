@@ -39,7 +39,11 @@ import { ComponentDropZone } from '../../dnd/ComponentDropZone'
 import { draggableComponentId } from '../../dnd/editorDnd'
 import { StateDialog } from './StateDialog'
 import { useCanvasViewport } from './useCanvasViewport'
-import { createCanvasComponentPreview, resolveImagePreviewStatus } from './componentPreview'
+import {
+  createCanvasComponentPreview,
+  resolveImagePlaceholderLabel,
+  resolveImagePreviewStatus,
+} from './componentPreview'
 import type { CanvasViewportControls } from './useCanvasViewport'
 import { useComponentAddMenu } from '../component-add-menu/ComponentAddMenu'
 import type { ComponentAddMenuTrigger } from '../component-add-menu/ComponentAddMenu'
@@ -1394,7 +1398,7 @@ function ComponentView({
   document,
   t,
 }: {
-  comp: Pick<EffectiveScreenComponent, 'config'>
+  comp: Pick<EffectiveScreenComponent, 'common' | 'config'>
   document: ProjectDocument
   t: ReturnType<typeof useI18n>['t']
 }) {
@@ -1449,7 +1453,17 @@ function ComponentView({
         </button>
       )
     case 'image':
-      return <ImagePreview key={preview.source} config={preview} t={t} />
+      return (
+        <ImagePreview
+          key={preview.source}
+          config={preview}
+          label={resolveImagePlaceholderLabel(
+            comp.common.description,
+            preview.alt,
+            t('canvas.imageLabel'),
+          )}
+        />
+      )
     case 'link': {
       const destination = preview.destination
       const href = destination.type === 'internal'
@@ -1482,36 +1496,37 @@ function ComponentView({
 
 function ImagePreview({
   config,
-  t,
+  label,
 }: {
   config: Extract<ReturnType<typeof createCanvasComponentPreview>, { kind: 'image' }>
-  t: ReturnType<typeof useI18n>['t']
+  label: string
 }) {
   const [failedSource, setFailedSource] = useState<string | null>(null)
   const status = resolveImagePreviewStatus(config.source, failedSource)
-  const reason = status === 'missing'
-    ? t('canvas.imageMissing')
-    : status === 'invalid'
-      ? t('canvas.imageInvalid')
-      : status === 'failed'
-        ? t('canvas.imageFailed')
-        : null
 
-  if (reason) {
+  if (status !== 'ready') {
     return (
       <div
         className={[
           styles.imagePlaceholder,
+          styles[`imageAspect${config.aspectRatio.replace(':', '')}`],
           config.placeholderStyle === 'skeleton' ? styles.imagePlaceholderSkeleton : '',
         ].join(' ')}
         role="img"
-        aria-label={`${config.alt}: ${reason}`}
-        data-image-placeholder={
-          status
-        }
+        aria-label={label}
+        data-image-placeholder={status}
       >
-        {config.placeholderStyle === 'icon' ? <span aria-hidden="true">▧</span> : null}
-        <span>{reason}</span>
+        <svg
+          className={styles.imagePlaceholderIcon}
+          viewBox="0 0 48 32"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <rect x="1" y="1" width="46" height="30" rx="3" />
+          <circle cx="35" cy="10" r="3" />
+          <path d="m6 26 10-10 7 7 5-5 14 8" />
+        </svg>
+        <span className={styles.imagePlaceholderLabel}>{label}</span>
       </div>
     )
   }

@@ -25,7 +25,7 @@ Paletteの項目をTreeまたはCanvasへdragします。既存のroot以外のc
 
 ### ImageとLink
 
-装飾ではなく画面仕様の一部となる画像には**Image**を使います。portableな相対URLまたはHTTP(S)の絶対URL、内容を表すalt text、制約付きfit、aspect ratio、placeholder styleを設定します。source未設定とnetwork読込失敗は、明示的なwireframe placeholderとして表示されます。
+装飾ではなく画面仕様の一部となる画像には**Image**を使います。Componentのdescriptionで画像の用途を示し、内容を表すalt text、制約付きfit、aspect ratio、placeholder styleを設定します。通常のInspectorでは、ワイヤーフレーム作成者にruntime画像URLの手入力を求めません。既存のimport documentや解決済みのCollection／Definition dataがportableな相対URLまたはHTTP(S) sourceを持つ場合はpreviewに使い、それ以外はlow-fidelityな画像placeholderをCanvasへ表示します。読込失敗時も同じplaceholderへ切り替わります。
 
 **Link**は、アプリ内Screen、外部HTTP(S) URL、論理resourceへのnavigationを表します。アプリ内Screenは同じcontext、外部URLは同じcontextまたは新しいcontextで開けます。Resource linkはdownloadを要求できますが、browserやserverが無視する場合があります。Resource IDはopaqueな識別子であり、project-level asset catalogへの参照ではありません。
 

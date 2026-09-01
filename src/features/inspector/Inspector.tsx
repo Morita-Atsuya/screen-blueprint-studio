@@ -962,19 +962,6 @@ export function Inspector() {
       )}
       {cfg.kind === 'image' && (
         <>
-          <Field label={t('inspector.imageSource')}>{controlId => (
-            <DraftTextField
-              id={controlId}
-              key={`${comp.id}:source`}
-              draftId={`component:${comp.id}:config.source`}
-              ariaLabel={t('inspector.imageSource')}
-              className={styles.input}
-              value={cfg.source}
-              onCommit={source => updateConfig({ source }, 'source')}
-              validate={source =>
-                isSafePortableUrl(source, true) ? null : t('canvas.imageInvalid')}
-            />
-          )}</Field>
           <Field label={t('inspector.imageAlt')}>{controlId => (
             <DraftTextField
               id={controlId}

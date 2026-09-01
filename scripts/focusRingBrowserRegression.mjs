@@ -359,6 +359,30 @@ async function run() {
           rel: link.getAttribute('rel'),
           text: link.textContent.trim(),
         },
+        images: (() => {
+          const imageNodes = [...document.querySelectorAll(
+            '[data-collection-id="comp-launch-task-card"]' +
+              '[data-definition-node-id="task-card-image"]'
+          )]
+          const image = imageNodes.find(node => node.querySelector('img'))?.querySelector('img')
+          const placeholder = imageNodes.find(node =>
+            node.querySelector('[data-image-placeholder="missing"]')
+          )?.querySelector('[data-image-placeholder="missing"]')
+          return {
+            nodeCount: imageNodes.length,
+            renderedImageCount: imageNodes.filter(node => node.querySelector('img')).length,
+            placeholderCount: imageNodes.filter(node =>
+              node.querySelector('[data-image-placeholder]')
+            ).length,
+            imageAlt: image?.getAttribute('alt'),
+            placeholderLabel: placeholder?.getAttribute('aria-label'),
+            placeholderText: placeholder?.textContent.trim(),
+            placeholderHasIcon: Boolean(placeholder?.querySelector('svg')),
+            hasErrorCopy: imageNodes.some(node =>
+              /Image URL|could not be loaded|画像URL|読み込めません/.test(node.textContent)
+            ),
+          }
+        })(),
         nodePaths: nodes.map(node => node.getAttribute('data-node-path')),
       }
     })()`)
@@ -378,6 +402,17 @@ async function run() {
         initial.link.rel === 'noopener noreferrer' &&
         initial.link.text === 'Planning guide',
       `resolved Link lost safe anchor semantics: ${JSON.stringify(initial.link)}`,
+    )
+    assert(
+      initial.images.nodeCount === 2 &&
+        initial.images.renderedImageCount === 1 &&
+        initial.images.placeholderCount === 1 &&
+        initial.images.imageAlt === 'TaskFlow board preview' &&
+        initial.images.placeholderLabel === 'Task preview' &&
+        initial.images.placeholderText === 'Task preview' &&
+        initial.images.placeholderHasIcon &&
+        !initial.images.hasErrorCopy,
+      `sample Image preview was not neutral and low fidelity: ${JSON.stringify(initial.images)}`,
     )
     assert(
       JSON.stringify(initial.nodePaths) === JSON.stringify([
@@ -620,6 +655,53 @@ async function run() {
     await waitFor(
       `document.querySelector('[data-editor-view="definition"]').hidden === false`,
       'Definition editor did not open',
+    )
+    await evaluate(`[
+      ...document.querySelectorAll('[data-definition-editor] aside button')
+    ].find(button => button.textContent.includes('Task Card')).click()`)
+    await waitFor(
+      `Boolean(document.querySelector(
+        '[data-definition-preview-node="task-card-image"] img'
+      ))`,
+      'Task Card shared preview Image did not render',
+    )
+    await evaluate(`document.querySelector(
+      '[data-definition-preview-node="task-card-image"] img'
+    ).src = '/missing-shared-preview-image.png'`)
+    await waitFor(
+      `Boolean(document.querySelector(
+        '[data-definition-preview-node="task-card-image"] [data-image-placeholder="failed"]'
+      ))`,
+      'broken shared preview Image did not fall back to the placeholder',
+    )
+    const sharedImageFallback = await evaluate(`(() => {
+      const placeholder = document.querySelector(
+        '[data-definition-preview-node="task-card-image"] [data-image-placeholder="failed"]'
+      )
+      return {
+        label: placeholder?.getAttribute('aria-label'),
+        text: placeholder?.textContent.trim(),
+        hasIcon: Boolean(placeholder?.querySelector('svg')),
+        hasBrokenImage: Boolean(document.querySelector(
+          '[data-definition-preview-node="task-card-image"] img'
+        )),
+      }
+    })()`)
+    assert(
+      sharedImageFallback.label === 'Task preview' &&
+        sharedImageFallback.text === 'Task preview' &&
+        sharedImageFallback.hasIcon &&
+        !sharedImageFallback.hasBrokenImage,
+      `Shared Image failure did not use the neutral placeholder: ${
+        JSON.stringify(sharedImageFallback)
+      }`,
+    )
+    await evaluate(`[
+      ...document.querySelectorAll('[data-definition-editor] aside button')
+    ].find(button => button.textContent.includes('Shared Header')).click()`)
+    await waitFor(
+      `Boolean(document.querySelector('[data-definition-tree-node="header-root"]'))`,
+      'Shared Header did not reopen after Image preview verification',
     )
     const editorState = await evaluate(`(() => ({
       rootPath: document.querySelector(

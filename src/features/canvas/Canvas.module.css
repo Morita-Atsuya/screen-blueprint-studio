@@ -602,6 +602,7 @@
 .imageAspect169 { aspect-ratio: 16 / 9; }
 .imagePlaceholder {
   display: grid;
+  width: 100%;
   min-height: 72px;
   place-items: center;
   gap: 4px;
@@ -612,6 +613,20 @@
   color: var(--text-muted);
   font-size: 0.78rem;
   text-align: center;
+}
+.imagePlaceholderIcon {
+  width: 38px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+.imagePlaceholderLabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .imagePlaceholderSkeleton {
   background:

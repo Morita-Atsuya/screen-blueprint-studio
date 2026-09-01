@@ -5541,7 +5541,7 @@ await test('semantic Image and Link configs enforce portable URL and destination
   const { sampleProject } = await import(
     moduleUrl(sampleProjectBundle, 'semantic-media-sample')
   )
-  const { resolveImagePreviewStatus } = await import(
+  const { resolveImagePlaceholderLabel, resolveImagePreviewStatus } = await import(
     moduleUrl(componentPreviewBundle, 'semantic-media-image-status')
   )
   const {
@@ -5637,6 +5637,28 @@ await test('semantic Image and Link configs enforce portable URL and destination
       resolveImagePreviewStatus('./broken.png', './broken.png') === 'failed' &&
       resolveImagePreviewStatus('./working.png', './broken.png') === 'ready',
     'Image preview did not distinguish errors or reset failure on source change',
+  )
+  assert(
+    resolveImagePlaceholderLabel('Task illustration', 'Accessible task image', 'Image') ===
+      'Task illustration' &&
+      resolveImagePlaceholderLabel('  ', 'Accessible task image', 'Image') ===
+        'Accessible task image' &&
+      resolveImagePlaceholderLabel('', '', 'Image') === 'Image',
+    'Image placeholder label did not prefer description, alt, then localized fallback',
+  )
+  const canvasSource = readFileSync(join(root, 'src/features/canvas/Canvas.tsx'), 'utf8')
+  const inspectorSource = readFileSync(join(root, 'src/features/inspector/Inspector.tsx'), 'utf8')
+  const messagesSource = readFileSync(join(root, 'src/i18n/messages.ts'), 'utf8')
+  assert(
+    canvasSource.includes('resolveImagePlaceholderLabel(') &&
+      canvasSource.includes('data-image-placeholder={status}') &&
+      canvasSource.includes('imagePlaceholderIcon') &&
+      !canvasSource.includes("t('canvas.imageMissing')") &&
+      !canvasSource.includes("t('canvas.imageFailed')") &&
+      !inspectorSource.includes('component:${comp.id}:config.source') &&
+      !messagesSource.includes('画像URLが未設定です') &&
+      !messagesSource.includes('Image URL is not set'),
+    'Image UI retained an error placeholder or exposed runtime source editing',
   )
   assert(
     [
