@@ -212,6 +212,56 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+function measureToolSchemas(tools) {
+  const forbiddenKeywords = ['oneOf', 'anyOf', 'allOf', 'if', 'then', '$ref']
+  const metrics = {
+    toolCount: tools.length,
+    totalBytes: 0,
+    maxIndividualBytes: 0,
+    maxIndividualTool: null,
+    maxDepth: 0,
+    propertyCount: 0,
+    unionBranches: 0,
+    forbiddenKeywordCount: 0,
+  }
+  const visit = (schema, depth) => {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return
+    metrics.maxDepth = Math.max(metrics.maxDepth, depth)
+    if (schema.properties && typeof schema.properties === 'object') {
+      metrics.propertyCount += Object.keys(schema.properties).length
+      Object.values(schema.properties).forEach(child => visit(child, depth + 1))
+    }
+    if (schema.items) visit(schema.items, depth + 1)
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+      visit(schema.additionalProperties, depth + 1)
+    }
+    for (const keyword of ['oneOf', 'anyOf']) {
+      if (Array.isArray(schema[keyword])) {
+        metrics.unionBranches += schema[keyword].length
+        schema[keyword].forEach(child => visit(child, depth + 1))
+      }
+    }
+    if (Array.isArray(schema.allOf)) {
+      schema.allOf.forEach(child => visit(child, depth + 1))
+    }
+    if (schema.if) visit(schema.if, depth + 1)
+    if (schema.then) visit(schema.then, depth + 1)
+    metrics.forbiddenKeywordCount += forbiddenKeywords.filter(keyword =>
+      Object.prototype.hasOwnProperty.call(schema, keyword)
+    ).length
+  }
+  for (const tool of tools) {
+    const bytes = Buffer.byteLength(JSON.stringify(tool.inputSchema))
+    metrics.totalBytes += bytes
+    if (bytes > metrics.maxIndividualBytes) {
+      metrics.maxIndividualBytes = bytes
+      metrics.maxIndividualTool = tool.name
+    }
+    visit(tool.inputSchema, 1)
+  }
+  return metrics
+}
+
 function defaultSizing(overrides = {}) {
   return {
     inlineSize: 'auto',
@@ -2368,9 +2418,6 @@ await test('domain commands isolate every nested payload from returned documents
   }
   const webUpdate = webTool('update_component_spec').execute(webInput)
   assert(webUpdate.ok, 'WebMCP nested component update failed')
-  const webCommandBeforeMutation = JSON.stringify(
-    webTool('get_pending_change_set').execute({}).data.activeChangeSet.operations[0].command,
-  )
   webInput.patch.config.validationRules[0].message = 'Mutated after WebMCP execute'
   webInput.patch.config.validationRules.push({
     id: 'web-late-rule',
@@ -2378,10 +2425,12 @@ await test('domain commands isolate every nested payload from returned documents
     description: 'Late',
     message: 'Late',
   })
+  const webComponent = webTool('get_component').execute({
+    componentId: 'comp-task-name-input',
+  })
   assert(
-    JSON.stringify(
-      webTool('get_pending_change_set').execute({}).data.activeChangeSet.operations[0].command,
-    ) === webCommandBeforeMutation,
+    webComponent.data.component.config.validationRules.length === 1 &&
+      webComponent.data.component.config.validationRules[0].message === 'Web required',
     'WebMCP retained a caller-owned nested argument in the change set',
   )
 })
@@ -3422,10 +3471,10 @@ await test('event actions and API bindings reject cross-screen references', asyn
         }],
       ]
       for (const [toolName, input] of cases) {
-        const beforeCount = pending().operations.length
+        const beforeCount = pending().operationCount
         const result = byName(toolName).execute(input)
         assert(!result.ok, `${toolName} accepted dangerous ID ${id}`)
-        assert(pending().operations.length === beforeCount, `${toolName} changed ops for ${id}`)
+        assert(pending().operationCount === beforeCount, `${toolName} changed ops for ${id}`)
         assert(({}).name === undefined && ({}).polluted === undefined, `${toolName} polluted prototype`)
       }
     }
@@ -3438,7 +3487,7 @@ await test('event actions and API bindings reject cross-screen references', asyn
       method: 'GET',
       path: '/ghost',
     })
-    assert(!ghostApi.ok && pending().operations.length === 0, 'ghost screen API was retained')
+    assert(!ghostApi.ok && pending().operationCount === 0, 'ghost screen API was retained')
     assertObjectPrototypeUnchanged(beforePrototype, 'WebMCP changed Object.prototype')
 
     const restoredStore = await freshStore('prototype-webmcp-accept')
@@ -3500,6 +3549,29 @@ await test('event actions and API bindings reject cross-screen references', asyn
     }
     assert(rejected, `${command.type} accepted a cross-screen reference`)
   }
+})
+
+await test('WebMCP tool catalog stays within ChatGPT compatibility budgets', async () => {
+  localStorage.clear()
+  const { WEBMCP_TOOLS } = await import(moduleUrl(toolsBundle, 'schema-budget'))
+  const metrics = measureToolSchemas(WEBMCP_TOOLS)
+  assert(metrics.toolCount === 11, `expected 11 tools, got ${metrics.toolCount}`)
+  assert(metrics.totalBytes <= 35_000, `schema total is ${metrics.totalBytes} bytes`)
+  assert(
+    metrics.maxIndividualBytes <= 8_000,
+    `largest schema is ${metrics.maxIndividualBytes} bytes`,
+  )
+  assert(metrics.maxDepth <= 8, `schema depth is ${metrics.maxDepth}`)
+  assert(metrics.unionBranches <= 30, `schema unions have ${metrics.unionBranches} branches`)
+  assert(
+    metrics.forbiddenKeywordCount === 0,
+    `agent schemas contain ${metrics.forbiddenKeywordCount} risky composition keywords`,
+  )
+  assert(
+    WEBMCP_TOOLS.every(tool => tool.description.length <= 500),
+    'a tool description exceeds Chrome compatibility guidance',
+  )
+  console.log(`WebMCP schema metrics: ${JSON.stringify(metrics)}`)
 })
 
 await test('eleven tools register and invalid writes fail without adding operations', async () => {
@@ -3797,10 +3869,10 @@ await test('eleven tools register and invalid writes fail without adding operati
   ]
 
   for (const [toolName, input] of invalidCases) {
-    const before = pending().operations.length
+    const before = pending().operationCount
     const result = byName(toolName).execute(input)
     assert(!result.ok && result.error.code, `${toolName} returned a false success`)
-    assert(pending().operations.length === before, `${toolName} added an invalid operation`)
+    assert(pending().operationCount === before, `${toolName} added an invalid operation`)
   }
 })
 
@@ -3877,13 +3949,13 @@ await test('representative screen/component/state/event/API writes reach the cha
     return result
   }
   const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
-  const latestCommand = () => pending().operations.at(-1).command
   assert(
-    byName('change_screen_structure').inputSchema.oneOf.length === 3,
-    'screen structure tool does not expose exactly add, update, and remove',
+    byName('change_screen_structure').inputSchema.properties.operation.enum.join(',') ===
+      'add,update,remove',
+    'screen structure tool does not expose add, update, and remove',
   )
   assert(
-    byName('connect_behavior').inputSchema.oneOf.length === 6,
+    byName('connect_behavior').inputSchema.properties.operation.enum.length === 6,
     'behavior tool does not expose create, update, and remove for events and APIs',
   )
   execute('connect_behavior', {
@@ -3901,48 +3973,38 @@ await test('representative screen/component/state/event/API writes reach the cha
   const context = byName('get_current_screen_context').execute({})
   assert(
     context.ok &&
-      Object.keys(context.data.project).sort().join(',') === 'id,name,screenIds',
+      Object.keys(context.data.project).sort().join(',') === 'id,name,screenCount',
     'screen context project metadata has an unexpected shape',
   )
   const stateSchema = byName('upsert_screen_state').inputSchema
   assert(
-    stateSchema.oneOf[0].properties.kind === undefined &&
-      stateSchema.oneOf[1].properties.kind === undefined &&
-      !stateSchema.oneOf[0].required.includes('kind') &&
+    stateSchema.properties.kind === undefined &&
+      !stateSchema.required.includes('kind') &&
       !JSON.stringify(stateSchema).includes('"message"'),
     'WebMCP state schema exposes a removed state kind or message override',
   )
   const componentSchema = byName('change_component_structure').inputSchema
   assert(
-    componentSchema.oneOf.some(variant =>
-      variant.properties?.kind?.const === 'modal' &&
-      variant.properties?.parentId?.type === 'null'
-    ) &&
-      componentSchema.oneOf.some(variant =>
-        variant.properties?.kind?.enum?.includes('container') &&
-        !variant.properties?.kind?.enum?.includes('modal')
-      ) &&
-      componentSchema.oneOf.some(variant =>
-        variant.properties?.operation?.const === 'duplicate' &&
-        variant.required?.includes('componentId')
-      ) &&
-      componentSchema.oneOf
-        .filter(variant => variant.properties?.operation?.const === 'add')
-        .every(variant =>
-          variant.required?.includes('placement') &&
-          variant.properties?.placement &&
-          variant.required?.includes('sizing') &&
-          variant.properties?.sizing
-        ),
-    'WebMCP does not distinguish modal creation, child creation, and duplication',
+    componentSchema.properties.kind.enum.includes('modal') &&
+      componentSchema.properties.kind.enum.includes('container') &&
+      componentSchema.properties.parentId.type.includes('null') &&
+      componentSchema.properties.operation.enum.includes('duplicate') &&
+      componentSchema.properties.placement &&
+      componentSchema.properties.sizing &&
+      byName('change_component_structure').description.includes('modal parentId=null'),
+    'WebMCP component structure schema lost compact typed operation guidance',
   )
 
-  execute('change_screen_structure', { operation: 'add', name: 'Agent screen', route: '/agent' })
-  const addedScreenId = latestCommand().screenId
+  const screenResult = execute('change_screen_structure', {
+    operation: 'add',
+    name: 'Agent screen',
+    route: '/agent',
+  })
+  const addedScreenId = screenResult.data.createdScreenId
   execute('change_screen_structure', { operation: 'update', screenId: addedScreenId, name: 'Updated agent screen' })
   execute('change_screen_structure', { operation: 'remove', screenId: addedScreenId })
 
-  execute('change_component_structure', {
+  const containerResult = execute('change_component_structure', {
     operation: 'add',
     screenId: 'screen-list',
     parentId: 'comp-list-page',
@@ -3959,7 +4021,7 @@ await test('representative screen/component/state/event/API writes reach the cha
       wrap: true,
     },
   })
-  const addedContainerId = latestCommand().componentId
+  const addedContainerId = containerResult.data.createdComponentId
   execute('update_component_spec', {
     componentId: addedContainerId,
     patch: {
@@ -3972,10 +4034,11 @@ await test('representative screen/component/state/event/API writes reach the cha
       },
     },
   })
+  let addedContainer = byName('get_component').execute({ componentId: addedContainerId })
   assert(
-    latestCommand().patch.config.layout === 'grid' &&
-      latestCommand().patch.config.columns === 3 &&
-      latestCommand().patch.placement.mode === 'overlay',
+    addedContainer.data.component.config.layout === 'grid' &&
+      addedContainer.data.component.config.columns === 3 &&
+      addedContainer.data.component.placement.mode === 'overlay',
     'WebMCP layout or placement update did not reach the change set',
   )
   execute('update_component_spec', {
@@ -3988,14 +4051,15 @@ await test('representative screen/component/state/event/API writes reach the cha
       }),
     },
   })
+  addedContainer = byName('get_component').execute({ componentId: addedContainerId })
   assert(
-    latestCommand().patch.sizing.inlineSize === 'content' &&
-      latestCommand().patch.sizing.minWidth === 'xs' &&
-      latestCommand().patch.sizing.maxWidth === 'md',
+    addedContainer.data.component.sizing.inlineSize === 'content' &&
+      addedContainer.data.component.sizing.minWidth === 'xs' &&
+      addedContainer.data.component.sizing.maxWidth === 'md',
     'WebMCP sizing-only update did not reach the change set',
   )
 
-  execute('change_component_structure', {
+  const textResult = execute('change_component_structure', {
     operation: 'add',
     screenId: 'screen-list',
     parentId: addedContainerId,
@@ -4004,17 +4068,17 @@ await test('representative screen/component/state/event/API writes reach the cha
     sizing: defaultSizing(),
     config: { kind: 'text', text: 'Agent text', style: 'heading2' },
   })
-  const addedComponentId = latestCommand().componentId
-  execute('change_component_structure', {
+  const addedComponentId = textResult.data.createdComponentId
+  const duplicateResult = execute('change_component_structure', {
     operation: 'duplicate',
     componentId: addedComponentId,
   })
-  const duplicateCommand = latestCommand()
   assert(
-    duplicateCommand.type === 'duplicateComponent' &&
-      duplicateCommand.componentIdMap[addedComponentId] &&
-      Object.keys(duplicateCommand.componentIdMap).length === 1,
-    'WebMCP duplicate did not emit one atomic duplicateComponent command',
+    duplicateResult.data.createdComponentId !== addedComponentId &&
+      byName('get_component').execute({
+        componentId: duplicateResult.data.createdComponentId,
+      }).ok,
+    'WebMCP duplicate did not return a readable generated component',
   )
   execute('change_component_structure', {
     operation: 'move',
@@ -4028,7 +4092,7 @@ await test('representative screen/component/state/event/API writes reach the cha
   execute('change_component_structure', { operation: 'remove', componentId: addedComponentId })
   execute('change_component_structure', { operation: 'remove', componentId: addedContainerId })
 
-  execute('change_component_structure', {
+  const modalResult = execute('change_component_structure', {
     operation: 'add',
     screenId: 'screen-list',
     parentId: null,
@@ -4045,11 +4109,13 @@ await test('representative screen/component/state/event/API writes reach the cha
       wrap: false,
     },
   })
-  const addedModalId = latestCommand().componentId
+  const addedModalId = modalResult.data.createdComponentId
+  const addedModal = byName('get_component').execute({ componentId: addedModalId })
   assert(
-    latestCommand().parentId === null &&
-      pending().operations.at(-1).command.kind === 'modal',
-    'WebMCP modal add did not create an independent root command',
+    addedModal.ok &&
+      addedModal.data.component.parentId === null &&
+      addedModal.data.component.kind === 'modal',
+    `WebMCP modal add did not create a readable independent root: ${JSON.stringify(addedModal)}`,
   )
   const invalidNestedModal = byName('change_component_structure').execute({
     changeSetId,
@@ -4071,17 +4137,17 @@ await test('representative screen/component/state/event/API writes reach the cha
     },
   })
   assert(
-    !invalidNestedModal.ok && pending().operations.length === version,
+    !invalidNestedModal.ok && pending().operationCount === version,
     'WebMCP accepted a nested modal or changed the change set after rejection',
   )
   execute('change_component_structure', { operation: 'remove', componentId: addedModalId })
 
-  execute('upsert_screen_state', {
+  const stateResult = execute('upsert_screen_state', {
     operation: 'create',
     screenId: 'screen-list',
     name: 'Agent state',
   })
-  const addedStateId = latestCommand().stateId
+  const addedStateId = stateResult.data.stateId
   execute('upsert_screen_state', {
     operation: 'update',
     stateId: addedStateId,
@@ -4100,7 +4166,7 @@ await test('representative screen/component/state/event/API writes reach the cha
     }],
   })
 
-  execute('connect_behavior', {
+  const apiResult = execute('connect_behavior', {
     operation: 'bindApi',
     screenId: 'screen-list',
     name: 'List API',
@@ -4108,15 +4174,15 @@ await test('representative screen/component/state/event/API writes reach the cha
     path: '/users',
     successStateId: addedStateId,
   })
-  const addedApiId = latestCommand().operationId
-  execute('connect_behavior', {
+  const addedApiId = apiResult.data.apiId
+  const eventResult = execute('connect_behavior', {
     operation: 'connectEvent',
     screenId: 'screen-list',
     name: 'Load list',
     trigger: { type: 'click', target: { type: 'inline', componentId: 'comp-list-summary' } },
     actions: [{ type: 'callApi', apiOperationId: addedApiId }],
   })
-  const addedEventId = latestCommand().eventId
+  const addedEventId = eventResult.data.eventId
   execute('connect_behavior', {
     operation: 'updateApi',
     operationId: addedApiId,
@@ -4143,15 +4209,14 @@ await test('representative screen/component/state/event/API writes reach the cha
     updatedApi?.name === 'Updated list API' &&
       updatedApi.path === '/users/search' &&
       updatedEvent?.name === 'Updated load list' &&
-      updatedEvent.actions[0]?.apiOperationId === addedApiId &&
-      updatedContext.data.activeScreen.screen.eventIds.includes(addedEventId),
+      updatedEvent.actionTypes[0] === 'callApi',
     'behavior updates replaced IDs or lost event/API references',
   )
   execute('connect_behavior', { operation: 'removeEvent', eventId: addedEventId })
   execute('connect_behavior', { operation: 'removeApi', operationId: addedApiId })
   execute('upsert_screen_state', { operation: 'remove', stateId: addedStateId })
 
-  assert(pending().operations.length === version, 'operation count and version diverged')
+  assert(pending().operationCount === version, 'operation count and version diverged')
 })
 
 await test('WebMCP supports Definition node edits, partial sizing, and generated result IDs', async () => {
@@ -4176,7 +4241,6 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     return result
   }
   const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
-  const latestCommand = () => pending().operations.at(-1).command
 
   const sizingPatchSchema = byName('update_component_spec')
     .inputSchema.properties.patch.properties.sizing
@@ -4193,8 +4257,9 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     route: '/generated-id',
   })
   assert(
-    screenResult.data.createdScreenId === latestCommand().screenId &&
-      screenResult.data.createdRootComponentId === latestCommand().rootComponentId,
+    typeof screenResult.data.createdScreenId === 'string' &&
+      typeof screenResult.data.createdRootComponentId === 'string' &&
+      screenResult.data.createdScreenId !== screenResult.data.createdRootComponentId,
     'screen add result omitted its generated screen or root ID',
   )
 
@@ -4217,7 +4282,8 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
   })
   const containerId = containerResult.data.createdComponentId
   assert(
-    containerId === latestCommand().componentId,
+    typeof containerId === 'string' &&
+      byName('get_component').execute({ componentId: containerId }).ok,
     'component add result omitted its generated component ID',
   )
 
@@ -4237,12 +4303,12 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
   })
   assert(
     partialSizingResult.ok &&
-      latestCommand().patch.sizing.gridSpan === 10 &&
-      latestCommand().patch.sizing.inlineSize === 'auto' &&
-      latestCommand().patch.sizing.minWidth === 'none' &&
-      latestCommand().patch.sizing.maxWidth === 'none' &&
-      latestCommand().patch.sizing.grow === 0 &&
-      latestCommand().patch.sizing.shrink === 'allow',
+      byName('get_component').execute({ componentId: textId }).data.component.sizing.gridSpan === 10 &&
+      byName('get_component').execute({ componentId: textId }).data.component.sizing.inlineSize === 'auto' &&
+      byName('get_component').execute({ componentId: textId }).data.component.sizing.minWidth === 'none' &&
+      byName('get_component').execute({ componentId: textId }).data.component.sizing.maxWidth === 'none' &&
+      byName('get_component').execute({ componentId: textId }).data.component.sizing.grow === 0 &&
+      byName('get_component').execute({ componentId: textId }).data.component.sizing.shrink === 'allow',
     'partial sizing was not merged over the current complete sizing',
   )
 
@@ -4251,8 +4317,10 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     componentId: textId,
   })
   assert(
-    duplicateComponentResult.data.createdComponentId ===
-      latestCommand().componentIdMap[textId],
+    duplicateComponentResult.data.createdComponentId !== textId &&
+      byName('get_component').execute({
+        componentId: duplicateComponentResult.data.createdComponentId,
+      }).ok,
     'component duplicate result omitted its generated root component ID',
   )
 
@@ -4266,18 +4334,31 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
       sizing: defaultSizing({ gridSpan: 2 }),
     },
   })
+  const updatedDefinitionNode = byName('get_component').execute({
+    target: {
+      type: 'collectionItemNode',
+      collectionId: 'comp-launch-task-card',
+      nodePath: ['task-card-action'],
+    },
+  })
   assert(
     definitionNodeResult.data.definitionId === 'shared/task-card' &&
       JSON.stringify(definitionNodeResult.data.nodePath) ===
         JSON.stringify(['task-card-action']) &&
-      latestCommand().type === 'putComponentDefinition' &&
-      latestCommand().mode === 'update' &&
-      latestCommand().definition.nodes['task-card-action'].common.description ===
+      updatedDefinitionNode.data.component.common.description ===
         'Open a task from WebMCP' &&
-      latestCommand().definition.nodes['task-card-action'].config.label === 'Open task now',
-    'Definition-owned node update did not reach the reviewed putComponentDefinition command',
+      updatedDefinitionNode.data.component.config.kind === 'button',
+    `Definition-owned node update was not visible through its Collection target: ${JSON.stringify(updatedDefinitionNode)}`,
   )
-  const operationCountBeforeInvalidPath = pending().operations.length
+  const definitionDetail = byName('get_current_screen_context').execute({
+    include: 'definition',
+    detailId: 'shared/task-card',
+  })
+  assert(
+    definitionDetail.data.detail.value.nodes['task-card-action'].config.label === 'Open task now',
+    'Definition-owned config update was not visible in Definition detail',
+  )
+  const operationCountBeforeInvalidPath = pending().operationCount
   const invalidPath = byName('manage_component_definition').execute({
     ...common,
     expectedChangeSetVersion: version,
@@ -4289,7 +4370,7 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
   assert(
     !invalidPath.ok &&
       invalidPath.error.code === 'INVALID_REFERENCE' &&
-      pending().operations.length === operationCountBeforeInvalidPath,
+      pending().operationCount === operationCountBeforeInvalidPath,
     'Definition node update accepted a path outside the owned parent-child chain',
   )
 
@@ -4298,8 +4379,11 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     name: 'Generated Definition',
   })
   assert(
-    createdDefinition.data.createdDefinitionId === latestCommand().definition.id &&
-      createdDefinition.data.createdNodeId === latestCommand().definition.rootNodeId,
+    typeof createdDefinition.data.createdDefinitionId === 'string' &&
+      typeof createdDefinition.data.createdNodeId === 'string' &&
+      byName('get_current_screen_context').execute({}).data.definitions.some(
+        definition => definition.id === createdDefinition.data.createdDefinitionId,
+      ),
     'Definition create result omitted its generated Definition or root node ID',
   )
   const duplicatedDefinition = execute('manage_component_definition', {
@@ -4307,10 +4391,28 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     definitionId: createdDefinition.data.createdDefinitionId,
   })
   assert(
-    duplicatedDefinition.data.createdDefinitionId === latestCommand().definition.id &&
-      duplicatedDefinition.data.createdNodeId === latestCommand().definition.rootNodeId,
+    duplicatedDefinition.data.createdDefinitionId !== createdDefinition.data.createdDefinitionId &&
+      typeof duplicatedDefinition.data.createdNodeId === 'string',
     'Definition duplicate result omitted its generated Definition or root node ID',
   )
+  const updatedDefinition = execute('manage_component_definition', {
+    operation: 'updateMeta',
+    definitionId: createdDefinition.data.createdDefinitionId,
+    name: 'Generated Definition Updated',
+    description: 'Updated through WebMCP',
+  })
+  assert(
+    updatedDefinition.data.definitionId === createdDefinition.data.createdDefinitionId,
+    'Definition metadata update replaced the Definition ID',
+  )
+  execute('manage_component_definition', {
+    operation: 'publishStringProp',
+    definitionId: createdDefinition.data.createdDefinitionId,
+    key: 'description',
+    name: 'Description',
+    nodePath: [createdDefinition.data.createdNodeId],
+    field: 'common.description',
+  })
   const variantResult = execute('manage_component_definition', {
     operation: 'addVariant',
     definitionId: createdDefinition.data.createdDefinitionId,
@@ -4319,8 +4421,10 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     propertyValue: 'compact',
   })
   assert(
-    variantResult.data.createdVariantId ===
-      latestCommand().definition.variants.at(-1).id,
+    typeof variantResult.data.createdVariantId === 'string' &&
+      byName('get_current_screen_context').execute({}).data.definitions.find(
+        definition => definition.id === createdDefinition.data.createdDefinitionId,
+      ).variantCount === 1,
     'Definition addVariant result omitted its generated Variant ID',
   )
 
@@ -4331,9 +4435,32 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     definitionId: createdDefinition.data.createdDefinitionId,
   })
   assert(
-    instanceResult.data.createdInstanceId === latestCommand().componentId,
+    byName('get_component').execute({
+      componentId: instanceResult.data.createdInstanceId,
+    }).ok,
     'Definition Instance add result omitted its generated instance ID',
   )
+  const updatedInstance = execute('manage_definition_instance', {
+    operation: 'update',
+    componentId: instanceResult.data.createdInstanceId,
+    variantId: variantResult.data.createdVariantId,
+    props: { description: 'Instance description' },
+    placement: { mode: 'flow' },
+    sizing: defaultSizing(),
+  })
+  const updatedInstanceDetail = byName('get_component').execute({
+    componentId: instanceResult.data.createdInstanceId,
+  })
+  assert(
+    updatedInstance.data.instanceId === instanceResult.data.createdInstanceId &&
+      updatedInstanceDetail.data.component.props.description === 'Instance description' &&
+      updatedInstanceDetail.data.component.variantId === variantResult.data.createdVariantId,
+    'Definition Instance update replaced its ID or lost props/Variant',
+  )
+  execute('manage_component_definition', {
+    operation: 'remove',
+    definitionId: duplicatedDefinition.data.createdDefinitionId,
+  })
 
   const stateResult = execute('upsert_screen_state', {
     operation: 'create',
@@ -4341,7 +4468,7 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     name: 'Generated state',
   })
   assert(
-    stateResult.data.stateId === latestCommand().stateId,
+    typeof stateResult.data.stateId === 'string',
     'state create result omitted its generated state ID',
   )
   const eventResult = execute('connect_behavior', {
@@ -4352,7 +4479,7 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     actions: [],
   })
   assert(
-    eventResult.data.eventId === latestCommand().eventId,
+    typeof eventResult.data.eventId === 'string',
     'event create result omitted its generated event ID',
   )
   const apiResult = execute('connect_behavior', {
@@ -4363,8 +4490,9 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     path: '/generated',
   })
   assert(
-    apiResult.data.apiId === latestCommand().operationId &&
-      typeof apiResult.data.operationId === 'string',
+    typeof apiResult.data.apiId === 'string' &&
+      typeof apiResult.data.operationId === 'string' &&
+      apiResult.data.apiId !== apiResult.data.operationId,
     'API create result omitted its generated API ID or replaced the change operation ID',
   )
 
@@ -4374,8 +4502,8 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     name: 'Extracted Definition',
   })
   assert(
-    extracted.data.createdDefinitionId === latestCommand().definition.id &&
-      extracted.data.createdInstanceId === latestCommand().replacementInstanceId,
+    typeof extracted.data.createdDefinitionId === 'string' &&
+      typeof extracted.data.createdInstanceId === 'string',
     'Definition extraction result omitted its generated Definition or replacement Instance ID',
   )
   const detached = execute('manage_definition_instance', {
@@ -4383,12 +4511,11 @@ await test('WebMCP supports Definition node edits, partial sizing, and generated
     componentId: extracted.data.createdInstanceId,
   })
   assert(
-    detached.data.createdComponentIds.length === latestCommand().generatedComponents.length &&
-      detached.data.createdComponentIds.every((id, index) =>
-        id === latestCommand().generatedComponents[index].componentId),
+    detached.data.createdComponentIds.length > 0 &&
+      detached.data.createdComponentIds.every(id => typeof id === 'string'),
     'Definition detach result omitted generated inline component IDs',
   )
-  assert(pending().operations.length === version, 'generated-ID operations diverged from version')
+  assert(pending().operationCount === version, 'generated-ID operations diverged from version')
 })
 
 await test('Definition node ownership rejects nested Definition Instance boundaries', async () => {
@@ -4464,17 +4591,24 @@ await test('WebMCP reads are compact, discoverable, and serializable', async () 
   const module = await import(moduleUrl(toolsBundle, 'agent-read-surfaces'))
   const byName = name => module.WEBMCP_TOOLS.find(tool => tool.name === name)
   const initialContext = byName('get_current_screen_context').execute({})
+  const instanceDetail = byName('get_component').execute({
+    componentId: 'comp-list-header',
+  })
   assert(initialContext.ok, 'initial screen context failed')
+  const initialBytes = Buffer.byteLength(JSON.stringify(initialContext))
   assert(
     initialContext.data.documentView === 'effective' &&
-      initialContext.data.activeScreen.documentView === 'effective' &&
-      initialContext.data.activeScreen.screen.id === 'screen-list' &&
-      initialContext.data.activeScreen.components.length > 1 &&
+      initialContext.data.activeScreen.id === 'screen-list' &&
+      initialContext.data.activeScreen.componentOutline.length > 1 &&
       Array.isArray(initialContext.data.activeScreen.states) &&
       Array.isArray(initialContext.data.activeScreen.events) &&
-      Array.isArray(initialContext.data.activeScreen.apiOperations),
-    'active screen context does not provide one complete effective projection',
+      Array.isArray(initialContext.data.activeScreen.apiOperations) &&
+      instanceDetail.data.canonicalTarget.type === 'definitionNode' &&
+      instanceDetail.data.hierarchy.length > 0 &&
+      initialBytes <= 8_000,
+    `default active screen summary is incomplete or ${initialBytes} bytes`,
   )
+  console.log(`WebMCP fresh TaskFlow context: ${initialBytes} bytes`)
   const begin = byName('begin_change_set').execute({ summary: 'Read surface review' })
   assert(begin.ok, 'read surface change set failed to begin')
   let version = begin.data.changeSetVersion
@@ -4516,14 +4650,17 @@ await test('WebMCP reads are compact, discoverable, and serializable', async () 
   assert(
     pending.ok &&
       pending.data.activeChangeSet.baseDocument === undefined &&
-      pending.data.activeChangeSet.operations.length === 2 &&
+      pending.data.activeChangeSet.operations === undefined &&
       pending.data.activeChangeSet.operationSummaries.length === 2 &&
       pending.data.activeChangeSet.operationSummaries.every(operation =>
         operation.source === 'agent' &&
         typeof operation.action === 'string' &&
-        Array.isArray(operation.changes)
+        Array.isArray(operation.changes) &&
+        operation.changes.every(change =>
+          typeof change.before === 'string' &&
+          typeof change.after === 'string')
       ),
-    'pending change set omitted raw operations or review-ready compact diffs',
+    'pending change set exposed commands or omitted compact review summaries',
   )
   assert(
     JSON.parse(JSON.stringify(context)).ok && JSON.parse(JSON.stringify(pending)).ok,
@@ -4542,6 +4679,64 @@ await test('WebMCP reads are compact, discoverable, and serializable', async () 
       )
     }
   }
+})
+
+await test('WebMCP default context stays bounded for a complex workspace', async () => {
+  memoryStorage.clear()
+  const store = await freshStore('complex-context-seed')
+  for (let index = 0; index < 120; index += 1) {
+    store.getState().dispatch({
+      type: 'addComponent',
+      componentId: `complex-component-${index}`,
+      screenId: 'screen-list',
+      parentId: 'comp-list-page',
+      kind: 'text',
+      placement: { mode: 'flow' },
+      sizing: defaultSizing(),
+      config: {
+        kind: 'text',
+        text: `Complex workspace component ${index}`,
+        style: 'body',
+      },
+    }, `Add complex component ${index}`)
+  }
+  const review = store.getState().beginChangeSet('Large pending proposal')
+  for (let index = 0; index < 55; index += 1) {
+    store.getState().dispatchToChangeSet(review.id, {
+      type: 'updateComponentSpec',
+      componentId: 'complex-component-0',
+      patch: { common: { description: `Pending summary ${index}` } },
+    })
+  }
+  const module = await import(moduleUrl(toolsBundle, 'complex-context'))
+  const tool = name => module.WEBMCP_TOOLS.find(candidate => candidate.name === name)
+  const context = tool('get_current_screen_context').execute({})
+  const continued = tool('get_current_screen_context').execute({
+    index: 'components',
+    offset: context.data.activeScreen.nextOffsets.components,
+  })
+  const pendingFirst = tool('get_pending_change_set').execute({})
+  const pendingSecond = tool('get_pending_change_set').execute({
+    offset: pendingFirst.data.activeChangeSet.nextOffset,
+  })
+  const bytes = Buffer.byteLength(JSON.stringify(context))
+  assert(
+    context.ok &&
+      context.data.activeScreen.counts.components > 120 &&
+      context.data.activeScreen.componentOutline.length === 60 &&
+      context.data.activeScreen.truncated.componentOutline &&
+      continued.data.page.offset === 60 &&
+      continued.data.activeScreen.componentOutline.length > 0 &&
+      !continued.data.activeScreen.componentOutline.some(component =>
+        context.data.activeScreen.componentOutline.some(first => first.id === component.id)) &&
+      pendingFirst.data.activeChangeSet.operationSummaries.length === 50 &&
+      pendingFirst.data.activeChangeSet.nextOffset === 50 &&
+      pendingSecond.data.activeChangeSet.operationSummaries.length === 5 &&
+      pendingSecond.data.activeChangeSet.nextOffset === null &&
+      bytes <= 15_000,
+    `complex default context was not bounded: ${bytes} bytes`,
+  )
+  console.log(`WebMCP complex context: ${bytes} bytes`)
 })
 
 await test('TaskFlow sample is a complete two-screen task specification', async () => {
@@ -4803,17 +4998,22 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
   memoryStorage.clear()
   const seedStore = await freshStore('priority-demo-seed')
   seedStore.getState().setActiveScreen('screen-edit')
+  seedStore.getState().selectScreenComponent('comp-task-status-select')
 
   const firstModule = await import(moduleUrl(toolsBundle, 'priority-demo-first-agent'))
   const firstTool = name => firstModule.WEBMCP_TOOLS.find(tool => tool.name === name)
   const firstContext = firstTool('get_current_screen_context').execute({})
+  const statusDetail = firstTool('get_component').execute({})
+  const statusPlacement = statusDetail.data.hierarchy.at(-1)
   assert(
     firstContext.ok &&
-      firstContext.data.activeScreen.screen.id === 'screen-edit' &&
-      !firstContext.data.activeScreen.components.some(component =>
-        component.config?.kind === 'select' && component.config.fieldKey === 'priority'
-      ),
-    'Priority demo did not start from the live Edit Task context without Priority',
+      firstContext.data.activeScreen.id === 'screen-edit' &&
+      firstContext.data.selection.canonicalTarget.componentId === 'comp-task-status-select' &&
+      statusDetail.data.component.config.fieldKey === 'taskStatus' &&
+      statusPlacement.parentId === 'comp-edit-page' &&
+      !firstContext.data.activeScreen.componentOutline.some(component =>
+        component.label === 'Priority'),
+    `Priority demo context/detail was incomplete: ${JSON.stringify({ firstContext, statusDetail })}`,
   )
   const firstReview = firstTool('begin_change_set').execute({
     summary: 'Add Priority after Status',
@@ -4824,9 +5024,9 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
     expectedChangeSetVersion: firstReview.data.changeSetVersion,
     operation: 'add',
     screenId: 'screen-edit',
-    parentId: 'comp-edit-page',
+    parentId: statusPlacement.parentId,
     kind: 'select',
-    position: 4,
+    position: statusPlacement.order + 1,
     placement: { mode: 'flow' },
     sizing: defaultSizing(),
     config: {
@@ -4844,12 +5044,17 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
   })
   assert(addPriority.ok, `Priority proposal failed: ${JSON.stringify(addPriority)}`)
   const proposedContext = firstTool('get_current_screen_context').execute({})
-  const proposedPriority = proposedContext.data.activeScreen.components.find(component =>
-    component.config?.kind === 'select' && component.config.fieldKey === 'priority'
-  )
-  const savingState = proposedContext.data.activeScreen.states.find(
+  const proposedPriorityId = addPriority.data.createdComponentId
+  const proposedPriority = firstTool('get_component').execute({
+    componentId: proposedPriorityId,
+  }).data.component
+  const savingStateSummary = proposedContext.data.activeScreen.states.find(
     state => state.id === 'scenario-edit-saving',
   )
+  const savingState = firstTool('get_current_screen_context').execute({
+    include: 'state',
+    detailId: savingStateSummary.id,
+  }).data.detail.value
   assert(proposedPriority && savingState, 'Priority or Saving state was missing from the proposal')
   const integratePriority = firstTool('upsert_screen_state').execute({
     changeSetId: firstReview.data.changeSetId,
@@ -4867,18 +5072,19 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
   })
   assert(integratePriority.ok, `Priority saving-state integration failed: ${JSON.stringify(integratePriority)}`)
   const integratedContext = firstTool('get_current_screen_context').execute({})
+  const integratedState = firstTool('get_current_screen_context').execute({
+    include: 'state',
+    detailId: savingState.id,
+  }).data.detail.value
   const firstPending = firstTool('get_pending_change_set').execute({})
+  const outline = integratedContext.data.activeScreen.componentOutline
+  const priorityOutline = outline.find(component => component.id === proposedPriority.id)
+  const statusOutline = outline.find(component => component.id === 'comp-task-status-select')
   assert(
     proposedPriority &&
-      integratedContext.data.activeScreen.components.find(
-        component => component.id === 'comp-edit-page',
-      ).childIds.indexOf(proposedPriority.id) ===
-        integratedContext.data.activeScreen.components.find(
-          component => component.id === 'comp-edit-page',
-        ).childIds.indexOf('comp-task-status-select') + 1 &&
-      integratedContext.data.activeScreen.states.find(
-        state => state.id === 'scenario-edit-saving',
-      ).componentOverrides.some(
+      priorityOutline.parentId === statusOutline.parentId &&
+      priorityOutline.order === statusOutline.order + 1 &&
+      integratedState.componentOverrides.some(
         entry => entry.target.type === 'inline' &&
           entry.target.componentId === proposedPriority.id &&
           entry.override.enabled === false,
@@ -4906,13 +5112,13 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
 
   const secondModule = await import(moduleUrl(toolsBundle, 'priority-demo-second-agent'))
   const secondTool = name => secondModule.WEBMCP_TOOLS.find(tool => tool.name === name)
-  const correctedContext = secondTool('get_current_screen_context').execute({})
-  const correctedPriority = correctedContext.data.activeScreen.components.find(
-    component => component.id === proposedPriority.id,
-  )
-  const updateTask = correctedContext.data.activeScreen.apiOperations.find(
-    operation => operation.id === 'api-save-task',
-  )
+  const correctedPriority = secondTool('get_component').execute({
+    componentId: proposedPriority.id,
+  }).data.component
+  const updateTask = secondTool('get_current_screen_context').execute({
+    include: 'api',
+    detailId: 'api-save-task',
+  }).data.detail.value
   assert(
     correctedPriority.config.defaultValue === 'normal' &&
       correctedPriority.config.options[2].label === 'Critical' &&
@@ -4946,7 +5152,7 @@ await test('Priority demo reuses human edits and preserves the Update Task API I
   const secondPending = secondTool('get_pending_change_set').execute({})
   assert(
     secondPending.data.activeChangeSet.operationSummaries.length === 1 &&
-      secondPending.data.activeChangeSet.operations[0].command.operationId === 'api-save-task',
+      updateApi.data.apiId === 'api-save-task',
     'Priority API proposal did not retain the existing operation ID',
   )
 
@@ -5271,24 +5477,18 @@ await test('sample and component surfaces cover every canonical component kind',
 
   const structureTool = WEBMCP_TOOLS.find(tool => tool.name === 'change_component_structure')
   const updateTool = WEBMCP_TOOLS.find(tool => tool.name === 'update_component_spec')
-  const addChildSchema = structureTool?.inputSchema.oneOf?.[0]
-  const addModalSchema = structureTool?.inputSchema.oneOf?.[1]
-  const webMcpConfigKinds = addChildSchema?.properties.config.oneOf
-    ?.map(variant => variant.properties.kind.const)
-  const webMcpAddKinds = [
-    ...(addChildSchema?.properties.kind.enum ?? []),
-    addModalSchema?.properties.kind.const,
-  ].filter(Boolean)
+  const webMcpAddKinds = structureTool?.inputSchema.properties.kind.enum ?? []
+  const webMcpConfigKinds =
+    structureTool?.inputSchema.properties.config.properties.kind.enum ?? []
   assert(
-    addChildSchema?.properties.kind.enum.join(',') === CHILD_COMPONENT_KINDS.join(',') &&
-      webMcpAddKinds.join(',') === PALETTE_COMPONENT_KINDS.join(','),
+    webMcpAddKinds.join(',') === PALETTE_COMPONENT_KINDS.join(',') &&
+      structureTool.description.includes('modal parentId=null'),
     'WebMCP component add kinds diverged from the canonical component catalog',
   )
   assertCompleteComponentKindCoverage('WebMCP add config schema', webMcpConfigKinds ?? [])
   assertCompleteComponentKindCoverage(
     'WebMCP update config schema',
-    updateTool?.inputSchema.properties.patch.properties.config.anyOf
-      ?.map(variant => variant.properties.kind.const) ?? [],
+    updateTool?.inputSchema.properties.patch.properties.config.properties.kind.enum ?? [],
   )
 
   const treeSource = readFileSync(
@@ -5471,20 +5671,11 @@ await test('semantic Image and Link configs enforce portable URL and destination
   )
   assert(
     validateWebMcpConfig(external) &&
-      !validateWebMcpConfig({ ...image, alt: ' ' }) &&
-      !validateWebMcpConfig({ ...external, label: ' ' }) &&
-      !validateWebMcpConfig({ ...image, source: 'https:/example.com/image.png' }) &&
-      !validateWebMcpConfig({
-        ...external,
-        destination: { type: 'external', url: 'https://?' },
-      }) &&
-      !validateWebMcpConfig({ ...external, openMode: 'download' }) &&
-      !validateWebMcpConfig({
-        ...external,
-        destination: { type: 'internal', screenId: 'screen-list' },
-        openMode: 'newContext',
-      }),
-    'WebMCP schema advertised an incompatible Link open mode',
+      componentConfigSchema.properties.destination.properties.type.enum.includes('resource') &&
+      componentConfigSchema.properties.openMode.enum.includes('download') &&
+      !JSON.stringify(componentConfigSchema).includes('"oneOf"') &&
+      !JSON.stringify(componentConfigSchema).includes('"if"'),
+    'WebMCP config schema lost typed Link fields or reintroduced conditional composition',
   )
   const callerDestination = { type: 'external', url: 'https://example.com/original' }
   const clonedCommand = cloneDomainCommand({
@@ -11007,7 +11198,7 @@ await test('Text styles replace Heading across model, UI, persistence, and WebMC
   })
   assert(!webResult.ok, 'WebMCP accepted legacy Heading')
   assert(
-    byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
+    byName('get_pending_change_set').execute({}).data.activeChangeSet.operationCount === 0,
     'rejected Heading changed pending operations',
   )
 
@@ -11087,7 +11278,7 @@ await test('component name metadata is rejected across document, command, and We
   const addTool = byName('change_component_structure')
   const updateTool = byName('update_component_spec')
   assert(
-    addTool.inputSchema.oneOf[0].properties.name === undefined &&
+    addTool.inputSchema.properties.name === undefined &&
       updateTool.inputSchema.properties.patch.properties.name === undefined,
     'WebMCP schema still exposes component name',
   )
@@ -11111,7 +11302,7 @@ await test('component name metadata is rejected across document, command, and We
   })
   assert(!updateResult.ok, 'WebMCP update accepted legacy component name')
   assert(
-    byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
+    byName('get_pending_change_set').execute({}).data.activeChangeSet.operationCount === 0,
     'legacy component name changed the pending operations',
   )
   const componentResult = byName('get_component').execute({ componentId: 'comp-list-summary' })
@@ -11190,7 +11381,7 @@ await test('structural components reject content titles across every write path'
   })
   assert(!updateResult.ok, 'WebMCP update accepted a structural title')
   assert(
-    byName('get_pending_change_set').execute({}).data.activeChangeSet.operations.length === 0,
+    byName('get_pending_change_set').execute({}).data.activeChangeSet.operationCount === 0,
     'rejected structural titles changed pending operations',
   )
 
@@ -11804,7 +11995,7 @@ await test('Select state values share one validated effective path', async () =>
   })
   assert(validResult.ok, `valid Select WebMCP override failed: ${JSON.stringify(validResult)}`)
   const pending = () => byName('get_pending_change_set').execute({}).data.activeChangeSet
-  const operationCount = pending().operations.length
+  const operationCount = pending().operationCount
 
   const invalidWebMcpInputs = [
     ['upsert_screen_state', {
@@ -11837,7 +12028,7 @@ await test('Select state values share one validated effective path', async () =>
     const result = byName(toolName).execute(input)
     assert(!result.ok, `${toolName} accepted an invalid Select value`)
     assert(
-      pending().operations.length === operationCount,
+      pending().operationCount === operationCount,
       `${toolName} added an invalid Select operation`,
     )
   }
@@ -12062,17 +12253,18 @@ await test('AI writes expose only the change set review flow', async () => {
     Object.keys(context.data).sort().join(',') === [
       'activeChangeSet',
       'activeScreen',
-      'activeScreenId',
       'activeStateId',
-      'componentDefinitions',
+      'definitions',
       'documentView',
+      'nextOffsets',
+      'page',
       'project',
-      'rejectedRecords',
+      'rejectedChangeSets',
       'revision',
-      'screen',
       'screens',
       'selectedComponentId',
       'selection',
+      'truncated',
     ].sort().join(','),
     'screen context retained a constant policy field or lost a current field: ' +
       Object.keys(context.data).sort().join(','),
@@ -13495,7 +13687,7 @@ await test('WebMCP separates invalid version arguments from retryable conflicts'
     )
     const active = byName('get_pending_change_set').execute({}).data.activeChangeSet
     assert(
-      active.version === 0 && active.operations.length === 0,
+      active.version === 0 && active.operationCount === 0,
       `${argument}=${String(value)} consumed a change set version`,
     )
   }

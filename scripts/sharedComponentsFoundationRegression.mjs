@@ -777,9 +777,47 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
   )
   const getComponent = WEBMCP_TOOLS.find(tool => tool.name === 'get_component')
   assert(
-    getComponent.inputSchema.properties.target.oneOf.some(branch =>
-      branch.properties.type.const === 'collectionItemNode'),
+    getComponent.inputSchema.properties.target.properties.type.enum
+      .includes('collectionItemNode') &&
+      getComponent.inputSchema.properties.target.properties.nodePath.items.type === 'string',
     'WebMCP shared target schema must expose collectionItemNode',
+  )
+  const componentStructure = WEBMCP_TOOLS.find(
+    tool => tool.name === 'change_component_structure',
+  )
+  const validateComponentStructure = new Ajv2020({ strict: false })
+    .compile(componentStructure.inputSchema)
+  const collectionConfig = clone(
+    sampleProject.components['comp-launch-task-card'].config,
+  )
+  collectionConfig.dataSource.previewItems = [{
+    id: 'nested-preview',
+    metadata: { owner: { name: 'Maya' } },
+    tags: ['priority', 'launch'],
+  }]
+  assert(
+    validateComponentStructure({
+      changeSetId: 'change-set',
+      expectedRevision: 0,
+      expectedChangeSetVersion: 0,
+      operation: 'add',
+      screenId: 'screen-list',
+      parentId: 'comp-list-page',
+      kind: 'collection',
+      placement: { mode: 'flow' },
+      sizing: {
+        inlineSize: 'auto',
+        minWidth: 'none',
+        maxWidth: 'none',
+        gridSpan: 1,
+        grow: 0,
+        shrink: 'allow',
+      },
+      config: collectionConfig,
+    }),
+    `WebMCP rejected nested Collection preview JSON: ${
+      JSON.stringify(validateComponentStructure.errors)
+    }`,
   )
 })
 

@@ -18,23 +18,31 @@ import type {
   PublicPropFieldV3,
 } from '../domain/model'
 import {
-  CHILD_COMPONENT_KINDS,
   DEFAULT_COMPONENT_PLACEMENT,
   DEFAULT_COMPONENT_SIZING,
+  PALETTE_COMPONENT_KINDS,
 } from '../domain/model'
 import { DomainError } from '../domain/errors'
 import { getOwnEntity } from '../domain/entityMap'
 import { effectiveComponent } from '../domain/selectors'
 import {
   componentTargetRefEquals,
-  findInlineScenarioOverride,
   findScenarioOverride,
   inlineTargetRef,
   isComponentTargetRef,
 } from '../domain/componentTargets'
 import { createDuplicateComponentCommand } from '../domain/componentDuplication'
 import { presentChangeSetOperations } from '../domain/changeSetPresentation'
-import { validateComponentSizing } from '../domain/runtimeValidation'
+import {
+  validateCommonComponentSpec,
+  validateComponentConfig,
+  validateComponentOverride,
+  validateComponentPlacement,
+  validateComponentSizing,
+  validateDefinitionComponentConfig,
+  validateEventAction,
+  validateEventTrigger,
+} from '../domain/runtimeValidation'
 import {
   selectedScreenComponentId,
   selectionCanonicalTarget,
@@ -47,16 +55,21 @@ import {
   resolveOwnedDefinitionInlineNodeAtPath,
 } from '../domain/definitionEditing'
 import { cloneComponentDefinition } from '../domain/modelClone'
-import { resolveComponentTarget, resolveScreenNodes } from '../domain/definitionResolver'
+import {
+  resolveComponentTarget,
+  resolveScreenNodes,
+  type ResolvedRuntimeNode,
+} from '../domain/definitionResolver'
 import type { ChangeSet } from '../domain/collaboration'
 import {
   componentConfigPatchSchema,
   componentConfigSchema,
   componentPlacementSchema,
-  rootComponentSizingSchema,
+  componentTargetSchema,
   componentSizingSchema,
   componentSizingPatchSchema,
   componentOverridesSchema,
+  publicPropFieldSchema,
 } from './schemas'
 
 type JsonObject = Record<string, unknown>
@@ -104,9 +117,8 @@ type ToolResult<T extends JsonObject = JsonObject> = ToolSuccess<T> | ToolFailur
 
 const CLOSED_OBJECT = { additionalProperties: false } as const
 const AGENT_WORKFLOW =
-  'Workflow: read get_current_screen_context; call begin_change_set; use its changeSetId, ' +
-  'baseRevision, and changeSetVersion in writes; replace expectedChangeSetVersion with every ' +
-  'successful write response; inspect get_pending_change_set. Only a human can Accept or Reject.'
+  'Read get_current_screen_context first. Writes require begin_change_set IDs and the latest ' +
+  'changeSetVersion; review with get_pending_change_set. Only a human can Accept or Reject.'
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -164,6 +176,12 @@ function requireExactKeys(input: JsonObject, allowedKeys: readonly string[], pat
       'INVARIANT_VIOLATION',
       `${path} contains unknown fields: ${unknown.join(', ')}`,
     )
+  }
+}
+
+function requireNonEmptyObject(input: JsonObject, path: string): void {
+  if (Object.keys(input).length === 0) {
+    throw new DomainError('INVALID_ARGUMENT', `${path} must not be empty`)
   }
 }
 
@@ -226,6 +244,7 @@ function scenarioOverridesFromInput(
         `overrides[${index}] must contain target and override objects`,
       )
     }
+    validateComponentOverride(entry.override, `overrides[${index}].override`)
     return {
       target: componentTargetFromInput(entry.target, `overrides[${index}].target`),
       override: entry.override as ComponentOverride,
@@ -282,10 +301,12 @@ function behaviorBindingSourceFromInput(
 function triggerFromInput(input: JsonObject): EventTrigger {
   const trigger = requiredRecord(input, 'trigger')
   requireExactKeys(trigger, ['type', 'target'], 'trigger')
-  return {
+  const result = {
     type: requiredString(trigger, 'type') as EventTrigger['type'],
     target: componentTargetFromInput(trigger.target, 'trigger.target'),
   }
+  validateEventTrigger(result, 'trigger')
+  return result
 }
 
 function failure(error: unknown): ToolFailure {
@@ -398,71 +419,38 @@ const writeBaseProperties = {
   },
 }
 
-const componentTargetSchema = {
-  oneOf: [
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'inline' },
-        componentId: { type: 'string', minLength: 1 },
-      },
-      required: ['type', 'componentId'],
-      ...CLOSED_OBJECT,
+function writeOperationSchema(
+  operations: readonly string[],
+  properties: JsonObject,
+  _requirements: string,
+): JsonObject {
+  return {
+    type: 'object',
+    properties: {
+      ...writeBaseProperties,
+      operation: { type: 'string', enum: operations },
+      ...properties,
     },
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'definitionNode' },
-        instanceId: { type: 'string', minLength: 1 },
-        nodePath: {
-          type: 'array',
-          minItems: 1,
-          items: { type: 'string', minLength: 1 },
-        },
-      },
-      required: ['type', 'instanceId', 'nodePath'],
-      ...CLOSED_OBJECT,
-    },
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'collectionItemNode' },
-        collectionId: { type: 'string', minLength: 1 },
-        nodePath: {
-          type: 'array',
-          minItems: 1,
-          items: { type: 'string', minLength: 1 },
-        },
-      },
-      required: ['type', 'collectionId', 'nodePath'],
-      ...CLOSED_OBJECT,
-    },
-  ],
+    required: [
+      'changeSetId',
+      'expectedRevision',
+      'expectedChangeSetVersion',
+      'operation',
+    ],
+    ...CLOSED_OBJECT,
+  }
 }
 
 const behaviorValueSourceSchema = {
-  oneOf: [
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'item' },
-        path: { type: 'string' },
-      },
-      required: ['type', 'path'],
-      ...CLOSED_OBJECT,
-    },
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'literal' },
-        value: {
-          type: ['string', 'number', 'boolean', 'null'],
-        },
-      },
-      required: ['type', 'value'],
-      ...CLOSED_OBJECT,
-    },
-  ],
+  type: 'object',
+  description: 'Required by type: item path; literal scalar value.',
+  properties: {
+    type: { type: 'string', enum: ['item', 'literal'] },
+    path: { type: 'string' },
+    value: { type: ['string', 'number', 'boolean', 'null'] },
+  },
+  required: ['type'],
+  ...CLOSED_OBJECT,
 }
 
 const behaviorParameterMapSchema = {
@@ -475,10 +463,27 @@ const fieldBindingSchema = {
   type: 'object',
   properties: {
     source: {
-      oneOf: [
-        ...componentTargetSchema.oneOf,
-        ...behaviorValueSourceSchema.oneOf,
-      ],
+      type: 'object',
+      description:
+        'A component target (inline/definitionNode/collectionItemNode) or item/literal value source.',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['inline', 'definitionNode', 'collectionItemNode', 'item', 'literal'],
+        },
+        componentId: { type: 'string', minLength: 1 },
+        instanceId: { type: 'string', minLength: 1 },
+        collectionId: { type: 'string', minLength: 1 },
+        nodePath: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', minLength: 1 },
+        },
+        path: { type: 'string' },
+        value: { type: ['string', 'number', 'boolean', 'null'] },
+      },
+      required: ['type'],
+      ...CLOSED_OBJECT,
     },
     targetPath: { type: 'string', minLength: 1 },
   },
@@ -487,60 +492,77 @@ const fieldBindingSchema = {
 }
 
 const eventActionSchema = {
-  oneOf: [
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'setScenario' },
-        scenarioId: { type: 'string', minLength: 1 },
-      },
-      required: ['type', 'scenarioId'],
-      ...CLOSED_OBJECT,
+  type: 'object',
+  description:
+    'Required by type: setScenario scenarioId; callApi apiOperationId; navigate destinationScreenId. clearScenario needs only type.',
+  properties: {
+    type: {
+      type: 'string',
+      enum: ['setScenario', 'clearScenario', 'callApi', 'navigate'],
     },
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'clearScenario' },
-      },
-      required: ['type'],
-      ...CLOSED_OBJECT,
-    },
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'callApi' },
-        apiOperationId: { type: 'string', minLength: 1 },
-      },
-      required: ['type', 'apiOperationId'],
-      ...CLOSED_OBJECT,
-    },
-    {
-      type: 'object',
-      properties: {
-        type: { const: 'navigate' },
-        destinationScreenId: { type: 'string', minLength: 1 },
-        routeParameters: behaviorParameterMapSchema,
-        queryParameters: behaviorParameterMapSchema,
-      },
-      required: ['type', 'destinationScreenId'],
-      ...CLOSED_OBJECT,
-    },
-  ],
+    scenarioId: { type: 'string', minLength: 1 },
+    apiOperationId: { type: 'string', minLength: 1 },
+    destinationScreenId: { type: 'string', minLength: 1 },
+    routeParameters: behaviorParameterMapSchema,
+    queryParameters: behaviorParameterMapSchema,
+  },
+  required: ['type'],
+  ...CLOSED_OBJECT,
 }
 
-function compactChangeSet(changeSet: ChangeSet | null, includeOperations: boolean): JsonObject | null {
+function compactText(value: string, maxLength = 80): string {
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  const characters = Array.from(normalized)
+  return characters.length <= maxLength
+    ? normalized
+    : `${characters.slice(0, maxLength - 1).join('')}…`
+}
+
+function compactOperationSummaries(changeSet: ChangeSet, offset: number): JsonObject[] {
+  return presentChangeSetOperations(changeSet, 'en')
+    .slice(offset, offset + 50)
+    .map(operation => ({
+    operationId: operation.operationId,
+    source: operation.source,
+    commandType: operation.commandType,
+    action: operation.action,
+    entityKind: operation.entityKind,
+    targetLabel: operation.targetLabel,
+    screenContext: operation.screenContext,
+    changes: operation.changes.map(change => ({
+      field: change.field,
+      before: change.before.text,
+      after: change.after.text,
+    })),
+    impact: operation.impact,
+    navigation: operation.navigation,
+    }))
+}
+
+function compactChangeSet(
+  changeSet: ChangeSet | null,
+  includeSummaries = false,
+  offset = 0,
+): JsonObject | null {
   if (!changeSet) return null
+  const operationSummaries = includeSummaries
+    ? compactOperationSummaries(changeSet, offset)
+    : undefined
   return {
     id: changeSet.id,
-    summary: changeSet.summary,
+    summary: compactText(changeSet.summary),
     baseRevision: changeSet.baseRevision,
     version: changeSet.version,
     operationCount: changeSet.operations.length,
     createdAt: changeSet.createdAt,
-    ...(includeOperations
+    ...(operationSummaries
       ? {
-          operations: changeSet.operations,
-          operationSummaries: presentChangeSetOperations(changeSet, 'en'),
+          operationSummaries,
+          offset,
+          operationsTruncated: offset + operationSummaries.length < changeSet.operations.length,
+          nextOffset: offset + operationSummaries.length < changeSet.operations.length
+            ? offset + operationSummaries.length
+            : null,
         }
       : {}),
   }
@@ -550,86 +572,376 @@ function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-function activeScreenProjection(screenId: string): JsonObject {
-  const document = useAppStore.getState().effectiveDocument
+function componentSummaryLabel(component: Pick<ResolvedRuntimeNode, 'kind' | 'config' | 'common'>): string {
+  switch (component.config.kind) {
+    case 'text':
+      return compactText(component.config.text)
+    case 'textInput':
+    case 'select':
+    case 'button':
+    case 'link':
+      return compactText(component.config.label)
+    case 'image':
+      return compactText(component.config.alt)
+    case 'page':
+    case 'modal':
+      return component.kind
+    case 'container':
+    case 'collection':
+      return compactText(component.common.description || component.kind)
+  }
+}
+
+function outlineNodeId(node: ResolvedRuntimeNode): string {
+  return node.canonicalTarget.type === 'inline'
+    ? node.canonicalTarget.componentId
+    : node.id
+}
+
+function activeScreenSummary(
+  screenId: string,
+  requestedIndex?: string,
+  requestedOffset = 0,
+): JsonObject {
+  const state = useAppStore.getState()
+  const document = state.effectiveDocument
   const screen = getOwnEntity(document.screens, screenId)
   if (!screen) throw new DomainError('NOT_FOUND', `Screen ${screenId} not found`)
   const byId = <T extends { id: string }>(left: T, right: T) =>
     compareCodeUnits(left.id, right.id)
+  const resolved = resolveScreenNodes(document, screen.id, state.ui.activeStateId)
+  const outlineLimit = 60
+  const componentOutline = resolved.orderedNodes.map(node => {
+    const parent = node.parentId ? resolved.nodesById[node.parentId] : undefined
+    const rootOrder = node.id === screen.rootComponentId
+      ? 0
+      : screen.modalComponentIds.indexOf(node.screenComponentId) + 1
+    return {
+      id: outlineNodeId(node),
+      kind: node.kind,
+      label: componentSummaryLabel(node),
+      parentId: parent ? outlineNodeId(parent) : null,
+      order: parent ? parent.childIds.indexOf(node.id) : Math.max(0, rootOrder),
+    }
+  })
+  const states = screen.scenarioIds.flatMap(id => {
+    const scenario = getOwnEntity(document.screenScenarios, id)
+    return scenario ? [{
+      id: scenario.id,
+      name: compactText(scenario.name),
+      description: compactText(scenario.description),
+      overrideCount: scenario.componentOverrides.length,
+      active: scenario.id === state.ui.activeStateId,
+    }] : []
+  })
+  const events = screen.eventIds.flatMap(id => {
+    const event = getOwnEntity(document.events, id)
+    return event ? [{
+      id: event.id,
+      name: compactText(event.name),
+      triggerType: event.trigger.type,
+      target: event.trigger.target,
+      actionTypes: event.actions.map(action => action.type),
+    }] : []
+  })
+  const apiOperations = Object.values(document.apiOperations)
+    .filter(operation => operation.screenId === screenId)
+    .sort(byId)
+    .map(operation => ({
+      id: operation.id,
+      name: compactText(operation.name),
+      method: operation.method,
+      path: compactText(operation.path),
+      bindingCount: operation.requestBindings.length,
+      successStateId: operation.successScenarioId,
+      errorStateId: operation.errorScenarioId,
+    }))
   return {
-    documentView: 'effective',
-    screen,
-    components: Object.values(document.components)
-      .filter(component => component.screenId === screenId)
-      .sort(byId),
-    states: screen.scenarioIds.flatMap(id => {
-      const state = getOwnEntity(document.screenScenarios, id)
-      return state ? [state] : []
-    }),
-    events: screen.eventIds.flatMap(id => {
-      const event = getOwnEntity(document.events, id)
-      return event ? [event] : []
-    }),
-    apiOperations: Object.values(document.apiOperations)
-      .filter(operation => operation.screenId === screenId)
-      .sort(byId),
+    id: screen.id,
+    name: compactText(screen.name),
+    route: compactText(screen.route),
+    rootComponentId: screen.rootComponentId,
+    modalComponentIds: screen.modalComponentIds,
+    componentOutline: componentOutline.slice(
+      requestedIndex === 'components' ? requestedOffset : 0,
+      (requestedIndex === 'components' ? requestedOffset : 0) + 60,
+    ),
+    states: states.slice(
+      requestedIndex === 'states' ? requestedOffset : 0,
+      (requestedIndex === 'states' ? requestedOffset : 0) + 30,
+    ),
+    events: events.slice(
+      requestedIndex === 'events' ? requestedOffset : 0,
+      (requestedIndex === 'events' ? requestedOffset : 0) + 30,
+    ),
+    apiOperations: apiOperations.slice(
+      requestedIndex === 'apis' ? requestedOffset : 0,
+      (requestedIndex === 'apis' ? requestedOffset : 0) + 30,
+    ),
+    counts: {
+      components: resolved.orderedNodes.length,
+      states: states.length,
+      events: events.length,
+      apiOperations: apiOperations.length,
+    },
+    truncated: {
+      componentOutline:
+        (requestedIndex === 'components' ? requestedOffset : 0) + outlineLimit <
+        resolved.orderedNodes.length,
+      states:
+        (requestedIndex === 'states' ? requestedOffset : 0) + 30 < states.length,
+      events:
+        (requestedIndex === 'events' ? requestedOffset : 0) + 30 < events.length,
+      apiOperations:
+        (requestedIndex === 'apis' ? requestedOffset : 0) + 30 < apiOperations.length,
+    },
+    nextOffsets: {
+      components:
+        (requestedIndex === 'components' ? requestedOffset : 0) + outlineLimit <
+        resolved.orderedNodes.length
+          ? (requestedIndex === 'components' ? requestedOffset : 0) + outlineLimit
+          : null,
+      states:
+        (requestedIndex === 'states' ? requestedOffset : 0) + 30 < states.length
+          ? (requestedIndex === 'states' ? requestedOffset : 0) + 30
+          : null,
+      events:
+        (requestedIndex === 'events' ? requestedOffset : 0) + 30 < events.length
+          ? (requestedIndex === 'events' ? requestedOffset : 0) + 30
+          : null,
+      apis:
+        (requestedIndex === 'apis' ? requestedOffset : 0) + 30 < apiOperations.length
+          ? (requestedIndex === 'apis' ? requestedOffset : 0) + 30
+          : null,
+    },
   }
 }
 
 const getCurrentScreenContext: ToolDefinition = {
   name: 'get_current_screen_context',
   description:
-    'Start here. Read the effective active screen with all components, states, events, APIs, ' +
-    'current UI selection, confirmed revision, and compact proposal metadata. ' + AGENT_WORKFLOW,
+    'Start here. Returns a bounded active-screen outline, canonical selection target, revision, ' +
+    'state/event/API/Definition indexes, and proposal summary. Use get_component for component detail; ' +
+    'include+detailId returns one state, event, API, or Definition.',
   annotations: { readOnlyHint: true },
-  inputSchema: { type: 'object', properties: {}, required: [], ...CLOSED_OBJECT },
-  execute() {
-    const state = useAppStore.getState()
-    if (state.recoveryState) {
-      return success({
-        recovery: {
-          status: state.recoveryState.status,
-          error: state.recoveryState.error,
-        },
-      })
-    }
+  inputSchema: {
+    type: 'object',
+    properties: {
+      include: { type: 'string', enum: ['state', 'event', 'api', 'definition'] },
+      detailId: { type: 'string', minLength: 1 },
+      index: {
+        type: 'string',
+        enum: ['screens', 'definitions', 'components', 'states', 'events', 'apis'],
+      },
+      offset: { type: 'integer', minimum: 0 },
+    },
+    required: [],
+    description:
+      'For one full entity, provide include+detailId. For a truncated index, provide index+offset.',
+    ...CLOSED_OBJECT,
+  },
+  execute(input) {
+    return withFailure(() => {
+      requireExactKeys(
+        input,
+        ['include', 'detailId', 'index', 'offset'],
+        'get_current_screen_context input',
+      )
+      const state = useAppStore.getState()
+      if (state.recoveryState) {
+        return {
+          recovery: {
+            status: state.recoveryState.status,
+            error: state.recoveryState.error,
+          },
+        }
+      }
     const screen = state.ui.activeScreenId
       ? getOwnEntity(state.effectiveDocument.screens, state.ui.activeScreenId) ?? null
       : null
-    return success({
-      project: state.effectiveDocument.project,
-      componentDefinitions: state.effectiveDocument.componentDefinitions,
-      screens: state.effectiveDocument.project.screenIds.flatMap(id => {
-        const current = getOwnEntity(state.effectiveDocument.screens, id)
-        return current ? [current] : []
-      }),
-      activeScreenId: state.ui.activeScreenId,
+    const screens = state.effectiveDocument.project.screenIds.flatMap(id => {
+      const current = getOwnEntity(state.effectiveDocument.screens, id)
+      return current ? [{
+        id: current.id,
+        name: compactText(current.name),
+        route: compactText(current.route),
+      }] : []
+    })
+    const definitions = Object.values(state.effectiveDocument.componentDefinitions)
+      .sort((left, right) => compareCodeUnits(left.id, right.id))
+      .map(definition => ({
+        id: definition.id,
+        name: compactText(definition.name),
+        description: compactText(definition.description),
+        nodeCount: Object.keys(definition.nodes).length,
+        publicPropCount: definition.publicProps.length,
+        variantCount: definition.variants.length,
+      }))
+    const canonicalTarget = state.ui.selection
+      ? selectionCanonicalTarget(state.effectiveDocument, state.ui.selection)
+      : null
+    const include = optionalString(input, 'include')
+    const detailId = optionalString(input, 'detailId')
+    if ((include === undefined) !== (detailId === undefined)) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'include and detailId must be provided together',
+      )
+    }
+    const requestedIndex = optionalString(input, 'index')
+    const requestedOffset = input.offset === undefined
+      ? 0
+      : requiredNonNegativeInteger(input, 'offset')
+    if ((requestedIndex === undefined) !== (input.offset === undefined)) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'index and offset must be provided together',
+      )
+    }
+    if (
+      requestedIndex &&
+      !['screens', 'definitions', 'components', 'states', 'events', 'apis']
+        .includes(requestedIndex)
+    ) {
+      throw new DomainError('INVALID_ARGUMENT', `Unsupported index value: ${requestedIndex}`)
+    }
+    let detail: unknown
+    if (include && detailId) {
+      detail = include === 'state'
+        ? getOwnEntity(state.effectiveDocument.screenScenarios, detailId)
+        : include === 'event'
+          ? getOwnEntity(state.effectiveDocument.events, detailId)
+          : include === 'api'
+            ? getOwnEntity(state.effectiveDocument.apiOperations, detailId)
+            : include === 'definition'
+              ? getOwnEntity(state.effectiveDocument.componentDefinitions, detailId)
+              : undefined
+      if (!['state', 'event', 'api', 'definition'].includes(include)) {
+        throw new DomainError('INVALID_ARGUMENT', `Unsupported include value: ${include}`)
+      }
+      if (!detail) {
+        throw new DomainError('NOT_FOUND', `${include} ${detailId} not found`)
+      }
+    }
+      return {
+      project: {
+        id: state.effectiveDocument.project.id,
+        name: compactText(state.effectiveDocument.project.name),
+        screenCount: screens.length,
+      },
+      screens: screens.slice(
+        requestedIndex === 'screens' ? requestedOffset : 0,
+        (requestedIndex === 'screens' ? requestedOffset : 0) + 30,
+      ),
+      definitions: definitions.slice(
+        requestedIndex === 'definitions' ? requestedOffset : 0,
+        (requestedIndex === 'definitions' ? requestedOffset : 0) + 30,
+      ),
       activeStateId: state.ui.activeStateId,
       selectedComponentId: selectedScreenComponentId(state.ui.selection),
-      selection: state.ui.selection,
+      selection: state.ui.selection ? { ...state.ui.selection, canonicalTarget } : null,
       revision: state.revision,
       documentView: 'effective',
-      activeChangeSet: compactChangeSet(state.activeChangeSet, false),
-      rejectedRecords: state.rejectedRecords,
-      screen,
-      activeScreen: screen ? {
-        ...activeScreenProjection(screen.id),
-        resolvedNodes: resolveScreenNodes(
-          state.effectiveDocument,
-          screen.id,
-          state.ui.activeStateId,
-        ).orderedNodes,
-      } : null,
+      activeChangeSet: compactChangeSet(state.activeChangeSet),
+      rejectedChangeSets: {
+        count: state.rejectedRecords.length,
+        recent: state.rejectedRecords.slice(0, 5).map(record => ({
+          changeSetId: record.changeSetId,
+          summary: compactText(record.summary),
+          baseRevision: record.baseRevision,
+          rejectedAt: record.rejectedAt,
+          operationCount: record.operationCount,
+        })),
+      },
+      activeScreen: screen
+        ? activeScreenSummary(screen.id, requestedIndex, requestedOffset)
+        : null,
+      truncated: {
+        screens:
+          (requestedIndex === 'screens' ? requestedOffset : 0) + 30 < screens.length,
+        definitions:
+          (requestedIndex === 'definitions' ? requestedOffset : 0) + 30 <
+          definitions.length,
+      },
+      nextOffsets: {
+        screens:
+          (requestedIndex === 'screens' ? requestedOffset : 0) + 30 < screens.length
+            ? (requestedIndex === 'screens' ? requestedOffset : 0) + 30
+            : null,
+        definitions:
+          (requestedIndex === 'definitions' ? requestedOffset : 0) + 30 <
+          definitions.length
+            ? (requestedIndex === 'definitions' ? requestedOffset : 0) + 30
+            : null,
+      },
+      page: requestedIndex ? { index: requestedIndex, offset: requestedOffset } : null,
+      ...(detail ? { detail: { type: include, value: detail } } : {}),
+      }
     })
   },
+}
+
+function componentHierarchy(screenId: string, target: ComponentTargetRef): JsonObject[] {
+  const state = useAppStore.getState()
+  const resolved = resolveScreenNodes(
+    state.effectiveDocument,
+    screenId,
+    state.ui.activeStateId,
+  )
+  const selected = resolved.orderedNodes.find(node =>
+    componentTargetRefEquals(node.canonicalTarget, target))
+  if (!selected) return []
+  const hierarchy: ResolvedRuntimeNode[] = []
+  const visited = new Set<string>()
+  let current: ResolvedRuntimeNode | undefined = selected
+  while (current && !visited.has(current.id)) {
+    hierarchy.push(current)
+    visited.add(current.id)
+    current = current.parentId ? resolved.nodesById[current.parentId] : undefined
+  }
+  return hierarchy.reverse().map(node => {
+    const parent = node.parentId ? resolved.nodesById[node.parentId] : undefined
+    return {
+      id: outlineNodeId(node),
+      kind: node.kind,
+      label: componentSummaryLabel(node),
+      parentId: parent ? outlineNodeId(parent) : null,
+      order: parent ? parent.childIds.indexOf(node.id) : 0,
+      canonicalTarget: node.canonicalTarget,
+    }
+  })
+}
+
+function relatedBehavior(target: ComponentTargetRef): JsonObject {
+  const state = useAppStore.getState()
+  const activeState = state.ui.activeStateId
+    ? getOwnEntity(state.effectiveDocument.screenScenarios, state.ui.activeStateId)
+    : undefined
+  const events = Object.values(state.effectiveDocument.events).filter(event =>
+    componentTargetRefEquals(event.trigger.target, target))
+  return {
+    stateOverride: activeState
+      ? findScenarioOverride(activeState, target)?.override ?? null
+      : null,
+    events,
+    apiOperations: Object.values(state.effectiveDocument.apiOperations).filter(operation =>
+      operation.requestBindings.some(binding =>
+        isComponentTargetRef(binding.source) &&
+        componentTargetRefEquals(binding.source, target)) ||
+      events.some(event =>
+        event.actions.some(action =>
+          action.type === 'callApi' &&
+          action.apiOperationId === operation.id) &&
+        operation.requestBindings.some(binding => binding.source.type === 'item')),
+    ),
+  }
 }
 
 const getComponent: ToolDefinition = {
   name: 'get_component',
   description:
-    'Read one effective component and its state override, related events, and API bindings. ' +
-    'Omit componentId to use the human UI selection. Start with get_current_screen_context. ' +
-    AGENT_WORKFLOW,
+    'After get_current_screen_context, read one effective component spec, canonical target, hierarchy/' +
+    'order, state override, events, and API bindings. Pass target for Shared/Collection nodes.',
   annotations: { readOnlyHint: true },
   inputSchema: {
     type: 'object',
@@ -646,6 +958,7 @@ const getComponent: ToolDefinition = {
   },
   execute(input) {
     return withFailure(() => {
+      requireExactKeys(input, ['componentId', 'target'], 'get_component input')
       const state = useAppStore.getState()
       if (state.recoveryState) {
         throw new DomainError('RECOVERY_REQUIRED', 'Persisted data recovery is required')
@@ -655,6 +968,12 @@ const getComponent: ToolDefinition = {
       const explicitTarget = input.target === undefined
         ? null
         : componentTargetFromInput(input.target, 'target')
+      if (explicitTarget && input.componentId !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'Provide either componentId or target, not both',
+        )
+      }
       const selectedTarget = explicitTarget ?? (
         input.componentId === undefined && state.ui.selection
           ? selectionCanonicalTarget(state.effectiveDocument, state.ui.selection)
@@ -673,23 +992,9 @@ const getComponent: ToolDefinition = {
             selectedTarget,
             activeState?.id ?? null,
           ),
-          stateOverride: activeState
-            ? findScenarioOverride(activeState, selectedTarget)?.override ?? null
-            : null,
-          relatedEvents: Object.values(state.effectiveDocument.events).filter(event =>
-            componentTargetRefEquals(event.trigger.target, selectedTarget)),
-          relatedApiOperations: Object.values(state.effectiveDocument.apiOperations).filter(operation =>
-            operation.requestBindings.some(binding =>
-              isComponentTargetRef(binding.source) &&
-              componentTargetRefEquals(binding.source, selectedTarget)) ||
-            Object.values(state.effectiveDocument.events).some(event =>
-              componentTargetRefEquals(event.trigger.target, selectedTarget) &&
-              event.actions.some(action =>
-                action.type === 'callApi' &&
-                action.apiOperationId === operation.id) &&
-              operation.requestBindings.some(binding =>
-                binding.source.type === 'item')),
-          ),
+          canonicalTarget: selectedTarget,
+          hierarchy: componentHierarchy(screenId, selectedTarget),
+          relevantBehavior: relatedBehavior(selectedTarget),
         }
       }
       if (!componentId) throw new DomainError('NOT_FOUND', 'No component ID or current selection')
@@ -699,20 +1004,21 @@ const getComponent: ToolDefinition = {
         ? getOwnEntity(state.effectiveDocument.screenScenarios, state.ui.activeStateId)
         : undefined
       const component = effectiveComponent(state.effectiveDocument, baseComponent, activeState)
+      const canonicalTarget = baseComponent.nodeType === 'definitionInstance'
+        ? selectionCanonicalTarget(state.effectiveDocument, {
+            type: 'screenDefinitionInstance',
+            screenId: baseComponent.screenId,
+            componentId,
+          })
+        : inlineTargetRef(componentId)
+      if (!canonicalTarget) {
+        throw new DomainError('INVALID_REFERENCE', `Component ${componentId} has no runtime target`)
+      }
       return {
         component,
-        stateOverride: activeState
-          ? findInlineScenarioOverride(activeState, componentId)?.override ?? null
-          : null,
-        relatedEvents: Object.values(state.effectiveDocument.events).filter(
-          event => componentTargetRefEquals(event.trigger.target, inlineTargetRef(componentId)),
-        ),
-        relatedApiOperations: Object.values(state.effectiveDocument.apiOperations).filter(operation =>
-          operation.requestBindings.some(binding =>
-            isComponentTargetRef(binding.source) &&
-            componentTargetRefEquals(binding.source, inlineTargetRef(componentId)),
-          ),
-        ),
+        canonicalTarget,
+        hierarchy: componentHierarchy(baseComponent.screenId, canonicalTarget),
+        relevantBehavior: relatedBehavior(canonicalTarget),
       }
     })
   },
@@ -721,24 +1027,44 @@ const getComponent: ToolDefinition = {
 const getPendingChangeSet: ToolDefinition = {
   name: 'get_pending_change_set',
   description:
-    'Review compact English operation summaries and field diffs for the active agent proposal. ' +
-    'The confirmed document is not duplicated in this response. ' + AGENT_WORKFLOW,
+    'After get_current_screen_context writes, review bounded operation summaries and compact diffs. ' +
+    'Use offset when nextOffset is returned. No commands, full values, or snapshots are echoed. ' +
+    'Only a human can Accept or Reject.',
   annotations: { readOnlyHint: true },
-  inputSchema: { type: 'object', properties: {}, required: [], ...CLOSED_OBJECT },
-  execute() {
-    const state = useAppStore.getState()
-    if (state.recoveryState) {
-      return success({
-        recovery: {
-          status: state.recoveryState.status,
-          error: state.recoveryState.error,
+  inputSchema: {
+    type: 'object',
+    properties: { offset: { type: 'integer', minimum: 0 } },
+    required: [],
+    ...CLOSED_OBJECT,
+  },
+  execute(input) {
+    return withFailure(() => {
+      requireExactKeys(input, ['offset'], 'get_pending_change_set input')
+      const offset = input.offset === undefined
+        ? 0
+        : requiredNonNegativeInteger(input, 'offset')
+      const state = useAppStore.getState()
+      if (state.recoveryState) {
+        return {
+          recovery: {
+            status: state.recoveryState.status,
+            error: state.recoveryState.error,
+          },
+        }
+      }
+      return {
+        activeChangeSet: compactChangeSet(state.activeChangeSet, true, offset),
+        confirmedRevision: state.revision,
+        rejectedChangeSets: {
+          count: state.rejectedRecords.length,
+          recent: state.rejectedRecords.slice(0, 5).map(record => ({
+            changeSetId: record.changeSetId,
+            summary: record.summary,
+            rejectedAt: record.rejectedAt,
+            operationCount: record.operationCount,
+          })),
         },
-      })
-    }
-    return success({
-      activeChangeSet: compactChangeSet(state.activeChangeSet, true),
-      confirmedRevision: state.revision,
-      rejectedRecords: state.rejectedRecords,
+      }
     })
   },
 }
@@ -762,6 +1088,7 @@ const beginChangeSet: ToolDefinition = {
   },
   execute(input) {
     return withWriteFailure(() => {
+      requireExactKeys(input, ['summary'], 'begin_change_set input')
       const changeSet = useAppStore.getState().beginChangeSet(requiredString(input, 'summary'))
       return {
         changeSetId: changeSet.id,
@@ -775,44 +1102,17 @@ const beginChangeSet: ToolDefinition = {
 const changeScreenStructure: ToolDefinition = {
   name: 'change_screen_structure',
   description:
-    'Add, update, or remove a screen in the active agent proposal. ' + AGENT_WORKFLOW,
-  inputSchema: {
-    oneOf: [
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'add' },
-          name: { type: 'string', minLength: 1 },
-          route: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'name', 'route'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'update' },
-          screenId: { type: 'string', minLength: 1 },
-          name: { type: 'string' },
-          route: { type: 'string' },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'remove' },
-          screenId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId'],
-        ...CLOSED_OBJECT,
-      },
-    ],
-  },
+    'Add, update, or remove a screen. Required: add name+route; update/remove screenId. ' +
+    AGENT_WORKFLOW,
+  inputSchema: writeOperationSchema(
+    ['add', 'update', 'remove'],
+    {
+      screenId: { type: 'string', minLength: 1 },
+      name: { type: 'string' },
+      route: { type: 'string' },
+    },
+    'Required by operation: add name+route; update/remove screenId.',
+  ),
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
@@ -870,83 +1170,23 @@ const changeScreenStructure: ToolDefinition = {
 const changeComponentStructure: ToolDefinition = {
   name: 'change_component_structure',
   description:
-    'Add, move, duplicate, or remove a component or independent modal root in the active proposal. ' +
-    'Sizing is validated against placement and the logical parent layout; invalid spans, grow, or ' +
-    'structural changes are rejected rather than adjusted. ' +
-    AGENT_WORKFLOW,
-  inputSchema: {
-    oneOf: [
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'add' },
-          screenId: { type: 'string', minLength: 1 },
-          parentId: { type: 'string', minLength: 1 },
-          kind: { type: 'string', enum: CHILD_COMPONENT_KINDS },
-          placement: componentPlacementSchema,
-          sizing: componentSizingSchema,
-          config: componentConfigSchema,
-          position: { type: 'integer', minimum: 0 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'sizing', 'config'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'add' },
-          screenId: { type: 'string', minLength: 1 },
-          parentId: { type: 'null' },
-          kind: { const: 'modal' },
-          placement: {
-            type: 'object',
-            properties: { mode: { const: 'flow' } },
-            required: ['mode'],
-            ...CLOSED_OBJECT,
-          },
-          sizing: rootComponentSizingSchema,
-          config: componentConfigSchema,
-          position: { type: 'integer', minimum: 0 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'parentId', 'kind', 'placement', 'sizing', 'config'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'move' },
-          componentId: { type: 'string', minLength: 1 },
-          newParentId: { type: 'string', minLength: 1 },
-          position: { type: 'integer', minimum: 0 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId', 'newParentId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'duplicate' },
-          componentId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'remove' },
-          componentId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId'],
-        ...CLOSED_OBJECT,
-      },
-    ],
-  },
+    'Add, move, duplicate, or remove components. Add requires screenId,parentId,kind,placement,' +
+    'sizing,config (modal parentId=null); move requires componentId+newParentId. ' + AGENT_WORKFLOW,
+  inputSchema: writeOperationSchema(
+    ['add', 'move', 'duplicate', 'remove'],
+    {
+      screenId: { type: 'string', minLength: 1 },
+      parentId: { type: ['string', 'null'] },
+      componentId: { type: 'string', minLength: 1 },
+      newParentId: { type: 'string', minLength: 1 },
+      kind: { type: 'string', enum: PALETTE_COMPONENT_KINDS },
+      placement: componentPlacementSchema,
+      sizing: componentSizingSchema,
+      config: componentConfigSchema,
+      position: { type: 'integer', minimum: 0 },
+    },
+    'Required by operation: add screenId,parentId,kind,placement,sizing,config; move componentId,newParentId; duplicate/remove componentId.',
+  ),
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
@@ -968,6 +1208,10 @@ const changeComponentStructure: ToolDefinition = {
         ], 'change_component_structure add input')
         const config = requiredRecord(input, 'config') as ComponentConfig
         const sizing = requiredRecord(input, 'sizing')
+        const kind = requiredString(input, 'kind') as ComponentKind
+        const placement = requiredRecord(input, 'placement')
+        validateComponentConfig(config, kind, 'config')
+        validateComponentPlacement(placement, 'placement')
         validateComponentSizing(sizing, 'sizing')
         const componentId = nanoid()
         command = {
@@ -975,8 +1219,8 @@ const changeComponentStructure: ToolDefinition = {
           componentId,
           screenId: requiredString(input, 'screenId'),
           parentId: requiredNullableString(input, 'parentId'),
-          kind: requiredString(input, 'kind') as ComponentKind,
-          placement: requiredRecord(input, 'placement') as ComponentPlacement,
+          kind,
+          placement,
           sizing,
           config,
           position: typeof input.position === 'number' ? input.position : undefined,
@@ -1044,10 +1288,8 @@ const changeComponentStructure: ToolDefinition = {
 const updateComponentSpec: ToolDefinition = {
   name: 'update_component_spec',
   description:
-    'Update a component common spec, partial sizing, placement, or kind-specific config. Sizing ' +
-    'fields are merged with the current base sizing and rejected when the result conflicts with ' +
-    'min/max ordering or parent layout context. ' +
-    AGENT_WORKFLOW,
+    'Patch component common/config/placement/sizing fields. Partial sizing merges with current ' +
+    'sizing; incompatible kind fields and unknown keys are rejected. ' + AGENT_WORKFLOW,
   inputSchema: {
     type: 'object',
     properties: {
@@ -1087,7 +1329,19 @@ const updateComponentSpec: ToolDefinition = {
       ], 'update_component_spec input')
       const patchInput = requiredRecord(input, 'patch')
       requireExactKeys(patchInput, ['common', 'config', 'placement', 'sizing'], 'update_component_spec patch')
+      requireNonEmptyObject(patchInput, 'update_component_spec patch')
       const componentId = requiredString(input, 'componentId')
+      const current = getOwnEntity(
+        useAppStore.getState().effectiveDocument.components,
+        componentId,
+      )
+      if (!current) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
+      if (current.nodeType !== 'inline') {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'Definition Instances must be updated with manage_definition_instance',
+        )
+      }
       const patch: {
         common?: Partial<CommonComponentSpec>
         config?: Partial<ComponentConfig>
@@ -1098,29 +1352,36 @@ const updateComponentSpec: ToolDefinition = {
         if (!isRecord(patchInput.common)) {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.common must be an object')
         }
+        requireNonEmptyObject(patchInput.common, 'patch.common')
+        validateCommonComponentSpec(
+          { ...current.common, ...patchInput.common },
+          'patch.common',
+        )
         patch.common = patchInput.common
       }
       if (patchInput.config !== undefined) {
         if (!isRecord(patchInput.config)) {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.config must be an object')
         }
+        requireNonEmptyObject(patchInput.config, 'patch.config')
+        validateComponentConfig(
+          { ...current.config, ...patchInput.config },
+          current.kind,
+          'patch.config',
+        )
         patch.config = patchInput.config
       }
       if (patchInput.placement !== undefined) {
         if (!isRecord(patchInput.placement)) {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.placement must be an object')
         }
+        validateComponentPlacement(patchInput.placement, 'patch.placement')
         patch.placement = patchInput.placement as ComponentPlacement
       }
       if (patchInput.sizing !== undefined) {
         if (!isRecord(patchInput.sizing)) {
           throw new DomainError('INVARIANT_VIOLATION', 'patch.sizing must be an object')
         }
-        const current = getOwnEntity(
-          useAppStore.getState().effectiveDocument.components,
-          componentId,
-        )
-        if (!current) throw new DomainError('NOT_FOUND', `Component ${componentId} not found`)
         const sizing = { ...current.sizing, ...patchInput.sizing }
         validateComponentSizing(sizing, 'patch.sizing')
         patch.sizing = sizing
@@ -1137,47 +1398,19 @@ const updateComponentSpec: ToolDefinition = {
 const upsertScreenState: ToolDefinition = {
   name: 'upsert_screen_state',
   description:
-    'Create, update, or remove a named screen state in the active proposal. ' + AGENT_WORKFLOW,
-  inputSchema: {
-    oneOf: [
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'create' },
-          screenId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          description: { type: 'string' },
-          overrides: componentOverridesSchema,
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'name'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'update' },
-          stateId: { type: 'string', minLength: 1 },
-          name: { type: 'string' },
-          description: { type: 'string' },
-          overrides: componentOverridesSchema,
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'stateId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'remove' },
-          stateId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'stateId'],
-        ...CLOSED_OBJECT,
-      },
-    ],
-  },
+    'Create, update, or remove a screen state. Required: create screenId+name; update/remove stateId. ' +
+    AGENT_WORKFLOW,
+  inputSchema: writeOperationSchema(
+    ['create', 'update', 'remove'],
+    {
+      screenId: { type: 'string', minLength: 1 },
+      stateId: { type: 'string', minLength: 1 },
+      name: { type: 'string' },
+      description: { type: 'string' },
+      overrides: componentOverridesSchema,
+    },
+    'Required by operation: create screenId+name; update/remove stateId.',
+  ),
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
@@ -1245,127 +1478,34 @@ const upsertScreenState: ToolDefinition = {
 const connectBehavior: ToolDefinition = {
   name: 'connect_behavior',
   description:
-    'Create, update without changing IDs, or remove an event or API operation in the active ' +
-    'proposal. Read the active screen first so references remain valid. ' + AGENT_WORKFLOW,
-  inputSchema: {
-    oneOf: [
-      {
+    'Create, update, or remove events/APIs without changing IDs. Event writes require name,trigger,' +
+    'actions plus screenId or eventId; API writes require name,method,path plus screenId or operationId. ' +
+    AGENT_WORKFLOW,
+  inputSchema: writeOperationSchema(
+    ['connectEvent', 'updateEvent', 'removeEvent', 'bindApi', 'updateApi', 'removeApi'],
+    {
+      screenId: { type: 'string', minLength: 1 },
+      eventId: { type: 'string', minLength: 1 },
+      operationId: { type: 'string', minLength: 1 },
+      name: { type: 'string', minLength: 1 },
+      trigger: {
         type: 'object',
         properties: {
-          ...writeBaseProperties,
-          operation: { const: 'connectEvent' },
-          screenId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          trigger: {
-            type: 'object',
-            properties: {
-              type: { type: 'string', enum: ['click', 'submit'] },
-              target: componentTargetSchema,
-            },
-            required: ['type', 'target'],
-            ...CLOSED_OBJECT,
-          },
-          actions: { type: 'array', items: eventActionSchema },
+          type: { type: 'string', enum: ['click', 'submit'] },
+          target: componentTargetSchema,
         },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'name', 'trigger', 'actions'],
+        required: ['type', 'target'],
         ...CLOSED_OBJECT,
       },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'removeEvent' },
-          eventId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'eventId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'updateEvent' },
-          eventId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          trigger: {
-            type: 'object',
-            properties: {
-              type: { type: 'string', enum: ['click', 'submit'] },
-              target: componentTargetSchema,
-            },
-            required: ['type', 'target'],
-            ...CLOSED_OBJECT,
-          },
-          actions: { type: 'array', items: eventActionSchema },
-        },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
-          'eventId',
-          'name',
-          'trigger',
-          'actions',
-        ],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'bindApi' },
-          screenId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-          path: { type: 'string', minLength: 1 },
-          requestBindings: { type: 'array', items: fieldBindingSchema },
-          successStateId: { type: 'string', minLength: 1 },
-          errorStateId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'screenId', 'name', 'method', 'path'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'removeApi' },
-          operationId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'operationId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'updateApi' },
-          operationId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-          path: { type: 'string', minLength: 1 },
-          requestBindings: { type: 'array', items: fieldBindingSchema },
-          successStateId: { type: ['string', 'null'], minLength: 1 },
-          errorStateId: { type: ['string', 'null'], minLength: 1 },
-        },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
-          'operationId',
-          'name',
-          'method',
-          'path',
-          'requestBindings',
-          'successStateId',
-          'errorStateId',
-        ],
-        ...CLOSED_OBJECT,
-      },
-    ],
-  },
+      actions: { type: 'array', items: eventActionSchema },
+      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+      path: { type: 'string', minLength: 1 },
+      requestBindings: { type: 'array', items: fieldBindingSchema },
+      successStateId: { type: ['string', 'null'] },
+      errorStateId: { type: ['string', 'null'] },
+    },
+    'Required: connectEvent screenId+name+trigger+actions; updateEvent eventId+name+trigger+actions; removeEvent eventId; bindApi screenId+name+method+path; updateApi operationId+name+method+path+requestBindings+successStateId+errorStateId; removeApi operationId.',
+  ),
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
@@ -1388,6 +1528,9 @@ const connectBehavior: ToolDefinition = {
         if (!Array.isArray(input.actions)) {
           throw new DomainError('INVALID_REFERENCE', 'actions must be an array')
         }
+        input.actions.forEach((action, index) =>
+          validateEventAction(action, `actions[${index}]`),
+        )
         const eventId = nanoid()
         command = {
           type: 'connectEvent',
@@ -1415,6 +1558,9 @@ const connectBehavior: ToolDefinition = {
         if (!Array.isArray(input.actions)) {
           throw new DomainError('INVALID_REFERENCE', 'actions must be an array')
         }
+        input.actions.forEach((action, index) =>
+          validateEventAction(action, `actions[${index}]`),
+        )
         command = {
           type: 'updateEvent',
           eventId: requiredString(input, 'eventId'),
@@ -1510,146 +1656,81 @@ const connectBehavior: ToolDefinition = {
 const manageComponentDefinition: ToolDefinition = {
   name: 'manage_component_definition',
   description:
-    'Create, rename, duplicate, update an owned inline node, expose a typed public property, add a ' +
-    'constrained Variant, or remove a shared Component Definition. Definitions are global and nested ' +
-    'references must remain a DAG. ' +
-    AGENT_WORKFLOW,
-  inputSchema: {
-    oneOf: [
-      {
+    'Manage shared Definitions. create needs name; all other operations need definitionId. ' +
+    'updateNode needs nodePath+patch; publishStringProp needs key+name+nodePath+field; addVariant ' +
+    'needs name+propertyKey+propertyValue. ' + AGENT_WORKFLOW,
+  inputSchema: writeOperationSchema(
+    ['create', 'updateMeta', 'duplicate', 'remove', 'updateNode', 'publishStringProp', 'addVariant'],
+    {
+      definitionId: { type: 'string', minLength: 1 },
+      name: { type: 'string', minLength: 1 },
+      description: { type: 'string' },
+      nodePath: {
+        type: 'array',
+        minItems: 1,
+        items: { type: 'string', minLength: 1 },
+      },
+      patch: {
         type: 'object',
         properties: {
-          ...writeBaseProperties,
-          operation: { const: 'updateNode' },
-          definitionId: { type: 'string', minLength: 1 },
-          nodePath: {
-            type: 'array',
-            minItems: 1,
-            items: { type: 'string', minLength: 1 },
-          },
-          patch: {
+          common: {
             type: 'object',
             properties: {
-              common: {
-                type: 'object',
-                properties: {
-                  description: { type: 'string' },
-                  visible: { type: 'boolean' },
-                  enabled: { type: 'boolean' },
-                },
-                minProperties: 1,
-                ...CLOSED_OBJECT,
-              },
-              config: componentConfigPatchSchema,
-              placement: componentPlacementSchema,
-              sizing: componentSizingSchema,
+              description: { type: 'string' },
+              visible: { type: 'boolean' },
+              enabled: { type: 'boolean' },
             },
             minProperties: 1,
             ...CLOSED_OBJECT,
           },
+          config: componentConfigPatchSchema,
+          placement: componentPlacementSchema,
+          sizing: componentSizingSchema,
         },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
-          'definitionId',
-          'nodePath',
-          'patch',
-        ],
+        minProperties: 1,
         ...CLOSED_OBJECT,
       },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'create' },
-          name: { type: 'string', minLength: 1 },
-          description: { type: 'string' },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'name'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'updateMeta' },
-          definitionId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          description: { type: 'string' },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'definitionId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { enum: ['duplicate', 'remove'] },
-          definitionId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'definitionId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'publishStringProp' },
-          definitionId: { type: 'string', minLength: 1 },
-          key: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          description: { type: 'string' },
-          nodePath: {
-            type: 'array',
-            minItems: 1,
-            items: { type: 'string', minLength: 1 },
-          },
-          field: { type: 'string' },
-        },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
+      key: { type: 'string', minLength: 1 },
+      field: publicPropFieldSchema,
+      propertyKey: { type: 'string', minLength: 1 },
+      propertyValue: { type: 'string', minLength: 1 },
+      defaultPropertyValue: { type: 'string', minLength: 1 },
+    },
+    'Required: create name; updateMeta/duplicate/remove definitionId; updateNode definitionId+nodePath+patch; publishStringProp definitionId+key+name+nodePath+field; addVariant definitionId+name+propertyKey+propertyValue.',
+  ),
+  execute(input) {
+    return withWriteFailure(() => {
+      const operation = requiredString(input, 'operation')
+      const baseKeys = [...Object.keys(writeBaseProperties), 'operation']
+      const allowedKeys: Record<string, string[]> = {
+        create: [...baseKeys, 'name', 'description'],
+        updateMeta: [...baseKeys, 'definitionId', 'name', 'description'],
+        duplicate: [...baseKeys, 'definitionId', 'name'],
+        remove: [...baseKeys, 'definitionId'],
+        updateNode: [...baseKeys, 'definitionId', 'nodePath', 'patch'],
+        publishStringProp: [
+          ...baseKeys,
           'definitionId',
           'key',
           'name',
+          'description',
           'nodePath',
           'field',
         ],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'addVariant' },
-          definitionId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-          propertyKey: { type: 'string', minLength: 1 },
-          propertyValue: { type: 'string', minLength: 1 },
-          defaultPropertyValue: { type: 'string', minLength: 1 },
-        },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
+        addVariant: [
+          ...baseKeys,
           'definitionId',
           'name',
           'propertyKey',
           'propertyValue',
+          'defaultPropertyValue',
         ],
-        ...CLOSED_OBJECT,
-      },
-    ],
-  },
-  execute(input) {
-    return withWriteFailure(() => {
-      const operation = requiredString(input, 'operation')
+      }
+      const operationKeys = allowedKeys[operation]
+      if (!operationKeys) {
+        throw new DomainError('INVALID_REFERENCE', `Unsupported Definition operation: ${operation}`)
+      }
+      requireExactKeys(input, operationKeys, `manage_component_definition ${operation} input`)
       const document = useAppStore.getState().effectiveDocument
       if (operation === 'create') {
         const definition = createEmptyComponentDefinition(
@@ -1717,18 +1798,30 @@ const manageComponentDefinition: ToolDefinition = {
           if (!isRecord(patch.common)) {
             throw new DomainError('INVALID_ARGUMENT', 'patch.common must be an object')
           }
+          requireNonEmptyObject(patch.common, 'patch.common')
+          validateCommonComponentSpec(
+            { ...node.common, ...patch.common },
+            'patch.common',
+          )
           node.common = { ...node.common, ...patch.common } as CommonComponentSpec
         }
         if (patch.config !== undefined) {
           if (!isRecord(patch.config)) {
             throw new DomainError('INVALID_ARGUMENT', 'patch.config must be an object')
           }
+          requireNonEmptyObject(patch.config, 'patch.config')
+          validateDefinitionComponentConfig(
+            { ...node.config, ...patch.config },
+            node.kind,
+            'patch.config',
+          )
           node.config = { ...node.config, ...patch.config } as DefinitionComponentConfig
         }
         if (patch.placement !== undefined) {
           if (!isRecord(patch.placement)) {
             throw new DomainError('INVALID_ARGUMENT', 'patch.placement must be an object')
           }
+          validateComponentPlacement(patch.placement, 'patch.placement')
           node.placement = patch.placement as ComponentPlacement
         }
         if (patch.sizing !== undefined) {
@@ -1812,83 +1905,60 @@ const manageComponentDefinition: ToolDefinition = {
 const manageDefinitionInstance: ToolDefinition = {
   name: 'manage_definition_instance',
   description:
-    'Insert or configure a shared Definition Instance, atomically extract an inline subtree into a ' +
-    'Definition, or detach an Instance back to inline components. Instance props are explicit typed values; ' +
-    'base Definition fields remain the default. ' + AGENT_WORKFLOW,
-  inputSchema: {
-    oneOf: [
-      {
+    'Manage Definition Instances. add requires screenId+parentId+definitionId; update/detach require ' +
+    'componentId; extract requires componentId+name. Optional props are typed scalars. ' +
+    AGENT_WORKFLOW,
+  inputSchema: writeOperationSchema(
+    ['add', 'update', 'extract', 'detach'],
+    {
+      screenId: { type: 'string', minLength: 1 },
+      parentId: { type: 'string', minLength: 1 },
+      definitionId: { type: 'string', minLength: 1 },
+      componentId: { type: 'string', minLength: 1 },
+      name: { type: 'string', minLength: 1 },
+      position: { type: 'integer', minimum: 0 },
+      variantId: { type: ['string', 'null'] },
+      props: {
         type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'add' },
-          screenId: { type: 'string', minLength: 1 },
-          parentId: { type: 'string', minLength: 1 },
-          definitionId: { type: 'string', minLength: 1 },
-          position: { type: 'integer', minimum: 0 },
-          variantId: { type: ['string', 'null'] },
-          props: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
-          placement: componentPlacementSchema,
-          sizing: componentSizingSchema,
-        },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
-          'screenId',
-          'parentId',
-          'definitionId',
-        ],
-        ...CLOSED_OBJECT,
+        additionalProperties: { type: ['string', 'number', 'boolean'] },
       },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'update' },
-          componentId: { type: 'string', minLength: 1 },
-          variantId: { type: ['string', 'null'] },
-          props: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
-          placement: componentPlacementSchema,
-          sizing: componentSizingSchema,
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId'],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'extract' },
-          componentId: { type: 'string', minLength: 1 },
-          name: { type: 'string', minLength: 1 },
-        },
-        required: [
-          'changeSetId',
-          'expectedRevision',
-          'expectedChangeSetVersion',
-          'operation',
-          'componentId',
-          'name',
-        ],
-        ...CLOSED_OBJECT,
-      },
-      {
-        type: 'object',
-        properties: {
-          ...writeBaseProperties,
-          operation: { const: 'detach' },
-          componentId: { type: 'string', minLength: 1 },
-        },
-        required: ['changeSetId', 'expectedRevision', 'expectedChangeSetVersion', 'operation', 'componentId'],
-        ...CLOSED_OBJECT,
-      },
-    ],
-  },
+      placement: componentPlacementSchema,
+      sizing: componentSizingSchema,
+    },
+    'Required by operation: add screenId+parentId+definitionId; update/detach componentId; extract componentId+name.',
+  ),
   execute(input) {
     return withWriteFailure(() => {
       const operation = requiredString(input, 'operation')
+      const baseKeys = [...Object.keys(writeBaseProperties), 'operation']
+      const allowedKeys: Record<string, string[]> = {
+        add: [
+          ...baseKeys,
+          'screenId',
+          'parentId',
+          'definitionId',
+          'position',
+          'variantId',
+          'props',
+          'placement',
+          'sizing',
+        ],
+        update: [
+          ...baseKeys,
+          'componentId',
+          'variantId',
+          'props',
+          'placement',
+          'sizing',
+        ],
+        extract: [...baseKeys, 'componentId', 'name'],
+        detach: [...baseKeys, 'componentId'],
+      }
+      const operationKeys = allowedKeys[operation]
+      if (!operationKeys) {
+        throw new DomainError('INVALID_REFERENCE', `Unsupported Instance operation: ${operation}`)
+      }
+      requireExactKeys(input, operationKeys, `manage_definition_instance ${operation} input`)
       const document = useAppStore.getState().effectiveDocument
       if (operation === 'extract') {
         const command = createExtractDefinitionCommand(
@@ -1916,10 +1986,27 @@ const manageDefinitionInstance: ToolDefinition = {
       }
       if (operation === 'add') {
         const props = input.props === undefined ? {} : requiredRecord(input, 'props')
+        for (const [key, value] of Object.entries(props)) {
+          if (
+            !key ||
+            (typeof value !== 'string' &&
+              typeof value !== 'number' &&
+              typeof value !== 'boolean')
+          ) {
+            throw new DomainError(
+              'INVALID_ARGUMENT',
+              `props.${key || '<empty>'} must be a string, number, or boolean`,
+            )
+          }
+        }
         const sizing = input.sizing === undefined
           ? DEFAULT_COMPONENT_SIZING
           : requiredRecord(input, 'sizing')
         validateComponentSizing(sizing, 'sizing')
+        const placement = input.placement === undefined
+          ? DEFAULT_COMPONENT_PLACEMENT
+          : requiredRecord(input, 'placement')
+        validateComponentPlacement(placement, 'placement')
         const componentId = `instance-${nanoid()}`
         return appendCommand(input, {
           type: 'addDefinitionInstance',
@@ -1932,9 +2019,7 @@ const manageDefinitionInstance: ToolDefinition = {
             ? null
             : requiredNullableString(input, 'variantId'),
           props: props as Record<string, string | number | boolean>,
-          placement: input.placement === undefined
-            ? DEFAULT_COMPONENT_PLACEMENT
-            : requiredRecord(input, 'placement') as ComponentPlacement,
+          placement,
           sizing,
         }, {
           createdInstanceId: componentId,
@@ -1944,10 +2029,29 @@ const manageDefinitionInstance: ToolDefinition = {
         const props = input.props === undefined
           ? undefined
           : requiredRecord(input, 'props') as Record<string, string | number | boolean>
+        if (props) {
+          for (const [key, value] of Object.entries(props)) {
+            if (
+              !key ||
+              (typeof value !== 'string' &&
+                typeof value !== 'number' &&
+                typeof value !== 'boolean')
+            ) {
+              throw new DomainError(
+                'INVALID_ARGUMENT',
+                `props.${key || '<empty>'} must be a string, number, or boolean`,
+              )
+            }
+          }
+        }
         const sizing = input.sizing === undefined
           ? undefined
           : requiredRecord(input, 'sizing')
         if (sizing) validateComponentSizing(sizing, 'sizing')
+        const placement = input.placement === undefined
+          ? undefined
+          : requiredRecord(input, 'placement')
+        if (placement) validateComponentPlacement(placement, 'placement')
         const componentId = requiredString(input, 'componentId')
         return appendCommand(input, {
           type: 'updateDefinitionInstance',
@@ -1956,9 +2060,7 @@ const manageDefinitionInstance: ToolDefinition = {
             ? undefined
             : requiredNullableString(input, 'variantId'),
           props,
-          placement: input.placement === undefined
-            ? undefined
-            : requiredRecord(input, 'placement') as ComponentPlacement,
+          placement,
           sizing,
         }, {
           instanceId: componentId,
