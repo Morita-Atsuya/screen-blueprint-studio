@@ -269,7 +269,29 @@ Screen Blueprint StudioのReact MVPを実装済みで、現在は提出品質を
 
 残作業はChrome WebMCP testing環境でのnative manual smoke、提出文と動画の作成である。
 
-## 12. 参照資料
+## 12. 2026-09-01 実装締切判断
+
+判断時刻: **2026-09-01 19:00 JST**
+
+提出品質と最終統合の安定性を優先し、この時刻を新規実装scopeの締切とする。
+
+### 締切前に完了を目指すscope
+
+- Shared Components
+- Collection vertical slice
+- WebMCP integration
+- final release
+
+### 提出後へ送るscope
+
+- Portable JSON/YAML Import/Export
+- 汎用Behavior（typed ValueSource、trigger、action、API outcomeの拡張）
+- Shared ComponentsのDefinitionを利用するshared patterns
+- 全面的なdocs再編
+
+この判断は提出作業の内部優先順位を定めるものであり、root READMEの商品説明には持ち込まない。締切前scopeでも、統合時に品質を確認できない項目は完了扱いにせず、公開roadmapのstatusを **In progress** のまま維持する。
+
+## 13. 参照資料
 
 - [OpenAI: The WebMCP Challenge](https://openai.com/webmcp-challenge/)
 - [Devpost: Official Rules](https://webmcp.devpost.com/rules)

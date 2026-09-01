@@ -203,7 +203,9 @@ Readツールには`readOnlyHint`を付与しています。Writeツールはact
 ├── docs/
 │   ├── HACKATHON_BRIEF.md
 │   ├── MVP_TECHNICAL_DESIGN.md
-│   └── PRODUCT_DIRECTION.md
+│   ├── PRODUCT_DIRECTION.md
+│   ├── ROADMAP.md
+│   └── ROADMAP.ja.md
 ├── scripts/
 │   └── regression.mjs
 ├── src/
@@ -223,6 +225,7 @@ Readツールには`readOnlyHint`を付与しています。Writeツールはact
 
 ## 設計ドキュメント
 
+- [Product roadmap (English)](./docs/ROADMAP.md) / [プロダクトロードマップ（日本語）](./docs/ROADMAP.ja.md)
 - [User guide (English)](./docs/USER_GUIDE.md)
 - [ユーザーガイド（日本語）](./docs/USER_GUIDE.ja.md)
 - [プロダクト方針](./docs/PRODUCT_DIRECTION.md)
