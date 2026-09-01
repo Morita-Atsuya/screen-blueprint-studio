@@ -6,7 +6,10 @@ import type {
   ProjectDocument,
   ScreenComponent,
 } from './model'
-import { targetRootScreenComponentId } from './componentTargets'
+import {
+  isComponentTargetRef,
+  targetRootScreenComponentId,
+} from './componentTargets'
 
 export type ComponentChangeStatus = 'added' | 'modified'
 
@@ -82,6 +85,7 @@ function componentApiBindings(document: ProjectDocument, componentId: EntityId) 
   return Object.values(document.apiOperations)
     .flatMap(operation =>
       operation.requestBindings.flatMap((binding, index) =>
+        isComponentTargetRef(binding.source) &&
         targetRootScreenComponentId(binding.source) === componentId
           ? [{
               operationId: operation.id,

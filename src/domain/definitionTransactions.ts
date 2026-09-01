@@ -12,6 +12,7 @@ import { DomainError } from './errors'
 import {
   componentTargetRefKey,
   definitionNodeTargetRef,
+  isComponentTargetRef,
   rewriteTargetRef,
   targetRootScreenComponentId,
 } from './componentTargets'
@@ -81,7 +82,9 @@ export function rewriteScreenTargetRefs(
     if (operation.screenId !== screenId) continue
     operation.requestBindings = operation.requestBindings.map(binding => ({
       targetPath: binding.targetPath,
-      source: rewriteTargetRef(binding.source, rewrites),
+      source: isComponentTargetRef(binding.source)
+        ? rewriteTargetRef(binding.source, rewrites)
+        : { ...binding.source },
     }))
   }
 }
@@ -132,7 +135,7 @@ export function collectDefinitionUses(
     isInstanceTarget(event.trigger.target)).length
   const apiBindingCount = Object.values(document.apiOperations).reduce(
     (count, operation) => count + operation.requestBindings.filter(binding =>
-      isInstanceTarget(binding.source)).length,
+      isComponentTargetRef(binding.source) && isInstanceTarget(binding.source)).length,
     0,
   )
   return {

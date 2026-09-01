@@ -131,15 +131,16 @@ export function Inspector() {
     return <ChangesPanel changeSet={activeChangeSet} />
   }
 
-  if (ui.selection?.type === 'resolvedDefinitionNode') {
+  if (
+    ui.selection?.type === 'resolvedDefinitionNode' ||
+    ui.selection?.type === 'collectionItemNode'
+  ) {
+    const target = selectionCanonicalTarget(effectiveDocument, ui.selection)
+    if (!target) return null
     const resolved = resolveComponentTarget(
       effectiveDocument,
       ui.selection.screenId,
-      {
-        type: 'definitionNode',
-        instanceId: ui.selection.instanceId,
-        nodePath: ui.selection.nodePath,
-      },
+      target,
       ui.activeStateId,
     )
     const definition = resolved.definitionId
@@ -148,22 +149,23 @@ export function Inspector() {
     const activeState = ui.activeStateId
       ? getOwnEntity(effectiveDocument.screenScenarios, ui.activeStateId)
       : undefined
-    const target = selectionCanonicalTarget(effectiveDocument, ui.selection)
-    const behavior = target
-      ? getComponentTargetBehavior(effectiveDocument, ui.selection.screenId, target)
-      : null
-    const eventEditor = target
-      ? getEventEditorContextForTarget(effectiveDocument, ui.selection.screenId, target)
-      : null
-    const apiEditor = target
-      ? getApiEditorContextForTarget(
-          effectiveDocument,
-          ui.selection.screenId,
-          target,
-          locale,
-        )
-      : null
-    const override = target && activeState
+    const behavior = getComponentTargetBehavior(
+      effectiveDocument,
+      ui.selection.screenId,
+      target,
+    )
+    const eventEditor = getEventEditorContextForTarget(
+      effectiveDocument,
+      ui.selection.screenId,
+      target,
+    )
+    const apiEditor = getApiEditorContextForTarget(
+      effectiveDocument,
+      ui.selection.screenId,
+      target,
+      locale,
+    )
+    const override = activeState
       ? findScenarioOverride(activeState, target)?.override
       : undefined
     const setOverride = (
@@ -177,7 +179,12 @@ export function Inspector() {
     return (
       <div className={styles.root} data-resolved-node-inspector>
         <h3 className={styles.heading}>{resolvedNodeInspectorLabel(resolved)}</h3>
-        <p className={styles.context}>{definition?.name}</p>
+        <p className={styles.context}>
+          {definition?.name}
+          {ui.selection.type === 'collectionItemNode'
+            ? ` · ${t('collection.templateTarget')}`
+            : ''}
+        </p>
         <p className={styles.reviewLock}>{t('definitions.resolvedSealed')}</p>
         <div className={styles.inlineActions}>
           <button

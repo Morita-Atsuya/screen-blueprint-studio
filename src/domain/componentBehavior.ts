@@ -3,6 +3,7 @@ import { getComponentDisplayLabel } from './componentDisplayLabel'
 import {
   CONTAINER_KINDS,
   type ApiOperation,
+  type BehaviorValueSource,
   type ComponentTargetRef,
   type EntityId,
   type EventAction,
@@ -19,6 +20,7 @@ import {
   componentTargetRefEquals,
   componentTargetRefKey,
   inlineTargetRef,
+  isComponentTargetRef,
 } from './componentTargets'
 import { resolveComponentTarget, resolveScreenNodes } from './definitionResolver'
 
@@ -42,7 +44,12 @@ export type ResolvedEventAction =
   | { type: 'setScenario'; scenario: ResolvedReference }
   | { type: 'clearScenario' }
   | { type: 'callApi'; operation: ResolvedApiReference }
-  | { type: 'navigate'; screen: ResolvedScreenReference }
+  | {
+      type: 'navigate'
+      screen: ResolvedScreenReference
+      routeParameters: Record<string, BehaviorValueSource>
+      queryParameters: Record<string, BehaviorValueSource>
+    }
 
 export interface ComponentBehaviorEvent {
   id: EntityId
@@ -105,6 +112,7 @@ export interface ApiEditorContext {
   operations: ApiEditorOperation[]
   states: ResolvedReference[]
   inputComponents: Array<ResolvedReference & { target: ComponentTargetRef }>
+  itemContext: { collectionId: EntityId } | null
 }
 
 export interface ValidationRulesEditorContext {
@@ -170,6 +178,8 @@ function resolveAction(
           label: screen?.name ?? null,
           route: screen?.route ?? null,
         },
+        routeParameters: action.routeParameters ?? {},
+        queryParameters: action.queryParameters ?? {},
       }
     }
   }
@@ -238,9 +248,19 @@ export function getComponentTargetBehavior(
   const validationRules = resolved.config.kind === 'textInput'
     ? resolved.config.validationRules
     : []
+  const calledOperationIds = new Set(events.flatMap(event =>
+    event.actions.flatMap(action =>
+      action.type === 'callApi' ? [action.operation.id] : [])))
   const apiBindings = Object.values(document.apiOperations).flatMap(operation =>
     operation.requestBindings
-      .filter(apiBinding => componentTargetRefEquals(apiBinding.source, target))
+      .filter(apiBinding =>
+        (
+          isComponentTargetRef(apiBinding.source) &&
+          componentTargetRefEquals(apiBinding.source, target)
+        ) || (
+          apiBinding.source.type === 'item' &&
+          calledOperationIds.has(operation.id)
+        ))
       .map(apiBinding => ({
         operation: resolveApi(document, operation.id),
         targetPath: apiBinding.targetPath,
@@ -318,6 +338,24 @@ function resolveBinding(
   binding: FieldBinding,
   locale: Locale,
 ): ResolvedFieldBinding {
+  if (binding.source.type === 'item') {
+    return {
+      component: {
+        id: `item:${binding.source.path}`,
+        label: `${locale === 'ja' ? '項目' : 'Item'} ${binding.source.path}`,
+      },
+      targetPath: binding.targetPath,
+    }
+  }
+  if (binding.source.type === 'literal') {
+    return {
+      component: {
+        id: `literal:${JSON.stringify(binding.source.value)}`,
+        label: `${locale === 'ja' ? '固定値' : 'Literal'} ${JSON.stringify(binding.source.value)}`,
+      },
+      targetPath: binding.targetPath,
+    }
+  }
   if (binding.source.type !== 'inline') {
     return {
       component: { id: componentTargetRefKey(binding.source), label: null },
@@ -394,6 +432,9 @@ export function getApiEditorContextForTarget(
         }),
       })),
     states: screen.scenarioIds.map(scenarioId => resolveScenario(document, scenarioId)),
+    itemContext: target.type === 'collectionItemNode'
+      ? { collectionId: target.collectionId }
+      : null,
     inputComponents: resolvedNodes.orderedNodes
       .filter(candidate => candidate.kind === 'textInput' || candidate.kind === 'select')
       .map(candidate => ({

@@ -2,7 +2,7 @@
 // Typed editor selection
 //
 // The editor never stores a bare `componentId` as "the selection". Every
-// selectable thing is one of four distinct shapes so screen structure,
+// selectable thing is one of five distinct shapes so screen structure,
 // resolved Definition content, and Definition-editor content can never be
 // confused with each other:
 //  - screenInlineComponent: an ordinary screen-owned component.
@@ -12,12 +12,20 @@
 //    identified by the owning instance and a stable nodePath. Selectable,
 //    focusable, and Event/API/Scenario-targetable, but not
 //    screen-reparentable and not directly editable (sealed).
+//  - collectionItemNode: a Definition node projected for every Collection
+//    item, identified by the owning Collection and a stable nodePath. The
+//    selection addresses the shared item template, never a preview item key.
 //  - definitionEditorNode: a node inside a Definition's own editor context
 //    (definitionId + stable nodePath), independent of any screen selection.
 // ============================================================
 import type { ComponentDefinition, ComponentTargetRef, EntityId, ProjectDocument } from './model'
 import { getOwnEntity, hasOwnEntity } from './entityMap'
-import { componentTargetRefKey, definitionNodeTargetRef, inlineTargetRef } from './componentTargets'
+import {
+  collectionItemNodeTargetRef,
+  componentTargetRefKey,
+  definitionNodeTargetRef,
+  inlineTargetRef,
+} from './componentTargets'
 import { componentDefinitionRefV3, resolveComponentDefinitionRefV3 } from './canonicalProjectSpecV3'
 import { resolveComponentTarget } from './definitionResolver'
 import { resolveDefinitionInlineNodeAtPath } from './definitionTransactions'
@@ -41,6 +49,13 @@ export interface ResolvedDefinitionNodeSelection {
   nodePath: [EntityId, ...EntityId[]]
 }
 
+export interface CollectionItemNodeSelection {
+  type: 'collectionItemNode'
+  screenId: EntityId
+  collectionId: EntityId
+  nodePath: [EntityId, ...EntityId[]]
+}
+
 export interface DefinitionEditorNodeSelection {
   type: 'definitionEditorNode'
   definitionId: EntityId
@@ -51,12 +66,14 @@ export type EditorSelection =
   | ScreenInlineSelection
   | ScreenInstanceSelection
   | ResolvedDefinitionNodeSelection
+  | CollectionItemNodeSelection
   | DefinitionEditorNodeSelection
 
 export type ScreenScopedSelection =
   | ScreenInlineSelection
   | ScreenInstanceSelection
   | ResolvedDefinitionNodeSelection
+  | CollectionItemNodeSelection
 
 // ------------------------------------------------------------
 // Constructors
@@ -91,6 +108,22 @@ export function resolvedDefinitionNodeSelection(
   }
 }
 
+export function collectionItemNodeSelection(
+  screenId: EntityId,
+  collectionId: EntityId,
+  nodePath: readonly EntityId[],
+): CollectionItemNodeSelection {
+  if (nodePath.length === 0) {
+    throw new Error('collectionItemNodeSelection requires a non-empty nodePath')
+  }
+  return {
+    type: 'collectionItemNode',
+    screenId,
+    collectionId,
+    nodePath: [...nodePath] as [EntityId, ...EntityId[]],
+  }
+}
+
 export function definitionEditorNodeSelection(
   definitionId: EntityId,
   nodePath: readonly EntityId[],
@@ -111,6 +144,7 @@ export function cloneEditorSelection(selection: EditorSelection): EditorSelectio
     case 'screenDefinitionInstance':
       return { ...selection }
     case 'resolvedDefinitionNode':
+    case 'collectionItemNode':
       return { ...selection, nodePath: [...selection.nodePath] as [EntityId, ...EntityId[]] }
     case 'definitionEditorNode':
       return { ...selection, nodePath: [...selection.nodePath] as [EntityId, ...EntityId[]] }
@@ -144,6 +178,8 @@ export function selectionRootScreenComponentId(selection: EditorSelection): Enti
       return selection.componentId
     case 'resolvedDefinitionNode':
       return selection.instanceId
+    case 'collectionItemNode':
+      return selection.collectionId
     case 'definitionEditorNode':
       return null
   }
@@ -182,6 +218,8 @@ export function selectionCanonicalTarget(
     }
     case 'resolvedDefinitionNode':
       return definitionNodeTargetRef(selection.instanceId, selection.nodePath)
+    case 'collectionItemNode':
+      return collectionItemNodeTargetRef(selection.collectionId, selection.nodePath)
     case 'definitionEditorNode':
       return null
   }
@@ -197,6 +235,10 @@ export function selectionKey(selection: EditorSelection): string {
       return `screen-instance:${encode(selection.screenId)}:${encode(selection.componentId)}`
     case 'resolvedDefinitionNode':
       return `resolved-node:${encode(selection.screenId)}:${encode(selection.instanceId)}:${selection.nodePath
+        .map(encode)
+        .join('/')}`
+    case 'collectionItemNode':
+      return `collection-node:${encode(selection.screenId)}:${encode(selection.collectionId)}:${selection.nodePath
         .map(encode)
         .join('/')}`
     case 'definitionEditorNode':
@@ -215,7 +257,7 @@ export function editorSelectionEquals(
 }
 
 export interface SelectionDomIdentity {
-  attribute: 'data-component-id' | 'data-definition-node-id'
+  attribute: 'data-component-id' | 'data-definition-node-id' | 'data-canonical-target-key'
   value: string
 }
 
@@ -229,6 +271,13 @@ export function selectionDomIdentity(selection: EditorSelection): SelectionDomId
       return {
         attribute: 'data-component-id',
         value: componentTargetRefKey(definitionNodeTargetRef(selection.instanceId, selection.nodePath)),
+      }
+    case 'collectionItemNode':
+      return {
+        attribute: 'data-canonical-target-key',
+        value: componentTargetRefKey(
+          collectionItemNodeTargetRef(selection.collectionId, selection.nodePath),
+        ),
       }
     case 'definitionEditorNode':
       return {
@@ -290,6 +339,28 @@ export function reconcileEditorSelection(
           document,
           selection.screenId,
           definitionNodeTargetRef(selection.instanceId, selection.nodePath),
+        )
+        return selection
+      } catch {
+        return null
+      }
+    }
+    case 'collectionItemNode': {
+      if (selection.screenId !== activeScreenId) return null
+      const collection = getOwnEntity(document.components, selection.collectionId)
+      if (
+        !collection ||
+        collection.nodeType !== 'inline' ||
+        collection.config.kind !== 'collection' ||
+        collection.screenId !== activeScreenId
+      ) {
+        return null
+      }
+      try {
+        resolveComponentTarget(
+          document,
+          selection.screenId,
+          collectionItemNodeTargetRef(selection.collectionId, selection.nodePath),
         )
         return selection
       } catch {
@@ -363,6 +434,21 @@ export function parseEditorSelectionValue(value: unknown): EditorSelection | nul
           type: 'resolvedDefinitionNode',
           screenId: record.screenId,
           instanceId: record.instanceId,
+          nodePath: record.nodePath,
+        }
+      }
+      return null
+    case 'collectionItemNode':
+      if (
+        keys.length === 4 &&
+        isNonEmptyString(record.screenId) &&
+        isNonEmptyString(record.collectionId) &&
+        isEntityIdPath(record.nodePath)
+      ) {
+        return {
+          type: 'collectionItemNode',
+          screenId: record.screenId,
+          collectionId: record.collectionId,
           nodePath: record.nodePath,
         }
       }

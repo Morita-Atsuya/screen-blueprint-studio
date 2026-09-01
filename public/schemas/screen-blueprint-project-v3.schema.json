@@ -2700,6 +2700,28 @@
             },
             "destinationScreenId": {
               "$ref": "#/$defs/entityId"
+            },
+            "routeParameters": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/collectionValueSource"
+              }
+            },
+            "queryParameters": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/collectionValueSource"
+              }
             }
           }
         }
@@ -2754,7 +2776,14 @@
       ],
       "properties": {
         "source": {
-          "$ref": "#/$defs/componentTarget"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/componentTarget"
+            },
+            {
+              "$ref": "#/$defs/collectionValueSource"
+            }
+          ]
         },
         "targetPath": {
           "type": "string"

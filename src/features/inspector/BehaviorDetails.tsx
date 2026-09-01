@@ -359,6 +359,18 @@ function ActionDetails({ action }: { action: ResolvedEventAction }) {
           <strong>{t('behavior.action.navigate')}</strong>
           <span>{referenceLabel(action.screen, t)}</span>
           {action.screen.route ? <code>{action.screen.route}</code> : null}
+          {[
+            ...Object.entries(action.routeParameters)
+              .map(([name, source]) => ['route', name, source] as const),
+            ...Object.entries(action.queryParameters)
+              .map(([name, source]) => ['query', name, source] as const),
+          ].map(([kind, name, source]) => (
+              <code key={`${kind}:${name}`}>
+                {kind}.{name} ← {source.type === 'item'
+                  ? `item${source.path}`
+                  : JSON.stringify(source.value)}
+              </code>
+            ))}
         </div>
       )
   }

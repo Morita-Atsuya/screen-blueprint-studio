@@ -7,7 +7,11 @@ import type {
   ApiEditorOperation,
 } from '../../domain/componentBehavior'
 import type { FieldBinding, HttpMethod } from '../../domain/model'
-import { cloneComponentTargetRef, componentTargetRefKey } from '../../domain/componentTargets'
+import {
+  cloneComponentTargetRef,
+  componentTargetRefKey,
+  isComponentTargetRef,
+} from '../../domain/componentTargets'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
@@ -26,9 +30,25 @@ interface DraftBinding {
 }
 
 function bindingComponentId(binding: FieldBinding): string {
+  if (binding.source.type === 'item') return `item:${binding.source.path}`
+  if (binding.source.type === 'literal') {
+    return `literal:${JSON.stringify(binding.source.value)}`
+  }
   return binding.source.type === 'inline'
     ? binding.source.componentId
     : componentTargetRefKey(binding.source)
+}
+
+function bindingSourceControlValue(binding: FieldBinding): string {
+  return isComponentTargetRef(binding.source)
+    ? `component:${bindingComponentId(binding)}`
+    : binding.source.type
+}
+
+function cloneBindingSource(binding: FieldBinding): FieldBinding['source'] {
+  return isComponentTargetRef(binding.source)
+    ? cloneComponentTargetRef(binding.source)
+    : { ...binding.source }
 }
 
 interface ApiOperationDialogProps {
@@ -74,7 +94,9 @@ export function ApiOperationDialog({
     mode === 'create' ||
     context.operations.some(candidate => candidate.operation.id === persistedOperationId)
   )
-  const componentIds = bindings.map(binding => bindingComponentId(binding.value))
+  const componentIds = bindings
+    .filter(binding => isComponentTargetRef(binding.value.source))
+    .map(binding => bindingComponentId(binding.value))
   const targetPaths = bindings.map(binding => binding.value.targetPath.trim())
   const statesAvailable = [successStateId, errorStateId].every(stateId =>
     stateId === '' || context.states.some(state => state.id === stateId),
@@ -85,17 +107,29 @@ export function ApiOperationDialog({
     operationAvailable &&
     statesAvailable &&
     bindings.every(binding =>
-      context.inputComponents.some(component => component.id === bindingComponentId(binding.value)) &&
+      (
+        binding.value.source.type === 'literal' ||
+        (
+          binding.value.source.type === 'item' &&
+          Boolean(context.itemContext) &&
+          binding.value.source.path.length > 0
+        ) ||
+        (
+          isComponentTargetRef(binding.value.source) &&
+          context.inputComponents.some(component =>
+            component.id === bindingComponentId(binding.value))
+        )
+      ) &&
       binding.value.targetPath.trim().length > 0
     ) &&
     new Set(componentIds).size === componentIds.length &&
     new Set(targetPaths).size === targetPaths.length
   )
-  const canAddBinding = new Set(componentIds).size < context.inputComponents.length
+  const canAddBinding = bindings.length < 50
   function save() {
     if (reviewLocked || staleAfterReview || !canSubmit || (mode === 'edit' && !persistedOperationId)) return
     const requestBindings = bindings.map(binding => ({
-      source: cloneComponentTargetRef(binding.value.source),
+      source: cloneBindingSource(binding.value),
       targetPath: binding.value.targetPath.trim(),
     }))
     const normalizedName = name.trim()
@@ -162,12 +196,16 @@ export function ApiOperationDialog({
     const used = new Set(bindings.map(binding => bindingComponentId(binding.value)))
     const component = context.inputComponents.find(candidate => !used.has(candidate.id))
       ?? context.inputComponents[0]
-    if (!component) return
+    const source: FieldBinding['source'] = context.itemContext
+      ? { type: 'item', path: '/id' }
+      : component
+        ? cloneComponentTargetRef(component.target)
+        : { type: 'literal', value: '' }
     setBindings(current => [
       ...current,
       {
         key: nanoid(),
-        value: { source: cloneComponentTargetRef(component.target), targetPath: '' },
+        value: { source, targetPath: '' },
       },
     ])
   }
@@ -309,7 +347,10 @@ export function ApiOperationDialog({
             <ol className={styles.actionList}>
               {bindings.map((binding, index) => {
                 const usedByOther = new Set(bindings.flatMap((candidate, candidateIndex) =>
-                  candidateIndex === index ? [] : [bindingComponentId(candidate.value)],
+                  candidateIndex === index ||
+                  !isComponentTargetRef(candidate.value.source)
+                    ? []
+                    : [bindingComponentId(candidate.value)],
                 ))
                 return (
                   <li
@@ -344,29 +385,38 @@ export function ApiOperationDialog({
                       <label className={styles.compactField}>
                         <span>{t('behavior.bindingComponent')}</span>
                         <select
-                          value={bindingComponentId(binding.value)}
+                          value={bindingSourceControlValue(binding.value)}
                           onChange={event => updateBinding(index, {
                             ...binding.value,
-                            source: cloneComponentTargetRef(
-                              context.inputComponents.find(component =>
-                                component.id === event.target.value)?.target ??
-                                binding.value.source,
-                            ),
+                            source: event.target.value === 'item'
+                              ? { type: 'item', path: '/id' }
+                              : event.target.value === 'literal'
+                                ? { type: 'literal', value: '' }
+                                : cloneComponentTargetRef(
+                                    context.inputComponents.find(component =>
+                                      `component:${component.id}` === event.target.value)?.target ??
+                                      context.inputComponents[0]!.target,
+                                  ),
                           })}
                         >
-                          {!context.inputComponents.some(
+                          {isComponentTargetRef(binding.value.source) &&
+                          !context.inputComponents.some(
                             component => component.id === bindingComponentId(binding.value),
                           ) ? (
-                            <option value={bindingComponentId(binding.value)}>
+                            <option value={bindingSourceControlValue(binding.value)}>
                               {t('behavior.missingReference', {
                                 id: bindingComponentId(binding.value),
                               })}
                             </option>
                           ) : null}
+                          {context.itemContext ? (
+                            <option value="item">{t('behavior.bindingItem')}</option>
+                          ) : null}
+                          <option value="literal">{t('behavior.bindingLiteral')}</option>
                           {context.inputComponents.map(component => (
                             <option
                               key={component.id}
-                              value={component.id}
+                              value={`component:${component.id}`}
                               disabled={usedByOther.has(component.id)}
                             >
                               {component.label}
@@ -374,6 +424,33 @@ export function ApiOperationDialog({
                           ))}
                         </select>
                       </label>
+                      {binding.value.source.type === 'item' ? (
+                        <label className={styles.compactField}>
+                          <span>{t('behavior.itemPath')}</span>
+                          <input
+                            required
+                            value={binding.value.source.path}
+                            onChange={event => updateBinding(index, {
+                              ...binding.value,
+                              source: { type: 'item', path: event.target.value },
+                            })}
+                          />
+                        </label>
+                      ) : null}
+                      {binding.value.source.type === 'literal' ? (
+                        <label className={styles.compactField}>
+                          <span>{t('behavior.literalValue')}</span>
+                          <input
+                            value={binding.value.source.value === null
+                              ? 'null'
+                              : String(binding.value.source.value)}
+                            onChange={event => updateBinding(index, {
+                              ...binding.value,
+                              source: { type: 'literal', value: event.target.value },
+                            })}
+                          />
+                        </label>
+                      ) : null}
                       <label className={styles.compactField}>
                         <span>{t('behavior.targetPath')}</span>
                         <input

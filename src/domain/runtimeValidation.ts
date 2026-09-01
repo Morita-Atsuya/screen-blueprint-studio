@@ -289,7 +289,7 @@ function validateJsonValue(value: unknown, path: string): void {
   })
 }
 
-function validateCollectionValueSource(
+export function validateCollectionValueSource(
   value: unknown,
   path: string,
 ): asserts value is CollectionValueSource {
@@ -936,8 +936,21 @@ export function validateEventAction(
       entityId(action.apiOperationId, `${path}.apiOperationId`)
       return
     case 'navigate':
-      exactKeys(action, ['type', 'destinationScreenId'], [], path)
+      exactKeys(
+        action,
+        ['type', 'destinationScreenId'],
+        ['routeParameters', 'queryParameters'],
+        path,
+      )
       entityId(action.destinationScreenId, `${path}.destinationScreenId`)
+      for (const field of ['routeParameters', 'queryParameters'] as const) {
+        if (action[field] === undefined) continue
+        const parameters = record(action[field], `${path}.${field}`)
+        for (const [key, source] of Object.entries(parameters)) {
+          if (!key.trim()) fail(`${path}.${field}`, 'must not contain empty parameter names')
+          validateCollectionValueSource(source, `${path}.${field}.${key}`)
+        }
+      }
       return
     default:
       fail(`${path}.type`, `must be one of: ${EVENT_ACTION_TYPES_V3.join(', ')}`)
@@ -963,7 +976,12 @@ export function validateScreenEvent(
 function validateFieldBinding(value: unknown, path: string): asserts value is FieldBinding {
   const binding = record(value, path)
   exactKeys(binding, ['source', 'targetPath'], [], path)
-  validateComponentTargetRef(binding.source, `${path}.source`)
+  const source = record(binding.source, `${path}.source`)
+  if (source.type === 'item' || source.type === 'literal') {
+    validateCollectionValueSource(source, `${path}.source`)
+  } else {
+    validateComponentTargetRef(source, `${path}.source`)
+  }
   string(binding.targetPath, `${path}.targetPath`)
 }
 

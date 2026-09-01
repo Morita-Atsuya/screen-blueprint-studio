@@ -8,7 +8,12 @@ import type {
   ScreenComponent,
 } from '../../domain/model'
 import { isInlineScreenComponent } from '../../domain/model'
-import { componentTargetRefEquals, findInlineScenarioOverride, inlineTargetRef } from '../../domain/componentTargets'
+import {
+  componentTargetRefEquals,
+  findInlineScenarioOverride,
+  inlineTargetRef,
+  isComponentTargetRef,
+} from '../../domain/componentTargets'
 
 export type InspectorSectionId =
   | 'basic'
@@ -190,7 +195,9 @@ function behaviorProjection(document: ProjectDocument, componentId: EntityId): u
       .sort((left, right) => left.id.localeCompare(right.id)),
     apiBindings: Object.values(document.apiOperations)
       .flatMap(operation => operation.requestBindings
-        .filter(binding => componentTargetRefEquals(binding.source, inlineTargetRef(componentId)))
+        .filter(binding =>
+          isComponentTargetRef(binding.source) &&
+          componentTargetRefEquals(binding.source, inlineTargetRef(componentId)))
         .map(binding => ({
           operationId: operation.id,
           targetPath: binding.targetPath,

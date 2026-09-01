@@ -2393,7 +2393,7 @@ await test('UI references reconcile after preview, accept, initialization, and u
   const changeSet = previewStore.getState().beginChangeSet('Remove active screen')
   previewStore.getState().dispatchToChangeSet(changeSet.id, {
     type: 'removeEvent',
-    eventId: 'event-edit-launch-task',
+    eventId: 'event-open-task-item',
   })
   previewStore.getState().dispatchToChangeSet(changeSet.id, {
     type: 'removeScreen',
@@ -3172,7 +3172,7 @@ await test('state and screen removal clean API/event references', async () => {
 
   document = applyCommandWithoutRevision(document, {
     type: 'removeEvent',
-    eventId: 'event-edit-launch-task',
+    eventId: 'event-open-task-item',
   })
   document = applyCommandWithoutRevision(document, {
     type: 'removeScreen',
@@ -4334,7 +4334,9 @@ await test('TaskFlow sample is a complete two-screen task specification', async 
     edge.source.screenId === 'screen-edit' && edge.target.screenId === 'screen-list'
   )
   assert(
-    listToEdit?.transitions.length === 1 &&
+    listToEdit?.transitions.length === 2 &&
+      listToEdit.transitions.some(transition => transition.eventId === 'event-edit-launch-task') &&
+      listToEdit.transitions.some(transition => transition.eventId === 'event-open-task-item') &&
       editToList?.transitions.length === 1 &&
       editToList.transitions[0].eventId === 'event-discard-task-changes',
     'TaskFlow navigation edges do not explain edit/discard paths',
@@ -4699,6 +4701,24 @@ await test('palette factory and component drops use validated commands', async (
   assert(
     store.getState().document.components['comp-list-page'].childIds[0] === command.componentId,
     'palette add command did not honor the drop position',
+  )
+  const selectCommand = createAddComponentCommand(
+    store.getState().document,
+    'screen-list',
+    'comp-list-page',
+    'select',
+    'en',
+  )
+  assert(
+    selectCommand.config.kind === 'select' &&
+      selectCommand.config.options.length === 1 &&
+      selectCommand.config.options[0]?.value === selectCommand.config.defaultValue,
+    'palette factory did not create a valid atomic Select default',
+  )
+  store.getState().dispatch(selectCommand, 'Palette Select add')
+  assert(
+    store.getState().document.components[selectCommand.componentId]?.config.kind === 'select',
+    'new Select could not be added through invariant validation',
   )
 
   const resolution = resolveComponentDrop(
@@ -8853,8 +8873,11 @@ await test('screen flow projects navigate actions and net review changes', async
       listToEdit?.transitions.length === 3 &&
       listToEdit.transitions[0].eventId === 'event-open-launch-task' &&
       listToEdit.transitions[1].eventId === 'event-open-docs-task' &&
+      listToEdit.transitions[2].eventId === 'event-open-task-item' &&
+      listToEdit.transitions[0].actionIndex === 0 &&
+      listToEdit.transitions[1].actionIndex === 0 &&
+      listToEdit.transitions[2].actionIndex === 1 &&
       listToEdit.transitions.every(transition =>
-        transition.actionIndex === 0 &&
         transition.triggerResolved &&
         transition.target.route === '/tasks/:taskId') &&
       editToList?.transitions.length === 2 &&
@@ -12878,6 +12901,9 @@ await test('API editor commands preserve references and enforce canonical bindin
       apiDialogSource.includes("type: 'updateApiOperation'") &&
       apiDialogSource.includes("type: 'removeApiOperation'") &&
       apiDialogSource.includes('setBindings') &&
+      apiDialogSource.includes(
+        '.filter(binding => isComponentTargetRef(binding.value.source))',
+      ) &&
       !apiDialogSource.includes('validationRules'),
     'Inspector API UI is not draft-based or crossed into validation editing',
   )
@@ -13433,7 +13459,8 @@ await test('delete confirmation enforces dialog focus and stale-impact behavior'
       JSON.stringify(impactItems) === JSON.stringify([
         'Components removed: 2',
         'Events removed: 1',
-        'Event actions removed: 1',
+        'Event actions removed: 2',
+        'API field bindings removed: 1',
         'State overrides removed: 2',
       ]),
     'delete dialog has no accessible name, description, or impact details: ' +

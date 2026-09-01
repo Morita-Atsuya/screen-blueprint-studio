@@ -361,7 +361,7 @@ export const sampleProject: ProjectDocument = {
         'event-open-create',
         'event-close-create',
         'event-submit-create',
-        'event-edit-launch-task',
+        'event-open-task-item',
       ],
     },
     'screen-edit': {
@@ -928,8 +928,8 @@ export const sampleProject: ProjectDocument = {
       trigger: { type: 'click', target: { type: 'inline', componentId: 'comp-create-submit-btn' } },
       actions: [{ type: 'callApi', apiOperationId: 'api-create-task' }],
     },
-    'event-edit-launch-task': {
-      id: 'event-edit-launch-task',
+    'event-open-task-item': {
+      id: 'event-open-task-item',
       screenId: 'screen-list',
       name: 'Open the launch task',
       trigger: {
@@ -940,7 +940,15 @@ export const sampleProject: ProjectDocument = {
           nodePath: ['task-card-action'],
         },
       },
-      actions: [{ type: 'navigate', destinationScreenId: 'screen-edit' }],
+      actions: [
+        { type: 'callApi', apiOperationId: 'api-open-task' },
+        {
+          type: 'navigate',
+          destinationScreenId: 'screen-edit',
+          routeParameters: { taskId: { type: 'item', path: '/id' } },
+          queryParameters: { source: { type: 'literal', value: 'task-list' } },
+        },
+      ],
     },
     'event-save-task': {
       id: 'event-save-task',
@@ -972,6 +980,18 @@ export const sampleProject: ProjectDocument = {
     },
   },
   apiOperations: {
+    'api-open-task': {
+      id: 'api-open-task',
+      screenId: 'screen-list',
+      name: 'Load selected task',
+      method: 'GET',
+      path: '/tasks/:taskId',
+      requestBindings: [
+        { source: { type: 'item', path: '/id' }, targetPath: 'path.taskId' },
+      ],
+      successScenarioId: null,
+      errorScenarioId: null,
+    },
     'api-create-task': {
       id: 'api-create-task',
       screenId: 'screen-list',

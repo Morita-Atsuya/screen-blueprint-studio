@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { useAppStore } from '../../app/appStore'
 import type { EventEditorContext } from '../../domain/componentBehavior'
 import type { EventAction, ScreenEvent } from '../../domain/model'
+import type { BehaviorValueSource } from '../../domain/model'
 import { useI18n } from '../../i18n/I18nProvider'
 import { trapDialogFocus } from './dialogFocus'
 import styles from './EventDialog.module.css'
@@ -13,6 +14,7 @@ import {
 } from '../../app/reviewLock'
 import { DialogReviewActions } from '../change-review/DialogReviewActions'
 import { cloneComponentTargetRef } from '../../domain/componentTargets'
+import { cloneEventAction } from '../../domain/modelClone'
 
 type DialogMode = 'create' | 'edit'
 type DialogResult = 'cancelled' | 'saved' | 'deleted'
@@ -49,7 +51,7 @@ export function EventDialog({
     event?.trigger.type ?? 'click',
   )
   const [actions, setActions] = useState<DraftAction[]>(() =>
-    (event?.actions ?? []).map(value => ({ key: nanoid(), value: { ...value } })),
+    (event?.actions ?? []).map(value => ({ key: nanoid(), value: cloneEventAction(value) })),
   )
   const persistedEventId = event?.id ?? eventId
   const draftLocked = reviewLocked || staleAfterReview
@@ -347,7 +349,12 @@ function createAction(type: ActionType, context: EventEditorContext): EventActio
     case 'clearScenario':
       return { type: 'clearScenario' }
     case 'navigate':
-      return { type, destinationScreenId: context.screens[0]?.id ?? '' }
+      return {
+        type,
+        destinationScreenId: context.screens[0]?.id ?? '',
+        routeParameters: {},
+        queryParameters: {},
+      }
     case 'callApi':
       return { type, apiOperationId: context.apiOperations[0]?.id ?? '' }
   }
@@ -376,7 +383,11 @@ function isActionTargetAvailable(
     case 'clearScenario':
       return true
     case 'navigate':
-      return context.screens.some(screen => screen.id === action.destinationScreenId)
+      return (
+        context.screens.some(screen => screen.id === action.destinationScreenId) &&
+        parametersAvailable(action.routeParameters, context) &&
+        parametersAvailable(action.queryParameters, context)
+      )
     case 'callApi':
       return context.apiOperations.some(operation => operation.id === action.apiOperationId)
   }
@@ -417,26 +428,40 @@ function ActionTarget({
       return null
     case 'navigate':
       return (
-        <label className={styles.compactField}>
-          <span>{t('behavior.target')}</span>
-          <select
-            value={action.destinationScreenId}
-            onChange={event => onChange({
-              ...action,
-              destinationScreenId: event.target.value,
-            })}
-          >
-            <MissingOption
-              currentId={action.destinationScreenId}
-              availableIds={context.screens.map(screen => screen.id)}
-            />
-            {context.screens.map(screen => (
-              <option key={screen.id} value={screen.id}>
-                {screen.label} ({screen.route})
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className={styles.navigateFields}>
+          <label className={styles.compactField}>
+            <span>{t('behavior.target')}</span>
+            <select
+              value={action.destinationScreenId}
+              onChange={event => onChange({
+                ...action,
+                destinationScreenId: event.target.value,
+              })}
+            >
+              <MissingOption
+                currentId={action.destinationScreenId}
+                availableIds={context.screens.map(screen => screen.id)}
+              />
+              {context.screens.map(screen => (
+                <option key={screen.id} value={screen.id}>
+                  {screen.label} ({screen.route})
+                </option>
+              ))}
+            </select>
+          </label>
+          <ParameterMapEditor
+            label={t('behavior.routeParameters')}
+            parameters={action.routeParameters ?? {}}
+            itemAllowed={context.target.type === 'collectionItemNode'}
+            onChange={routeParameters => onChange({ ...action, routeParameters })}
+          />
+          <ParameterMapEditor
+            label={t('behavior.queryParameters')}
+            parameters={action.queryParameters ?? {}}
+            itemAllowed={context.target.type === 'collectionItemNode'}
+            onChange={queryParameters => onChange({ ...action, queryParameters })}
+          />
+        </div>
       )
     case 'callApi':
       return (
@@ -462,6 +487,129 @@ function ActionTarget({
         </label>
       )
   }
+}
+
+function parametersAvailable(
+    parameters: Record<string, BehaviorValueSource> | undefined,
+    context: EventEditorContext,
+  ): boolean {
+    return Object.entries(parameters ?? {}).every(([name, source]) =>
+      name.trim().length > 0 &&
+      (
+        source.type === 'literal' ||
+        (
+          context.target.type === 'collectionItemNode' &&
+          source.path.length > 0
+        )
+      ))
+  }
+
+function ParameterMapEditor({
+    label,
+    parameters,
+    itemAllowed,
+    onChange,
+  }: {
+    label: string
+    parameters: Record<string, BehaviorValueSource>
+    itemAllowed: boolean
+    onChange(parameters: Record<string, BehaviorValueSource>): void
+  }) {
+    const { t } = useI18n()
+    const entries = Object.entries(parameters)
+    const replaceEntry = (
+      oldName: string,
+      name: string,
+      source: BehaviorValueSource,
+    ) => {
+      if (
+        name !== oldName &&
+        Object.prototype.hasOwnProperty.call(parameters, name)
+      ) return
+      const next = { ...parameters }
+      delete next[oldName]
+      next[name] = source
+      onChange(next)
+    }
+    return (
+      <div className={styles.parameterMap}>
+        <div className={styles.parameterHeading}>
+          <span>{label}</span>
+          <button
+            type="button"
+            className={styles.secondary}
+            onClick={() => {
+              let index = entries.length + 1
+              while (
+                Object.prototype.hasOwnProperty.call(parameters, `param${index}`)
+              ) index += 1
+              onChange({
+                ...parameters,
+                [`param${index}`]: itemAllowed
+                  ? { type: 'item', path: '/id' }
+                  : { type: 'literal', value: '' },
+              })
+            }}
+          >
+            + {t('behavior.addParameter')}
+          </button>
+        </div>
+        {entries.map(([name, source]) => (
+          <div className={styles.parameterRow} key={name}>
+            <input
+              required
+              aria-label={t('behavior.parameterName')}
+              value={name}
+              onChange={event => replaceEntry(name, event.target.value, source)}
+            />
+            <select
+              aria-label={t('behavior.parameterSource')}
+              value={source.type}
+              onChange={event => replaceEntry(
+                name,
+                name,
+                event.target.value === 'item'
+                  ? { type: 'item', path: '/id' }
+                  : { type: 'literal', value: '' },
+              )}
+            >
+              {itemAllowed ? <option value="item">{t('behavior.bindingItem')}</option> : null}
+              <option value="literal">{t('behavior.bindingLiteral')}</option>
+            </select>
+            <input
+              required={source.type === 'item'}
+              aria-label={source.type === 'item'
+                ? t('behavior.itemPath')
+                : t('behavior.literalValue')}
+              value={source.type === 'item'
+                ? source.path
+                : source.value === null
+                  ? 'null'
+                  : String(source.value)}
+              onChange={event => replaceEntry(
+                name,
+                name,
+                source.type === 'item'
+                  ? { type: 'item', path: event.target.value }
+                  : { type: 'literal', value: event.target.value },
+              )}
+            />
+            <button
+              type="button"
+              className={styles.removeAction}
+              aria-label={t('behavior.removeParameter', { name })}
+              onClick={() => {
+                const next = { ...parameters }
+                delete next[name]
+                onChange(next)
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    )
 }
 
 function MissingOption({

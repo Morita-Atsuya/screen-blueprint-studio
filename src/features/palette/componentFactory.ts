@@ -71,8 +71,11 @@ export function createDefaultComponentConfig(
         fieldKey: generateUniqueFieldKey(doc),
         label: translate(locale, 'defaults.selectLabel'),
         required: false,
-        options: [],
-        defaultValue: '',
+        options: [{
+          value: 'option-1',
+          label: translate(locale, 'defaults.selectOption'),
+        }],
+        defaultValue: 'option-1',
       }
     case 'button':
       return {

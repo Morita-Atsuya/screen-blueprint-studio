@@ -244,7 +244,8 @@
         "event-open-create",
         "event-close-create",
         "event-submit-create",
-        "event-edit-launch-task"
+        "event-edit-launch-task",
+        "event-open-task-item"
       ]
     },
     "screen-edit": {
@@ -1625,6 +1626,43 @@
         }
       ]
     },
+    "event-open-task-item": {
+      "id": "event-open-task-item",
+      "screenId": "screen-list",
+      "name": "Open the selected task",
+      "trigger": {
+        "type": "click",
+        "target": {
+          "type": "collectionItemNode",
+          "collectionId": "comp-example-collection",
+          "nodePath": [
+            "header-root"
+          ]
+        }
+      },
+      "actions": [
+        {
+          "type": "callApi",
+          "apiOperationId": "api-open-task"
+        },
+        {
+          "type": "navigate",
+          "destinationScreenId": "screen-edit",
+          "routeParameters": {
+            "taskId": {
+              "type": "item",
+              "path": "/id"
+            }
+          },
+          "queryParameters": {
+            "source": {
+              "type": "literal",
+              "value": "task-list"
+            }
+          }
+        }
+      ]
+    },
     "event-save-task": {
       "id": "event-save-task",
       "screenId": "screen-edit",
@@ -1698,6 +1736,24 @@
     }
   },
   "apiOperations": {
+    "api-open-task": {
+      "id": "api-open-task",
+      "screenId": "screen-list",
+      "name": "Load selected task",
+      "method": "GET",
+      "path": "/tasks/:taskId",
+      "requestBindings": [
+        {
+          "source": {
+            "type": "item",
+            "path": "/id"
+          },
+          "targetPath": "path.taskId"
+        }
+      ],
+      "successScenarioId": null,
+      "errorScenarioId": null
+    },
     "api-create-task": {
       "id": "api-create-task",
       "screenId": "screen-list",

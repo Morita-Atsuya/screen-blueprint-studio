@@ -168,6 +168,39 @@
   gap: 8px;
 }
 
+.navigateFields {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.parameterMap {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.parameterHeading,
+.parameterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.parameterHeading {
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.parameterRow input,
+.parameterRow select {
+  min-width: 0;
+  flex: 1;
+}
+
 .removeAction {
   flex: 0 0 28px;
   width: 28px;

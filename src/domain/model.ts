@@ -196,6 +196,8 @@ export type CollectionValueSource =
   | { type: 'item'; path: string }
   | { type: 'literal'; value: JsonScalar }
 
+export type BehaviorValueSource = CollectionValueSource
+
 export interface CollectionPropBinding {
   propKey: string
   source: CollectionValueSource
@@ -661,7 +663,12 @@ export type EventAction =
   | { type: 'setScenario'; scenarioId: EntityId }
   | { type: 'clearScenario' }
   | { type: 'callApi'; apiOperationId: EntityId }
-  | { type: 'navigate'; destinationScreenId: EntityId }
+  | {
+      type: 'navigate'
+      destinationScreenId: EntityId
+      routeParameters?: Record<string, BehaviorValueSource>
+      queryParameters?: Record<string, BehaviorValueSource>
+    }
 
 export type EventActionV3 = EventAction
 
@@ -680,7 +687,7 @@ export type HttpMethod = (typeof HTTP_METHODS_V3)[number]
 export type HttpMethodV3 = HttpMethod
 
 export interface FieldBinding {
-  source: ComponentTargetRef
+  source: ComponentTargetRef | BehaviorValueSource
   targetPath: string
 }
 

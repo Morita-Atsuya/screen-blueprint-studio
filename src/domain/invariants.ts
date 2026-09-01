@@ -4,6 +4,7 @@ import {
   type ComponentDefinition,
   type ComponentDefinitionNode,
   type ComponentKind,
+  type BehaviorValueSource,
   type DefinitionComponentConfig,
   type EntityId,
   type ProjectDocument,
@@ -40,9 +41,60 @@ import {
 } from './runtimeValidation'
 import {
   parseJsonPointer,
+  resolveJsonPointer,
   resolveCollectionItem,
   validateCollectionPreviewItems,
 } from './collection'
+
+function validateItemBehaviorSource(
+  document: ProjectDocument,
+  screenId: EntityId,
+  collectionId: EntityId,
+  source: BehaviorValueSource,
+  label: string,
+  allowNull: boolean,
+): void {
+  if (source.type === 'literal') {
+    if (!allowNull && source.value === null) {
+      throw new DomainError('INVARIANT_VIOLATION', `${label} must not be null`)
+    }
+    return
+  }
+  parseJsonPointer(source.path, label)
+  const collection = getOwnEntity(document.components, collectionId)
+  if (
+    !collection ||
+    collection.screenId !== screenId ||
+    !isInlineScreenComponent(collection) ||
+    collection.config.kind !== 'collection'
+  ) {
+    throw new DomainError(
+      'INVARIANT_VIOLATION',
+      `${label} requires a Collection on the same screen`,
+    )
+  }
+  for (const [index, item] of collection.config.dataSource.previewItems.entries()) {
+    const result = resolveJsonPointer(item, source.path, label)
+    if (!result.found) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `${label} is missing from preview item ${index + 1}`,
+      )
+    }
+    if (typeof result.value === 'object' && result.value !== null) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `${label} must resolve to a scalar`,
+      )
+    }
+    if (!allowNull && result.value === null) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `${label} must not resolve to null`,
+      )
+    }
+  }
+}
 
 const VARIANT_FIELD_TO_PUBLIC_PROP_FIELD: Partial<Record<keyof NonNullable<VariantNodeOverride['config']>, PublicPropFieldV3>> = {
   layout: 'config.layout',
@@ -880,6 +932,46 @@ function validateEvents(screen: Screen, document: ProjectDocument): void {
           `Event ${event.id} references a missing destination screen`,
         )
       }
+      if (action.type === 'navigate') {
+        for (const [kind, parameters] of [
+          ['route', action.routeParameters],
+          ['query', action.queryParameters],
+        ] as const) {
+          for (const [name, source] of Object.entries(parameters ?? {})) {
+            if (!name.trim()) {
+              throw new DomainError(
+                'INVARIANT_VIOLATION',
+                `Event ${event.id} ${kind} parameter name must not be empty`,
+              )
+            }
+            if (source.type === 'item') {
+              if (event.trigger.target.type !== 'collectionItemNode') {
+                throw new DomainError(
+                  'INVARIANT_VIOLATION',
+                  `Event ${event.id} item parameter requires a Collection item trigger`,
+                )
+              }
+              validateItemBehaviorSource(
+                document,
+                screen.id,
+                event.trigger.target.collectionId,
+                source,
+                `Event ${event.id} ${kind} parameter ${name}`,
+                false,
+              )
+            } else {
+              validateItemBehaviorSource(
+                document,
+                screen.id,
+                '',
+                source,
+                `Event ${event.id} ${kind} parameter ${name}`,
+                false,
+              )
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -889,22 +981,57 @@ function validateApiOperations(screen: Screen, document: ProjectDocument): void 
     if (operation.screenId !== screen.id) continue
     const bindingTargets = new Set<string>()
     const targetPaths = new Set<string>()
+    const itemBindings = operation.requestBindings.filter(binding => binding.source.type === 'item')
+    const callers = Object.values(document.events).filter(event =>
+      event.screenId === screen.id &&
+      event.actions.some(action =>
+        action.type === 'callApi' && action.apiOperationId === operation.id))
+    const callerCollectionIds = new Set(callers.flatMap(event =>
+      event.trigger.target.type === 'collectionItemNode'
+        ? [event.trigger.target.collectionId]
+        : []))
+    if (
+      itemBindings.length > 0 &&
+      (
+        callers.length === 0 ||
+        callerCollectionIds.size !== 1 ||
+        callers.some(event => event.trigger.target.type !== 'collectionItemNode')
+      )
+    ) {
+      throw new DomainError(
+        'INVARIANT_VIOLATION',
+        `API operation ${operation.id} item bindings require callers from one Collection`,
+      )
+    }
     for (const binding of operation.requestBindings) {
-      const resolved = resolveComponentTarget(document, screen.id, binding.source, null)
-      if (resolved.config.kind !== 'textInput' && resolved.config.kind !== 'select') {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          `API operation ${operation.id} binding source must resolve to an input component`,
+      if (binding.source.type === 'item') {
+        validateItemBehaviorSource(
+          document,
+          screen.id,
+          [...callerCollectionIds][0]!,
+          binding.source,
+          `API operation ${operation.id} binding ${binding.targetPath}`,
+          true,
         )
+      } else if (binding.source.type !== 'literal') {
+        const resolved = resolveComponentTarget(document, screen.id, binding.source, null)
+        if (resolved.config.kind !== 'textInput' && resolved.config.kind !== 'select') {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `API operation ${operation.id} binding source must resolve to an input component`,
+          )
+        }
       }
-      const targetKey = componentTargetRefKey(binding.source)
-      if (bindingTargets.has(targetKey)) {
-        throw new DomainError(
-          'INVARIANT_VIOLATION',
-          `API operation ${operation.id} has a duplicate binding source ${targetKey}`,
-        )
+      if (binding.source.type !== 'item' && binding.source.type !== 'literal') {
+        const targetKey = componentTargetRefKey(binding.source)
+        if (bindingTargets.has(targetKey)) {
+          throw new DomainError(
+            'INVARIANT_VIOLATION',
+            `API operation ${operation.id} has a duplicate binding source ${targetKey}`,
+          )
+        }
+        bindingTargets.add(targetKey)
       }
-      bindingTargets.add(targetKey)
       const targetPath = binding.targetPath.trim()
       if (targetPath.length === 0) {
         throw new DomainError(

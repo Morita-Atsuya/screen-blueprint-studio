@@ -1,12 +1,14 @@
 import { getOwnEntity } from '../domain/entityMap'
 import type { EditorSelection } from '../domain/editorSelection'
 import {
+  collectionItemNodeSelection,
   resolvedDefinitionNodeSelection,
   screenComponentSelection,
 } from '../domain/editorSelection'
 import { resolveScreenNodes } from '../domain/definitionResolver'
 import type { EntityId, ProjectDocument } from '../domain/model'
 import {
+  collectionItemNodeTargetRef,
   componentTargetRefKey,
   definitionNodeTargetRef,
 } from '../domain/componentTargets'
@@ -175,7 +177,10 @@ export function resolveHierarchyEditorSelection(
   selection: EditorSelection,
   shortcut: HierarchySelectionShortcut,
 ): EditorSelection | null {
-  if (selection.type !== 'resolvedDefinitionNode') {
+  if (
+    selection.type !== 'resolvedDefinitionNode' &&
+    selection.type !== 'collectionItemNode'
+  ) {
     if (selection.type === 'definitionEditorNode') return null
     const targetId = resolveHierarchySelectionTarget(
       document,
@@ -188,8 +193,11 @@ export function resolveHierarchyEditorSelection(
   }
 
   const resolved = resolveScreenNodes(document, selection.screenId, null)
+  const selectedTarget = selection.type === 'resolvedDefinitionNode'
+    ? definitionNodeTargetRef(selection.instanceId, selection.nodePath)
+    : collectionItemNodeTargetRef(selection.collectionId, selection.nodePath)
   const selected = resolved.nodesByTarget[
-    componentTargetRefKey(definitionNodeTargetRef(selection.instanceId, selection.nodePath))
+    componentTargetRefKey(selectedTarget)
   ]
   if (!selected) return null
   let targetRuntimeId: string | undefined
@@ -215,6 +223,12 @@ export function resolveHierarchyEditorSelection(
         target.canonicalTarget.instanceId,
         target.canonicalTarget.nodePath,
       )
+    : target.canonicalTarget.type === 'collectionItemNode'
+      ? collectionItemNodeSelection(
+          selection.screenId,
+          target.canonicalTarget.collectionId,
+          target.canonicalTarget.nodePath,
+        )
     : target.canonicalTarget.type === 'inline'
       ? screenComponentSelection(
         document,

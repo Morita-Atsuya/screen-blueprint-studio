@@ -29,6 +29,12 @@ export function collectionItemNodeTargetRef(
   return { type: 'collectionItemNode', collectionId, nodePath: [...nodePath] }
 }
 
+export function isComponentTargetRef(
+  value: ComponentTargetRef | { type: 'item' | 'literal' },
+): value is ComponentTargetRef {
+  return value.type !== 'item' && value.type !== 'literal'
+}
+
 export function cloneComponentTargetRef(target: ComponentTargetRef): ComponentTargetRef {
   if (!isRecord(target)) {
     throw new DomainError('INVARIANT_VIOLATION', 'Component target must be an object')

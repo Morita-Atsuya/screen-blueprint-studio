@@ -155,9 +155,11 @@ export function StructureTree() {
     requestHumanDelete,
   } = useAppStore()
   const { activeScreenId } = ui
-  const selectedComponentId = ui.selection
-    ? selectionScreenComponentId(ui.selection)
-    : null
+  const selectedComponentId = ui.selection?.type === 'collectionItemNode'
+    ? ui.selection.collectionId
+    : ui.selection
+      ? selectionScreenComponentId(ui.selection)
+      : null
   const [treePreferences, setTreePreferences] = useState<StructureTreePreferences>(() =>
     resolveInitialStructureTreePreferences(browserStorage()),
   )

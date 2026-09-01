@@ -269,6 +269,19 @@ function replaceSelectionRoot(
         }
       : null
   }
+  if (selection.type === 'collectionItemNode') {
+    return (
+      component.nodeType === 'inline' &&
+      component.config.kind === 'collection'
+    )
+      ? {
+          ...selection,
+          screenId: component.screenId,
+          collectionId: componentId,
+          nodePath: [...selection.nodePath] as [EntityId, ...EntityId[]],
+        }
+      : null
+  }
   if (
     selection.type === 'screenInlineComponent' ||
     selection.type === 'screenDefinitionInstance'

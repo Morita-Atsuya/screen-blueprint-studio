@@ -109,7 +109,11 @@ const {
   createExtractDefinitionCommand,
   duplicateComponentDefinition,
 } = await import(moduleUrl(definitionEditingBundle, 'definition-editing'))
-const { parseEditorSelectionValue } = await import(
+const {
+  parseEditorSelectionValue,
+  reconcileEditorSelection,
+  selectionCanonicalTarget,
+} = await import(
   moduleUrl(editorSelectionBundle, 'editor-selection')
 )
 const { componentTargetRefKey } = await import(
@@ -265,6 +269,32 @@ await test('Collection resolves bounded item data with stable canonical identity
         node.canonicalTarget.collectionId === collection.id),
     'Collection preview nodes must have unique runtime IDs and stable collectionItemNode targets',
   )
+  const persistedCollectionSelection = parseEditorSelectionValue({
+    type: 'collectionItemNode',
+    screenId: 'screen-list',
+    collectionId: collection.id,
+    nodePath: ['task-card-action'],
+  })
+  assert(
+    persistedCollectionSelection?.type === 'collectionItemNode' &&
+      reconcileEditorSelection(
+        sampleProject,
+        persistedCollectionSelection,
+        'screen-list',
+      )?.type === 'collectionItemNode' &&
+      selectionCanonicalTarget(
+        sampleProject,
+        persistedCollectionSelection,
+      )?.type === 'collectionItemNode',
+    'Collection template selection must persist and resolve to a canonical target',
+  )
+  assert(
+    sampleProject.apiOperations['api-open-task'].requestBindings[0].source.type === 'item' &&
+      sampleProject.events['event-open-task-item'].actions.some(action =>
+        action.type === 'navigate' &&
+        action.routeParameters?.taskId?.type === 'item'),
+    'sample must demonstrate item-bound API and navigation values',
+  )
 
   const duplicateKeys = clone(sampleProject)
   const duplicateCollection = duplicateKeys.components['comp-launch-task-card']
@@ -338,6 +368,40 @@ await test('Collection resolves bounded item data with stable canonical identity
   })
   await expectThrow('empty Collections must validate literal prop bindings', () =>
     validateInvariants(invalidEmptyLiteralProp))
+
+  const missingItemValue = clone(sampleProject)
+  missingItemValue.apiOperations['api-open-task'].requestBindings[0].source.path = '/missing'
+  await expectThrow('missing item API binding paths must be rejected', () =>
+    validateInvariants(missingItemValue))
+  const objectItemValue = clone(sampleProject)
+  for (const item of objectItemValue.components[
+    'comp-launch-task-card'
+  ].config.dataSource.previewItems) item.payload = { id: item.id }
+  objectItemValue.apiOperations['api-open-task'].requestBindings[0].source.path = '/payload'
+  await expectThrow('object item API binding values must be rejected', () =>
+    validateInvariants(objectItemValue))
+  const crossContextItemValue = clone(sampleProject)
+  crossContextItemValue.events['event-submit-create'].actions.push({
+    type: 'callApi',
+    apiOperationId: 'api-open-task',
+  })
+  await expectThrow('item API bindings must reject non-Collection callers', () =>
+    validateInvariants(crossContextItemValue))
+  const inlineNavigateItem = clone(sampleProject)
+  inlineNavigateItem.events['event-submit-create'].actions.push({
+    type: 'navigate',
+    destinationScreenId: 'screen-edit',
+    routeParameters: { taskId: { type: 'item', path: '/id' } },
+  })
+  await expectThrow('item navigation parameters require a Collection item trigger', () =>
+    validateInvariants(inlineNavigateItem))
+  const repeatedValueSources = clone(sampleProject)
+  repeatedValueSources.apiOperations['api-open-task'].requestBindings.push(
+    { source: { type: 'item', path: '/id' }, targetPath: 'body.taskId' },
+    { source: { type: 'literal', value: 'task-list' }, targetPath: 'body.source' },
+    { source: { type: 'literal', value: 'task-list' }, targetPath: 'body.auditSource' },
+  )
+  validateInvariants(repeatedValueSources)
 
   const apiBackedCollection = clone(sampleProject)
   apiBackedCollection.components['comp-launch-task-card'].config.dataSource.apiOperationId =
@@ -465,6 +529,30 @@ await test('Definition editor paths, impact analysis, and resolved behavior targ
       eventEditor.target.instanceId === 'comp-list-header' &&
       apiEditor?.supportsApiEditing,
     'resolved Definition target did not reach the visual Event/API editor contract',
+  )
+  const collectionTarget = {
+    type: 'collectionItemNode',
+    collectionId: 'comp-launch-task-card',
+    nodePath: ['task-card-action'],
+  }
+  const collectionBehavior = getComponentTargetBehavior(
+    sampleProject,
+    'screen-list',
+    collectionTarget,
+  )
+  const collectionApiEditor = getApiEditorContextForTarget(
+    sampleProject,
+    'screen-list',
+    collectionTarget,
+  )
+  assert(
+    collectionBehavior?.events.some(event => event.id === 'event-open-task-item') &&
+      collectionBehavior.apiBindings.some(binding => binding.targetPath === 'path.taskId') &&
+      collectionApiEditor?.itemContext?.collectionId === 'comp-launch-task-card' &&
+      collectionApiEditor.operations.some(operation =>
+        operation.operation.id === 'api-open-task' &&
+        operation.bindings.some(binding => binding.component.id === 'item:/id')),
+    'Collection template target did not expose item Event/API bindings for human review',
   )
 
   const withResolvedInput = clone(sampleProject)
@@ -626,6 +714,60 @@ await test('WebMCP event action input schema matches canonical Scenario actions'
   assert(
     !validate({ ...base, actions: [{ type: 'setState', stateId: 'legacy-state' }] }),
     'connect_behavior still advertised the removed setState action',
+  )
+  assert(
+    validate({
+      ...base,
+      trigger: {
+        type: 'click',
+        target: {
+          type: 'collectionItemNode',
+          collectionId: 'comp-launch-task-card',
+          nodePath: ['task-card-action'],
+        },
+      },
+      actions: [{
+        type: 'navigate',
+        destinationScreenId: 'screen-edit',
+        routeParameters: { taskId: { type: 'item', path: '/id' } },
+        queryParameters: { source: { type: 'literal', value: 'task-list' } },
+      }],
+    }),
+    `connect_behavior rejected item-bound navigation: ${JSON.stringify(validate.errors)}`,
+  )
+  assert(
+    validate({
+      changeSetId: 'change-set',
+      expectedRevision: 0,
+      expectedChangeSetVersion: 0,
+      operation: 'bindApi',
+      screenId: 'screen-list',
+      name: 'Open task',
+      method: 'GET',
+      path: '/tasks/:taskId',
+      requestBindings: [{
+        source: { type: 'item', path: '/id' },
+        targetPath: 'path.taskId',
+      }],
+    }),
+    `connect_behavior rejected item API bindings: ${JSON.stringify(validate.errors)}`,
+  )
+  assert(
+    !validate({
+      changeSetId: 'change-set',
+      expectedRevision: 0,
+      expectedChangeSetVersion: 0,
+      operation: 'bindApi',
+      screenId: 'screen-list',
+      name: 'Invalid',
+      method: 'POST',
+      path: '/tasks',
+      requestBindings: [{
+        source: { type: 'literal', value: { nested: true } },
+        targetPath: 'body.invalid',
+      }],
+    }),
+    'connect_behavior accepted an object literal behavior source',
   )
   const getComponent = WEBMCP_TOOLS.find(tool => tool.name === 'get_component')
   assert(

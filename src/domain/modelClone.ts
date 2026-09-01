@@ -327,9 +327,30 @@ export function cloneEventTrigger(trigger: EventTrigger): EventTrigger {
 
 export function cloneEventAction(action: EventAction): EventAction {
   switch (action.type) {
+    case 'navigate':
+      return {
+        ...action,
+        ...(action.routeParameters
+          ? {
+              routeParameters: cloneRecord(
+                action.routeParameters,
+                source => ({ ...source }),
+                'navigate routeParameters',
+              ),
+            }
+          : {}),
+        ...(action.queryParameters
+          ? {
+              queryParameters: cloneRecord(
+                action.queryParameters,
+                source => ({ ...source }),
+                'navigate queryParameters',
+              ),
+            }
+          : {}),
+      }
     case 'setScenario':
     case 'callApi':
-    case 'navigate':
       return { ...action }
     case 'clearScenario':
       return { type: 'clearScenario' }
@@ -341,7 +362,9 @@ export function cloneEventAction(action: EventAction): EventAction {
 export function cloneFieldBinding(binding: FieldBinding): FieldBinding {
   return {
     targetPath: binding.targetPath,
-    source: cloneComponentTargetRef(binding.source),
+    source: binding.source.type === 'item' || binding.source.type === 'literal'
+      ? { ...binding.source }
+      : cloneComponentTargetRef(binding.source),
   }
 }
 

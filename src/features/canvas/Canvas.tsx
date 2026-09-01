@@ -24,11 +24,12 @@ import { effectiveComponent, type EffectiveScreenComponent } from '../../domain/
 import { getOwnEntity } from '../../domain/entityMap'
 import { getComponentDisplayLabel } from '../../domain/componentDisplayLabel'
 import {
+  collectionItemNodeSelection,
   resolvedDefinitionNodeSelection,
-  screenComponentSelection,
   selectedScreenComponentId,
   selectionScreenComponentId,
 } from '../../domain/editorSelection'
+import { componentTargetRefKey } from '../../domain/componentTargets'
 import {
   getChangeSetComponentChanges,
   type ComponentChangeStatus,
@@ -798,9 +799,15 @@ function ResolvedCanvasNode({
     !node.nodePath ||
     !node.common.visible
   ) return null
-  const isSelected = selection?.type === 'resolvedDefinitionNode' &&
+  const isSelected = (
+    selection?.type === 'resolvedDefinitionNode' &&
     selection.instanceId === node.instanceId &&
     JSON.stringify(selection.nodePath) === JSON.stringify(node.nodePath)
+  ) || (
+    selection?.type === 'collectionItemNode' &&
+    selection.collectionId === node.collectionId &&
+    JSON.stringify(selection.nodePath) === JSON.stringify(node.nodePath)
+  )
   const isContainer = CONTAINER_KINDS.includes(node.kind)
   const layout = hasLayout(node.config) ? node.config : null
   const flowChildren = node.childIds
@@ -815,7 +822,7 @@ function ResolvedCanvasNode({
   const select = () => setSelection(
     node.instanceId
       ? resolvedDefinitionNodeSelection(node.screenId, node.instanceId, node.nodePath!)
-      : screenComponentSelection(document, node.screenId, node.collectionId!),
+      : collectionItemNodeSelection(node.screenId, node.collectionId!, node.nodePath!),
   )
   const childrenStyle = layout
     ? {
@@ -847,6 +854,7 @@ function ResolvedCanvasNode({
         }
       }}
       data-component-id={node.id}
+      data-canonical-target-key={componentTargetRefKey(node.canonicalTarget)}
       data-resolved-definition-node
       data-definition-id={node.definitionId ?? undefined}
       data-definition-node-id={node.definitionNodeId ?? undefined}

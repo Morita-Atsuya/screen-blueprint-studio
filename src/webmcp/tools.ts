@@ -3,6 +3,7 @@ import { useAppStore } from '../app/appStore'
 import type { DomainCommand } from '../domain/commands'
 import type {
   CommonComponentSpec,
+  BehaviorValueSource,
   ComponentConfig,
   ComponentKind,
   ComponentOverride,
@@ -29,11 +30,15 @@ import {
   findInlineScenarioOverride,
   findScenarioOverride,
   inlineTargetRef,
+  isComponentTargetRef,
 } from '../domain/componentTargets'
 import { createDuplicateComponentCommand } from '../domain/componentDuplication'
 import { presentChangeSetOperations } from '../domain/changeSetPresentation'
 import { validateComponentSizing } from '../domain/runtimeValidation'
-import { selectedScreenComponentId } from '../domain/editorSelection'
+import {
+  selectedScreenComponentId,
+  selectionCanonicalTarget,
+} from '../domain/editorSelection'
 import {
   createDetachDefinitionInstanceCommand,
   createEmptyComponentDefinition,
@@ -235,10 +240,40 @@ function fieldBindingsFromInput(value: unknown): FieldBinding[] {
     }
     requireExactKeys(entry, ['source', 'targetPath'], `requestBindings[${index}]`)
     return {
-      source: componentTargetFromInput(entry.source, `requestBindings[${index}].source`),
+      source: behaviorBindingSourceFromInput(
+        entry.source,
+        `requestBindings[${index}].source`,
+      ),
       targetPath: requiredString(entry, 'targetPath'),
     }
   })
+}
+
+function behaviorBindingSourceFromInput(
+  value: unknown,
+  label: string,
+): ComponentTargetRef | BehaviorValueSource {
+  if (!isRecord(value)) {
+    throw new DomainError('INVALID_REFERENCE', `${label} must be an object`)
+  }
+  if (value.type === 'item') {
+    requireExactKeys(value, ['type', 'path'], label)
+    return { type: 'item', path: requiredString(value, 'path') }
+  }
+  if (value.type === 'literal') {
+    requireExactKeys(value, ['type', 'value'], label)
+    const literal = value.value
+    if (
+      literal !== null &&
+      typeof literal !== 'string' &&
+      typeof literal !== 'number' &&
+      typeof literal !== 'boolean'
+    ) {
+      throw new DomainError('INVALID_REFERENCE', `${label}.value must be a scalar`)
+    }
+    return { type: 'literal', value: literal }
+  }
+  return componentTargetFromInput(value, label)
 }
 
 function triggerFromInput(input: JsonObject): EventTrigger {
@@ -397,10 +432,46 @@ const componentTargetSchema = {
   ],
 }
 
+const behaviorValueSourceSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        type: { const: 'item' },
+        path: { type: 'string' },
+      },
+      required: ['type', 'path'],
+      ...CLOSED_OBJECT,
+    },
+    {
+      type: 'object',
+      properties: {
+        type: { const: 'literal' },
+        value: {
+          type: ['string', 'number', 'boolean', 'null'],
+        },
+      },
+      required: ['type', 'value'],
+      ...CLOSED_OBJECT,
+    },
+  ],
+}
+
+const behaviorParameterMapSchema = {
+  type: 'object',
+  propertyNames: { type: 'string', minLength: 1, pattern: '\\S' },
+  additionalProperties: behaviorValueSourceSchema,
+}
+
 const fieldBindingSchema = {
   type: 'object',
   properties: {
-    source: componentTargetSchema,
+    source: {
+      oneOf: [
+        ...componentTargetSchema.oneOf,
+        ...behaviorValueSourceSchema.oneOf,
+      ],
+    },
     targetPath: { type: 'string', minLength: 1 },
   },
   required: ['source', 'targetPath'],
@@ -440,6 +511,8 @@ const eventActionSchema = {
       properties: {
         type: { const: 'navigate' },
         destinationScreenId: { type: 'string', minLength: 1 },
+        routeParameters: behaviorParameterMapSchema,
+        queryParameters: behaviorParameterMapSchema,
       },
       required: ['type', 'destinationScreenId'],
       ...CLOSED_OBJECT,
@@ -575,12 +648,8 @@ const getComponent: ToolDefinition = {
         ? null
         : componentTargetFromInput(input.target, 'target')
       const selectedTarget = explicitTarget ?? (
-        input.componentId === undefined && state.ui.selection?.type === 'resolvedDefinitionNode'
-          ? {
-              type: 'definitionNode' as const,
-              instanceId: state.ui.selection.instanceId,
-              nodePath: state.ui.selection.nodePath,
-            }
+        input.componentId === undefined && state.ui.selection
+          ? selectionCanonicalTarget(state.effectiveDocument, state.ui.selection)
           : null
       )
       if (selectedTarget) {
@@ -603,7 +672,15 @@ const getComponent: ToolDefinition = {
             componentTargetRefEquals(event.trigger.target, selectedTarget)),
           relatedApiOperations: Object.values(state.effectiveDocument.apiOperations).filter(operation =>
             operation.requestBindings.some(binding =>
-              componentTargetRefEquals(binding.source, selectedTarget)),
+              isComponentTargetRef(binding.source) &&
+              componentTargetRefEquals(binding.source, selectedTarget)) ||
+            Object.values(state.effectiveDocument.events).some(event =>
+              componentTargetRefEquals(event.trigger.target, selectedTarget) &&
+              event.actions.some(action =>
+                action.type === 'callApi' &&
+                action.apiOperationId === operation.id) &&
+              operation.requestBindings.some(binding =>
+                binding.source.type === 'item')),
           ),
         }
       }
@@ -624,6 +701,7 @@ const getComponent: ToolDefinition = {
         ),
         relatedApiOperations: Object.values(state.effectiveDocument.apiOperations).filter(operation =>
           operation.requestBindings.some(binding =>
+            isComponentTargetRef(binding.source) &&
             componentTargetRefEquals(binding.source, inlineTargetRef(componentId)),
           ),
         ),

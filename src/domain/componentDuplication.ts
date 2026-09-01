@@ -22,7 +22,10 @@ import {
   cloneEventTrigger,
   cloneScreenScenario,
 } from './modelClone'
-import { targetRootScreenComponentId } from './componentTargets'
+import {
+  isComponentTargetRef,
+  targetRootScreenComponentId,
+} from './componentTargets'
 
 export interface ComponentPasteTarget {
   destinationComponentId: EntityId
@@ -111,7 +114,10 @@ function collectSnapshotDependencies(
   )
   for (const operation of Object.values(document.apiOperations)) {
     if (operation.screenId !== sourceScreenId) continue
+    const componentBindings = operation.requestBindings.filter(binding =>
+      isComponentTargetRef(binding.source))
     const matchedBindings = operation.requestBindings.filter(binding =>
+      isComponentTargetRef(binding.source) &&
       sourceIdSet.has(targetRootScreenComponentId(binding.source)),
     )
     const referencedByCopiedEvent = Object.values(events).some(event =>
@@ -119,7 +125,7 @@ function collectSnapshotDependencies(
     )
     const referencedByCollection = collectionApiOperationIds.has(operation.id)
     if (matchedBindings.length === 0 && !referencedByCopiedEvent && !referencedByCollection) continue
-    if (matchedBindings.length !== operation.requestBindings.length) return null
+    if (matchedBindings.length !== componentBindings.length) return null
     apiOperations[operation.id] = {
       ...operation,
       requestBindings: operation.requestBindings.map(cloneFieldBinding),

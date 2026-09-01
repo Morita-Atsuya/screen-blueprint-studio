@@ -43,6 +43,7 @@ import {
   cloneScreenComponent,
   cloneScreenScenario,
 } from './modelClone'
+import { isComponentTargetRef } from './componentTargets'
 import {
   buildDetachTargetRewriteMap,
   buildExtractionTargetRewriteMap,
@@ -122,8 +123,18 @@ function cleanupComponentRefs(removedIds: ReadonlySet<EntityId>, doc: ProjectDoc
   }
 
   for (const operation of Object.values(doc.apiOperations)) {
+    const hasCollectionCaller = Object.values(doc.events).some(event =>
+      event.trigger.target.type === 'collectionItemNode' &&
+      event.actions.some(action =>
+        action.type === 'callApi' && action.apiOperationId === operation.id))
     operation.requestBindings = operation.requestBindings
-      .filter(binding => !targetBelongsToRemovedScreenComponents(binding.source, removedIds))
+      .filter(binding =>
+        (binding.source.type !== 'item' || hasCollectionCaller) &&
+        !isComponentTargetRef(binding.source) ||
+        (
+          isComponentTargetRef(binding.source) &&
+          !targetBelongsToRemovedScreenComponents(binding.source, removedIds)
+        ))
       .map(cloneFieldBinding)
   }
 }
@@ -377,7 +388,9 @@ function copySnapshotIntoDocument(
       screenId: destinationScreenId,
       requestBindings: operation.requestBindings.map(binding => ({
         targetPath: binding.targetPath,
-        source: mapTargetIntoCopiedSubtree(binding.source, mappedComponents),
+        source: isComponentTargetRef(binding.source)
+          ? mapTargetIntoCopiedSubtree(binding.source, mappedComponents)
+          : { ...binding.source },
       })),
     })
   }
@@ -1357,6 +1370,17 @@ export function applyCommandWithoutRevision(
         }
       }
       deleteOwnEntity(next.events, event.id)
+      for (const operation of Object.values(next.apiOperations)) {
+        const hasCollectionCaller = Object.values(next.events).some(candidate =>
+          candidate.trigger.target.type === 'collectionItemNode' &&
+          candidate.actions.some(action =>
+            action.type === 'callApi' && action.apiOperationId === operation.id))
+        if (!hasCollectionCaller) {
+          operation.requestBindings = operation.requestBindings
+            .filter(binding => binding.source.type !== 'item')
+            .map(cloneFieldBinding)
+        }
+      }
       break
     }
 
