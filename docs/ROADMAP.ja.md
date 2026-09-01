@@ -4,7 +4,7 @@
 
 最終更新: 2026年9月1日
 
-Screen Blueprint Studioは、意味のあるUIコンポーネントから、ワイヤーフレーム、画面状態、振る舞い、API binding、人間とAIによるレビュー可能な変更を共有するsource of truthを構築します。画面を自由描画ではなく構造化された仕様としてモデル化し、ひとつのportableなモデルを通じて視覚編集と振る舞いの整合性を保ち、AIが作成した変更の決定権を人間に残します。仕様では制約付きの型を持つ選択肢を優先し、raw CSSや任意のJavaScript式を公開しません。
+Screen Blueprint Studioは、意味のあるUIコンポーネントから、ワイヤーフレーム、画面状態、振る舞い、API binding、人間とAIによるレビュー可能な変更を共有するsource of truthを構築します。画面を自由描画ではなく構造化された仕様としてモデル化し、ひとつのportableなモデルを通じて視覚編集と振る舞いの整合性を保ち、AIが作成した変更の決定権を人間に残します。エディタは仕様に含まれるraw CSS、任意のHTML、JavaScript式を描画・実行しません。
 
 ## このリリースで利用可能
 
@@ -24,10 +24,8 @@ Screen Blueprint Studioは、意味のあるUIコンポーネントから、ワ�
 今後の追加では、Studioをcode editorに変えることなく、portabilityとbehavior modelingを拡張します。
 
 - Project全体を環境間で移動し、version control上でreviewできる **portable JSON/YAML Import/Export**。
-- Data-driven propertyとbindingに使える、`component`、`item`、`route`、`query`、`literal` sourceを持つ汎用typed **ValueSource** model。
-- 既存の`click`／`submit`に加える **`load`／`change` trigger**。
-- 状態変更、API呼び出し、アプリ内遷移に加える **back、external navigation、resource、scroll action**。
-- Response classまたは個別status codeごとに異なる画面状態を選べる **HTTP status別API outcome**。
-- 編集modeと実行modeを明確に分けたまま、trigger、action、collection item、navigation、API outcomeを試せる **操作previewの改善**。
+- 参照、validation、WebMCP操作を支援するtyped standard caseを備えた **open-world specification model**。標準のconvenienceとして、`component`、`item`、`route`、`query`、`literal` ValueSource、`load`／`change` trigger、back／external navigation／resource／scroll action、HTTP status別API outcomeを提供します。
+- Standard typeがまだないHTML／UI component、trigger、action、condition、value sourceを扱う **custom specification fallback**。Custom entryは`name`、`description`、`input`、`output`、`example`、`implementation notes`を保持してStudio上に表示し、unknown enum valueとして拒否せずround-tripします。これは記述的な仕様であり、HTMLやJavaScriptとして実行しません。
+- 画面状態、collection item、navigation、API outcomeをより明確に確認し、編集contextとpreview contextを分離する **操作previewの改善**。
 
-各機能の設計に伴ってroadmapのscopeを調整する場合がありますが、portability、typed model、人間によるreviewという上記の原則は製品境界として維持します。
+各機能の設計に伴ってroadmapのscopeを調整する場合がありますが、portability、open-world fallbackを持つtyped standard case、人間によるreviewという原則は製品境界として維持します。

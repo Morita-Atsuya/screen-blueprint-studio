@@ -285,7 +285,7 @@ Screen Blueprint StudioのReact MVPを実装済みで、現在は提出品質を
 ### 提出後へ送るscope
 
 - Portable JSON/YAML Import/Export
-- 汎用Behavior（typed ValueSource、trigger、action、API outcomeの拡張）
+- 汎用Behavior。Common caseはtyped ValueSource、trigger、action、condition、API outcomeとして参照・validation・WebMCP操作を支援する。Standard typeがないHTML／UI componentやbehavior要素も、name、description、input、output、example、implementation notesを持つcustom specificationとして保持・表示・round-tripし、unknown enum valueで拒否しない。Custom specificationは記述であり、任意HTML／JavaScriptとして実行しない。
 - 全面的なdocs再編
 
 ### 製品scopeから除外
