@@ -71,11 +71,16 @@
 
 .horizontal.end {
   position: absolute;
-  inset: 0 -5px 0 auto;
+  inset: 0 0 0 auto;
   width: 10px;
   height: auto;
   margin: 0;
+  border-left: 0;
+  border-right: 2px solid transparent;
 }
+
+.horizontal.end.active { border-right-color: #c7d2fe; }
+.horizontal.end.over { border-right-color: var(--accent); }
 
 .grid {
   position: absolute;

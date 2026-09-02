@@ -67,6 +67,7 @@ export function ComponentDropZone({
       data-drop-orientation={orientation}
       data-editor-drop-id={dropId}
       data-drop-visible={showAffordance || undefined}
+      data-drop-over={isOver && compatibleSurface || undefined}
       data-drop-outcome={
         compatibleSurface ? accepts ? 'allowed' : 'invalid' : undefined
       }

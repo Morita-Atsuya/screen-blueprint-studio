@@ -246,6 +246,47 @@ async function sampleBrowserDocument(profile) {
     variants: [],
     representativeVariantId: null,
   }
+  const addHorizontalFixture = (containerId, labels, minWidth = 'none') => {
+    const horizontal = structuredClone(document.components['comp-task-list'])
+    horizontal.id = containerId
+    horizontal.parentId = 'comp-list-page'
+    horizontal.childIds = labels.map((_, index) => `${containerId}-item-${index}`)
+    horizontal.common.description = containerId
+    horizontal.config = {
+      ...horizontal.config,
+      layout: 'horizontal',
+      columns: labels.length,
+      wrap: false,
+    }
+    document.components[containerId] = horizontal
+    for (const [index, componentId] of horizontal.childIds.entries()) {
+      const child = structuredClone(document.components['comp-create-task-btn'])
+      child.id = componentId
+      child.parentId = containerId
+      child.sizing.inlineSize = 'content'
+      child.sizing.minWidth = minWidth
+      child.common.description = `Horizontal item ${index + 1}`
+      child.config = { ...child.config, label: labels[index], eventId: null }
+      document.components[componentId] = child
+    }
+  }
+  addHorizontalFixture(
+    'browser-horizontal-container',
+    ['Horizontal Alpha', 'Horizontal Beta', 'Horizontal Gamma'],
+  )
+  addHorizontalFixture('browser-horizontal-single', ['Single horizontal button'])
+  addHorizontalFixture(
+    'browser-horizontal-overflow',
+    ['Overflow One', 'Overflow Two', 'Overflow Three'],
+    'xl',
+  )
+  document.components['comp-list-page'].childIds.splice(
+    2,
+    0,
+    'browser-horizontal-container',
+    'browser-horizontal-single',
+    'browser-horizontal-overflow',
+  )
   return document
 }
 
@@ -315,6 +356,84 @@ async function run() {
         'application did not render after reload',
       )
     }
+    const dragComponent = async (sourceId, targetId, targetFraction, expectedDropPosition) => {
+      await evaluate(`document.querySelector(
+        '[data-drag-surface="canvas"][data-drag-component=${JSON.stringify(sourceId)}]'
+      )?.scrollIntoView({ block: 'center', inline: 'center' })`)
+      const points = await evaluate(`(() => {
+        const source = document.querySelector(
+          '[data-drag-surface="canvas"][data-drag-component=${JSON.stringify(sourceId)}]'
+        )
+        const target = document.querySelector(
+          '[data-horizontal-drop-slot] > [data-component-id=${JSON.stringify(targetId)}]'
+        )?.closest('[data-horizontal-drop-slot]')
+        const sourceRect = source?.getBoundingClientRect()
+        const targetRect = target?.getBoundingClientRect()
+        return sourceRect && targetRect ? {
+          source: {
+            x: sourceRect.left + sourceRect.width / 2,
+            y: sourceRect.top + sourceRect.height / 2,
+          },
+          target: {
+            x: targetRect.left + targetRect.width * ${targetFraction},
+            y: targetRect.top + targetRect.height / 2,
+          },
+        } : null
+      })()`)
+      assert(points, `horizontal drag geometry missing: ${sourceId} -> ${targetId}`)
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        x: points.source.x,
+        y: points.source.y,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      })
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: points.source.x + 8,
+        y: points.source.y,
+        button: 'left',
+        buttons: 1,
+      })
+      await waitFor(
+        `Boolean(document.querySelector('[data-drag-overlay]'))`,
+        `horizontal drag did not activate for ${sourceId}`,
+      )
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: points.target.x,
+        y: points.target.y,
+        button: 'left',
+        buttons: 1,
+      })
+      await waitFor(
+        `document.querySelector(
+          '[data-editor-drop-id="canvas:drop:browser-horizontal-container:${expectedDropPosition}"]'
+        )?.getAttribute('data-drop-over') === 'true'`,
+        `horizontal drag did not select boundary ${expectedDropPosition}`,
+      )
+      await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        x: points.target.x,
+        y: points.target.y,
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+      })
+    }
+    const horizontalOrder = () => evaluate(`(() => {
+      const container = document.querySelector(
+        '[data-component-id="browser-horizontal-container"]'
+      )
+      const ui = [...container.querySelector('[data-layout="horizontal"]').children]
+        .filter(node => node.hasAttribute('data-horizontal-drop-slot'))
+        .map(node => node.querySelector(':scope > [data-component-id]')
+          ?.getAttribute('data-component-id'))
+      const saved = JSON.parse(localStorage.getItem(${JSON.stringify(workspaceKey)}))
+        .document.components['browser-horizontal-container'].childIds
+      return { ui, saved }
+    })()`)
 
     await waitFor(
       `document.readyState === 'complete' && Boolean(document.querySelector('#root > *'))`,
@@ -484,6 +603,49 @@ async function run() {
       `default Canvas geometry or resolved borders drifted: ${JSON.stringify(geometry)}`,
     )
     console.log('PASS default Canvas geometry keeps flow, borders, and 12-track cards bounded')
+
+    const horizontalOverflow = await evaluate(`(() => {
+      const measure = id => {
+        const component = document.querySelector(\`[data-component-id="\${id}"]\`)
+        const children = component?.querySelector('[data-layout="horizontal"]')
+        const end = [...children?.querySelectorAll(
+          '[data-drop-orientation="horizontal"][data-drop-position]'
+        ) ?? []].at(-1)
+        const style = children && getComputedStyle(children)
+        const endRect = end?.getBoundingClientRect()
+        const childrenRect = children?.getBoundingClientRect()
+        return {
+          clientWidth: children?.clientWidth,
+          scrollWidth: children?.scrollWidth,
+          overflowX: style?.overflowX,
+          endBeyondRight: Boolean(endRect && childrenRect && endRect.right > childrenRect.right + 1),
+        }
+      }
+      const single = measure('browser-horizontal-single')
+      const overflowNode = document.querySelector(
+        '[data-component-id="browser-horizontal-overflow"] [data-layout="horizontal"]'
+      )
+      const overflow = measure('browser-horizontal-overflow')
+      overflowNode.scrollLeft = overflowNode.scrollWidth
+      overflow.scrollLeft = overflowNode.scrollLeft
+      return { single, overflow }
+    })()`)
+    assert(
+      horizontalOverflow.single.scrollWidth <= horizontalOverflow.single.clientWidth + 1 &&
+        horizontalOverflow.single.overflowX === 'auto' &&
+        !horizontalOverflow.single.endBeyondRight &&
+        horizontalOverflow.overflow.scrollWidth > horizontalOverflow.overflow.clientWidth &&
+        horizontalOverflow.overflow.endBeyondRight &&
+        horizontalOverflow.overflow.scrollLeft > 0,
+      `horizontal overflow geometry regressed: ${JSON.stringify(horizontalOverflow)}`,
+    )
+    console.log(
+      `PASS horizontal Canvas only scrolls when child content overflows ` +
+        `(single ${horizontalOverflow.single.scrollWidth}/` +
+        `${horizontalOverflow.single.clientWidth}px, overflow ` +
+        `${horizontalOverflow.overflow.scrollWidth}/` +
+        `${horizontalOverflow.overflow.clientWidth}px)`,
+    )
 
     const hoverPoint = await evaluate(`(() => {
       const node = document.querySelector(
@@ -866,6 +1028,68 @@ async function run() {
     )
     console.log('PASS Definition propagation participates in Undo and Redo')
 
+    const expectedHorizontalOrders = [
+      [
+        'browser-horizontal-container-item-1',
+        'browser-horizontal-container-item-2',
+        'browser-horizontal-container-item-0',
+      ],
+      [
+        'browser-horizontal-container-item-0',
+        'browser-horizontal-container-item-1',
+        'browser-horizontal-container-item-2',
+      ],
+      [
+        'browser-horizontal-container-item-1',
+        'browser-horizontal-container-item-0',
+        'browser-horizontal-container-item-2',
+      ],
+    ]
+    await evaluate(`[
+      ...document.querySelectorAll('aside button')
+    ].find(button => button.textContent.trim() === 'Task List').click()`)
+    await waitFor(
+      `Boolean(document.querySelector('[data-component-id="browser-horizontal-container"]'))`,
+      'Task List did not reopen for horizontal DnD',
+    )
+    await dragComponent(
+      'browser-horizontal-container-item-0',
+      'browser-horizontal-container-item-2',
+      0.75,
+      3,
+    )
+    let horizontalResult = await horizontalOrder()
+    assert(
+      JSON.stringify(horizontalResult.ui) === JSON.stringify(expectedHorizontalOrders[0]) &&
+        JSON.stringify(horizontalResult.saved) === JSON.stringify(expectedHorizontalOrders[0]),
+      `right-half horizontal drop did not move to the end: ${JSON.stringify(horizontalResult)}`,
+    )
+    await dragComponent(
+      'browser-horizontal-container-item-0',
+      'browser-horizontal-container-item-1',
+      0.25,
+      0,
+    )
+    horizontalResult = await horizontalOrder()
+    assert(
+      JSON.stringify(horizontalResult.ui) === JSON.stringify(expectedHorizontalOrders[1]) &&
+        JSON.stringify(horizontalResult.saved) === JSON.stringify(expectedHorizontalOrders[1]),
+      `left-half horizontal drop did not move to the start: ${JSON.stringify(horizontalResult)}`,
+    )
+    await dragComponent(
+      'browser-horizontal-container-item-0',
+      'browser-horizontal-container-item-1',
+      0.75,
+      2,
+    )
+    horizontalResult = await horizontalOrder()
+    assert(
+      JSON.stringify(horizontalResult.ui) === JSON.stringify(expectedHorizontalOrders[2]) &&
+        JSON.stringify(horizontalResult.saved) === JSON.stringify(expectedHorizontalOrders[2]),
+      `adjacent horizontal swap did not persist: ${JSON.stringify(horizontalResult)}`,
+    )
+    console.log('PASS horizontal Canvas body halves reorder components in UI and document')
+
     await evaluate(`[
       ...document.querySelectorAll('aside button')
     ].find(button => button.textContent.trim() === 'Task List').click()`)
@@ -918,9 +1142,13 @@ async function run() {
       )
     }
     await cdp.call('Emulation.setPageScaleFactor', { pageScaleFactor: 1.25 })
-    await evaluate(`document.querySelector(
-      '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-action"]'
-    ).click()`)
+    await evaluate(`(() => {
+      const node = document.querySelector(
+        '[data-collection-id="comp-launch-task-card"][data-definition-node-id="task-card-action"]'
+      )
+      node.scrollIntoView({ block: 'center', inline: 'center' })
+      node.click()
+    })()`)
     await waitFor(
       `document.querySelector('[data-editor-selected="true"]')
         ?.getAttribute('data-node-path') === 'task-card-action'`,
@@ -1020,7 +1248,7 @@ async function run() {
       }`,
     )
     console.log('PASS review lock seals Definition editor without discarding content')
-    console.log('PASS trusted Chrome Canvas regression (8 groups)')
+    console.log('PASS trusted Chrome Canvas regression (10 groups)')
   } finally {
     try {
       cdp?.close()

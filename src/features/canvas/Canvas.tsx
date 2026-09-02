@@ -36,7 +36,8 @@ import {
 } from '../../domain/changeSetComponentChanges'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ComponentDropZone } from '../../dnd/ComponentDropZone'
-import { draggableComponentId } from '../../dnd/editorDnd'
+import { componentDropId, draggableComponentId } from '../../dnd/editorDnd'
+import { horizontalAfterDropPosition } from '../../dnd/horizontalDropTarget'
 import { StateDialog } from './StateDialog'
 import { useCanvasViewport } from './useCanvasViewport'
 import {
@@ -1284,6 +1285,12 @@ function CanvasComponent({
             } : undefined}
           >
             {component.childIds.map((childId, index) => {
+              const isLastFlowChild = flowChildIds[flowChildIds.length - 1] === childId
+              const afterPosition = horizontalAfterDropPosition(
+                component.childIds,
+                flowChildIds,
+                childId,
+              )
               const dropZone = (
                 <ComponentDropZone
                   surface="canvas"
@@ -1311,6 +1318,19 @@ function CanvasComponent({
                   data-grid-span={getOwnEntity(document.components, childId)!.sizing.gridSpan}
                   data-grow={getOwnEntity(document.components, childId)!.sizing.grow}
                   data-shrink={getOwnEntity(document.components, childId)!.sizing.shrink}
+                  data-horizontal-drop-slot={
+                    dropOrientation === 'horizontal' || undefined
+                  }
+                  data-horizontal-drop-before-id={
+                    dropOrientation === 'horizontal'
+                      ? componentDropId('canvas', component.id, index)
+                      : undefined
+                  }
+                  data-horizontal-drop-after-id={
+                    dropOrientation === 'horizontal' && afterPosition !== null
+                      ? componentDropId('canvas', component.id, afterPosition)
+                      : undefined
+                  }
                 >
                   {dropZone}
                   <CanvasComponent
@@ -1330,18 +1350,31 @@ function CanvasComponent({
                     componentStatuses={componentStatuses}
                     resolvedScreen={resolvedScreen}
                   />
+                  {dropOrientation === 'horizontal' && isLastFlowChild ? (
+                    <ComponentDropZone
+                      surface="canvas"
+                      parentId={component.id}
+                      screenId={component.screenId}
+                      position={component.childIds.length}
+                      orientation="horizontal"
+                      edge="end"
+                      label={t('dnd.end', { label: displayName })}
+                    />
+                  ) : null}
                 </div>
               )
             })}
-            <ComponentDropZone
-              surface="canvas"
-              parentId={component.id}
-              screenId={component.screenId}
-              position={component.childIds.length}
-              orientation={dropOrientation}
-              edge="end"
-              label={t('dnd.end', { label: displayName })}
-            />
+            {dropOrientation !== 'horizontal' || flowChildIds.length === 0 ? (
+              <ComponentDropZone
+                surface="canvas"
+                parentId={component.id}
+                screenId={component.screenId}
+                position={component.childIds.length}
+                orientation={dropOrientation}
+                edge="end"
+                label={t('dnd.end', { label: displayName })}
+              />
+            ) : null}
           </div>
         </SortableContext>
       )}

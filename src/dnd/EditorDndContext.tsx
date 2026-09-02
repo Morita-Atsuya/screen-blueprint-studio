@@ -28,7 +28,12 @@ import type { ComponentPlacementInvalidReason } from '../domain/componentPlaceme
 import {
   DEFAULT_COMPONENT_PLACEMENT,
   DEFAULT_COMPONENT_SIZING,
+  isInlineScreenComponent,
 } from '../domain/model'
+import type { ProjectDocument } from '../domain/model'
+import { horizontalDropTargetAt } from './horizontalDropTarget'
+import { horizontalFlowDropIsNoOp } from './horizontalDropTarget'
+import { getOwnEntity } from '../domain/entityMap'
 
 const DROP_ERROR_KEYS: Record<
   ComponentPlacementInvalidReason | 'surfaceMismatch',
@@ -46,6 +51,45 @@ const DROP_ERROR_KEYS: Record<
 }
 
 type CompletedDropOutcome = EditorDropOutcome | { status: 'cancelled' }
+
+function resolveInteractionDrop(
+  document: ProjectDocument,
+  drag: Parameters<typeof resolveEditorDrop>[1],
+  target: Parameters<typeof resolveEditorDrop>[2],
+): EditorDropOutcome {
+  const outcome = resolveEditorDrop(document, drag, target)
+  if (
+    drag.type !== 'component' ||
+    drag.surface !== 'canvas' ||
+    target.surface !== 'canvas' ||
+    outcome.status !== 'moved' ||
+    outcome.action !== 'move'
+  ) {
+    return outcome
+  }
+  const component = getOwnEntity(document.components, drag.componentId)
+  const parent = getOwnEntity(document.components, target.parentId)
+  if (
+    !component ||
+    !parent ||
+    component.parentId !== parent.id ||
+    !isInlineScreenComponent(parent) ||
+    !('layout' in parent.config) ||
+    parent.config.layout !== 'horizontal'
+  ) {
+    return outcome
+  }
+  const flowChildIds = parent.childIds.filter(childId =>
+    getOwnEntity(document.components, childId)?.placement.mode === 'flow')
+  return horizontalFlowDropIsNoOp(
+    parent.childIds,
+    flowChildIds,
+    component.id,
+    target.position,
+  )
+    ? { status: 'no-op', position: outcome.position }
+    : outcome
+}
 
 export function EditorDndProvider({ children }: { children: React.ReactNode }) {
   const { locale, t } = useI18n()
@@ -105,7 +149,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       completedDrop.current = { status: 'cancelled' }
       return
     }
-    const outcome = resolveEditorDrop(state.effectiveDocument, drag, target)
+    const outcome = resolveInteractionDrop(state.effectiveDocument, drag, target)
     completedDrop.current = outcome
     if (outcome.status === 'no-op') return
     if (outcome.status === 'invalid') {
@@ -203,7 +247,7 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
             const drag = active.data.current
             const target = over?.data.current
             if (!isEditorDragData(drag) || !isComponentDropData(target)) return ''
-            const outcome = resolveEditorDrop(
+            const outcome = resolveInteractionDrop(
               useAppStore.getState().effectiveDocument,
               drag,
               target,
@@ -262,11 +306,11 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
           droppableContainers: compatibleContainers,
         }
         if (collisionArguments.pointerCoordinates) {
-          const directDrop = document
-            .elementsFromPoint(
-              collisionArguments.pointerCoordinates.x,
-              collisionArguments.pointerCoordinates.y,
-            )
+          const elementsAtPointer = document.elementsFromPoint(
+            collisionArguments.pointerCoordinates.x,
+            collisionArguments.pointerCoordinates.y,
+          )
+          const directDrop = elementsAtPointer
             .map(element => element.closest<HTMLElement>('[data-editor-drop-id]'))
             .find((element): element is HTMLElement => {
               if (element === null) return false
@@ -276,6 +320,33 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
             })
           const directId = directDrop?.dataset.editorDropId
           if (directId) return [{ id: directId }]
+
+          const compatibleIds = new Set(
+            compatibleContainers.map(container => String(container.id)),
+          )
+          const visitedSlots = new Set<HTMLElement>()
+          for (const element of elementsAtPointer) {
+            const slot = element.closest<HTMLElement>('[data-horizontal-drop-slot]')
+            if (!slot || visitedSlots.has(slot)) continue
+            visitedSlots.add(slot)
+            const beforeId = slot.dataset.horizontalDropBeforeId
+            const afterId = slot.dataset.horizontalDropAfterId
+            if (
+              !beforeId ||
+              !afterId ||
+              !compatibleIds.has(beforeId) ||
+              !compatibleIds.has(afterId)
+            ) {
+              continue
+            }
+            const targetId = horizontalDropTargetAt(
+              collisionArguments.pointerCoordinates,
+              slot.getBoundingClientRect(),
+              beforeId,
+              afterId,
+            )
+            if (targetId) return [{ id: targetId }]
+          }
         }
         const pointerCollisions = pointerWithin(compatibleArguments)
         if (pointerCollisions.length === 0) {
@@ -303,7 +374,10 @@ export function EditorDndProvider({ children }: { children: React.ReactNode }) {
       onDragCancel={handleDragCancel}
     >
       {children}
-      <DragOverlay dropAnimation={isPaletteDrag ? null : undefined}>
+      <DragOverlay
+        dropAnimation={isPaletteDrag ? null : undefined}
+        style={{ pointerEvents: 'none' }}
+      >
         {dragLabel ? (
           <div className={styles.overlay} data-drag-overlay>
             {dragLabel}

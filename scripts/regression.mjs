@@ -76,6 +76,7 @@ const domainBundle = join(temp, 'applyCommand.mjs')
 const screenNamingBundle = join(temp, 'screenNaming.mjs')
 const componentFactoryBundle = join(temp, 'componentFactory.mjs')
 const editorDndBundle = join(temp, 'editorDnd.mjs')
+const horizontalDropTargetBundle = join(temp, 'horizontalDropTarget.mjs')
 const editorShortcutsBundle = join(temp, 'editorShortcuts.mjs')
 const toastModelBundle = join(temp, 'toastModel.mjs')
 const componentDisplayLabelBundle = join(temp, 'componentDisplayLabel.mjs')
@@ -119,6 +120,7 @@ bundle('src/domain/applyCommand.ts', domainBundle)
 bundle('src/features/screens/screenNaming.ts', screenNamingBundle)
 bundle('src/features/palette/componentFactory.ts', componentFactoryBundle)
 bundle('src/dnd/editorDnd.ts', editorDndBundle)
+bundle('src/dnd/horizontalDropTarget.ts', horizontalDropTargetBundle)
 bundle('src/app/editorShortcuts.ts', editorShortcutsBundle)
 bundle('src/app/toastModel.ts', toastModelBundle)
 bundle('src/domain/componentDisplayLabel.ts', componentDisplayLabelBundle)
@@ -5885,6 +5887,7 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
     newParentId: 'comp-edit-page',
     position: 4,
   })
+
   assert(
     reordered.components['comp-edit-page'].childIds.slice(4, 6).join(',') ===
       'comp-cancel-edit-btn,comp-save-btn',
@@ -6210,6 +6213,84 @@ await test('component reorder and reparent classify moved, no-op, and invalid ta
       noOpStore.getState().activeChangeSet?.operations.length === 0,
     'active change set recorded a no-op move',
   )
+})
+
+await test('horizontal component geometry selects before and after insertion boundaries', async () => {
+  const {
+    horizontalAfterDropPosition,
+    horizontalDropTargetAt,
+    horizontalFlowDropIsNoOp,
+  } = await import(
+    moduleUrl(horizontalDropTargetBundle, 'horizontal-drop-target')
+  )
+  const rect = { left: 120, right: 320, top: 40, bottom: 140 }
+  const cases = [
+    [{ x: 120, y: 90 }, 2],
+    [{ x: 219.99, y: 90 }, 2],
+    [{ x: 220, y: 90 }, 3],
+    [{ x: 320, y: 90 }, 3],
+    [{ x: 119.99, y: 90 }, null],
+    [{ x: 220, y: 140.01 }, null],
+  ]
+  for (const [point, expected] of cases) {
+    assert(
+      horizontalDropTargetAt(point, rect, 2, 3) === expected,
+      `horizontal hit target mismatch at ${JSON.stringify(point)}`,
+    )
+  }
+  const mixedChildIds = ['flow-a', 'overlay-b', 'flow-c', 'sticky-d']
+  const mixedFlowChildIds = ['flow-a', 'flow-c']
+  assert(
+    horizontalAfterDropPosition(mixedChildIds, mixedFlowChildIds, 'flow-a') === 2 &&
+      horizontalAfterDropPosition(mixedChildIds, mixedFlowChildIds, 'flow-c') === 4 &&
+      horizontalAfterDropPosition(mixedChildIds, mixedFlowChildIds, 'overlay-b') === null &&
+      horizontalFlowDropIsNoOp(mixedChildIds, mixedFlowChildIds, 'flow-a', 2) &&
+      horizontalFlowDropIsNoOp(mixedChildIds, mixedFlowChildIds, 'flow-c', 1) &&
+      !horizontalFlowDropIsNoOp(mixedChildIds, mixedFlowChildIds, 'flow-a', 4) &&
+      !horizontalFlowDropIsNoOp(mixedChildIds, mixedFlowChildIds, 'flow-c', 0),
+    'horizontal flow body targets did not skip interleaved projected children',
+  )
+
+  memoryStorage.clear()
+  const store = await freshStore('horizontal-drop-normalization')
+  const { resolveComponentDrop } = await import(
+    moduleUrl(editorDndBundle, 'horizontal-drop-normalization')
+  )
+  const document = store.getState().document
+  const parentId = 'comp-edit-page'
+  const screenId = 'screen-edit'
+  const childIds = document.components[parentId].childIds
+  const target = position => ({
+    type: 'component-drop',
+    surface: 'canvas',
+    parentId,
+    screenId,
+    position,
+    label: `boundary ${position}`,
+  })
+  const expected = [
+    ['comp-edit-header', 0, 'no-op', 0],
+    ['comp-edit-header', 2, 'moved', 1],
+    ['comp-task-name-input', 2, 'no-op', 2],
+    ['comp-task-name-input', 3, 'no-op', 2],
+    ['comp-task-name-input', 4, 'moved', 3],
+    ['comp-save-btn', 0, 'moved', 0],
+    ['comp-save-btn', 6, 'moved', 5],
+    ['comp-save-btn', childIds.length, 'moved', childIds.length - 1],
+  ]
+  for (const [componentId, dropPosition, status, position] of expected) {
+    const outcome = resolveComponentDrop(
+      document,
+      componentId,
+      target(dropPosition),
+    )
+    assert(
+      outcome.status === status && outcome.position === position,
+      `same-parent boundary normalization drifted: ${componentId} at ${dropPosition} -> ${
+        JSON.stringify(outcome)
+      }`,
+    )
+  }
 })
 
 await test('review lock blocks human document mutations and screen management reconciles selection', async () => {
